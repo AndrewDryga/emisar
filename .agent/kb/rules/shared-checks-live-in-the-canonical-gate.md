@@ -30,7 +30,7 @@ scan, and the compile-cycle budget.
 
 ```go
 // tools/internal/devtool/gates.go
-if err := a.runStaticcheck(ctx, dir, "./..."); err != nil {
+if err := a.run(ctx, dir, nil, "go", "tool", "staticcheck", "./..."); err != nil {
     return fmt.Errorf("%s staticcheck findings: %w", module, err)
 }
 ```
@@ -54,14 +54,10 @@ gate still fails the job.
 ```
 
 Pin tools and invoke them through the gate so contributors need no global install.
-Normally use `go run <module>@<version>`. The temporary Staticcheck exception
-uses official `v0.8.1` with released `x/tools v0.50.0`, verifies the module and
-original source hash, and patches only call classification in a private source
-copy. It preserves every analyzer and runs from the original target directory;
-neither the module cache nor the target dependency files may be modified.
-Remove this backport when an aged official release supports Go export V5. Its
-[source and provenance](../../../tools/internal/devtool/testdata/staticcheck/README.md)
-are owned by the canonical tooling implementation, not a CI-only patch.
+Staticcheck is pinned by the tools module's `tool` directive, where the
+release-age gate and Dependabot review each release, and runs as
+`go tool staticcheck` from every workspace module. A tool with no module pin
+uses `go run <module>@<version>`.
 
 **How it's enforced.** Review signal, and a mechanical one: any `run:` step in
 `.github/workflows/ci.yml` that invokes `mix`, `go`, `staticcheck`, `sobelow`,

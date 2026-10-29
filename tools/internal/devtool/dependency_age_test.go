@@ -115,7 +115,6 @@ func dependencyReviewFixture(t *testing.T) (*App, string) {
 			t.Fatal(err)
 		}
 	}
-	writeStaticcheckFixture(t, app.Root)
 	gitIn(t, app.Root, "init", "-q")
 	gitIn(t, app.Root, "config", "user.name", "Test")
 	gitIn(t, app.Root, "config", "user.email", "test@example.com")
@@ -125,7 +124,6 @@ func dependencyReviewFixture(t *testing.T) (*App, string) {
 	capture := filepath.Join(t.TempDir(), "dep-arguments")
 	bin := filepath.Join(app.Root, "bin")
 	script := "#!/bin/sh\nif [ \"$1 $2 $3\" = 'run ./cmd/depgate check' ]; then\n  printf '%s\\n' \"$@\" > \"$TEST_DEP_ARGS\"\n  exit \"$TEST_DEP_EXIT\"\nfi\n"
-	script += fakeStaticcheckGo
 	if err := os.WriteFile(filepath.Join(bin, "go"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -137,6 +135,5 @@ func dependencyReviewFixture(t *testing.T) (*App, string) {
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("TEST_DEP_ARGS", capture)
 	t.Setenv("TEST_DEP_EXIT", "0")
-	t.Setenv("COMMAND_LOG", filepath.Join(t.TempDir(), "checker-commands"))
 	return app, capture
 }

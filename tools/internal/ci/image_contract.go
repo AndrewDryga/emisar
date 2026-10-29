@@ -390,7 +390,7 @@ func readDiagnosticsOrigins(bundle string) (map[string][]string, error) {
 				return nil, fmt.Errorf("unexpected Compose source origin")
 			}
 		case "compiler-image":
-			if fields[0] != "./compose/GO-LICENSE" || fields[2] != composeCompilerImage || strings.Join(fields[3:], "\t") != "stdlib\tv1.27.2\tall\tgolang/go\tgo1.27.2" {
+			if fields[0] != "./compose/GO-LICENSE" || fields[2] != composeCompilerImage || strings.Join(fields[3:], "\t") != "stdlib\tv1.27.3\tall\tgolang/go\tgo1.27.3" {
 				return nil, fmt.Errorf("unexpected Go runtime license origin")
 			}
 		default:
@@ -482,7 +482,7 @@ func verifyDiagnosticsSBOM(path string, contract imageContract, bundle string) e
 			}
 			composeCount++
 		}
-		if component.PURL == "pkg:golang/stdlib@v1.27.2" && component.Name == "stdlib" && component.Version == "v1.27.2" {
+		if component.PURL == "pkg:golang/stdlib@v1.27.3" && component.Name == "stdlib" && component.Version == "v1.27.3" {
 			toolchainCount++
 		}
 	}

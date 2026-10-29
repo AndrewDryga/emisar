@@ -24,10 +24,10 @@
 # documents the version, the @sha256 pins the exact multi-arch index so a
 # rebuild is reproducible and a moved/republished tag can't swap the base
 # out. Refresh (when bumping a tag or pulling security patches) with:
-#   docker buildx imagetools inspect golang:1.27.2-alpine3.24 --format '{{.Manifest.Digest}}'
+#   docker buildx imagetools inspect golang:1.27.3-alpine3.24 --format '{{.Manifest.Digest}}'
 # then paste the new digest below (keep the tag in sync).
 
-FROM golang:1.27.2-alpine3.24@sha256:85dc1069ac644ea3c527b177303a406eb3358192816cd7f9e5848eb658851673 AS builder
+FROM golang:1.27.3-alpine3.24@sha256:d530cf60723abf1ffae0cd16bb546b379ec0550d2f3815e5b16ed69dbc00fba4 AS builder
 
 WORKDIR /src
 COPY mcp/go.mod ./

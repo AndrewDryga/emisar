@@ -286,10 +286,11 @@ func (a *App) goGate(ctx context.Context, module, coverage string) error {
 	}
 	// staticcheck belongs to the canonical gate, not a CI-only step: as a CI-only
 	// step it let a green local gate ship a red job, which is how forty findings
-	// accumulated unseen. The pinned tool build stays off the contributor's PATH
-	// and keeps Go export-format compatibility separate from analyzer changes.
+	// accumulated unseen. The tools module pins it with a `tool` directive, so
+	// the release-age gate reviews each release; `go tool` builds it from the
+	// verified sums, off the contributor's PATH, for every workspace module.
 	if err := a.gatePhase(module+" staticcheck", func() error {
-		if err := a.runStaticcheck(ctx, dir, "./..."); err != nil {
+		if err := a.run(ctx, dir, nil, "go", "tool", "staticcheck", "./..."); err != nil {
 			return fmt.Errorf("%s staticcheck findings: %w", module, err)
 		}
 		return nil

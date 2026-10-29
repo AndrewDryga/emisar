@@ -54,7 +54,7 @@ func diagnosticsFixture(t *testing.T) string {
 		case "cli-plugins/docker-compose", "compose/LICENSE", "compose/NOTICE":
 			kind, source, owner = "github-source", "https://codeload.github.com/docker/compose/tar.gz/5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de", "docker-compose\t5.5.1\tamd64\tdocker/compose\tv5.5.1"
 		case "compose/GO-LICENSE":
-			kind, source, owner = "compiler-image", "golang:1.27.2-alpine3.24@sha256:85dc1069ac644ea3c527b177303a406eb3358192816cd7f9e5848eb658851673", "stdlib\tv1.27.2\tall\tgolang/go\tgo1.27.2"
+			kind, source, owner = "compiler-image", "golang:1.27.3-alpine3.24@sha256:d530cf60723abf1ffae0cd16bb546b379ec0550d2f3815e5b16ed69dbc00fba4", "stdlib\tv1.27.3\tall\tgolang/go\tgo1.27.3"
 		}
 		origins = append(origins, "./"+path+"\t"+kind+"\t"+source+"\t"+owner+"\n")
 	}
@@ -84,8 +84,8 @@ func diagnosticsFixture(t *testing.T) string {
 	build := fmt.Sprintf(`source_url=https://codeload.github.com/docker/compose/tar.gz/5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de
 source_sha256=c72877db37172d8ee55f565e4fed20067af89015e986b190768fd4ee621025f2
 source_commit=5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de
-toolchain_image=golang:1.27.2-alpine3.24@sha256:85dc1069ac644ea3c527b177303a406eb3358192816cd7f9e5848eb658851673
-toolchain_version=go1.27.2
+toolchain_image=golang:1.27.3-alpine3.24@sha256:d530cf60723abf1ffae0cd16bb546b379ec0550d2f3815e5b16ed69dbc00fba4
+toolchain_version=go1.27.3
 go_mod_sha256=cdf5424bec2a7c75fa955a56efc88fb1731db5cca019cf63d4a1980a218e0868
 go_sum_sha256=8e96090883306abcd19ed57025a3e108b0b1cf6a6dff220c73d1aa77bb408a10
 module_update=go get golang.org/x/net@v0.60.0 github.com/containerd/containerd/v2@v2.3.6
@@ -161,7 +161,7 @@ func TestDiagnosticsManifestRejectsWrongIdentityAndIncompleteClosure(t *testing.
 			if err != nil {
 				return err
 			}
-			err = os.WriteFile(path, []byte(strings.ReplaceAll(string(data), "toolchain_version=go1.27.2", "toolchain_version=go1.26.8")), 0o600)
+			err = os.WriteFile(path, []byte(strings.ReplaceAll(string(data), "toolchain_version=go1.27.3", "toolchain_version=go1.26.8")), 0o600)
 			sealDiagnosticsFixture(t, dir)
 			return err
 		}},

@@ -174,7 +174,7 @@ func diagnosticsSBOMFixture(t *testing.T) (string, string, imageContract) {
 	}
 	composeBinaryFixture(t, bundle)
 	runtime := filepath.Join(t.TempDir(), "runtime.cdx.json")
-	if err := os.WriteFile(runtime, []byte(`{"components":[{"type":"library","bom-ref":"go-runtime","name":"stdlib","version":"v1.27.2","purl":"pkg:golang/stdlib@v1.27.2"},{"type":"library","name":"example-go","version":"1.2.3","purl":"pkg:golang/example@v1.2.3","licenses":[{"license":{"id":"MIT"}}],"hashes":[{"alg":"SHA-256","content":"kept"}]}]}`), 0o600); err != nil {
+	if err := os.WriteFile(runtime, []byte(`{"components":[{"type":"library","bom-ref":"go-runtime","name":"stdlib","version":"v1.27.3","purl":"pkg:golang/stdlib@v1.27.3"},{"type":"library","name":"example-go","version":"1.2.3","purl":"pkg:golang/example@v1.2.3","licenses":[{"license":{"id":"MIT"}}],"hashes":[{"alg":"SHA-256","content":"kept"}]}]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	hash, err := hashFile(filepath.Join(bundle, "manifest"))
