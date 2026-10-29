@@ -18,6 +18,26 @@ defmodule EmisarWeb.Changelog do
   @entries [
     %{
       date: ~D[2026-10-29],
+      slug: "compromised-certificate-authorities-distrusted",
+      title: "Compromised certificate authorities distrusted",
+      tag: "v0.55.0",
+      summary:
+        "A security release. Several eMudhra intermediate certificate authorities were compromised, and every layer that checks certificates now refuses them: the Cloud SQL Auth Proxy that carries the database connection, Terraform, the host operating system, and the CA bundle in the portal image. The same window patches six OpenSSL issues in the portal image and puts How it works in the site's top navigation.",
+      details: [
+        {"Security",
+         [
+           "Cloud SQL Auth Proxy 2.26.3 and Terraform 1.17.1 are built with a Go release that no longer trusts the compromised eMudhra intermediates. The portal image's CA bundle drops the emSign ECC Root CA - G3 and Comodo AAA Services roots.",
+           "OpenSSL 3.0.22-1~deb12u2 in the portal and diagnostics images fixes six issues, including a DTLS flaw and an ECDSA timing leak.",
+           "Portal hosts move to Container-Optimized OS build 18867.652.12, with kernel 6.6.159 and 36 fixes since the previous build, among them containerd, glibc, and sudo."
+         ]},
+        {"Website",
+         [
+           "How it works now leads the top navigation and the mobile menu, and its introduction is shorter."
+         ]}
+      ]
+    },
+    %{
+      date: ~D[2026-10-29],
       slug: "patched-web-server-and-approval-handoffs",
       title: "A patched web server and approval handoffs",
       tag: "v0.54.0",
