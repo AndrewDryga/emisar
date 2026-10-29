@@ -17,7 +17,8 @@ defmodule EmisarWeb.MCP.Instructions do
 
   When an action or runbook first returns `pending_approval`, tell the user in this conversation \
   right away: what is waiting, that only an authorized person's approval in Emisar releases it, \
-  and the exact `approval.url`, plus any returned reason or expiry. This is a human wait, not a \
+  and the exact `approval.url`, plus any returned reason or expiry. If you are a subagent, send \
+  that notice to your parent agent now and ask it to tell the user. This is a human wait, not a \
   failure: do not retry, self-approve, or accept a chat reply as approval. Keep doing independent \
   work, follow `next`, and notify once per approval request.
 

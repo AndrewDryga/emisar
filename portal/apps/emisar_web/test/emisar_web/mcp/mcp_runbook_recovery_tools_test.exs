@@ -4167,8 +4167,9 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert approval["handoff"] ==
              "If you have not yet told the user about this request, tell them now in this " <>
                "conversation that it waits for an authorized person to approve it in Emisar, " <>
-               "and give them this approval's url. Do not retry it, approve it yourself, or " <>
-               "treat a chat reply as approval."
+               "and give them this approval's url. If you are a subagent, send that notice to " <>
+               "your parent agent now and ask it to tell the user. Do not retry it, approve it " <>
+               "yourself, or treat a chat reply as approval."
   end
 
   defp named_reviewer(account, full_name) do

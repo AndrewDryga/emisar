@@ -556,12 +556,14 @@ defmodule EmisarWeb.MCP.Service do
   defp fixed_approval(_run, _subject, false), do: {nil, nil}
 
   # Fixed, server-authored text: every pending result repeats the user handoff
-  # the server instructions describe, for clients that drop those instructions.
+  # the server instructions describe, for clients that drop those instructions
+  # and for subagents, whose replies reach another agent instead of the user.
   # It never interpolates request data, so it cannot carry untrusted text.
   @approval_handoff "If you have not yet told the user about this request, tell them now " <>
                       "in this conversation that it waits for an authorized person to approve " <>
-                      "it in Emisar, and give them this approval's url. Do not retry it, " <>
-                      "approve it yourself, or treat a chat reply as approval."
+                      "it in Emisar, and give them this approval's url. If you are a subagent, " <>
+                      "send that notice to your parent agent now and ask it to tell the user. " <>
+                      "Do not retry it, approve it yourself, or treat a chat reply as approval."
 
   @doc """
   The bounded `{request_id, url, expires_at, handoff}` approval object shared

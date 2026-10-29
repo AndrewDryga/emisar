@@ -35,7 +35,7 @@
       "request_id": "01a08f81-cb81-7273-801b-ce6ad6321a77",
       "url": "https://emisar.dev/app/example/approvals/01a08f81-cb81-7273-801b-ce6ad6321a77",
       "expires_at": "2026-09-12T08:07:23.236118Z",
-      "handoff": "If you have not yet told the user about this request, tell them now in this conversation that it waits for an authorized person to approve it in Emisar, and give them this approval's url. Do not retry it, approve it yourself, or treat a chat reply as approval."
+      "handoff": "If you have not yet told the user about this request, tell them now in this conversation that it waits for an authorized person to approve it in Emisar, and give them this approval's url. If you are a subagent, send that notice to your parent agent now and ask it to tell the user. Do not retry it, approve it yourself, or treat a chat reply as approval."
     },
     "wait_until": "2026-09-12T08:07:23.236118Z",
     "next": {

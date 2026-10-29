@@ -754,7 +754,7 @@
         "request_id": {"type": "string", "minLength": 1, "maxLength": 80},
         "url": {"type": "string", "format": "uri", "maxLength": 2048},
         "expires_at": {"$ref": "#/$defs/timestamp"},
-        "handoff": {"type": "string", "minLength": 1, "maxLength": 400, "description": "Fixed server text: unless already done, tell the user in this conversation that the request waits for an authorized person's approval in Emisar and give them `url`."}
+        "handoff": {"type": "string", "minLength": 1, "maxLength": 400, "description": "Fixed server text: unless already done, tell the user in this conversation, or through the parent agent when running as a subagent, that the request waits for an authorized person's approval in Emisar and give them `url`."}
       }
     },
     "review": {

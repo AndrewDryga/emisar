@@ -1042,7 +1042,7 @@ coordinated schema, instruction, documentation, and client-corpus updates.
         "request_id": "apr_01J0D85QB2BWAAGXX9YZFZJEPR",
         "url": "https://emisar.dev/app/example/approvals/apr_01J0D85QB2BWAAGXX9YZFZJEPR",
         "expires_at": "2026-07-13T15:12:10Z",
-        "handoff": "If you have not yet told the user about this request, tell them now in this conversation that it waits for an authorized person to approve it in Emisar, and give them this approval's url. Do not retry it, approve it yourself, or treat a chat reply as approval."
+        "handoff": "If you have not yet told the user about this request, tell them now in this conversation that it waits for an authorized person to approve it in Emisar, and give them this approval's url. If you are a subagent, send that notice to your parent agent now and ask it to tell the user. Do not retry it, approve it yourself, or treat a chat reply as approval."
       },
       "wait_until": "2026-07-13T15:12:10Z",
       "next": {
@@ -1068,16 +1068,18 @@ confirmation.
 The first time an action or runbook returns `pending_approval`, the model tells
 the user in the current conversation what is waiting, that only an authorized
 person's approval in Emisar releases it, and the exact `approval.url`, relaying
-any returned reason or expiry without inventing details. It notifies once per
-approval request, keeps doing independent work, and never retries, self-approves,
-or accepts a chat reply in place of the approval. The server instructions state
-this. Every `approval` object repeats it in the fixed, server-written `handoff`
-sentence for clients that drop the instructions; the sentence asks for the
-notice only if the model has not given it yet, so a repeated wait frame does not
-prompt a second one. Emisar sends no external notification for it. If the work
-is no longer needed while the run waits, the model calls
-[`cancel_run`](#cancel_run) on that run instead of leaving the request open
-until a human decides or it expires.
+any returned reason or expiry without inventing details. A model running as a
+subagent, whose replies reach another agent rather than the user, sends that
+notice to its parent agent right away and asks it to tell the user. It notifies
+once per approval request, keeps doing independent work, and never retries,
+self-approves, or accepts a chat reply in place of the approval. The server
+instructions state this. Every `approval` object repeats it in the fixed,
+server-written `handoff` sentence for clients that drop the instructions; the
+sentence asks for the notice only if the model has not given it yet, so a
+repeated wait frame does not prompt a second one. Emisar sends no external
+notification for it. If the work is no longer needed while the run waits, the
+model calls [`cancel_run`](#cancel_run) on that run instead of leaving the
+request open until a human decides or it expires.
 
 An approval is bound to the exact run facts. A standing grant is narrower than
 the API key: it matches the exact key, action ID, runner generation, and either
@@ -1413,7 +1415,7 @@ Example after a wait times out while approval is still pending:
       "request_id": "apr_01J0D85QB2BWAAGXX9YZFZJEPR",
       "url": "https://emisar.dev/app/example/approvals/apr_01J0D85QB2BWAAGXX9YZFZJEPR",
       "expires_at": "2026-07-13T15:12:10Z",
-      "handoff": "If you have not yet told the user about this request, tell them now in this conversation that it waits for an authorized person to approve it in Emisar, and give them this approval's url. Do not retry it, approve it yourself, or treat a chat reply as approval."
+      "handoff": "If you have not yet told the user about this request, tell them now in this conversation that it waits for an authorized person to approve it in Emisar, and give them this approval's url. If you are a subagent, send that notice to your parent agent now and ask it to tell the user. Do not retry it, approve it yourself, or treat a chat reply as approval."
     },
     "wait_until": "2026-07-13T15:12:10Z",
     "next": {
@@ -2150,7 +2152,7 @@ approval is pending and its request is visible to the caller:
     "request_id": "8b7c9d4e-2f31-4a68-9c05-7d1e83b2a6f4",
     "url": "https://emisar.dev/app/example/approvals/8b7c9d4e-2f31-4a68-9c05-7d1e83b2a6f4",
     "expires_at": "2026-07-13T15:12:10Z",
-    "handoff": "If you have not yet told the user about this request, tell them now in this conversation that it waits for an authorized person to approve it in Emisar, and give them this approval's url. Do not retry it, approve it yourself, or treat a chat reply as approval."
+    "handoff": "If you have not yet told the user about this request, tell them now in this conversation that it waits for an authorized person to approve it in Emisar, and give them this approval's url. If you are a subagent, send that notice to your parent agent now and ask it to tell the user. Do not retry it, approve it yourself, or treat a chat reply as approval."
   },
   "wait_until": "2026-07-13T15:12:10Z"
 }

@@ -48,6 +48,7 @@ defmodule EmisarWeb.MCP.InstructionsTest do
           "only an authorized person's approval in Emisar releases it",
           "the exact `approval.url`",
           "any returned reason or expiry",
+          "If you are a subagent, send that notice to your parent agent now and ask it to tell the user",
           "a human wait, not a failure",
           "do not retry, self-approve, or accept a chat reply as approval",
           "Keep doing independent work",
@@ -81,7 +82,8 @@ defmodule EmisarWeb.MCP.InstructionsTest do
     refute @text =~ "`find_actions`"
     refute @text =~ "schema-valid `args`"
     refute @text =~ "emisar pack install"
-    # Room for the approval handoff paragraph; still a short preamble.
-    assert byte_size(@text) < 2_200
+    # Room for the approval handoff paragraph, including its subagent relay;
+    # still a short preamble.
+    assert byte_size(@text) < 2_300
   end
 end
