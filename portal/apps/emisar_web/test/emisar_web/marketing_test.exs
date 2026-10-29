@@ -598,20 +598,20 @@ defmodule EmisarWeb.MarketingTest do
     # Every step's caption is in the page, in order; the finished picture's caption shows.
     assert map |> LazyHTML.query("[data-hiw-cap-n] .hiw-cap-t") |> Enum.map(&LazyHTML.text/1) ==
              [
-               "Before emisar: an SSH key.",
-               "Before emisar: one wrong guess.",
-               "Install the runner.",
-               "emisar in the middle.",
+               "Before emisar: you let an agent use your SSH key.",
+               "Before emisar: a confused agent creates a problem.",
+               "Install the emisar runner.",
+               "emisar sits in the middle.",
                "Connect your agent.",
-               "Add packs.",
-               "A request runs.",
-               "A person approves.",
-               "Refused.",
-               "On the record."
+               "Packs extend the agent's toolset.",
+               "Low-risk requests run unattended.",
+               "Disruptive actions require human approval.",
+               "Policy can also deny actions outright.",
+               "Everything is on the record."
              ]
 
     assert map |> LazyHTML.query("[data-hiw-cap]") |> LazyHTML.text() |> squish() =~
-             "On the record. The audit trail holds all three decisions"
+             "Everything is on the record. The audit trail holds all three decisions"
 
     # The refused example is an action the drawn runner has (linux-core), so policy refuses it;
     # an action from a pack no runner has would be unavailable, not refused.

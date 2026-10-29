@@ -59,7 +59,7 @@ const S = [null,
     seq: (k) => [k.show("agent"), 90, k.show("you"), 90, k.show("region"), 300, k.show("con"), 300, k.lit("ag-claude"), { w: "ssh", draw: 1, lit: 1, tone: "rose" }, k.show("key", "con-b"), 300, k.show("b1"), 550, k.show("b2"), 450,
       { w: "ssh", rev: 1, tone: "rose" }, k.show("chat-b"), 650, k.show("b3"), k.lit("svc-pg", "jolt"), 800, k.unlit("svc-pg"), 300,
       k.show("dzb1"), 280, k.show("dzb2"), 280, k.show("dzb3")] },
-  // 2 One wrong guess
+  // 2 A confused agent
   {
     start: (m, k) => { m.focus = ""; k.hide("con-b", "b1", "b2", "b3", "chat-b", "dzb1", "dzb2", "dzb3")(); k.text("con-who", "Claude.ai")(); k.text("you-sub", SHRUG)() },
     seq: (k) => [300, k.lit("ag-claude"), k.show("chat-a"), 900, { w: "ssh", tone: "rose" }, k.show("con-a"), k.show("a1"), 700, k.show("a2"), k.lit("a2"), 800,

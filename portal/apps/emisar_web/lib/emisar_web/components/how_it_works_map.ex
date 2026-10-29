@@ -41,56 +41,56 @@ defmodule EmisarWeb.HowItWorksMap do
               <p class="hiw-count" aria-hidden="true"><b data-hiw-count>10</b> / 10</p>
               <div class="hiw-cap">
                 <p class="hiw-cap-live" data-hiw-cap aria-live="polite" aria-atomic="true">
-                  <span class="hiw-sr">Step 10 of 10. </span><strong class="hiw-cap-t">On the record.</strong>
+                  <span class="hiw-sr">Step 10 of 10. </span><strong class="hiw-cap-t">Everything is on the record.</strong>
                   <span class="hiw-cap-s">The audit trail holds all three decisions, the
                   <span class="w-deny">refused</span>
                   one included, and the runner keeps its own hash-chained journal of the two runs on the host.</span>
                 </p>
                 <p class="hiw-cap-size" data-hiw-cap-n="1" aria-hidden="true">
-                  <strong class="hiw-cap-t">Before emisar: an SSH key.</strong>
-                  <span class="hiw-cap-s">The agent runs commands itself. It reads a config file, the database password flows straight back to it, and it restarts Postgres with nothing checking first.</span>
+                  <strong class="hiw-cap-t">Before emisar: you let an agent use your SSH key.</strong>
+                  <span class="hiw-cap-s">The agent runs commands itself. It reads a config file, and the database password flows straight back to your AI provider training data.</span>
                 </p>
                 <p class="hiw-cap-size" data-hiw-cap-n="2" aria-hidden="true">
-                  <strong class="hiw-cap-t">Before emisar: one wrong guess.</strong>
-                  <span class="hiw-cap-s">The agent means to reset the dev database, but on this server
-                  <code>$DB_HOST</code>
-                  points at production. The drop runs at once, and there is no undo.</span>
+                  <strong class="hiw-cap-t">Before emisar: a confused agent creates a problem.</strong>
+                  <span class="hiw-cap-s">The agent means to clear old dumps, but
+                  <code>$DUMP_DIR</code>
+                  is empty on this server, so the delete takes the whole Postgres data directory. It runs at once, and there is no undo.</span>
                 </p>
                 <p class="hiw-cap-size" data-hiw-cap-n="3" aria-hidden="true">
-                  <strong class="hiw-cap-t">Install the runner.</strong>
+                  <strong class="hiw-cap-t">Install the emisar runner.</strong>
                   <span class="hiw-cap-s">One command installs a small open-source runner. It connects out over TLS, so you open no inbound port.</span>
                 </p>
                 <p class="hiw-cap-size" data-hiw-cap-n="4" aria-hidden="true">
-                  <strong class="hiw-cap-t">emisar in the middle.</strong>
-                  <span class="hiw-cap-s">The hosted control plane sits between agent and server, with identity, policy, approvals, and an audit trail.</span>
+                  <strong class="hiw-cap-t">emisar sits in the middle.</strong>
+                  <span class="hiw-cap-s">The hosted control plane sits between agent and server, relaying messages and enforcing identity, policy, approvals, and an audit trail.</span>
                 </p>
                 <p class="hiw-cap-size" data-hiw-cap-n="5" aria-hidden="true">
                   <strong class="hiw-cap-t">Connect your agent.</strong>
-                  <span class="hiw-cap-s">Your agent connects over MCP to one server with 14 tools. It no longer needs the SSH key.</span>
+                  <span class="hiw-cap-s">Your agent connects to emisar over MCP. It no longer needs the SSH key or any other way into your infrastructure.</span>
                 </p>
                 <p class="hiw-cap-size" data-hiw-cap-n="6" aria-hidden="true">
-                  <strong class="hiw-cap-t">Add packs.</strong>
-                  <span class="hiw-cap-s">Packs add ready-made actions, each a fixed command with checked arguments: 1,840 actions in 103 packs.</span>
+                  <strong class="hiw-cap-t">Packs extend the agent's toolset.</strong>
+                  <span class="hiw-cap-s">Agents run actions grouped in packs, each a fixed command with checked arguments. The catalog has 1,840 actions in 103 packs for the tools you most likely use, and you can build your own.</span>
                 </p>
                 <p class="hiw-cap-size" data-hiw-cap-n="7" aria-hidden="true">
-                  <strong class="hiw-cap-t">A request runs.</strong>
+                  <strong class="hiw-cap-t">Low-risk requests run unattended.</strong>
                   <span class="hiw-cap-s">Policy <span class="w-pass">allows</span>
                   the low-risk <code>postgres.slow_queries</code>. The runner checks the trusted pack and its local rules, runs it, and redacts the output on the host.</span>
                 </p>
                 <p class="hiw-cap-size" data-hiw-cap-n="8" aria-hidden="true">
-                  <strong class="hiw-cap-t">A person approves.</strong>
+                  <strong class="hiw-cap-t">Disruptive actions require human approval.</strong>
                   <span class="hiw-cap-s"><code>postgres.terminate_backend</code>
                   is high risk, so it <span class="w-warn">waits</span>
                   until a person approves it in the console or by email, then runs the same way.</span>
                 </p>
                 <p class="hiw-cap-size" data-hiw-cap-n="9" aria-hidden="true">
-                  <strong class="hiw-cap-t">Refused.</strong>
+                  <strong class="hiw-cap-t">Policy can also deny actions outright.</strong>
                   <span class="hiw-cap-s">Rebooting the host with <code>linux.reboot_host</code>
-                  is critical, so policy <span class="w-deny">refuses</span>
+                  is critical, so the default policy <span class="w-deny">refuses</span>
                   it, and it never reaches your server.</span>
                 </p>
                 <p class="hiw-cap-size" data-hiw-cap-n="10" aria-hidden="true">
-                  <strong class="hiw-cap-t">On the record.</strong>
+                  <strong class="hiw-cap-t">Everything is on the record.</strong>
                   <span class="hiw-cap-s">The audit trail holds all three decisions, the
                   <span class="w-deny">refused</span>
                   one included, and the runner keeps its own hash-chained journal of the two runs on the host.</span>
@@ -123,15 +123,15 @@ defmodule EmisarWeb.HowItWorksMap do
                 /></button>
               </div>
               <div class="hiw-prog" role="group" aria-label="Steps">
-                <button type="button" class="hiw-seg is-first is-done" data-hiw-seg="1"><i></i><span class="hiw-sr">Step 1 of 10: Before emisar, an SSH key</span></button>
-                <button type="button" class="hiw-seg is-done" data-hiw-seg="2"><i></i><span class="hiw-sr">Step 2 of 10: Before emisar, one wrong guess</span></button>
-                <button type="button" class="hiw-seg is-first is-done" data-hiw-seg="3"><i></i><span class="hiw-sr">Step 3 of 10: Install the runner</span></button>
-                <button type="button" class="hiw-seg is-done" data-hiw-seg="4"><i></i><span class="hiw-sr">Step 4 of 10: emisar in the middle</span></button>
+                <button type="button" class="hiw-seg is-first is-done" data-hiw-seg="1"><i></i><span class="hiw-sr">Step 1 of 10: Before emisar, you let an agent use your SSH key</span></button>
+                <button type="button" class="hiw-seg is-done" data-hiw-seg="2"><i></i><span class="hiw-sr">Step 2 of 10: Before emisar, a confused agent creates a problem</span></button>
+                <button type="button" class="hiw-seg is-first is-done" data-hiw-seg="3"><i></i><span class="hiw-sr">Step 3 of 10: Install the emisar runner</span></button>
+                <button type="button" class="hiw-seg is-done" data-hiw-seg="4"><i></i><span class="hiw-sr">Step 4 of 10: emisar sits in the middle</span></button>
                 <button type="button" class="hiw-seg is-done" data-hiw-seg="5"><i></i><span class="hiw-sr">Step 5 of 10: Connect your agent</span></button>
-                <button type="button" class="hiw-seg is-done" data-hiw-seg="6"><i></i><span class="hiw-sr">Step 6 of 10: Add packs</span></button>
-                <button type="button" class="hiw-seg is-first is-done" data-hiw-seg="7"><i></i><span class="hiw-sr">Step 7 of 10: A request runs</span></button>
-                <button type="button" class="hiw-seg is-done" data-hiw-seg="8"><i></i><span class="hiw-sr">Step 8 of 10: A person approves</span></button>
-                <button type="button" class="hiw-seg is-done" data-hiw-seg="9"><i></i><span class="hiw-sr">Step 9 of 10: Refused</span></button>
+                <button type="button" class="hiw-seg is-done" data-hiw-seg="6"><i></i><span class="hiw-sr">Step 6 of 10: Packs extend the agent's toolset</span></button>
+                <button type="button" class="hiw-seg is-first is-done" data-hiw-seg="7"><i></i><span class="hiw-sr">Step 7 of 10: Low-risk requests run unattended</span></button>
+                <button type="button" class="hiw-seg is-done" data-hiw-seg="8"><i></i><span class="hiw-sr">Step 8 of 10: Disruptive actions require human approval</span></button>
+                <button type="button" class="hiw-seg is-done" data-hiw-seg="9"><i></i><span class="hiw-sr">Step 9 of 10: Policy can also deny actions outright</span></button>
                 <button
                   type="button"
                   class="hiw-seg is-first is-done"
@@ -222,13 +222,13 @@ defmodule EmisarWeb.HowItWorksMap do
                 </div>
                 <div class="hiw-chat-b">
                   <p class="hiw-say">
-                    “The dev database is behind. Resetting it so the migration can run again.”
+                    “Disk is almost full. Clearing the old migration dumps.”
                   </p>
                 </div>
               </div>
               <ul class="hiw-dz hiw-dz-a">
                 <li class="hiw-fx is-off" data-k="dza1">
-                  <.icon name="state.warning" class="h-4 w-4" />Meant dev, dropped production
+                  <.icon name="state.warning" class="h-4 w-4" />Meant old dumps, deleted the database
                 </li>
                 <li class="hiw-fx is-off" data-k="dza2">
                   <.icon name="state.warning" class="h-4 w-4" />Nothing asks first, and there is no undo
@@ -411,9 +411,9 @@ defmodule EmisarWeb.HowItWorksMap do
                   </div>
                   <div class="hiw-con-bs" phx-no-format>
                     <div class="hiw-con-b hiw-fx is-off" data-k="con-a">
-                      <span class="hiw-cl cmd hiw-fx is-off" data-k="a1">psql -h "$DB_HOST" -c 'DROP DATABASE checkout'</span>
-                      <span class="hiw-cl trace hiw-fx is-off" data-k="a2">+ psql -h <span class="hiw-sec">prod-db-01</span> -c 'DROP DATABASE checkout'</span>
-                      <span class="hiw-cl boom hiw-fx is-off" data-k="a3">DROP DATABASE</span>
+                      <span class="hiw-cl cmd hiw-fx is-off" data-k="a1">rm -rf "/var/lib/postgresql/$DUMP_DIR"/*</span>
+                      <span class="hiw-cl trace hiw-fx is-off" data-k="a2">+ rm -rf /var/lib/postgresql/<span class="hiw-sec">16</span></span>
+                      <span class="hiw-cl boom hiw-fx is-off" data-k="a3">PANIC: could not open file "global/pg_control"</span>
                     </div>
                     <div class="hiw-con-b hiw-fx is-off" data-k="con-b">
                       <span class="hiw-cl cmd hiw-fx is-off" data-k="b1">cat /etc/checkout/env</span>
