@@ -123,11 +123,15 @@ defmodule EmisarWeb.MarketingComponents do
           <.brand />
         </.link>
 
-        <%!-- Desktop nav: visible md+. Five items — use cases (proof),
-             security (trust), pricing, packs (the catalog), and docs. The
-             "what your AI gains" pitch leads the home page itself now;
+        <%!-- Desktop nav: visible lg+. Six items — how it works (the model,
+             for a first-time visitor), use cases (proof), security (trust),
+             pricing, packs (the catalog), and docs. Six links plus the CTAs
+             overflow a 768px bar, so below lg the menu carries them.
              Changelog and About live in the footer. --%>
-        <nav class="hidden items-center gap-8 md:flex">
+        <nav class="hidden items-center gap-8 lg:flex">
+          <.marketing_nav_link href={~p"/how-it-works"} active={@current == :how_it_works}>
+            How it works
+          </.marketing_nav_link>
           <.marketing_nav_link href={~p"/use-cases"} active={@current == :use_cases}>
             Use cases
           </.marketing_nav_link>
@@ -143,9 +147,9 @@ defmodule EmisarWeb.MarketingComponents do
           <.marketing_nav_link href={~p"/docs"} active={@current == :docs}>Docs</.marketing_nav_link>
         </nav>
 
-        <%!-- Desktop CTAs: visible md+. A signed-in visitor gets a
+        <%!-- Desktop CTAs: visible lg+. A signed-in visitor gets a
              Dashboard link; everyone else gets Sign in / Start free. --%>
-        <div class="hidden items-center gap-4 md:flex">
+        <div class="hidden items-center gap-4 lg:flex">
           <%= if @signed_in? do %>
             <.marketing_button size={:sm} href={~p"/app"} icon="action.next">
               Dashboard
@@ -161,7 +165,7 @@ defmodule EmisarWeb.MarketingComponents do
           <% end %>
         </div>
 
-        <%!-- Mobile hamburger: visible < md. Toggles the drawer
+        <%!-- Mobile hamburger: visible < lg. Toggles the drawer
              below; uses the same JS dance as the in-app shell so
              the body lock works the same. --%>
         <button
@@ -170,7 +174,7 @@ defmodule EmisarWeb.MarketingComponents do
           aria-controls="marketing-mobile-nav"
           aria-expanded="false"
           data-mobile-nav-open
-          class="-mr-1.5 rounded-md p-2.5 text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100 md:hidden"
+          class="-mr-1.5 rounded-md p-2.5 text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100 lg:hidden"
         >
           <.icon name="action.menu" class="h-5 w-5" />
         </button>
@@ -185,7 +189,7 @@ defmodule EmisarWeb.MarketingComponents do
          node — and reveal in stagger. Toggled by mobile_nav.js (focus-trapped). --%>
     <div
       id="marketing-mobile-nav"
-      class="fixed inset-0 z-50 hidden bg-[#07080a] md:hidden"
+      class="fixed inset-0 z-50 hidden bg-[#07080a] lg:hidden"
       role="dialog"
       aria-modal="true"
       aria-label="Site menu"
@@ -229,37 +233,46 @@ defmodule EmisarWeb.MarketingComponents do
                 <ul class="flex flex-1 flex-col justify-around">
                   <li>
                     <.marketing_gate_link
+                      href={~p"/how-it-works"}
+                      active={@current == :how_it_works}
+                      idx={1}
+                    >
+                      How it works
+                    </.marketing_gate_link>
+                  </li>
+                  <li>
+                    <.marketing_gate_link
                       href={~p"/use-cases"}
                       active={@current == :use_cases}
-                      idx={1}
+                      idx={2}
                     >
                       Use cases
                     </.marketing_gate_link>
                   </li>
                   <li>
-                    <.marketing_gate_link href={~p"/security"} active={@current == :security} idx={2}>
+                    <.marketing_gate_link href={~p"/security"} active={@current == :security} idx={3}>
                       Security
                     </.marketing_gate_link>
                   </li>
                   <li>
-                    <.marketing_gate_link href={~p"/pricing"} active={@current == :pricing} idx={3}>
+                    <.marketing_gate_link href={~p"/pricing"} active={@current == :pricing} idx={4}>
                       Pricing
                     </.marketing_gate_link>
                   </li>
                   <li>
-                    <.marketing_gate_link href={~p"/packs"} active={@current == :packs} idx={4}>
+                    <.marketing_gate_link href={~p"/packs"} active={@current == :packs} idx={5}>
                       Packs
                     </.marketing_gate_link>
                   </li>
                   <li>
-                    <.marketing_gate_link href={~p"/docs"} active={@current == :docs} idx={5}>
+                    <.marketing_gate_link href={~p"/docs"} active={@current == :docs} idx={6}>
                       Docs
                     </.marketing_gate_link>
                   </li>
                 </ul>
               </nav>
 
-              <div class="rise-5 relative px-6 pb-9">
+              <div class="rise-6 relative px-6 pb-9">
                 <.scan_line class="mb-7 opacity-50" />
                 <div class="space-y-3">
                   <%= if @signed_in? do %>

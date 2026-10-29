@@ -740,7 +740,8 @@ pre::-webkit-scrollbar-track,
 .rise-2,
 .rise-3,
 .rise-4,
-.rise-5 {
+.rise-5,
+.rise-6 {
   animation: rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 .rise-2 {
@@ -754,6 +755,9 @@ pre::-webkit-scrollbar-track,
 }
 .rise-5 {
   animation-delay: 0.34s;
+}
+.rise-6 {
+  animation-delay: 0.42s;
 }
 
 .js-reveal [data-reveal] {
@@ -800,7 +804,8 @@ pre::-webkit-scrollbar-track,
   .rise-2,
   .rise-3,
   .rise-4,
-  .rise-5 {
+  .rise-5,
+  .rise-6 {
     animation: none;
   }
   [data-reveal] {
