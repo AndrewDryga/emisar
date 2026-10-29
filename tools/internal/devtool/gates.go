@@ -66,7 +66,7 @@ const (
   docs                       validate repository documentation
   portal                     compile, format-check, and run Credo
   portal --fix               reformat Portal sources instead of checking them
-  staged                     validate staged migrations and source formatting
+  staged                     validate staged source formatting and pack hashes
   infra-templates            render and validate production cloud-init
   packs                      validate every pack, the hash goldens, and the catalog, then
                              rehearse its publication against the live registry

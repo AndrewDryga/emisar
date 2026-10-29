@@ -67,30 +67,47 @@ func (a *App) checkStagedPortalFormat(ctx context.Context) error {
 		return fmt.Errorf("staged Portal files require mix: %w", err)
 	}
 
-	var unformatted []string
+	// Every `mix format` start costs a VM boot and a dependency check, about half
+	// a second, so one run per file held a 44-file commit for 20 s. A file whose
+	// working copy git reports identical to its staged blob is checked from disk,
+	// together with the rest in one run; only a partly staged file, where the two
+	// differ, has its staged blob piped in on its own. Literal pathspecs, so a
+	// bracket in a filename cannot glob its way into the wrong group.
+	unstaged, err := a.diffFiles(ctx, []string{"--literal-pathspecs", "diff", "--name-only", "-z"}, nil, formatFiles...)
+	if err != nil {
+		return err
+	}
+	partlyStaged := make(map[string]bool, len(unstaged))
+	for _, file := range unstaged {
+		partlyStaged[file] = true
+	}
+
+	var unformatted, fullyStaged []string
 	for _, file := range formatFiles {
+		relative := strings.TrimPrefix(filepath.ToSlash(file), "portal/")
+		if !partlyStaged[file] {
+			fullyStaged = append(fullyStaged, relative)
+			continue
+		}
 		source, err := a.stagedBlob(ctx, file)
 		if err != nil {
 			return err
 		}
-		relative := strings.TrimPrefix(filepath.ToSlash(file), "portal/")
-		// mixFormatArgs, not a bare `format`: the cached dot formatter it works
-		// around also decides which app's configuration --stdin-filename resolves
-		// to, so a foreign manifest would check app sources against the umbrella's
-		// own rules instead of their app's.
-		args := append(a.mixFormatArgs("--check-formatted", "--stdin-filename", relative), "-")
-		command := exec.CommandContext(ctx, "mix", args...)
-		command.Dir = a.Portal
-		command.Env = os.Environ()
-		command.Stdin = bytes.NewReader(source)
-		var output bytes.Buffer
-		command.Stdout, command.Stderr = &output, &output
-		if err := command.Run(); err != nil {
-			if strings.Contains(output.String(), "not formatted") {
-				unformatted = append(unformatted, file)
-				continue
-			}
-			return fmt.Errorf("formatting staged Portal %s: %w: %s", file, err, strings.TrimSpace(output.String()))
+		report, err := a.checkPortalFormat(ctx, source, "--stdin-filename", relative, "-")
+		if err != nil {
+			return fmt.Errorf("formatting staged Portal %s: %w", file, err)
+		}
+		if report != "" {
+			unformatted = append(unformatted, file)
+		}
+	}
+	if len(fullyStaged) != 0 {
+		report, err := a.checkPortalFormat(ctx, nil, fullyStaged...)
+		if err != nil {
+			return fmt.Errorf("formatting staged Portal files: %w", err)
+		}
+		if report != "" {
+			unformatted = append(unformatted, report)
 		}
 	}
 	if len(unformatted) != 0 {
@@ -103,6 +120,43 @@ func (a *App) checkStagedPortalFormat(ctx context.Context) error {
 			strings.Join(unformatted, "\n"))
 	}
 	return nil
+}
+
+// checkPortalFormat runs one `mix format --check-formatted` over the given
+// files, or over stdin when the arguments end in "-". It returns mix's report
+// when the input is not formatted, and an error for any other failure.
+//
+// mixFormatArgs, not a bare `format`: the cached dot formatter it works around
+// also decides which app's configuration a file resolves to, so a foreign
+// manifest would check app sources against the umbrella's own rules instead of
+// their app's.
+//
+// `loadpaths --no-deps-check` first and --no-compile on format, because a commit
+// check must never build. Loading the LiveView formatter plugin otherwise runs
+// Mix's dependency check, which recompiles every dependency under the build lock
+// whenever a different Elixir build stamped _build last: minutes per commit,
+// plus a wait on any other session's compile. Skipping the check loads the
+// existing build as it is and starts no Mix listeners; with listeners, a
+// checkout that never compiled crashed on Phoenix.CodeReloader before reaching
+// the plugin, and now gets "Formatter plugin ... cannot be found" instead.
+func (a *App) checkPortalFormat(ctx context.Context, stdin []byte, args ...string) (string, error) {
+	format := a.mixFormatArgs(append([]string{"--check-formatted", "--no-compile"}, args...)...)
+	command := exec.CommandContext(ctx, "mix", append([]string{"do", "loadpaths", "--no-deps-check", "+"}, format...)...)
+	command.Dir = a.Portal
+	command.Env = os.Environ()
+	if stdin != nil {
+		command.Stdin = bytes.NewReader(stdin)
+	}
+	var output bytes.Buffer
+	command.Stdout, command.Stderr = &output, &output
+	if err := command.Run(); err != nil {
+		report := strings.TrimSpace(output.String())
+		if strings.Contains(report, "not formatted") {
+			return report, nil
+		}
+		return "", fmt.Errorf("%w: %s", err, report)
+	}
+	return "", nil
 }
 
 func (a *App) requireCleanPackHashInputs(ctx context.Context) error {

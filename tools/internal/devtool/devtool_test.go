@@ -587,6 +587,90 @@ func TestStagedCheckFormatsPortalIndexBlobsWithTheirFilename(t *testing.T) {
 	}
 }
 
+// One `mix format` per staged file made a 44-file commit wait 20 s. Fully staged
+// files share one run read from disk; a partly staged file still has its own
+// staged blob piped in. Neither run may compile: a commit check that rebuilds
+// dependencies cost minutes whenever another Elixir build had stamped _build.
+func TestStagedCheckFormatsFullyStagedPortalFilesInOneRun(t *testing.T) {
+	root := t.TempDir()
+	git := func(args ...string) {
+		t.Helper()
+		command := exec.Command("git", args...)
+		command.Dir = root
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, output)
+		}
+	}
+	write := func(path, content string) {
+		t.Helper()
+		absolute := filepath.Join(root, "portal", filepath.FromSlash(path))
+		if err := os.MkdirAll(filepath.Dir(absolute), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(absolute, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	git("init", "-q")
+	git("config", "user.email", "test@example.com")
+	git("config", "user.name", "Test")
+	write("apps/emisar/lib/clean.exs", "clean\n")
+	write("apps/emisar_web/lib/bad.ex", "BAD\n")
+	write("apps/emisar_web/lib/page.heex", "clean\n")
+	write("apps/emisar_web/lib/partial.ex", "clean staged blob\n")
+	git("add", "portal")
+	// Unformatted only in the working tree: a check that read it from disk
+	// would report the file, and a check of its staged blob passes it.
+	write("apps/emisar_web/lib/partial.ex", "BAD working copy\n")
+
+	bin := t.TempDir()
+	log := filepath.Join(bin, "mix.log")
+	script := `#!/bin/sh
+printf '%s\n' "$*" >> "$MIX_LOG"
+case " $* " in
+*" - "*)
+  case "$(cat)" in *BAD*) echo 'The following files are not formatted:' >&2; exit 1 ;; esac ;;
+*)
+  bad=""
+  for file in "$@"; do
+    [ -f "$file" ] && grep -q BAD "$file" && bad="$bad $file"
+  done
+  if [ -n "$bad" ]; then echo "The following files are not formatted:$bad" >&2; exit 1; fi ;;
+esac
+`
+	if err := os.WriteFile(filepath.Join(bin, "mix"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("MIX_LOG", log)
+
+	app := New(root, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
+	err := app.stagedCheck(t.Context())
+	if err == nil || !strings.Contains(err.Error(), "staged Portal files are not formatted") ||
+		!strings.Contains(err.Error(), "apps/emisar_web/lib/bad.ex") || strings.Contains(err.Error(), "partial.ex") {
+		t.Fatalf("staged check error = %v", err)
+	}
+	data, readErr := os.ReadFile(log)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	runs := strings.Split(strings.TrimSpace(string(data)), "\n")
+	check := "do loadpaths --no-deps-check + format --dot-formatter " +
+		filepath.Join(root, "portal", ".formatter.exs") + " --check-formatted --no-compile"
+	want := []string{
+		check + " --stdin-filename apps/emisar_web/lib/partial.ex -",
+		check + " apps/emisar/lib/clean.exs apps/emisar_web/lib/bad.ex apps/emisar_web/lib/page.heex",
+	}
+	if len(runs) != len(want) {
+		t.Fatalf("mix ran %d times, want one piped run and one shared run:\n%s", len(runs), data)
+	}
+	for i := range want {
+		if runs[i] != want[i] {
+			t.Fatalf("mix run %d = %q, want %q", i, runs[i], want[i])
+		}
+	}
+}
+
 // `./run check portal --fix` is the writing half of `./run check portal`: one
 // `mix format` carrying the absolute dot formatter, and no --check-formatted.
 // Run through the dispatcher with a recording mix, so this pins the command a

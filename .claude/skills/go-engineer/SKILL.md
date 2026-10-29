@@ -50,4 +50,4 @@ Show the output — never "should work". Don't pipe `go test`/`gofmt` through
 One focused commit (ending with its `Coop-Task: <id>` trailer) → append the
 *what + why* to the task's `log.md` and overwrite its `state.md` with the outcome
 and validation → `coop tasks done <id>`. Blocked? `coop tasks block <id>` and
-fill its `decision.md`. The commit-gate will gofmt-check your staged `.go`.
+fill its `decision.md`. The pre-commit hook gofmt-checks your staged `.go`.
