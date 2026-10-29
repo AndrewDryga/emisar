@@ -1,0 +1,75 @@
+schema_version: 1
+id: nomad.alloc_exec_node_dns
+title: Show DNS resolution inside an allocation task
+kind: script
+risk: medium
+description: >
+  Show resolver nameservers, search domains and recognized options from a bounded
+  read of /etc/resolv.conf, Node DNS servers, OS lookup addresses and separate
+  DNS A/AAAA results inside the selected task. Starts a fresh Node process via
+  nomad alloc exec; it does not inspect the existing application process or its
+  custom resolvers. Returns at most 16 entries per field and error codes, never
+  raw file contents or environment values. Medium risk because it executes in
+  any selected task and exposes internal network topology. Requires Node.js and
+  env with -u support in the task, plus the Nomad alloc-exec namespace capability
+  (alloc-node-exec for raw_exec). Node preload, debug, coverage and compile-cache
+  hooks are disabled. A failed OS lookup or total deadline returns a nonzero
+  exit with partial diagnostic JSON and an explicit timed_out flag; A/AAAA
+  failures remain separate fields.
+side_effects:
+  - Reads a bounded resolver configuration projection and performs DNS queries from a new process inside the selected task.
+  - Does not change the resolver configuration or the running application.
+args:
+  - name: alloc_id
+    type: string
+    required: true
+    description: Allocation ID or prefix from nomad.job_allocations or nomad.alloc_status.
+    validation:
+      max_length: 36
+      pattern: '^[a-fA-F0-9][a-fA-F0-9-]{3,35}$'
+  - name: task
+    type: string
+    required: true
+    description: Exact task name; the task must contain Node.js and env with -u support.
+    validation:
+      max_length: 128
+      pattern: '^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$'
+  - name: namespace
+    type: string
+    required: false
+    default: ""
+    description: Nomad namespace. Empty keeps the ambient NOMAD_NAMESPACE or default namespace.
+    validation:
+      max_length: 128
+      pattern: '^([a-zA-Z0-9][a-zA-Z0-9_-]{0,127})?$'
+  - name: seconds
+    type: integer
+    required: false
+    default: 10
+    description: Total probe deadline in seconds, including DNS and connection setup.
+    validation:
+      min: 1
+      max: 30
+  - name: hostname
+    type: string
+    required: true
+    description: Hostname to resolve through the task's OS resolver and Node DNS resolver.
+    validation:
+      max_length: 253
+      pattern: '^[a-zA-Z0-9][a-zA-Z0-9.-]{0,252}$'
+execution:
+  script:
+    path: scripts/alloc_node_dns.sh
+    interpreter: /bin/sh
+  argv: ["{{ args.namespace }}", "{{ args.task }}", "{{ args.alloc_id }}", "{{ args.hostname }}", "{{ args.seconds }}"]
+  timeout: 40s
+output:
+  parser: json
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 4096
+examples:
+  - title: Check the web task from inside its allocation
+    args:
+      alloc_id: abc12345
+      task: web
+      hostname: api.internal

@@ -34,6 +34,21 @@ class Handler(BaseHTTPRequestHandler):
         query = parse_qs(url.query)
         if url.path == "/health":
             return self.document({"ok": True})
+        if url.path.startswith("/node-"):
+            with lock:
+                state["observed"] = {"path": url.path, "authorization": self.headers.get("Authorization")}
+            if url.path == "/node-slow":
+                time.sleep(5)
+            status = 302 if url.path == "/node-redirect" else 503 if url.path == "/node-failure" else 200
+            headers = {"X-Fixture": "packtest-canary-node-response-15f351"}
+            if url.path == "/node-redirect":
+                headers["Location"] = "https://consul:8444/redirected"
+            if url.path == "/node-large-headers":
+                headers["X-Large"] = "x" * 16384
+            try:
+                return self.document({"body": "packtest-canary-node-response-15f351"}, status, headers)
+            except (BrokenPipeError, ConnectionResetError, ssl.SSLError):
+                return
         if url.path == "/configure":
             with lock:
                 state.update(mode=query["mode"][0], size=int(query.get("size", [256])[0]), observed={}, redirected=0)
@@ -169,6 +184,13 @@ tls_context.verify_mode = ssl.CERT_REQUIRED
 tls_server = ThreadingHTTPServer(("0.0.0.0", 8443), Handler)
 tls_server.socket = tls_context.wrap_socket(tls_server.socket, server_side=True)
 threading.Thread(target=tls_server.serve_forever, daemon=True).start()
+
+# Normal HTTPS with a private CA, distinct from the mTLS Nomad API fixture.
+node_tls_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+node_tls_context.load_cert_chain("/fixture/tls/server.pem", "/fixture/tls/server-key.pem")
+node_tls_server = ThreadingHTTPServer(("0.0.0.0", 8444), Handler)
+node_tls_server.socket = node_tls_context.wrap_socket(node_tls_server.socket, server_side=True)
+threading.Thread(target=node_tls_server.serve_forever, daemon=True).start()
 
 
 class UnixHTTPServer(ThreadingHTTPServer):

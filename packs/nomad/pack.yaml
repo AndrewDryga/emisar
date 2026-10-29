@@ -2,7 +2,7 @@ schema_version: 1
 
 id: nomad
 name: HashiCorp Nomad
-version: 0.4.16
+version: 0.4.17
 retired_below: 0.4.12
 description: >
   Deep Nomad operations — full job lifecycle (inspect, history, scale
@@ -12,7 +12,8 @@ description: >
   managed_by=terraform jobs, filtered server-side), per-task CPU/memory
   resource read + set, allocation introspection + health checks + filesystem
   ls/stat (metadata only, never file contents) + fixed in-container Redis
-  probes (ping/info via alloc exec, no freeform command) + restart + signal +
+  probes (ping/info via alloc exec) and fixed task-local Node DNS/HTTPS diagnostics
+  (no freeform command) + restart + signal +
   stop, bounded job health snapshots, job-spec-declared actions (run a command
   the job author defined),
   native service discovery (no Consul) — every namespace-bound action takes an
@@ -72,6 +73,7 @@ setup:
   notes:
     - "Any NOMAD_* env you set must also be allowlisted in the runner's `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth/TLS)."
     - With ACLs enabled the token needs the matching capabilities — submit-job for the job mutators, alloc-exec for job_action_run, node:write for drain/eligibility/purge, and operator:write for the raft remove-peer action.
+    - "Fixed allocation Node diagnostics require Node.js and env with -u support inside the selected task, and alloc-exec (alloc-node-exec for raw_exec). They start a separate Node process, preserve NODE_EXTRA_CA_CERTS for HTTPS trust, and disable preload/debug/coverage hooks; they do not inspect in-process application overrides."
     - "API aggregation and projection actions use jq on the runner host; it is a declared pack requirement."
     - "The API-read actions use `nomad operator api` (Nomad CLI 1.4+). Newer verbs degrade with a plain CLI error on older clusters: node pools need Nomad 1.6+, job-declared actions 1.7+, job_start 1.9+."
   verify: nomad.agent_info
@@ -129,6 +131,8 @@ actions:
   # Fixed alloc-exec probes (medium — runs inside the container; no freeform command)
   - actions/alloc_exec_redis_ping.yaml
   - actions/alloc_exec_redis_info.yaml
+  - actions/alloc_exec_node_dns.yaml
+  - actions/alloc_exec_node_https.yaml
   - actions/alloc_logs.yaml
   - actions/alloc_logs_stderr.yaml
   - actions/alloc_stats.yaml
