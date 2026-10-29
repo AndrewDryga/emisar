@@ -4,20 +4,20 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="quickstart"
-      updated="September 7, 2026"
+      updated="October 21, 2026"
       toc={[
         {"create-account", "Create your account"},
         {"install-runner", "Install the runner"},
         {"watch-connect", "Watch it connect"},
         {"first-action", "Run your first action"},
-        {"connect-llm", "Point your LLM at it"},
-        {"workflow", "The workflow we recommend"}
+        {"connect-llm", "Connect your agent"},
+        {"workflow", "Choose the next task"}
       ]}
     >
       <.docs_header current="quickstart">
         <:dek>
           Connect one Linux host, run <code class="font-mono text-brand-300">linux.uptime</code>
-          through policy, then point your LLM at the same catalog. About five minutes.
+          on it, then ask your AI agent to repeat the check.
         </:dek>
       </.docs_header>
 
@@ -43,13 +43,13 @@
       <.docs_h2 id="create-account">1. Create your account</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <.link href={~p"/sign_up"} class="text-brand-400 hover:text-brand-300">Sign up</.link>
-        to create your account. It's your control plane: runners connect to it, your LLM's MCP calls arrive there, and it applies your policy and writes the audit trail. The free plan covers <strong class="text-zinc-300">3 runners and 1 user</strong>. No credit card required.
+        to create your account. You will use the console to connect your host and review its runs. The free plan covers <strong class="text-zinc-300">3 runners and 1 user</strong>. No credit card required.
       </p>
 
       <.docs_h2 id="install-runner">2. Install the runner</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The runner is a small service that lives on your host and executes actions there.
-        Nothing touches the host except through it. In the console, click <a
+        The runner executes emisar actions on your host with its service user’s permissions.
+        In the console, open <a
           href={~p"/app/runners/install"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Runners → Connect a runner</a>. You'll get a one-line install command
@@ -91,13 +91,16 @@
 
 Runner is connected and healthy.</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        That is the host's own view. The console has the final say on whether the runner is
-        really connected.
+        Check that your runner also appears
+        online in the console before continuing.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The standard <code class="font-mono">linux-core</code>
-        pack is trusted automatically because its hash matches the one emisar publishes. A
-        custom or edited pack waits for a trust decision instead. That flow is in <.link
+        The current published packs, like <.link
+          navigate={~p"/packs/linux-core"}
+          class="font-mono text-brand-400 hover:text-brand-300"
+        >linux-core</.link>,
+        are trusted
+        automatically. A custom or edited pack needs review. See <.link
           navigate={~p"/docs/pack-updates"}
           class="text-brand-400 hover:text-brand-300"
         >Roll out and roll back packs</.link>.
@@ -160,8 +163,7 @@ Runner is connected and healthy.</.docs_code>
             <li class="flex items-start gap-2.5">
               <span class="flex-none text-zinc-500">—</span>
               <span>
-                A connect that hangs instead of failing is a blocked network path, not a bad key. Allow
-                outbound HTTPS to <code class="font-mono">emisar.dev:443</code>.
+                If the connection hangs, check DNS and outbound HTTPS to <code class="font-mono">emisar.dev:443</code>, then read the runner log.
               </span>
             </li>
             <li class="flex items-start gap-2.5">
@@ -187,7 +189,8 @@ Runner is connected and healthy.</.docs_code>
           href={~p"/app/runners"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Runners</a>. Select the <code class="font-mono text-brand-300">linux.uptime</code>
-        action. Add a short <strong>reason</strong>, then click <strong>Dispatch</strong>. The output streams back:
+        action. Add a short <strong>reason</strong>, then select <strong>Run on &lt;runner name&gt;</strong>.
+        A successful result looks like this:
       </p>
       <.docs_code phx-no-format label="output"> 14:32:07 up 18 days,  4:01,  load average: 0.42, 0.51, 0.48</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -203,17 +206,24 @@ Runner is connected and healthy.</.docs_code>
         for the full console workflow.
       </p>
 
-      <.docs_h2 id="connect-llm">5. Point your LLM at it</.docs_h2>
+      <.docs_h2 id="connect-llm">5. Connect your agent</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Connect your AI agent, and the catalog becomes tools it can call. Reads run at once,
-        and risky work waits for your approval. In the console, open
+        Check that the run succeeded, shows the runner you selected and <code>linux.uptime</code>,
+        and includes the command's output.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Once connected, your agent can request the same actions you run from the console.
+        Your policy decides which requests run, wait for approval, or are denied.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Open
         <a
           href={~p"/app/agents"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >AI agents</a>
-        and select your client. Claude.ai and ChatGPT connect over remote MCP with OAuth, and the page walks you through it. Local and CLI clients use the
-        <code>emisar-mcp</code>
-        bridge. Install it on the machine where your client runs:
+        and select your client. For Claude.ai or ChatGPT, follow the browser connection
+        steps shown there. For a local or CLI client, install the <code>emisar-mcp</code>
+        bridge on the machine where that client runs:
       </p>
       <.os_docs_code phx-no-format detected={@detected_os}>
         <:tab
@@ -249,154 +259,46 @@ Runner is connected and healthy.</.docs_code>
         >Runs</a>.
       </p>
 
-      <%!-- Optional, secondary to step 5: most clients prompt "allow this tool?"
-           per call. Because emisar gates server-side, that client prompt is
-           redundant for emisar's tools and safe to silence — the framing the
-           agents page uses, repeated here for the public docs/SEO surface. --%>
-      <details class="group mt-6 overflow-hidden rounded-lg border border-zinc-900 bg-black/40">
-        <summary class="flex cursor-pointer items-center justify-between gap-4 px-5 py-4 text-sm font-semibold text-zinc-100 transition-colors hover:bg-zinc-900/30 [&::-webkit-details-marker]:hidden">
-          <span class="flex items-center gap-2">
-            <.icon name="communication.prompt_suppressed" class="h-4 w-4 text-zinc-500" />
-            Stop your AI client asking permission for every emisar action
-          </span>
-          <.icon
-            name="action.disclose"
-            class="h-5 w-5 shrink-0 text-zinc-500 transition duration-200 group-hover:text-zinc-300 group-open:rotate-180 group-open:text-brand-400"
-          />
-        </summary>
-        <div class="border-t border-zinc-900 px-5 pb-5 pt-4">
-          <p class="text-base leading-7 text-zinc-400">
-            Most clients ask <em>"allow this tool?"</em>
-            the first time a model calls one. That prompt is not needed for emisar's tools, because
-            emisar gates every action <strong class="text-zinc-200">server-side</strong>: account
-            policy applies to every call, risky actions wait for human approval, and out-of-policy
-            ones are denied.
-          </p>
-          <p class="mt-3 text-base leading-7 text-zinc-400">
-            The installer offers to do this for Claude Code, Gemini CLI, Codex CLI, and Grok CLI. Those four clients have a setting that can name the
-            <code class="font-mono text-brand-300">emisar</code>
-            server alone. It skips Cursor, because Cursor's only control is global.
-            Whichever way you answer, auto-permitting in a client never bypasses emisar's gate. To
-            set it yourself:
-          </p>
-          <ul class="mt-3 space-y-2 text-base leading-7 text-zinc-400">
-            <li class="flex items-start gap-2.5">
-              <span class="flex-none text-zinc-500">—</span>
-              <span>
-                <strong class="text-zinc-300">Claude Code</strong>:
-                add <code class="font-mono text-brand-300">"mcp__emisar__*"</code>
-                to <code class="font-mono">permissions.allow</code>
-                in <code class="font-mono">~/.claude/settings.json</code>.
-              </span>
-            </li>
-            <li class="flex items-start gap-2.5">
-              <span class="flex-none text-zinc-500">—</span>
-              <span>
-                <strong class="text-zinc-300">Gemini CLI</strong>:
-                set <code class="font-mono text-brand-300">"trust": true</code>
-                on the <code class="font-mono">emisar</code>
-                server in <code class="font-mono">~/.gemini/settings.json</code>.
-              </span>
-            </li>
-            <li class="flex items-start gap-2.5">
-              <span class="flex-none text-zinc-500">—</span>
-              <span>
-                <strong class="text-zinc-300">Grok CLI</strong>:
-                add <code class="font-mono text-brand-300">"MCPTool(emisar__*)"</code>
-                to <code class="font-mono">[permission].allow</code>
-                in <code class="font-mono">~/.grok/config.toml</code>.
-              </span>
-            </li>
-            <li class="flex items-start gap-2.5">
-              <span class="flex-none text-zinc-500">—</span>
-              <span>
-                <strong class="text-zinc-300">Cursor, Codex CLI</strong>:
-                Cursor approves globally through agent auto-run. Codex can trust only emisar with
-                <code class="font-mono">default_tools_approval_mode = "approve"</code>
-                under <code class="font-mono">[mcp_servers.emisar]</code>. The
-                <.link navigate={~p"/app/agents"} class="text-brand-400 hover:text-brand-300">
-                  AI agents
-                </.link>
-                page has the exact per-client steps.
-              </span>
-            </li>
-          </ul>
-        </div>
-      </details>
-
-      <.docs_h2 id="workflow">6. The workflow we recommend</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        emisar gives an agent eyes and hands on production, restrained by the policy you set. It can make
-        changes, which is what a gated action is for, but don't use it as your configuration
-        manager. Standing changes an agent makes on a live host are how you get drift nobody can
-        reproduce.
-      </p>
-      <p class="mt-5 text-base leading-7 text-zinc-400">
-        So the durable pattern pairs the agent with your infrastructure-as-code:
-      </p>
-      <ol class="mt-4 list-decimal space-y-3 pl-6 text-base leading-7 text-zinc-400">
-        <li>
-          The agent <strong class="text-zinc-200">investigates</strong>
-          through emisar and finds the root cause. Reads run on policy, so this part is unattended
-          and on the record.
-        </li>
-        <li>
-          If it's on fire, it <strong class="text-zinc-200">hot-patches</strong>
-          through one gated action to contain it. A person approves, and the side effect waits
-          until they do.
-        </li>
-        <li>
-          Then it <strong class="text-zinc-200">writes the durable fix as code</strong>
-          (Terraform, Ansible, a Kubernetes manifest, whatever your fleet runs) and hands you a
-          change you <strong class="text-zinc-200">review and apply</strong>
-          through your normal pipeline. The hot-patch bought time; this is the part that survives
-          the next converge.
-        </li>
-      </ol>
-      <p class="mt-5 text-base leading-7 text-zinc-400">
-        And cover as much of your infrastructure as you can: the more actions an agent can
-        reach, the more it can do for you. Breadth is safe because policy decides what
-        actually runs. Adding runners and matching packs to each host is in <.link
-          navigate={~p"/docs/runner-fleet"}
+        Your client may ask permission before calling an MCP tool. For supported clients,
+        the installer can allow emisar's tools automatically. Emisar still checks every
+        request against your policy, so review that policy before enabling this option.
+        See the client-specific steps on <a
+          href={~p"/app/agents"}
           class="text-brand-400 hover:text-brand-300"
-        >Manage the runner fleet</.link>.
-      </p>
-      <p class="mt-5 text-base leading-7 text-zinc-400">
-        We also recommend running your agents locally inside a sandbox, such as <.link
-          navigate={~p"/docs/connect-agent-sandboxes#coop"}
-          class="text-brand-400 hover:text-brand-300"
-        >co:op</.link>. Agents are most useful when you can leave them working unattended, but
-        built-in permission prompts alone don't isolate them from your machine. An agent with
-        access can leak your secrets, use your SSH keys without asking, or delete files it
-        shouldn't touch.
-      </p>
-      <p class="mt-5 text-base leading-7 text-zinc-400">
-        A sandbox limits which files, secrets, and tools the agent can access on your machine.
-        It pairs well with emisar, which extends that control to your infrastructure and
-        third-party tools.
-      </p>
-      <p class="mt-5 text-base leading-7 text-zinc-400">
-        See it end to end on a real incident: <.link
-          navigate={~p"/use-cases/csi-data-loss"}
-          class="text-brand-400 hover:text-brand-300"
-        >the 33-hour wipe</.link>.
+        >AI agents</a>.
       </p>
 
-      <.docs_callout kind={:tip} title="What you just set up">
-        <p>
-          There is now a finite, reviewed catalog between an AI agent and your host. The model can
-          call only declared actions, risky calls wait for a person, and configured patterns
-          redact matching output on the host. The audit records who ran what, and why.
-        </p>
-        <p class="mt-3">
-          Next,
-          <.link
-            navigate={~p"/docs/use-a-published-pack"}
-            class="text-brand-400 hover:text-brand-300"
-          >add a published pack</.link>
-          for a service you operate.
-        </p>
-      </.docs_callout>
+      <.docs_h2 id="workflow">Choose the next task</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        You now have a connected host, a completed action, and a matching run record.
+        Next,
+        <.link
+          navigate={~p"/docs/investigate-a-service"}
+          class="text-brand-400 hover:text-brand-300"
+        >try an investigation and an approved restart</.link>
+        on a test service, or
+        <.link
+          navigate={~p"/docs/use-a-published-pack"}
+          class="text-brand-400 hover:text-brand-300"
+        >add a published pack</.link>
+        for a tool you operate.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Before expanding access, review the actions, host permissions, and policy. An allowed
+        action can still change a real system. If the fix belongs in Terraform, Ansible, or
+        another configuration repository, have the agent prepare a change for your normal
+        review and deployment process.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        For local coding agents,
+        <.link
+          navigate={~p"/docs/connect-agent-sandboxes"}
+          class="text-brand-400 hover:text-brand-300"
+        >set up a sandbox</.link>
+        to limit access to your own files and credentials. That complements the infrastructure
+        controls you just set up through emisar.
+      </p>
     </.docs_layout>
   </section>
 

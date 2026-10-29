@@ -8,31 +8,30 @@
         Custom MCP server vs emisar
       </.marketing_heading>
       <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
-        Building your own MCP server is a reasonable thing to do, and for a narrow surface it is
-        the right one. This is what changes between the afternoon you ship the
-        prototype and the quarter you spend making it safe to point an agent at production.
+        A custom MCP server makes sense when you need a small adapter over an API that already
+        handles authorization and audit. emisar fits ongoing agent work across real hosts,
+        through actions you can review and control. The decision is how much of that execution
+        system your team wants to build and maintain.
       </p>
 
       <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">
-        The prototype is the easy 20%
+        A tool handler is the beginning
       </h2>
       <p class="mt-3 text-base leading-7 text-zinc-400">
-        Wiring up <code>tools/list</code>
-        and a handler that shells out takes a few hours. The work that doesn't show up
-        in the demo is everything between the model's request and a safe, attributable execution
-        on a real host. That part is never <em>done</em>: every new host, pack, client, and edge
-        case reopens the list, and it's your pager.
+        Connecting a model's request to a command is the first step. You also need to check
+        who can call it and which inputs are valid, handle lost connections, and record the
+        result. Those checks must keep working as you add hosts, clients, and actions.
       </p>
 
       <%!-- The difference, shown: the same psql, two ways. Amber = the handler
-           you hand-roll (ships in an afternoon, never done); emerald = the
+           in a minimal example; emerald = the
            declared pack action. Same terminal look as /compare/raw-ssh. --%>
       <div class="mt-8 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div class="overflow-hidden rounded-xl border border-amber-500/25 bg-black/40">
           <div class="flex items-center gap-2 border-b border-amber-500/20 bg-amber-500/5 px-4 py-2.5">
             <span class="h-2 w-2 rounded-full bg-amber-500/70"></span>
             <span class="text-xs font-semibold text-amber-200">
-              your-mcp-server.ts · an afternoon
+              your-mcp-server.ts · simplified example
             </span>
           </div>
           <div class="space-y-1.5 px-4 py-4 font-mono text-[11.5px] leading-relaxed">
@@ -55,7 +54,7 @@
         <div class="overflow-hidden rounded-xl border border-brand-500/25 bg-black/40">
           <div class="flex items-center gap-2 border-b border-brand-500/20 bg-brand-500/5 px-4 py-2.5">
             <span class="h-2 w-2 rounded-full bg-brand-500"></span>
-            <span class="text-xs font-semibold text-brand-200">postgres.yml · declared once</span>
+            <span class="text-xs font-semibold text-brand-200">postgres.yml · emisar pack action</span>
           </div>
           <div class="space-y-1.5 px-4 py-4 font-mono text-[11.5px] leading-relaxed text-zinc-300">
             <p>id: postgres.terminate_backend</p>
@@ -90,15 +89,15 @@
         What you'd build and own
       </h2>
       <p class="mt-3 text-base leading-7 text-zinc-400">
-        A capable team can build every row of this. The column on the left is the code you write,
-        test, and carry.
+        You can build these controls yourself. Your team then owns their tests, updates,
+        and behavior when something fails.
       </p>
       <%!-- One data list, two layouts: a table on md+, stacked cards on mobile, so
         the 3-way comparison reads without a horizontal scroll on phones. --%>
       <% rows = [
         {"Argument validation",
          "Reject undeclared args, coerce types, enforce bounds, and do all of it on the host, since the model's output is untrusted",
-         "Typed YAML schemas the runner re-validates before exec; argv arrays, never a shell string"},
+         "Typed schemas revalidated on the host; the executable and any shell program are fixed by the reviewed pack"},
         {"Tool integrity", "Your deploy pipeline is the only thing stopping a changed handler",
          "Content-addressed packs; published hashes auto-pin, and a changed or unrecognized SHA-256 blocks dispatch until an admin reviews it"},
         {"Host transport", "Credentials and routing you design and secure",
@@ -161,23 +160,17 @@
           </div>
         </div>
       </div>
-      <p class="mt-3 text-xs leading-relaxed text-zinc-400">
-        None of these are hard in isolation. They're a product because they have to hold together,
-        forever.
-      </p>
 
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
         What emisar costs you
       </h2>
-      <p class="mt-3 text-base leading-7 text-zinc-400">
-        Buying the boring 80% instead of building it has costs too.
-      </p>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li>
           <strong class="text-zinc-200">It's a vendor in your path.</strong>
           We host the control plane.
-          Your runner stays on your host, dials out, and keeps its own tamper-evident journal. A host-side admission list lets an operator veto any action even if our cloud is wrong.
-          Still, the dispatch decision goes through our service.
+          Your runner connects from your host and keeps its own journal. You can block
+          actions on the runner even if the cloud allows them, but each request still
+          goes through our service.
         </li>
         <li>
           <strong class="text-zinc-200">It's opinionated.</strong>
@@ -186,11 +179,9 @@
           control than bending the workflow to fit ours.
         </li>
         <li>
-          <strong class="text-zinc-200">It's finite on purpose.</strong>
-          emisar exists to let an agent run a <em>reviewed catalog</em>, not arbitrary commands. If
-          you want the model to do anything it can think of, that's raw SSH, and <.link navigate={
-            ~p"/compare/raw-ssh-for-ai"
-          }>we wrote that comparison too</.link>.
+          <strong class="text-zinc-200">You choose the available actions.</strong>
+          Use published packs or add your own commands as custom actions. For an agent
+          that needs an unrestricted shell, see the <.link navigate={~p"/compare/raw-ssh-for-ai"}>SSH comparison</.link>.
         </li>
         <li>
           <strong class="text-zinc-200">
@@ -204,17 +195,36 @@
         Build it yourself when
       </h2>
       <p class="mt-3 text-base leading-7 text-zinc-400">
-        The surface is narrow, one team owns it, the target is already an API sitting behind your
-        existing authorization and audit, and you don't expect to add hosts or clients. A small MCP
-        adapter is exactly enough, and a second system would only be in the way.
+        A small MCP adapter can be enough for one team's workflow, especially when the API
+        already handles access checks and audit records. It is a good fit when you don't
+        expect to add more hosts or clients.
       </p>
 
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
         Reach for emisar when
       </h2>
       <p class="mt-3 text-base leading-7 text-zinc-400">
-        Tools reach real hosts, more than one agent or client needs access, security wants a
-        reviewable action contract, operators want one approval and audit surface across the fleet, and you'd rather not own the failure modes above for the life of the project.
+        Connect your agent once, then add capabilities as packs. Use the published catalog
+        for common infrastructure and wrap your own procedures as custom actions. Emisar
+        handles the shared access checks, execution, approvals, and records as your hosts
+        and workflows grow. You don't have to rebuild all of that and, which takes even more time,
+        maintain it as the environment evolves.
+      </p>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
+        Try one task before choosing
+      </h2>
+      <p class="mt-3 text-base leading-7 text-zinc-400">
+        Use the
+        <.link navigate={~p"/docs/quickstart"} class="text-brand-400 hover:text-brand-300">quickstart</.link>
+        to connect a runner and run <code>linux.uptime</code>. Inspect the result and its record,
+        then choose a relevant action from the <.link
+          navigate={~p"/packs"}
+          class="text-brand-400 hover:text-brand-300"
+        >published packs</.link>.
+        For a longer example, the
+        <.link navigate={~p"/use-cases/csi-data-loss"} class="text-brand-400 hover:text-brand-300">CSI data-loss investigation</.link>
+        shows where the agent kept working and where a person had to decide.
       </p>
 
       <div class="mt-12 flex flex-wrap gap-x-6 gap-y-3 border-t border-zinc-900 pt-8 text-sm">
@@ -226,10 +236,10 @@
   </section>
 
   <.marketing_cta
-    headline="Skip building and securing your own MCP server."
-    subcopy="emisar is the policy engine, approvals, audit trail, and runner trust you'd otherwise build and maintain yourself. Connect a runner and you're done."
-    secondary_label="Talk to sales"
-    secondary_path={EmisarWeb.MailTo.sales()}
+    headline="Connect your infrastructure in 5 minutes."
+    subcopy="Start with ready-made packs and add your own actions through the same MCP server."
+    secondary_label="Follow the quickstart"
+    secondary_path={~p"/docs/quickstart"}
   />
 
   <.marketing_footer />

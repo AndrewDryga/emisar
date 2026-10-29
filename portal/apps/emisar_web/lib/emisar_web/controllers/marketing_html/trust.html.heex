@@ -20,10 +20,9 @@
         Security controls you can verify.
       </.marketing_heading>
       <p class="mt-6 max-w-2xl text-lg leading-relaxed text-zinc-300">
-        emisar sits between AI assistants and production systems. We keep that authority narrow:
-        runners connect out, agents get declared actions instead of shell access, risky changes stop
-        for a person, and every decision leaves evidence. This page covers the controls operating
-        today and the documents available for review.
+        Emisar controls how AI agents access your production systems. Agents request actions
+        from trusted packs, policy decides what can run, and runners connect from your hosts
+        to carry out the work. Audit events and linked runs let you review what happened.
       </p>
       <div class="mt-8 flex flex-wrap gap-4">
         <.marketing_button href={EmisarWeb.MailTo.sales()} icon="action.next">
@@ -57,9 +56,9 @@
           {"product.audit", "Audit & monitoring", "Audit & SIEM", ~p"/docs/audit-and-siem",
            [
              "Portal audit: actor, action, target, policy and approval decisions, outcome, exit code, and linked run",
-             "Run history: exact action arguments kept for the plan's window; sensitive fields are masked in console and API views, not storage",
+             "Run history keeps exact arguments for your plan's retention period. Sensitive fields are hidden in console and API views but remain in storage",
              "Runner journal: a redacted copy of action arguments in SHA-256 hash-chained JSONL kept on each host",
-             "emisar audit verify reports breaks in the retained runner journal's chain; it cannot rule out that a privileged host operator replaced or truncated the entire local journal",
+             "emisar audit verify checks the journal entries still on disk. Even if the chain is valid, someone with full host access may have replaced or cut short the journal",
              "Poll NDJSON into your SIEM with a read-only audit-export token"
            ]},
           {"state.locked", "Data handling", "Privacy policy", ~p"/privacy",
@@ -215,11 +214,9 @@
       <div>
         <h2 class="text-2xl font-bold text-white">Security review &amp; procurement</h2>
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
-          <strong class="text-zinc-200">Security review material is available now.</strong>
-          We complete security questionnaires and can provide supporting material for access
-          control, change management, vulnerability management, monitoring, backup and recovery,
-          retention, and deletion. SOC 2 Type II audit preparation is underway; the independent
-          examination is not complete. We also offer a
+          We help your team review emisar's access controls, software delivery, monitoring,
+          recovery, and data handling. Contact us for supporting documents, a completed
+          security questionnaire, or a
           <.link
             navigate={~p"/dpa"}
             class="font-medium text-brand-300 hover:text-brand-200"
@@ -227,6 +224,9 @@
             Data Processing Addendum you can sign
           </.link>
           (email support@emisar.dev to request one).
+        </p>
+        <p class="mt-4 text-base leading-relaxed text-zinc-400">
+          We're preparing for SOC 2 Type II. The independent examination is not yet complete.
         </p>
       </div>
 
@@ -243,7 +243,9 @@
       <div>
         <h2 class="text-2xl font-bold text-white">Availability & SLA</h2>
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
-          The hosted control plane targets <strong class="text-zinc-200">99.95% monthly uptime on Team and 99.99% on Enterprise</strong>, backed by a written SLA in the Enterprise order form. Because runners dial out and the host has the last word, a control-plane outage pauses new dispatches. It never leaves an action half-run or bypasses a gate.
+          The hosted control plane targets <strong class="text-zinc-200">99.95% monthly uptime on Team and 99.99% on Enterprise</strong>, backed by a written SLA in the Enterprise order form. A control-plane outage pauses new dispatches.
+          Running actions continue while the runner remains alive and report their results after
+          reconnecting. If the runner or host fails, the outcome may be unknown.
         </p>
       </div>
 
@@ -304,11 +306,13 @@
           needs access to the two public trust-root hosts in <.link
             navigate={~p"/docs/network-requirements#installers"}
             class="text-brand-400 hover:text-brand-300"
-          >Network requirements</.link>, but no GitHub login. Without GitHub CLI, the installers
-          and <code class="font-mono text-zinc-300">emisar update</code>
-          ask before continuing, or warn and
-          continue when run unattended. In that case the checksum from the release mirror alone proves the
-          selected archive's bytes. An authenticated GitHub CLI can add the per-archive online check.
+          >Network requirements</.link>, but no GitHub login. Without GitHub CLI, an interactive
+          install or update asks before continuing. An unattended install requires
+          <code>--yes</code>
+          and an explicit pack selection; an unattended update can warn and
+          continue. Those paths check the archive against the mirror's checksum without
+          verifying the release signature. An authenticated GitHub CLI can add the per-archive
+          online check.
         </p>
       </div>
 
@@ -327,7 +331,7 @@
 
   <.marketing_cta
     headline="Review emisar with your security team."
-    subcopy="We'll walk through the trust boundary, production controls, available evidence, DPA, and the requirements specific to your environment."
+    subcopy="Bring your requirements. We'll review how emisar controls access, handles data, and records the work, with supporting documents and a DPA."
     secondary_label="Email security@emisar.dev"
     secondary_path={EmisarWeb.MailTo.security()}
   />

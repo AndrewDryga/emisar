@@ -1,17 +1,20 @@
 defmodule EmisarWeb.DocsRedirectController do
   @moduledoc """
-  Permanent redirects from retired documentation pages to their canonical sections.
+  Permanent redirects from retired documentation URLs to their canonical destinations.
   """
   use EmisarWeb, :controller
 
-  @sandbox_guides [
+  @retired_guides [
+    deployment: "/docs/production",
+    connect_cli_client: "/docs/connect-cli-agent",
+    upgrades: "/docs/runner-upgrades",
     connect_coop: "/docs/connect-agent-sandboxes#coop",
     connect_docker_sandboxes: "/docs/connect-agent-sandboxes#docker-sandboxes",
     connect_nono: "/docs/connect-agent-sandboxes#nono",
     connect_dev_containers: "/docs/connect-agent-sandboxes#dev-containers"
   ]
 
-  for {action, target} <- @sandbox_guides do
+  for {action, target} <- @retired_guides do
     def unquote(action)(conn, _params) do
       conn
       |> put_status(:moved_permanently)

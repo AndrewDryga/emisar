@@ -11,7 +11,7 @@ defmodule EmisarWeb.DocsNavTest do
   # flatten, prev/next, and sitemap tests below structural rather than a
   # sample of a few pages.
   @ordered_slugs ~w(
-    quickstart
+    quickstart investigate-a-service
     host-install containers kubernetes nomad autoscaling-fleets
     network-requirements runner-fleet production runner-upgrades runner-credentials
     connect-cli-agent connect-claude-ai connect-chatgpt connect-agent-sandboxes
@@ -91,13 +91,13 @@ defmodule EmisarWeb.DocsNavTest do
       assert Enum.map(DocsNav.flat(), & &1.slug) == @ordered_slugs
     end
 
-    test "carries 48 pages with unique slugs and unique /docs paths" do
+    test "carries 49 pages with unique slugs and unique /docs paths" do
       pages = DocsNav.flat()
       paths = Enum.map(pages, & &1.path)
 
-      assert length(pages) == 48
-      assert pages |> Enum.map(& &1.slug) |> Enum.uniq() |> length() == 48
-      assert paths |> Enum.uniq() |> length() == 48
+      assert length(pages) == 49
+      assert pages |> Enum.map(& &1.slug) |> Enum.uniq() |> length() == 49
+      assert paths |> Enum.uniq() |> length() == 49
       assert Enum.all?(paths, &String.starts_with?(&1, "/docs/"))
     end
 
@@ -159,7 +159,7 @@ defmodule EmisarWeb.DocsNavTest do
     end
 
     test "the first page has no previous and the last has no next" do
-      assert {nil, %{slug: "host-install"}} =
+      assert {nil, %{slug: "investigate-a-service"}} =
                DocsNav.prev_next(List.first(@ordered_slugs))
 
       assert {%{slug: "security-model"}, nil} = DocsNav.prev_next(List.last(@ordered_slugs))

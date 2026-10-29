@@ -10,13 +10,13 @@
     <div class="mx-auto max-w-4xl px-6 lg:px-8">
       <p class="text-base font-semibold text-brand-400">Use cases</p>
       <.marketing_heading tag="h1" scale={:display} class="mt-2">
-        Most days it saves an hour. Some days it saves the night.
+        From routine checks to incident investigation.
       </.marketing_heading>
       <p class="mt-8 max-w-2xl text-lg leading-8 text-zinc-400 text-pretty">
-        Give an agent eyes on production (logs, metrics, health, and config across the whole
-        fleet) and it earns its keep every day. When something does break, the
-        same loop holds: the agent investigates through declared actions, stops the bleed behind
-        one approval, and lands the durable fix.
+        Ask your agent why checkout is slow, which certificates expire next, or whether a
+        cluster is ready for a migration. Emisar gives it actions to investigate across your
+        systems and a record you can follow. Your agent keeps working within policy and
+        brings you changes that need approval.
       </p>
     </div>
   </section>
@@ -38,15 +38,15 @@
       <div class="mx-auto mt-14 grid max-w-6xl grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
         <%= for {icon, tag, title, story} <- [
           {"story.dispatch", "Pre-flight", "Pre-migration go / no-go",
-           "Before you cut prod to the new cluster, you ask: is the target ready? The agent checks disk and memory headroom, confirms the replicas are caught up, validates every TLS cert, and diffs the configs against prod across every node, then hands back a go/no-go in a minute."},
+           "Before you cut prod to the new cluster, you ask: is the target ready? The agent checks disk and memory headroom, confirms the replicas are caught up, validates every TLS cert, and diffs the configs against prod across every node, then gives you the evidence to review before the migration."},
           {"action.search", "Investigate", "\"Why is checkout slow?\"",
-           "You ask in plain English. The agent correlates nginx access logs, Prometheus p99, the database's lock and slow-query state, and the upstream's health across services, then narrows it to a stuck connection pool. It takes minutes instead of an hour of greps and tails across six SSH sessions."},
+           "You ask in plain English. The agent correlates nginx access logs, Prometheus p99, the database's lock and slow-query state, and the upstream's health across services, then narrows it to a stuck connection pool. You can inspect the calls and evidence before accepting the diagnosis."},
           {"story.debug", "Self-debug", "It debugs what it shipped",
            "Your coding agent deploys and error rates tick up. Instead of waiting for a human to gather context, it reads its own deploy's logs and metrics, spots the env var it got wrong, and opens the fix as a reviewed PR, without a round-trip just to find out what happened."},
           {"security.posture", "Sweep", "Cert expiry, before the pager",
            "\"Which certs expire in the next 30 days?\" The agent walks every host and ingress, checks expiry, and hands you the three about to lapse, days remaining and all, before an outage finds them for you."},
           {"story.alerting", "Triage", "First response",
-           "The page fires. The agent triages first: it looks at the failing service's logs, the last three deploys, the resource pressure, and the dependency that's actually down. You wake to a diagnosis and a remediation waiting on your approval instead of a blank alert and a cold terminal."},
+           "If you connect an alert to an agent you run, it can inspect service logs, recent deployments, and dependencies through emisar. Review its diagnosis and any requested change."},
           {"story.optimize", "Capacity", "Ready for the launch?",
            "Before the campaign goes live, you ask whether the fleet can take it. The agent reports current headroom, connection-pool limits, and the slowest dependency across every service, so you scale the one thing that matters instead of over-provisioning everything."}
         ] do %>
@@ -125,13 +125,9 @@
         <% end %>
       </div>
 
-      <%!-- Honesty note --%>
+      <%!-- Security detail --%>
       <p class="mx-auto mt-12 max-w-3xl text-center text-sm leading-6 text-zinc-400">
-        emisar doesn't claim to prevent the failure. It changes everything a human or an agent
-        does <em class="text-zinc-400">around</em>
-        it: a finite catalog instead of a shell, one
-        approval instead of standing access, and a searchable record instead of a guess.
-        See exactly how the boundary holds on the <.link
+        See how emisar enforces your rules and records the work on the <.link
           navigate={~p"/security"}
           class="text-brand-300 hover:text-brand-200"
         >security page</.link>.
@@ -140,8 +136,8 @@
   </section>
 
   <.marketing_cta
-    headline="Put a gated agent on your next migration and your next incident."
-    subcopy="Install a runner, connect your LLM, and let it investigate behind policy. It acts only when you approve."
+    headline="Give your agent a production task."
+    subcopy="Start with a routine check or an investigation. Your policy decides what runs on its own and what needs you."
     secondary_label="Read the quickstart"
     secondary_path={~p"/docs/quickstart"}
   />

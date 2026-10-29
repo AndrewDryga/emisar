@@ -64,6 +64,12 @@ defmodule EmisarWeb.PacksRegistry do
     if leftovers == [], do: categorized, else: categorized ++ [{"Other", "other", leftovers}]
   end
 
+  @doc "Searchable text for the public catalog, including the tasks its actions describe."
+  def search_terms(%Catalog.PublishedRegistry.Pack{} = pack) do
+    actions = Enum.map_join(pack.actions, " ", &(&1.id <> " " <> &1.title))
+    String.downcase(Enum.join([pack.name, pack.id, pack.description, actions], " "))
+  end
+
   @doc "Repo source URL for a pack, suitable for an external link."
   @spec source_url(Catalog.PublishedRegistry.Pack.t()) :: String.t()
   def source_url(%Catalog.PublishedRegistry.Pack{source_url: url}), do: url

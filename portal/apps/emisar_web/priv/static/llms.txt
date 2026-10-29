@@ -1,14 +1,15 @@
 # emisar
 
-> emisar lets MCP-capable agents keep working on infrastructure through a finite catalog of declared actions instead of a shell. Policy decides what runs, what waits for a person, and what is denied; an outbound-only runner validates each action again on the host.
+> emisar gives MCP agents a catalog of infrastructure actions. You choose which requests can run, which need approval, and which are denied. The runner checks each action again before executing it on your host.
 
-emisar provides the governed action surface an agent calls. It does not run the agent loop, provide process isolation, or make a permitted destructive action harmless. Action packs, policy, runner configuration, and host permissions are all part of the security boundary.
+Your AI client runs the agent and calls emisar's tools. Emisar does not isolate the agent's other tools, and an allowed action can still cause damage. Review the installed packs, policy, runner settings, and host permissions together.
 
 Remote MCP clients connect through OAuth at `https://emisar.dev/api/mcp/rpc`. Local clients can use the `emisar-mcp` stdio bridge described below.
 
 ## Start here
 
-- [Quickstart](https://emisar.dev/docs/quickstart): Connect one Linux host, run the first declared action, and verify the audit record.
+- [Quickstart](https://emisar.dev/docs/quickstart): Connect a Linux host, run linux.uptime, review the result, and repeat the check through your agent.
+- [Investigate a service](https://emisar.dev/docs/investigate-a-service): Inspect a test service, request one restart, review the approval, and verify recovery.
 - [Connect a CLI agent](https://emisar.dev/docs/connect-cli-agent): Connect local stdio MCP clients through the emisar-mcp bridge.
 - [Connect Claude.ai](https://emisar.dev/docs/connect-claude-ai): Add emisar to Claude.ai as a custom connector over OAuth.
 - [MCP reference](https://emisar.dev/docs/mcp-reference): Review the fixed tools, parameters, continuations, errors, and signed-dispatch fields.
@@ -31,7 +32,8 @@ Remote MCP clients connect through OAuth at `https://emisar.dev/api/mcp/rpc`. Lo
 
 ## Optional
 
-- [How emisar works](https://emisar.dev/how-it-works): Follow an action from MCP intent through policy, host execution, and audit receipt.
-- [Guides](https://emisar.dev/guides): Read incident investigations and practical infrastructure guidance.
+- [How emisar works](https://emisar.dev/how-it-works): Follow an action from your agent through policy to host execution, then review the result.
+- [Technical guide](https://emisar.dev/guides/how-emisar-works): Read how pack trust, policy, runner checks, audit records, and signed dispatch work.
+- [Guides](https://emisar.dev/guides): Read practical guidance on production access and prompt injection.
 - [Changelog](https://emisar.dev/changelog): Review shipped product changes.
 - [Pricing](https://emisar.dev/pricing): Compare hosted plans and included limits.

@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="runner-cli"
-      updated="September 3, 2026"
+      updated="October 21, 2026"
       toc={[
         {"running", "Running the CLI"},
         {"connect", "The connect daemon"},
@@ -421,14 +421,22 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
 <span class="text-zinc-500">$</span> sudo emisar audit verify --all  <span class="text-zinc-500"># recompute the journal hash chain</span></.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <.docs_inline_code>status</.docs_inline_code>
-        reads a mode-0600 snapshot written by the running daemon and verifies it against the held
-        process lock, PID, and heartbeat freshness. It proves only the host's latest successful
-        send; the console has the final say on what the control plane has received.
+        checks the running daemon's private snapshot against its process lock, PID, and latest
+        heartbeat. It reports the host's last successful send; check the console to confirm
+        what the control plane received.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         <.docs_inline_code>doctor</.docs_inline_code>
-        never opens a cloud session, and executes no action unless you pass <.docs_inline_code>--probe</.docs_inline_code>, which adds the
+        checks the local installation without opening a cloud session or running actions.
+        Add
+        <.docs_inline_code>--probe</.docs_inline_code>
+        to include the
         <.docs_inline_code>pack verify</.docs_inline_code>
-        run above and so costs one real call per pack. One failing check never aborts the
-        rest, so one run surfaces every problem.
+        checks shown above; this makes one real call per pack. If a check fails,
+        <.docs_inline_code>doctor</.docs_inline_code>
+        still runs the remaining checks.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         <.docs_inline_code>audit verify</.docs_inline_code>
         exits 0 when the chain is intact and 1 on the first break, printing the line and event
         ID.

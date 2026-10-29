@@ -92,11 +92,11 @@
             <tbody class="divide-y divide-zinc-900 align-top text-zinc-300">
               <%= for {control, tier, detail} <- [
                 {"Deny-by-default tool allow-listing", "Foundation",
-                 "The trusted pack catalog is the allowlist. The runner refuses any action it doesn't declare. The model can't even see an undeclared command, let alone run it."},
+                 "The runner refuses actions outside its trusted catalog."},
                 {"Least agency: typed, scoped capability", "Foundation",
                  "Every action is a typed contract with per-argument bounds. Per-user and per-group runner scopes limit which hosts an agent can reach at all."},
                 {"Short-lived, IdP-issued credentials instead of static keys", "Foundation",
-                 "OAuth 2.1 for remote MCP clients, and short-lived, revocable keys for everything else, each inheriting the runner access of the operator who created it. No long-lived shell key sits on the host."},
+                 "Remote MCP clients connect through OAuth. Local bridge connections use revocable keys scoped by their membership. Key lifetime and renewal depend on the credential type; audit-export tokens do not expire."},
                 {"Parameter validation, tool-side", "Foundation",
                  "The runner re-validates every argument against the action schema and clamps options to their min/max before exec."},
                 {"Version-controlled, integrity-checked configuration", "Enterprise",
@@ -104,13 +104,13 @@
                 {"Tamper-evident, hash-chained host journal", "Enterprise",
                  "Every action is recorded to the searchable off-host portal audit and to a hash-chained JSONL journal kept on the runner. emisar audit verify reports breaks in that chain."},
                 {"Human-in-the-loop approval for high-risk actions", "Advanced",
-                 "Risk-tiered policy holds destructive actions for a person. The approver sees the actor, the args, the target host, and the rule that fired, then allows or denies with one click."},
+                 "Policy can allow, require approval, or deny. Defaults require approval for high risk and deny critical actions. Approvers review the actor, arguments, host, and policy decision."},
                 {"Just-in-time / just-enough access", "Advanced",
                  "One-use approvals and scoped standing grants. The agent gets the capability for the task, not standing access that outlives it."},
                 {"Continuous audit ingest by your SIEM", "Advanced",
                  "Your SIEM reads the cloud audit through a dedicated read-only credential."},
                 {"Cryptographic non-origination: the platform can't act for you", "Advanced",
-                 "A customer-authorized bridge signs each request with a key the control plane never holds. A compromised control plane can relay that signed request, but it can't forge, alter, replay, or originate one. The capability to act on your behalf is removed from the platform. Signed dispatch is opt-in per runner."}
+                 "An enforcing runner verifies requests signed by your MCP bridge. The control plane does not hold the signing key. Preserve runner replay state, or follow the documented identity and trust rotation when replacing a host. Signed dispatch is opt-in per runner."}
               ] do %>
                 <tr class="hover:bg-zinc-900/30">
                   <td class="px-6 py-4 font-medium text-zinc-100">{control}</td>
@@ -139,13 +139,12 @@
     <div class="mx-auto max-w-4xl px-6 lg:px-8">
       <p class="text-base font-semibold text-brand-400">Where emisar stops</p>
       <.marketing_heading tag="h2" scale={:section} class="mt-2">
-        One pillar, not the whole framework.
+        How emisar fits your security controls
       </.marketing_heading>
       <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
-        The framework is broader than any one product, and we'd rather be precise than oversell.
-        emisar owns the <em class="text-zinc-200">tool-access</em>
-        pillar: what an agent can do to your infrastructure, and the record of it. It does not do
-        these, and doesn't claim to:
+        Emisar controls infrastructure access: which actions an agent can request, where
+        they can run, and how the work is recorded. Pair it with controls for the model
+        and agent itself:
       </p>
       <ul class="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <%= for item <- [
@@ -164,7 +163,7 @@
         jailbroken or prompt-injected. It then makes sure a
         compromised agent <em class="text-zinc-200">still</em>
         can't exceed declared, gated, audited actions. That is the framework's first principle, <em class="text-zinc-200">assume breach</em>, applied to the one place an AI agent can do
-        real damage: the keyboard in front of your servers.
+        real damage: your production.
       </p>
     </div>
   </section>
@@ -186,9 +185,8 @@
         </figcaption>
       </figure>
       <p class="mt-8 text-lg leading-8 text-zinc-400 text-pretty">
-        The emisar loop works the same way. The agent investigates through read actions,
-        correlates, and drafts the fix. The one destructive step stops for a person and lands on
-        the record. We have a real incident written up end to end: a CSI driver that reformatted
+        You can use emisar to let an agent investigate through allowed actions while
+        holding containment actions for approval. Choose those rules in your policy. We have a real incident written up end to end: a CSI driver that reformatted
         a live volume and wiped 33 hours of metrics, contained on a single approval.
       </p>
       <div class="mt-8">
@@ -207,7 +205,7 @@
        framework PDF stays linked in the hero and the design-test figure. --%>
   <.marketing_cta
     headline="Put the framework between your agent and production."
-    subcopy="Install a runner and connect your agent. Every call then crosses the boundary this page mapped: least agency, an approval where it counts, and an audit trail you can hand an auditor."
+    subcopy="Install a runner and connect your agent. Choose which actions it can use, when it needs approval, and review what happened in the audit trail."
     secondary_label="Read the security model"
     secondary_path={~p"/security"}
   />

@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="billing"
-      updated="September 7, 2026"
+      updated="October 21, 2026"
       toc={[
         {"plans", "Plans and limits"},
         {"entitlements", "What each plan unlocks"},
@@ -270,12 +270,14 @@
 
       <.docs_h2 id="retention">Plan changes and audit retention</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Each audit event gets a fixed retention deadline when it is written, so a plan change
-        affects only later events. An upgrade keeps new history longer, and a downgrade shortens
-        the window for new events without deleting older retained history. Run history and run
-        output are different: they follow the plan you are on right now, so a downgrade or a
-        lapsed subscription shortens the window for existing runs too. Export anything you
-        need to keep before changing plans. The windows are in the <a
+        A plan change affects how long emisar keeps new audit events. Events already recorded
+        keep their original retention deadlines. Upgrading keeps new events longer;
+        downgrading shortens their retention.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Run history and output follow your current plan, including runs already recorded.
+        A downgrade or expired subscription can therefore shorten how long you can access them.
+        Export anything you need before changing plans. See the retention periods in the <a
           href="#plans"
           class="text-brand-400 hover:text-brand-300"
         >table above</a>.

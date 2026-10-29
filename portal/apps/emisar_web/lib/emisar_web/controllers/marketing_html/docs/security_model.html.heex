@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="security-model"
-      updated="September 5, 2026"
+      updated="October 21, 2026"
       toc={[
         {"trust-boundary", "The trust boundary"},
         {"what-its-not", "What emisar is not"},
@@ -142,11 +142,11 @@
           The runner config supports <code>admission.allow</code>
           and <code>admission.deny</code>
           glob lists over action IDs. For example, use <code>cassandra.*</code>
-          or <code>*.repair</code>. It also supports a risk ceiling. On a
-          read-only host, <code>admission.max_risk: medium</code>
-          drops every high-risk and critical
-          action, regardless of cloud policy. The runner
-          hides blocked actions from the catalog it advertises and refuses them at execution
+          or <code>*.repair</code>. A ceiling of <code>admission.max_risk: medium</code>
+          blocks high-risk and critical actions, regardless of cloud policy. It is not a
+          read-only mode: some medium-risk actions change state. Use an explicit action
+          allowlist and host permissions when you need read-only access. The runner
+          marks blocked actions unavailable in its advertised catalog and refuses them at execution
           time, so even a compromised portal cannot
           push something the host operator did not allow. Refusals land in
           the JSONL audit log as <code>action_blocked_by_admission</code>

@@ -1,4 +1,5 @@
-// Interactive "watch emisar work" terminal on the marketing home page.
+// Interactive "watch emisar work" terminal on the marketing home page and the
+// copy-paste comparison.
 //
 // Marketing pages are controller-rendered (no LiveSocket), so this runs as a
 // plain DOM module on load — same reasoning as the clipboard delegation in
@@ -11,7 +12,7 @@
 // the tabs degrade to a readable stacked transcript. Here we hide the lines
 // and replay them in `data-seq` order — typing shell input, streaming
 // install/runner output on the host tab, and rendering a faithful Claude
-// Code session (thinking spinners, ⏺/⎿ tool calls, the approval beat) on the
+// Code session (thinking spinners, ●/⎿ tool calls, the approval beat) on the
 // LLM tab. Honors prefers-reduced-motion (static render; tabs still work).
 
 import {onFirstVisible, reducedMotion} from "./lib/browser.js"
@@ -24,8 +25,11 @@ const CHAR_MS = 14
 const TAB_HOLD_MS = 1300
 const TAB_SETTLE_MS = 750
 
+// A paste lands whole a beat after the words typed before it, like Cmd+V.
+const PASTE_MS = 300
+
 // Lines whose body is typed out character-by-character (the rest stream in).
-const TYPED = new Set(["srv-prompt", "cc-user"])
+const TYPED = new Set(["srv-local-prompt", "srv-prompt", "cc-user"])
 // JS-only animated spinners (server-rendered hidden).
 const SPINNER = new Set(["cc-spin", "cc-spin-wait"])
 
@@ -33,20 +37,25 @@ const SPINNER = new Set(["cc-spin", "cc-spin-wait"])
 // lines stream fast like a real installer; the approval beat dwells.
 const PAUSE = {
   "srv-comment": 350,
+  "srv-local-prompt": 450,
   "srv-prompt": 450,
-  "srv-install": 170,
+  "srv-install": 80,
+  "srv-ask": 700,
+  "srv-out": 30,
   "srv-banner": 380,
   "srv-log": 280,
   "srv-ok": 650,
   "cc-meta": 400,
   "cc-user": 550,
   "cc-text": 560,
+  "cc-code": 450,
   "cc-tool": 380,
   "cc-result": 320,
   "cc-result-cont": 220,
   "cc-diff-note": 90,
   "cc-diff-ctx": 90,
   "cc-diff-add": 280,
+  "cc-permit": 900,
   "cc-pending": 750,
   "cc-approved": 850
 }
@@ -55,10 +64,13 @@ const PAUSE = {
 const SPIN_GLYPHS = ["·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "✢"]
 const SPIN_TICK_MS = 110
 
+// A page may carry several demos (the copy-paste comparison plays two side
+// by side); each one replays on its own.
 export function initEmisarDemo() {
-  const root = document.querySelector("[data-emisar-demo]")
-  if (!root) return
+  document.querySelectorAll("[data-emisar-demo]").forEach(initDemo)
+}
 
+function initDemo(root) {
   const tabs = Array.from(root.querySelectorAll("[data-demo-tab]"))
   const panes = Array.from(root.querySelectorAll("[data-demo-pane]"))
   const screen = root.querySelector("[data-demo-screen]")
@@ -68,8 +80,15 @@ export function initEmisarDemo() {
   )
   if (!tabs.length || !panes.length || !lines.length) return
 
-  // Snapshot each line's final text so we can clear it and replay.
-  lines.forEach((l) => { l.dataset.text = l.textContent })
+  // Snapshot each line's final text so we can clear it and replay. A paste
+  // chip is kept aside: the replay types the words, then drops it in whole.
+  const pastes = new Map()
+  lines.forEach((l) => {
+    const paste = l.querySelector(".demo-paste")
+    if (paste) { pastes.set(l, paste); paste.remove() }
+    l.dataset.text = l.textContent
+    if (paste) l.appendChild(paste)
+  })
 
   let timers = []
   let playing = false
@@ -97,6 +116,24 @@ export function initEmisarDemo() {
     if (screen) screen.scrollTop = screen.scrollHeight
   }
 
+  // A line's final state: its text plus any paste chip.
+  function fill(line) {
+    line.textContent = line.dataset.text
+    const paste = pastes.get(line)
+    if (paste) line.appendChild(paste)
+  }
+
+  function landPaste(line, done) {
+    const paste = pastes.get(line)
+    if (!paste) return done()
+    later(PASTE_MS, () => {
+      if (!playing) return
+      line.appendChild(paste)
+      scrollToEnd()
+      done()
+    })
+  }
+
   // Static: every non-spinner line visible with its final text. Spinners
   // stay hidden (they're motion). Tabs still switch panes.
   function revealAll() {
@@ -105,7 +142,7 @@ export function initEmisarDemo() {
     stripCursor()
     lines.forEach((l) => {
       if (isSpinner(l)) { l.hidden = true; return }
-      l.textContent = l.dataset.text
+      fill(l)
       l.hidden = false
     })
   }
@@ -125,10 +162,10 @@ export function initEmisarDemo() {
         animateSpinner(line, kind, next)
       } else if (TYPED.has(kind)) {
         line.hidden = false
-        typeInto(line, line.dataset.text, () => later(pause, next))
+        typeInto(line, line.dataset.text, () => landPaste(line, () => later(pause, next)))
       } else {
         line.hidden = false
-        line.textContent = line.dataset.text
+        fill(line)
         scrollToEnd()
         later(pause, next)
       }
@@ -181,11 +218,13 @@ export function initEmisarDemo() {
 
   // Claude's thinking spinner: glyph cycles, seconds tick up, a token
   // counter climbs, then it vanishes and the next line lands — exactly the
-  // "✻ Working… (3s · ↑ 1.4k tokens · esc to interrupt)" beat.
+  // "✻ Working… (3s · ↑ 1.4k tokens · esc to interrupt)" beat. Waiting on
+  // an approval generates nothing, so that spinner shows only the time.
   function animateSpinner(line, kind, done) {
     line.hidden = false
     const word = line.dataset.text
-    const totalMs = kind === "cc-spin-wait" ? 2600 : 1300
+    const waiting = kind === "cc-spin-wait"
+    const totalMs = waiting ? 2600 : 1300
     let elapsed = 0
     let gi = 0
     let tokens = 1.1 + Math.random() * 0.5
@@ -197,10 +236,9 @@ export function initEmisarDemo() {
       glyph.className = "demo-spin-glyph"
       glyph.textContent = SPIN_GLYPHS[gi % SPIN_GLYPHS.length]
       line.appendChild(glyph)
+      const tokenCount = waiting ? "" : " · ↑ " + tokens.toFixed(1) + "k tokens"
       line.appendChild(
-        document.createTextNode(
-          " " + word + "… (" + secs + "s · ↑ " + tokens.toFixed(1) + "k tokens · esc to interrupt)"
-        )
+        document.createTextNode(" " + word + "… (" + secs + "s" + tokenCount + " · esc to interrupt)")
       )
     }
 

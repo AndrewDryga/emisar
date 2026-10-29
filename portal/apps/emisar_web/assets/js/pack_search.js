@@ -5,7 +5,7 @@
 // Markup contract (packs.html.heex):
 //   #pack-search                  the search input
 //   [data-pack-section] / id=slug each category block (also the anchor target)
-//   [data-pack-name]              each pack card; attr = "name id", lowercased
+//   [data-pack-name]              each pack card; attr = name, description and action search text, lowercased
 //   [data-pack-count]             the count span in a category heading
 //   [data-pack-nav]               a jump-nav pill; attr = the category slug
 //   #pack-search-empty            the "no matches" message
@@ -46,6 +46,9 @@ export function initPackSearch() {
     for (const nav of navItems) {
       const section = document.getElementById(nav.getAttribute("data-pack-nav"))
       show(nav, !section || section.style.display !== "none")
+      const count = nav.querySelector("[data-pack-nav-count]")
+      const sectionCount = section?.querySelector("[data-pack-count]")
+      if (count && sectionCount) count.textContent = sectionCount.textContent
     }
 
     if (empty) empty.hidden = anyVisible

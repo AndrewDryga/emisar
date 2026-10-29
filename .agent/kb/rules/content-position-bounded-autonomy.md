@@ -29,6 +29,13 @@ Keep that setup advice in task documentation. Explain custom actions where the
 reader needs to understand how to extend the available work; do not promise arbitrary
 shell freedom or risk-free execution.
 
+When the comparison is raw SSH, do not concede that SSH can simply be configured to
+match. Limiting which commands an agent runs and keeping a record of them takes
+separate tools for command restrictions, session recording, and audit logs, which the
+team adds and runs. Agent tools also approve shell access by command prefix ("Do you
+want to run ssh …?"), so one answer can cover any later ssh command and the operator
+cannot clearly review what the agent will run on the host.
+
 Plain-English editing must preserve the product's position and approved strong
 headlines. Keep meaningful category terms such as Zero Trust and use the actual
 feature name: a standing grant is not a "limited approval." Compact comparison
@@ -45,6 +52,11 @@ integration.
 
 This hierarchy keeps the promise differentiated while preserving security
 credibility. It connects the outcome to mechanisms a technical buyer can inspect.
+
+The founder corrected "SSH can also use restricted accounts, forced commands, and
+session recording, but you have to set those up yourself" (2026-10-28): it reads as if
+SSH matches emisar with some configuration, when those controls need separate tools
+and the agent's prefix-matched approval still hides what will run.
 
 ## Good
 

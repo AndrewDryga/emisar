@@ -23,7 +23,6 @@
             <.icon name="story.clipboard_artifact" class="h-4 w-4 text-amber-300" />
             <h2 class="text-xs font-semibold text-zinc-200">The copy-paste loop</h2>
           </div>
-          <span class="hidden text-xs text-zinc-400 sm:inline">You carry every step</span>
         </div>
 
         <ol class="grid lg:grid-cols-5">
@@ -79,14 +78,12 @@
           </li>
         </ol>
 
-        <div class="grid border-t border-zinc-800 bg-zinc-950/90 lg:grid-cols-5">
-          <p class="flex items-center gap-1.5 whitespace-nowrap px-4 py-4 text-[11px] font-medium text-amber-300 sm:gap-2 sm:px-5 sm:text-xs lg:gap-1.5 lg:px-3 lg:text-[11px] xl:gap-2 xl:px-4 xl:text-xs">
-            <.icon name="state.warning" class="h-3.5 w-3.5 shrink-0" /> You are the only check.
-          </p>
-          <p class="flex items-center border-t border-zinc-800 px-5 py-4 text-xs leading-5 text-zinc-400 lg:col-span-4 lg:border-l lg:border-t-0">
-            That helps when you understand the command.
-          </p>
-        </div>
+        <p class="border-t border-zinc-800 bg-zinc-950 px-5 py-4 text-xs leading-5 text-zinc-400">
+          <span class="font-medium text-amber-300">
+            In this flow you are the only check.
+          </span>
+          That works when you understand the command and keep focus on small details.
+        </p>
       </div>
     </div>
   </section>
@@ -126,8 +123,8 @@
           <p class="mt-2 text-base leading-7 text-zinc-400 text-pretty sm:mt-0">
             A familiar one-line command is easy to check. A generated Bash pipeline or Python
             script may not be. After enough routine trips, it is easy to skim, paste, and press
-            Enter without understanding what will run. That is the worst of both worlds: free-form
-            code reaches the shell, but the human check is no longer much of a check.
+            Enter without understanding what will run. At that point, generated code reaches
+            your shell without a careful review which is the worst of both words.
           </p>
         </div>
         <div class="py-5 sm:grid sm:grid-cols-[14rem_1fr] sm:gap-8">
@@ -150,48 +147,23 @@
           The same restart, without the copy-paste loop
         </h2>
         <p class="mt-4 text-base leading-7 text-zinc-400 text-pretty">
-          The model wants to restart <code>api</code> on <code>edge-sfo-03</code>.
+          Grafana alerts you that the error rate of <code>api</code>
+          on <code>edge-sfo-03</code>
+          is high, and you want to fix it.
         </p>
       </div>
 
-      <div class="mt-8 grid gap-5 lg:grid-cols-2">
-        <div class="overflow-hidden rounded-lg bg-zinc-900 ring-1 ring-white/10">
-          <div class="flex items-center justify-between border-b border-zinc-800 bg-amber-500/5 px-5 py-3">
-            <span class="text-xs font-semibold text-amber-200">Copy-paste</span>
-            <span class="text-xs text-zinc-400">Manual handoffs</span>
-          </div>
-          <div class="grid grid-cols-[4.5rem_1fr] gap-x-3 gap-y-5 p-5 text-xs leading-5">
-            <p class="text-zinc-400">LLM</p>
-            <p class="font-mono text-zinc-300">Try: sudo systemctl restart api</p>
-            <p class="text-zinc-400">You</p>
-            <p class="text-zinc-300">Paste it into the terminal and run it.</p>
-            <p class="text-zinc-400">You again</p>
-            <p class="text-zinc-300">Paste the output back into the chat.</p>
-            <p class="col-span-2 border-t border-zinc-800 pt-4 text-zinc-400">
-              The command and result cross the clipboard. The reason stays in the chat.
-            </p>
-          </div>
+      <%!-- The home page's terminal, twice: the same 502 fixed by hand and
+           through emisar. The copy-paste replay hops between the host and
+           Claude; the emisar replay never leaves Claude. --%>
+      <div class="mt-8 grid gap-8 lg:grid-cols-2 lg:gap-5">
+        <div class="min-w-0">
+          <p class="text-xs font-semibold text-amber-300">Copy-paste</p>
+          <.emisar_demo script={:copy_paste} class="mt-3" />
         </div>
-
-        <div class="overflow-hidden rounded-lg bg-zinc-900 ring-1 ring-brand-500/30">
-          <div class="flex items-center justify-between border-b border-brand-500/20 bg-brand-500/5 px-5 py-3">
-            <span class="text-xs font-semibold text-brand-200">With emisar</span>
-            <.state_chip state={:pass} label="succeeded" />
-          </div>
-          <div class="grid grid-cols-[4.5rem_1fr] gap-x-3 gap-y-5 p-5 text-xs leading-5">
-            <p class="text-zinc-400">LLM</p>
-            <p class="text-zinc-200">Restart api on edge-sfo-03.</p>
-            <p class="text-zinc-400">You</p>
-            <p class="text-zinc-300">
-              Approve this run once.
-              <span class="text-zinc-400">Policy asked because a restart changes the host.</span>
-            </p>
-            <p class="text-zinc-400">emisar</p>
-            <p class="text-brand-300">Succeeded. The result goes back to the LLM.</p>
-            <p class="col-span-2 border-t border-zinc-800 pt-4 text-zinc-400">
-              No shell command or result crosses the clipboard.
-            </p>
-          </div>
+        <div class="min-w-0">
+          <p class="text-xs font-semibold text-brand-400">With emisar</p>
+          <.emisar_demo script={:with_emisar} class="mt-3" />
         </div>
       </div>
 
@@ -201,19 +173,19 @@
       </h2>
       <% rows = [
         {"What the model can do", "Nothing on its own. You run every command.",
-         "It can request only the actions and runners you exposed to it. There is no SSH or general shell."},
+         "Through emisar, it can request declared actions on runners it may access. Policies govern which actions are allowed and which stop for human review."},
         {"What it knows", "Only the text and images you paste, from that moment.",
-         "Fresh output from actions you allowed. It cannot look anywhere else."},
+         "Fresh output from the actions you allow. The model never has to access the shell on the runner host, and never sees secrets."},
         {"How commands are checked",
          "You are the check. That gets harder with an unfamiliar command or generated script, and easier to skip when the loop becomes routine.",
          "The runner checks the arguments and builds the command from an action definition you installed."},
         {"Approval",
          "Pressing Enter is approval. The chat does not record exactly what you approved on which host.",
-         "The approval page shows the action, arguments, runner, requester, and reason. Your approval applies to that run only."},
+         "The approval page shows the action, arguments, runner, requester, and reason. Your approval applies to that run unless you enable reuse."},
         {"Secrets", "You must notice secrets before copying text or screenshots into the chat.",
          "The runner applies the action's redaction rules before output leaves the host."},
         {"What is saved", "Chat history, shell history, dashboards, and tickets.",
-         "One run record in the cloud audit, plus a hash-chained journal on the runner."}
+         "Cloud audit events, linked run history, and a separate hash-chained journal on the runner."}
       ] %>
 
       <div class="mt-5 hidden overflow-hidden rounded-lg ring-1 ring-white/10 md:block">
@@ -267,9 +239,9 @@
             Each run keeps its own record
           </h2>
           <p class="mt-4 text-base leading-7 text-zinc-400 text-pretty">
-            Once the run finishes, emisar keeps the request, approval, target, and result together.
-            You can search that record or send it to your SIEM. The runner keeps a local,
-            hash-chained journal too.
+            Open a run to inspect its request, approval, target, and result. The cloud audit
+            records decisions and outcomes; Team and Enterprise can export those events to a
+            SIEM. Each runner also keeps a separate local, hash-chained journal.
           </p>
           <.cta_link
             navigate={~p"/docs/audit-and-siem"}
@@ -287,11 +259,52 @@
             class="w-full"
           />
           <figcaption class="border-t border-zinc-800 bg-zinc-950 px-4 py-3 text-xs leading-5 text-zinc-400">
-            Filtered to successes and approvals. Open any row to see who asked, what ran, where it
-            ran, and how it ended.
+            Open any row to see who asked, what ran, where it ran, and how it ended.
           </figcaption>
         </figure>
       </div>
+    </div>
+  </section>
+
+  <section class="py-16 sm:py-24">
+    <div class="mx-auto max-w-6xl px-6 lg:px-8">
+      <div class="max-w-3xl">
+        <p class="text-xs font-semibold text-brand-400">For teams</p>
+        <h2 class="mt-2 text-3xl font-semibold text-zinc-50 text-balance">
+          One place to govern AI access to production
+        </h2>
+        <p class="mt-4 text-base leading-7 text-zinc-400 text-pretty">
+          Without a shared way to use AI on production, people find their own. Usually it is the
+          copy-paste loop, run from personal chats, and each one gives a model a path into
+          production that you can't see.
+        </p>
+      </div>
+
+      <div class="mt-10 max-w-5xl divide-y divide-zinc-900 border-y border-zinc-900">
+        <div class="py-5 sm:grid sm:grid-cols-[14rem_1fr] sm:gap-8">
+          <h3 class="text-sm font-semibold text-amber-200">Without one place</h3>
+          <p class="mt-2 text-base leading-7 text-zinc-400 text-pretty sm:mt-0">
+            Production logs go into chat histories you don't control, and generated commands run
+            on whatever host someone has open. No one else reviews them, and nothing records
+            them. When a command runs on the wrong host, or a pasted log carries a token, there is
+            no trail to tell you who did what.
+          </p>
+        </div>
+        <div class="py-5 sm:grid sm:grid-cols-[14rem_1fr] sm:gap-8">
+          <h3 class="text-sm font-semibold text-brand-300">With emisar</h3>
+          <p class="mt-2 text-base leading-7 text-zinc-400 text-pretty sm:mt-0">
+            Every agent on the team uses the same reviewed actions under your account's policy.
+            You decide what runs on its own and what waits for a person, and every run is
+            recorded with who asked and where it ran. An agent can reach only what its member
+            can, and removing a member cuts off every agent that acts as them.
+          </p>
+        </div>
+      </div>
+
+      <.cta_link
+        navigate={~p"/docs/teams-and-access"}
+        class="mt-6 inline-block min-h-10 py-2.5 text-sm"
+      >Read about teams and access</.cta_link>
     </div>
   </section>
 
@@ -312,12 +325,12 @@
         <div class="border-t border-zinc-800 pt-10 lg:border-l lg:border-t-0 lg:pl-12 lg:pt-0">
           <p class="text-xs font-semibold text-brand-400">When it repeats</p>
           <h2 class="mt-2 text-3xl font-semibold text-zinc-50 text-balance">
-            When the command comes back, make it an action
+            Give the agent the checks you keep repeating.
           </h2>
           <p class="mt-4 max-w-2xl text-base leading-7 text-zinc-400 text-pretty">
-            Install a runner on the hosts you want to reach and define the action once. From then
-            on, every connected model and operator uses the same reviewed command instead of
-            inventing a new one.
+            Install the packs for the services you run, then let your agent fetch logs,
+            check status, and follow the next lead. Add your own action when you need an
+            internal procedure. Each call uses a reviewed definition and your account's policy.
           </p>
 
           <div class="mt-8 grid gap-6 sm:grid-cols-2">

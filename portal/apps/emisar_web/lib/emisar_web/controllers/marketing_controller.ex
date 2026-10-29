@@ -54,7 +54,10 @@ defmodule EmisarWeb.MarketingController do
      "Work across several emisar accounts: one MCP server entry per account, the CLI's stored accounts, and one cloud connector per account."},
     {"/docs/quickstart", :quickstart, :quickstart,
      "Quickstart — install the runner + run your first action",
-     "Install one Linux runner, run linux.uptime through policy, verify its audit event, and connect an LLM."},
+     "Connect a Linux host, run linux.uptime, review its result, and ask your AI agent to repeat the check through emisar."},
+    {"/docs/investigate-a-service", :investigate_a_service, :investigate_a_service,
+     "Investigate a service and approve a restart",
+     "Run a throwaway nginx container on a dev host, let your AI agent inspect it and request a restart, then approve it and check the audit in emisar."},
     {"/docs/use-a-published-pack", :use_a_published_pack, :use_a_published_pack,
      "Use a published action pack",
      "Choose, inspect, install, configure, trust, and verify a published emisar action pack."},
@@ -76,15 +79,15 @@ defmodule EmisarWeb.MarketingController do
      "An AI operator explains how it authored and stress-tested a bare-metal Cassandra platform, then used emisar's bounded actions to help move 12 application jobs across 14 live keyspaces. Human decisions and corrections are clearly separated."},
     {"/compare/raw-ssh-for-ai", :raw_ssh_for_ai, :raw_ssh_for_ai,
      "Why not just give the LLM SSH?",
-     "Comparison: raw SSH-for-AI agents vs an emisar action pack. Both run real commands; the difference is whose recovery you're betting on."},
+     "Compare SSH access and emisar action packs for AI agents: host permissions, command scope, approvals, audit, and when each approach fits."},
     {"/compare/custom-mcp-server", :custom_mcp_server, :custom_mcp_server,
      "Custom MCP server vs emisar",
-     "Custom MCP server vs emisar: the arg validation, pack integrity, policy, approvals, per-user scopes, redaction, audit, and reconnect handling you'd build and own for production agent access, and the tradeoffs that come with emisar."},
+     "Compare a custom MCP server with emisar for infrastructure access: action validation, policy, host transport, audit, and the tradeoffs to test with one real task."},
     {"/compare/copy-paste-ai-ops", :copy_paste_ai_ops, :copy_paste_ai_ops,
      "Copy-pasting between an LLM and your terminal",
      "See what changes when an LLM can use a small set of approved actions instead of waiting for you to paste logs, commands, and results back and forth."},
     {"/how-it-works", :how_it_works, :how_it_works, "How emisar works",
-     "How emisar works: an agent calls one declared action, and the control plane checks the pack hash and policy. A human approves anything risky. The outbound-only runner re-validates and executes on your host, and every step lands in a searchable audit, mirrored to a tamper-evident hash-chained journal on your host."},
+     "Follow an infrastructure action from your AI agent through emisar policy to the runner on your host, then review the decision and result."},
     {"/trust", :trust, :trust, "Trust Center — security, infrastructure & assurance",
      "Review the controls protecting emisar: outbound-only runners, signed dispatch, private Google Cloud infrastructure, DNSSEC, hardened delivery, independent monitoring, audit evidence, DPA, subprocessors, and insurance."},
     {"/zero-trust", :zero_trust, :zero_trust, "Zero Trust for AI Agents",
@@ -178,22 +181,22 @@ defmodule EmisarWeb.MarketingController do
   # below. Keeping them in one list is what lets Google's rich result
   # match visible content without the two drifting apart.
   @home_faqs [
-    {"Can the LLM run anything it wants?",
-     "No. The runner accepts only actions declared in a trusted pack and allowed by its local admission rules. Undeclared commands are not part of the agent's catalog and are rejected before execution."},
+    {"What can the agent run through emisar?",
+     "Only actions from trusted packs that pass your access rules and policy. The runner checks each request again on the host. Any other tools you give your agent need their own access controls."},
     {"What can it actually do?",
-     "Read and tail logs, query metrics, inspect processes, memory, disk, and containers, check your databases, and trace DNS, TLS, and connectivity — across your whole fleet. And, behind approval, act: restart a unit, stop a runaway job, fail over, scale. It's a finite catalog of declared actions, and you can add your own."},
+     "Your agent can read service logs, query metrics, inspect databases and containers, and carry out operations such as restarting a service. Install published packs for the software you run, or write an action for your own procedure. Your policy decides which requests are allowed."},
     {"Where do approvals happen?",
-     "In the web UI and your email inbox. The approver sees the actor, the arguments, the target host, and the policy rule that triggered the gate. One click to allow, one to deny."},
+     "In the web UI and your email inbox. The approver sees who requested the action, its arguments, the target host, and the policy rule requiring approval. They can approve or deny the request."},
     {"Do I have to approve every action?",
-     "No. Policy decides by risk tier, action, runner, or runner group. Agents are most useful when they are unleashed, so routine, bounded reads can run automatically. Risky changes can require approval, and destructive actions can be denied. You choose where the agent keeps moving and where a person must step in."},
+     "No. Set rules by risk tier, action, runner, or runner group. New accounts allow low- and medium-risk actions, require approval for high-risk actions, and deny critical actions. You can change these rules or create standing grants for repeated work."},
     {"What if my runner dies mid-run?",
-     "On Linux, the runner stops the action if it exits. If the runner stays offline, emisar marks its in-flight runs as errored within minutes, so nothing appears to run forever."},
+     "On Linux, when the runner exits, it stops the action it started. If only the connection drops, the action keeps running while the runner is alive. After a host or runner failure, inspect the target before repeating a change: the action may have run even if you never received its result."},
     {"Is this MCP-compatible?",
-     "Yes. Claude.ai and ChatGPT connect to emisar's remote JSON-RPC MCP server through OAuth. Fifteen local clients — Claude Code, Claude Desktop, Cursor, Windsurf, Zed, Copilot CLI, Gemini CLI, Codex CLI, and more — plus almost any other MCP agent can use the emisar stdio bridge."},
+     "Yes. Claude.ai and ChatGPT connect through remote MCP with OAuth. Fifteen local clients, including Claude Code, Claude Desktop, Cursor, Windsurf, Zed, Copilot CLI, Gemini CLI, and Codex CLI, can use the emisar stdio bridge. The bridge also works with almost any other MCP agent."},
     {"Can I self-host the control plane?",
-     "The current product uses the hosted emisar control plane. The repository includes deployable control-plane code for evaluation, but supported self-hosted and air-gapped deployments are not generally available today. Contact us if self-hosting is a requirement."},
+     "Emisar's supported product uses the hosted control plane. You can run the repository code for evaluation, but we don't offer supported self-hosted or air-gapped deployments. Contact us if self-hosting is a requirement."},
     {"What about secrets?",
-     "Runner output is redacted before leaving the host and kept in run history. The audit trail stores the final outcome's metadata, including who, when, action, runner, reason, and exit code. Patterns are declared per action; defaults catch about 20 built-in patterns."}
+     "The runner masks output that matches configured patterns before sending it back. Unknown secret formats can still pass through. Run history stores exact arguments, with sensitive fields masked in console and API views; the cloud audit records decisions and outcomes."}
   ]
 
   # The home page has bespoke JSON-LD; keep it as its own def. Every
@@ -242,9 +245,9 @@ defmodule EmisarWeb.MarketingController do
       )
 
     render(conn, :home,
-      page_title: "Give AI tools approved infrastructure actions, not SSH",
+      page_title: "Infrastructure access for AI agents through MCP",
       meta_description:
-        "One governed MCP server connects any AI agent to a finite action catalog, enforced on-host with pack trust, policy gates, approvals, and an audit trail.",
+        "Let your MCP agent investigate infrastructure through declared actions. Choose what runs, what needs approval, and what stays off limits.",
       canonical_url: @base <> "/",
       faqs: @home_faqs,
       pack_count: Catalog.published_pack_count(),
@@ -257,13 +260,13 @@ defmodule EmisarWeb.MarketingController do
   # built from Billing in pricing_faqs/1 instead.
   @pricing_faqs [
     {"Do you store the output of my commands?",
-     "Runner output is redacted before leaving the host and kept in run history. The audit trail stores the final outcome's metadata, including who, when, action, runner, reason, and exit code. Redaction uses 20 built-in patterns plus your own per-action rules."},
+     "Yes. Run history stores command output after the runner filters it on the host using 20 built-in redaction patterns and your per-action rules. The audit trail records who ran the action, when, on which runner, their reason, and the final exit code."},
     {"How does billing work?",
      "Paid plans are billed per runner through Paddle, our Merchant of Record. You get an invoice for each billing period, and Paddle handles sales tax and VAT. We never see or store full card numbers."},
     {"Can I self-host?",
-     "The current product uses the hosted emisar control plane. The runner, MCP bridge, and packs are Apache-2.0 open source, and the repository includes deployable control-plane code (Business Source License) for evaluation. Supported self-hosted and air-gapped deployments are not generally available today. Tell us if self-hosting is a requirement."},
+     "The supported product uses emisar's hosted control plane. The runner, MCP bridge, and packs are open source under Apache-2.0. You can run the control-plane code under the Business Source License for evaluation, but supported self-hosted and air-gapped deployments are not generally available. Contact us if you need self-hosting."},
     {"Can I cancel any time?",
-     "Yes. Cancel from billing settings to stop renewal in Paddle. Paid features and limits remain available until the scheduled end of the billing period, then the account moves to Free limits."},
+     "Yes. Cancel in billing settings to stop renewal through Paddle. Your paid features and limits remain available until the end of the billing period, then your account returns to Free limits."},
     {"Do you offer startup discounts?",
      "Yes. Email sales@emisar.dev with your YC or pre-seed letter and we'll take it from there."}
   ]
@@ -587,20 +590,20 @@ defmodule EmisarWeb.MarketingController do
   # this list drives the index cards, per-guide meta + TechArticle JSON-LD,
   # and the sitemap. {slug, action/template, title, dek, date, read_time, meta}.
   @guides [
-    {"how-emisar-works", :how_emisar_works, "How emisar works",
-     "How do you give an AI agent access to production without worrying that it might hallucinate its way into dropping a database or taking the site down?",
-     "July 2026", "9 min read",
-     "See what an AI agent can actually do through emisar and what stops it doing something else, following one service restart from MCP request to runner execution and audit."},
+    {"how-emisar-works", :how_emisar_works, "How emisar works: the technical guide",
+     "How do you give an AI agent access to production without worrying that it might hallucinate its way into dropping a database or taking the site down? We follow one service restart from the MCP request, through policy, to the runner on your host.",
+     "Updated October 21, 2026", "6 min read",
+     "See what an AI agent can do through emisar and what stops it, following one service restart from MCP request through policy to runner execution and audit."},
     {"give-ai-agents-safe-production-access", :give_ai_agents_safe_production_access,
      "How to give an AI agent safe access to production",
-     "Agents do their best work when nobody is watching over their shoulder. Coding agents get that freedom from a sandbox, but production has no sandbox. What teams try instead, where each one cracks, and the division of labor that holds up.",
-     "July 2026", "7 min read",
-     "How to give an AI agent safe access to production: why SSH keeps ending in deleted-database postmortems, why an MCP server per tool becomes a maintenance and policy burden, and how one MCP with a declared action catalog lets an agent investigate production freely, ship fixes as code, and touch dangerous actions only behind human approval."},
+     "Agents do their best work when nobody is watching over their shoulder. Coding agents get that freedom from a sandbox, but production has no sandbox. Here is what teams try instead, where each one cracks, and the division of labor that holds up.",
+     "Updated October 21, 2026", "7 min read",
+     "Copy-paste, raw SSH, and one MCP server per tool all break down for AI agents in production. The pattern that holds up: read production, write code."},
     {"prompt-injection-for-ops-teams", :prompt_injection_for_ops_teams,
      "Prompt injection for ops teams: your logs are prompts now",
-     "The moment an AI agent starts reading your production logs, everyone who can write to them can talk to it. How the trick works — and why the defense that holds isn't a smarter prompt but a shorter list of things the agent can do.",
-     "July 2026", "8 min read",
-     "Prompt injection for AI ops agents: how attacker-controlled text in logs, tickets, and telemetry can steer an agent with production access, why prompt-level defenses and read-only access aren't enough, and how a declared action catalog with policy, approvals, and audited denials turns a successful injection into a visible, refused request."}
+     "The moment an AI agent starts reading your production logs, everyone who can write to them can talk to it. Here is how the trick works, and why the defense that holds is a shorter list of things the agent can do, not a smarter prompt.",
+     "Updated October 21, 2026", "8 min read",
+     "How prompt injection in logs steers AI agents, why prompt rules and read-only access fall short for ops teams, and how bounded actions limit the damage."}
   ]
   @guide_summaries Enum.map(@guides, fn {slug, _action, title, dek, date, read_time, _desc} ->
                      %{slug: slug, title: title, dek: dek, date: date, read_time: read_time}
@@ -794,7 +797,7 @@ defmodule EmisarWeb.MarketingController do
         |> put_view(html: EmisarWeb.ErrorHTML)
         |> render(:"404")
 
-      {^slug, action, title, _dek, _date, _read_time, description} ->
+      {^slug, action, title, dek, date, read_time, description} ->
         path = "/guides/" <> slug
 
         article_ld =
@@ -832,6 +835,7 @@ defmodule EmisarWeb.MarketingController do
           )
 
         render(conn, action,
+          guide_meta: %{title: title, dek: dek, date: date, read_time: read_time},
           page_title: title,
           meta_description: description,
           canonical_url: @base <> path,

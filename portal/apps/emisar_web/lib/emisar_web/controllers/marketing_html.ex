@@ -5,6 +5,7 @@ defmodule EmisarWeb.MarketingHTML do
   See the `marketing_html` directory for all templates available.
   """
   use EmisarWeb, :html
+  import EmisarWeb.HowItWorksMap
   alias EmisarWeb.SandboxRisks
 
   embed_templates "marketing_html/*"
@@ -121,9 +122,12 @@ defmodule EmisarWeb.MarketingHTML do
   # transcript across two tabs: the host (nomad-hvn03: real shell + Go-runner
   # output) and the LLM (a faithful Claude Code session). `data-seq` is
   # the play order that `assets/js/emisar_demo.js` reads; per-kind styling
-  # (the prompt, `[install]`, the ⏺/⎿ glyphs, colors, indents) lives in
-  # the `.demo-*` rules in app.css. Server lines mirror install.sh +
-  # `banner()`/slog output; the LLM lines mirror Claude Code's UI.
+  # (the prompt, `[install]`, the ●/⎿ glyphs, colors, indents) lives in
+  # the `.demo-*` rules in app.css. Server lines are install.sh's own log
+  # lines and summary for the console's install command (with an explicit
+  # EMISAR_PACKS set), `emisar status`, and the runner's slog text lines as
+  # `journalctl -o cat` shows them; keep them in step when those change. The
+  # LLM lines mirror Claude Code's UI.
   #
   # `spin`/`spin-wait` are JS-only animated spinners — rendered `hidden`
   # so no-JS visitors and crawlers skip them; their text is the gerund the
@@ -323,115 +327,368 @@ defmodule EmisarWeb.MarketingHTML do
   def plan_limit(count) when is_integer(count), do: Integer.to_string(count)
 
   @demo_lines [
-    # --- Host: a storage node on the fleet, one curl to connect ------
+    # --- Host: install the runner (install.sh's real output), confirm it
+    # connected, then follow its log so later runs stream in --------
     {1, "server", "srv-comment",
      "# nomad-hvn03 · Dell R640 · Pure FlashArray over iSCSI multipath · democratic-csi v1.9.5"},
-    {2, "server", "srv-prompt", "curl -fsSL https://emisar.dev/install.sh | sudo bash"},
-    {3, "server", "srv-install", "downloading emisar-#{@runner_current}-linux-amd64.tar.gz"},
-    {4, "server", "srv-install",
-     "checksum verified  sha256:9f2c1e7b4a0d…  ·  installed v#{@runner_current}"},
-    {5, "server", "srv-banner",
-     "emisar connecting to wss://emisar.dev/runner/socket/websocket (group=storage packs=multipath,iscsi,pure,nomad,debugging,docker)"},
-    {6, "server", "srv-ok",
-     "runner online · nomad-hvn03 · advertising 84 actions, every one policy-gated"},
+    {2, "server", "srv-prompt",
+     "curl -fsSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-… EMISAR_PACKS=linux-core,debugging,fs-search,docker,nomad bash"},
+    {3, "server", "srv-install", "install target: linux/amd64 via systemd"},
+    {4, "server", "srv-install", "latest release: runner-v#{@runner_current}"},
+    {5, "server", "srv-ask",
+     "install emisar runner-v#{@runner_current} to /usr/local/bin/emisar (and configure as a service)? [y/N] y"},
+    {6, "server", "srv-install",
+     "downloading emisar-#{@runner_current}-linux-amd64.tar.gz from Emisar release mirror"},
+    {7, "server", "srv-install",
+     "checksum signature verified  AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml"},
+    {8, "server", "srv-install", "checksum verified  sha256:9f2c1e7b4a0d5c3e…"},
+    {9, "server", "srv-install", "extracting"},
+    {10, "server", "srv-install", "staging binary at /usr/local/bin/.emisar-stage.Qw3rTz/emisar"},
+    {11, "server", "srv-install", "verified: emisar version #{@runner_current}"},
+    {12, "server", "srv-install", "creating system user emisar"},
+    {13, "server", "srv-install", "mkdir /etc/emisar"},
+    {14, "server", "srv-install", "mkdir /var/lib/emisar"},
+    {15, "server", "srv-install", "mkdir /var/log/emisar"},
+    {16, "server", "srv-install", "installed binary to /usr/local/bin/emisar"},
+    {17, "server", "srv-install", "installed pack linux-core (bundled)"},
+    {18, "server", "srv-install", "installed pack debugging (bundled)"},
+    {19, "server", "srv-install", "installed pack fs-search (registry)"},
+    {20, "server", "srv-install", "installed pack docker (bundled)"},
+    {21, "server", "srv-install", "installed pack nomad (registry)"},
+    {22, "server", "srv-install", "writing pre-configured config to /etc/emisar/config.yaml"},
+    {23, "server", "srv-install", "writing runner.env stub to /etc/emisar/runner.env"},
+    {24, "server", "srv-install", "writing /etc/systemd/system/emisar.service"},
+    {25, "server", "srv-install", "starting emisar.service"},
+    {26, "server", "srv-install", "recorded installer ownership at /etc/emisar/install-receipt"},
+    {27, "server", "srv-install", "installed emisar runner-v#{@runner_current}"},
+    {28, "server", "srv-out", " "},
+    {29, "server", "srv-out", "=============================================================="},
+    {30, "server", "srv-out", "emisar runner-v#{@runner_current} installed."},
+    {31, "server", "srv-out", " "},
+    {32, "server", "srv-out", "Binary:   /usr/local/bin/emisar"},
+    {33, "server", "srv-out", "Config:   /etc/emisar/config.yaml"},
+    {34, "server", "srv-out", "Secrets:  /etc/emisar/runner.env   (chmod 600)"},
+    {35, "server", "srv-out", "Data:     /var/lib/emisar"},
+    {36, "server", "srv-out", "Logs:     /var/log/emisar/events.jsonl (security log)"},
+    {37, "server", "srv-out", " "},
+    {38, "server", "srv-out",
+     "Pre-configured from install env (EMISAR_URL + EMISAR_ENROLLMENT_KEY)."},
+    {39, "server", "srv-out",
+     "Edit /etc/emisar/config.yaml to tighten runner.group / labels later."},
+    {40, "server", "srv-out", " "},
+    {41, "server", "srv-out", "The service is running. Check the runner connection:"},
+    {42, "server", "srv-out", "  sudo /usr/local/bin/emisar status"},
+    {43, "server", "srv-prompt", "sudo emisar status"},
+    {44, "server", "srv-out", " "},
+    {45, "server", "srv-out", "  ✓  connection    connected · heartbeat sent 3s ago"},
+    {46, "server", "srv-out",
+     "  ✓  catalog       5 packs · 191 actions advertised · all available"},
+    {47, "server", "srv-out", "  ✓  process       PID 2214 · up 9s · 1 connection attempt(s)"},
+    {48, "server", "srv-out", "  ✓  runs          0 in flight (last reported by the daemon)"},
+    {49, "server", "srv-out", "  ✓  checks        7 local readiness checks passed"},
+    {50, "server", "srv-out", " "},
+    {51, "server", "srv-ok", "Runner is connected and healthy."},
+    {52, "server", "srv-prompt", "sudo journalctl -u emisar -f -o cat"},
+    {53, "server", "srv-log",
+     "time=2026-10-28T13:41:06.873Z level=INFO msg=cloud.dial url=wss://emisar.dev/runner/socket/websocket external_id=nomad-hvn03"},
+    {54, "server", "srv-log",
+     "time=2026-10-28T13:41:07.412Z level=INFO msg=cloud.connected actions=191 packs=5 inflight_runs=0 requeued_starts=0 requeued_results=0"},
 
     # --- Claude Code: the alarm, then investigate through emisar -----
-    {7, "llm", "cc-meta",
+    {55, "llm", "cc-meta",
      "emisar MCP connected · #{@mcp_tool_count} tools · scoped to nomad-hvn03"},
-    {8, "llm", "cc-user",
+    {56, "llm", "cc-user",
      "grafana shows the last 7 days of metrics flat — only the last 12 minutes are alive. the process is healthy and ingesting. where did 33 hours of data go?"},
-    {9, "llm", "cc-spin", "Investigating"},
-    {10, "llm", "cc-text",
+    {57, "llm", "cc-spin", "Investigating"},
+    {58, "llm", "cc-text",
      "A flat week with only the last 12 minutes alive means VictoriaMetrics restarted onto empty storage. So I'll follow the data: look at its volume, then the kernel log from when it was mounted, then the CSI driver that mounted it."},
-    {11, "llm", "cc-tool",
+    {59, "llm", "cc-tool",
      "emisar · fs.ls_long(path: \"…/vm-data\", reason: \"what's actually on the VictoriaMetrics volume?\")"},
-    {12, "llm", "cc-result", "drwx------ 2 root root 16384 lost+found"},
-    {13, "llm", "cc-result-cont",
+    {60, "llm", "cc-result", "drwx------ 2 root root 16384 lost+found"},
+    {61, "llm", "cc-result-cont",
      "# a brand-new, empty ext4 — born 30 minutes ago. The 33h of history isn't here."},
-    {14, "llm", "cc-tool",
+    {62, "llm", "cc-tool",
      "emisar · debugging.dmesg_tail(lines: 400, reason: \"what happened at mount time?\")"},
-    {15, "llm", "cc-result",
+    {63, "llm", "cc-result",
      "13:11:03  device-mapper: multipath 254:3: queue_if_no_path enabled"},
-    {16, "llm", "cc-result-cont",
+    {64, "llm", "cc-result-cont",
      "13:11:09  EXT4-fs (dm-3): mounted a clean filesystem   # 6 seconds — with no active path"},
-    {17, "llm", "cc-tool",
+    {65, "llm", "cc-tool",
      "emisar · docker.logs(container: \"democratic-csi\", lines: 2000, reason: \"did the CSI driver format it?\")"},
-    {18, "llm", "cc-result", "GetDiskFormat /dev/mapper/3624…265c → blkid output=\"\" (empty)"},
-    {19, "llm", "cc-result-cont",
+    {66, "llm", "cc-result", "GetDiskFormat /dev/mapper/3624…265c → blkid output=\"\" (empty)"},
+    {67, "llm", "cc-result-cont",
      "\"unformatted\" → mkfs.ext4 -F /dev/mapper/3624… → \"successfully formatted\"   # over a LIVE LUN"},
-    {20, "llm", "cc-spin", "Analyzing"},
-    {21, "llm", "cc-text",
+    {68, "llm", "cc-spin", "Analyzing"},
+    {69, "llm", "cc-text",
      "Root cause: a multipath path-group race. On migration every path came up queue-ready but none active, so the first read returned empty — democratic-csi took \"empty\" for \"unformatted\" and reformatted the live LUN. It's the known CSI bug kubernetes#95183. VictoriaMetrics is overwriting the old blocks right now, so the first move is to stop the writes."},
 
     # --- Claude Code: stop the bleed — one approval -----------------
-    {22, "llm", "cc-tool",
+    {70, "llm", "cc-tool",
      "emisar · nomad.alloc_stop(alloc: \"a1b2c3d4\", reason: \"CSI reformatted a live LUN — halt writes to preserve recoverable blocks\")"},
-    {23, "llm", "cc-pending",
+    {71, "llm", "cc-pending",
      "⏸ pending approval — nomad.alloc_stop is high-risk; a human approves in the portal"},
-    {24, "llm", "cc-spin-wait", "Waiting for approval"},
-    {25, "llm", "cc-approved", "✓ approved by you · one use · audit event recorded"},
+    {72, "llm", "cc-spin-wait", "Waiting for approval"},
+    {73, "llm", "cc-approved", "✓ approved by you · one use · audit event recorded"},
 
-    # --- Host: the runner executes the approved stop ----------------
-    {26, "server", "srv-log",
-     "level=INFO msg=\"run dispatched\" action=nomad.alloc_stop run=run_5d36c9 via=approval"},
-    {27, "server", "srv-log",
-     "level=INFO msg=\"run complete\" action=nomad.alloc_stop exit=0 dur=0.38s"},
+    # --- Host: the followed runner log shows the approved stop run ---
+    {74, "server", "srv-log",
+     "time=2026-10-28T13:47:02.114Z level=INFO msg=cloud.run_started request_id=req_7Hk2pQ9xWm4LsN1vT8cRaA action_id=nomad.alloc_stop"},
+    {75, "server", "srv-log",
+     "time=2026-10-28T13:47:02.497Z level=INFO msg=cloud.run_finished request_id=req_7Hk2pQ9xWm4LsN1vT8cRaA action_id=nomad.alloc_stop status=success exit_code=0 duration_ms=383 reason=\"\""},
 
     # --- Claude Code: verify the obvious fix in the source, then ship it
-    {28, "llm", "cc-result", "alloc a1b2c3d4 stopped · writes halted · LUN frozen for forensics"},
-    {29, "llm", "cc-text",
+    {76, "llm", "cc-result", "alloc a1b2c3d4 stopped · writes halted · LUN frozen for forensics"},
+    {77, "llm", "cc-text",
      "Writes are stopped. Now a durable fix — it goes in the infra repo, since a host change won't survive the next drain. The driver has a node.format.disabled flag that should prevent this; I'll check the source before relying on it."},
-    {30, "llm", "cc-spin", "Checking the driver source"},
-    {31, "llm", "cc-tool",
+    {78, "llm", "cc-spin", "Checking the driver source"},
+    {79, "llm", "cc-tool",
      "gh · democratic-csi/democratic-csi@v1.9.5 — read NodeStageVolume in src/driver/index.js"},
-    {32, "llm", "cc-result",
+    {80, "llm", "cc-result",
      "async NodeStageVolume(call) { … await filesystem.formatDevice(device, fs_type) }"},
-    {33, "llm", "cc-result-cont",
+    {81, "llm", "cc-result-cont",
      "# formatDevice runs mkfs unconditionally, and nothing on this path reads node.format.disabled — it's a no-op in v1.9.5."},
-    {34, "llm", "cc-text",
+    {82, "llm", "cc-text",
      "So the flag won't help. I'll shadow mkfs inside the CSI container so the driver can't reformat a live Pure LUN, and still set format.disabled (commented) so we pick up the upstream fix when it lands."},
-    {35, "llm", "cc-tool",
+    {83, "llm", "cc-tool",
      "git · open PR \"csi: guard against the driver reformatting live LUNs\""},
-    {36, "llm", "cc-result", "1 file changed, 38 insertions(+)"},
-    {37, "llm", "cc-diff-note", "@@ template local/driver-config.yaml @@"},
-    {38, "llm", "cc-diff-ctx", "  node:"},
-    {39, "llm", "cc-diff-add", "+    format:"},
-    {40, "llm", "cc-diff-add",
+    {84, "llm", "cc-result", "1 file changed, 38 insertions(+)"},
+    {85, "llm", "cc-diff-note", "@@ template local/driver-config.yaml @@"},
+    {86, "llm", "cc-diff-ctx", "  node:"},
+    {87, "llm", "cc-diff-add", "+    format:"},
+    {88, "llm", "cc-diff-add",
      "+      # ignored by v1.9.5 (filesystem.formatDevice); kept for when upstream honors it"},
-    {41, "llm", "cc-diff-add", "+      disabled: true"},
-    {42, "llm", "cc-diff-note", "@@ task node · shadow mkfs before exec democratic-csi @@"},
-    {43, "llm", "cc-diff-add",
+    {89, "llm", "cc-diff-add", "+      disabled: true"},
+    {90, "llm", "cc-diff-note", "@@ task node · shadow mkfs before exec democratic-csi @@"},
+    {91, "llm", "cc-diff-add",
      "+  for n in mkfs mkfs.ext4 mkfs.xfs …; do mv \"$d/$n\" \"$d/$n.real\"; cp guard \"$d/$n\"; done"},
-    {44, "llm", "cc-diff-note", "@@ new file local/mkfs.guard @@"},
-    {45, "llm", "cc-diff-add", "+  case \"$dev\" in /dev/*) ;; *) exec \"$real\" \"$@\" ;; esac"},
-    {46, "llm", "cc-diff-add",
+    {92, "llm", "cc-diff-note", "@@ new file local/mkfs.guard @@"},
+    {93, "llm", "cc-diff-add", "+  case \"$dev\" in /dev/*) ;; *) exec \"$real\" \"$@\" ;; esac"},
+    {94, "llm", "cc-diff-add",
      "+  grep -qiE 'nvme|Pure|FlashArray' \"$sys/model\" || exec \"$real\" \"$@\"   # local disk → real mkfs"},
-    {47, "llm", "cc-diff-add",
+    {95, "llm", "cc-diff-add",
      "+  [ \"$(blkid -o value -s TYPE \"$dev\")\" = ext4 ] && exit 0   # re-attach → no-op"},
-    {48, "llm", "cc-diff-add",
+    {96, "llm", "cc-diff-add",
      "+  exit 64   # blank or unsure on a live Pure LUN → refuse, never mkfs"},
-    {49, "llm", "cc-text",
+    {97, "llm", "cc-text",
      "33 hours of metrics are gone — overwritten before I caught the writes. The disk is frozen if you want to attempt recovery. The PR keeps format.disabled for when upstream honors it, and adds mkfs.guard so the driver can't mkfs a mounted Pure LUN. Review and merge before the next node drain."}
   ]
 
+  # The /compare/copy-paste-ai-ops pair: the same 502 on edge-sfo-03, fixed
+  # twice. Copy-paste: you ssh in from your laptop, carry the logs into Claude
+  # and the command and its output back, so the replay keeps hopping between
+  # the host and Claude (`[Pasted text #N +M lines]` is how Claude Code shows
+  # a paste; `demo_line` sets it apart). With emisar: Claude calls the linux
+  # pack's actions and the output returns to the chat, so the replay never
+  # leaves the claude tab. Both show the same host state: Go's net/http accept
+  # loop out of file descriptors, then the restarted unit.
+  @copy_paste_demo_lines [
+    {1, "server", "srv-comment", "# api on edge-sfo-03 is returning 502s"},
+    {2, "server", "srv-local-prompt", "ssh edge-sfo-03"},
+    {3, "server", "srv-log", "Welcome to Ubuntu 24.04.1 LTS (GNU/Linux 6.8.0-45-generic x86_64)"},
+    {4, "server", "srv-log", "Last login: Wed Oct 28 09:12:44 2026 from 10.0.4.17"},
+    {5, "server", "srv-prompt", "sudo journalctl -u api -n 4"},
+    {6, "server", "srv-log",
+     "Oct 28 14:02:09 edge-sfo-03 api[1423]: http: Accept error: accept tcp [::]:8080: accept4: too many open files; retrying in 1s"},
+    {7, "server", "srv-log",
+     "Oct 28 14:02:10 edge-sfo-03 api[1423]: http: Accept error: accept tcp [::]:8080: accept4: too many open files; retrying in 1s"},
+    {8, "server", "srv-log",
+     "Oct 28 14:02:11 edge-sfo-03 api[1423]: http: Accept error: accept tcp [::]:8080: accept4: too many open files; retrying in 1s"},
+    {9, "server", "srv-log",
+     "Oct 28 14:02:12 edge-sfo-03 api[1423]: http: Accept error: accept tcp [::]:8080: accept4: too many open files; retrying in 1s"},
+    {10, "llm", "cc-user",
+     "api on edge-sfo-03 is returning 502s. logs: [Pasted text #1 +4 lines]"},
+    {11, "llm", "cc-spin", "Analyzing"},
+    {12, "llm", "cc-text",
+     "api has run out of file descriptors, so it can't accept new connections. A restart clears that for now. Run this on edge-sfo-03 and paste the output:"},
+    {13, "llm", "cc-code", "sudo systemctl restart api && systemctl status api"},
+    {14, "server", "srv-prompt", "sudo systemctl restart api && systemctl status api"},
+    {15, "server", "srv-log", "● api.service - API server"},
+    {16, "server", "srv-log",
+     "     Loaded: loaded (/etc/systemd/system/api.service; enabled; preset: enabled)"},
+    {17, "server", "srv-log",
+     "     Active: active (running) since Wed 2026-10-28 14:03:40 UTC; 1s ago"},
+    {18, "server", "srv-log", "   Main PID: 2210 (api)"},
+    {19, "llm", "cc-user", "done: [Pasted text #2 +4 lines]"},
+    {20, "llm", "cc-spin", "Analyzing"},
+    {21, "llm", "cc-text",
+     "api is back up. The leak will come back, so the code still needs a fix."}
+  ]
+
+  # Each call and result fits one line of the half-width window; long
+  # output is abbreviated with "…" the way the home demo does.
+  @with_emisar_demo_lines [
+    {1, "llm", "cc-meta", "emisar MCP connected · scoped to edge-sfo-03"},
+    {2, "llm", "cc-user", "api on edge-sfo-03 is returning 502s"},
+    {3, "llm", "cc-spin", "Investigating"},
+    {4, "llm", "cc-tool", "emisar · linux.journalctl(unit: \"api\")"},
+    {5, "llm", "cc-result", "api[1423]: … accept4: too many open files"},
+    {6, "llm", "cc-result-cont", "… +213 lines (ctrl+r to expand)"},
+    {7, "llm", "cc-spin", "Analyzing"},
+    {8, "llm", "cc-text",
+     "api has run out of file descriptors, so it can't accept new connections. A restart clears that for now."},
+    {9, "llm", "cc-tool", "emisar · linux.systemctl_restart(unit: \"api\")"},
+    {10, "llm", "cc-result", "succeeded · exit 0 · 1.2s"},
+    {11, "llm", "cc-tool", "emisar · linux.systemctl_status(unit: \"api\")"},
+    {12, "llm", "cc-result", "Active: active (running) since 14:03:40; 1s ago"},
+    {13, "llm", "cc-result-cont", "… +14 lines (ctrl+r to expand)"},
+    {14, "llm", "cc-text",
+     "api is back up. The leak will come back, so the code still needs a fix."}
+  ]
+
+  # The /compare/raw-ssh-for-ai pair: the same rollback of a bad deploy,
+  # once through Claude Code's Bash tool over SSH and once through emisar.
+  # Over SSH, one "don't ask again" answer covers every later ssh command,
+  # including a read of the service's .env; through emisar, Claude calls the
+  # nomad pack's job_history (low) and job_revert (high), and only the
+  # revert waits for an approval of that one run.
+  @raw_ssh_demo_lines [
+    {1, "llm", "cc-user",
+     "api on nomad-prod-1 is throwing 502s since the 14:00 deploy. roll it back"},
+    {2, "llm", "cc-spin", "Investigating"},
+    {3, "llm", "cc-tool", "Bash(ssh nomad-prod-1 'nomad job history api')"},
+    {4, "llm", "cc-permit",
+     "Do you want to proceed? ❯ Yes, and don't ask again for ssh commands"},
+    {5, "llm", "cc-result", "Version     = 18"},
+    {6, "llm", "cc-result-cont", "Stable      = false"},
+    {7, "llm", "cc-result-cont", "… +10 lines (ctrl+r to expand)"},
+    {8, "llm", "cc-text",
+     "v18 went out at 14:00 and isn't stable. I'll check whether it changed the service's config."},
+    {9, "llm", "cc-tool", "Bash(ssh nomad-prod-1 'cat /srv/api/.env')"},
+    {10, "llm", "cc-result", "API_PORT=8080"},
+    {11, "llm", "cc-leak", "DB_PASSWORD=x7Kq2vLp9mWd"},
+    {12, "llm", "cc-result-cont", "… +4 lines (ctrl+r to expand)"},
+    {13, "llm", "cc-text",
+     "The config didn't change, so the new code is the likely cause. Rolling back to v17."},
+    {14, "llm", "cc-tool", "Bash(ssh nomad-prod-1 'nomad job revert api 17')"},
+    {15, "llm", "cc-result", "==> 2026-10-28T14:21:07Z: Monitoring evaluation \"9c1f2a3b\""},
+    {16, "llm", "cc-result-cont", "… +6 lines (ctrl+r to expand)"},
+    {17, "llm", "cc-text",
+     "Rolled back to v17. The 502s should clear as the new allocations start."}
+  ]
+
+  @ssh_emisar_demo_lines [
+    {1, "llm", "cc-meta", "emisar MCP connected · scoped to nomad-prod-1"},
+    {2, "llm", "cc-user",
+     "api on nomad-prod-1 is throwing 502s since the 14:00 deploy. roll it back"},
+    {3, "llm", "cc-spin", "Investigating"},
+    {4, "llm", "cc-tool", "emisar · nomad.job_history(job: \"api\")"},
+    {5, "llm", "cc-result", "Version     = 18"},
+    {6, "llm", "cc-result-cont", "Stable      = false"},
+    {7, "llm", "cc-result-cont", "… +10 lines (ctrl+r to expand)"},
+    {8, "llm", "cc-text",
+     "v18 went out at 14:00 and isn't stable; v17 was the last stable version. Rolling back to it."},
+    {9, "llm", "cc-tool", "emisar · nomad.job_revert(job: \"api\", version: 17)"},
+    {10, "llm", "cc-pending",
+     "⏸ pending approval — nomad.job_revert is high-risk; a human approves in the portal"},
+    {11, "llm", "cc-spin-wait", "Waiting for approval"},
+    {12, "llm", "cc-approved", "✓ approved by you · one use · audit event recorded"},
+    {13, "llm", "cc-result", "==> 2026-10-28T14:21:07Z: Monitoring evaluation \"9c1f2a3b\""},
+    {14, "llm", "cc-result-cont", "… +6 lines (ctrl+r to expand)"},
+    {15, "llm", "cc-text",
+     "Rolled back to v17. The 502s should clear as the new allocations start."}
+  ]
+
+  # Each script names its host tab, the shell prompts its prompt lines show
+  # (keyed by line kind), the footer caption, and whether Claude's turns are
+  # set apart by a blank line (the short compare transcripts are). A script
+  # with no "server" lines renders the claude tab alone.
+  defp demo_script(:incident) do
+    %{
+      host: "nomad-hvn03",
+      prompts: %{"srv-prompt" => "ops@nomad-hvn03:~$ "},
+      spaced: true,
+      label: "emisar demo",
+      caption:
+        "The agent used fs, debugging, docker, and nomad packs from the catalog. Only the high-risk action was paused for human approval.",
+      lines: @demo_lines
+    }
+  end
+
+  defp demo_script(:copy_paste) do
+    %{
+      host: "edge-sfo-03",
+      prompts: %{"srv-local-prompt" => "ops@laptop:~$ ", "srv-prompt" => "ops@edge-sfo-03:~$ "},
+      spaced: true,
+      label: "Copy-paste demo",
+      caption: "Logs, the command, and its output all pass through your clipboard.",
+      lines: @copy_paste_demo_lines
+    }
+  end
+
+  defp demo_script(:with_emisar) do
+    %{
+      host: "edge-sfo-03",
+      prompts: %{},
+      spaced: true,
+      label: "emisar demo",
+      caption: "Claude calls emisar actions. Nothing passes through your clipboard.",
+      lines: @with_emisar_demo_lines
+    }
+  end
+
+  defp demo_script(:raw_ssh) do
+    %{
+      host: "nomad-prod-1",
+      prompts: %{},
+      spaced: true,
+      label: "Raw SSH demo",
+      caption: "One answer let the agent run any ssh command. The password is now in the chat.",
+      lines: @raw_ssh_demo_lines
+    }
+  end
+
+  defp demo_script(:ssh_emisar) do
+    %{
+      host: "nomad-prod-1",
+      prompts: %{},
+      spaced: true,
+      label: "emisar demo",
+      caption: "Each call is a declared action. The revert waited for your approval of that run.",
+      lines: @ssh_emisar_demo_lines
+    }
+  end
+
+  attr :script, :atom,
+    default: :incident,
+    values: [:incident, :copy_paste, :with_emisar, :raw_ssh, :ssh_emisar],
+    doc: "which transcript to play"
+
+  attr :class, :any, default: "mx-auto mt-16 max-w-4xl", doc: "placement and width"
+
   @doc """
-  Interactive "watch emisar work" terminal for the home page. The full
-  incident is server-rendered in two panes (one per tab) so no-JS visitors
-  and crawlers get the whole story and the tabs degrade to a readable,
-  stacked transcript. `assets/js/emisar_demo.js` enhances it into a tabbed,
-  typed replay with Claude-style spinners (and honors
-  `prefers-reduced-motion`). CSP-safe — no inline script.
+  Interactive "watch emisar work" terminal. The home page plays the
+  `:incident`; /compare/copy-paste-ai-ops plays `:copy_paste` beside
+  `:with_emisar`, and /compare/raw-ssh-for-ai plays `:raw_ssh` beside
+  `:ssh_emisar`. The full transcript is server-rendered in two panes (one
+  per tab) so no-JS visitors and crawlers get the whole story and the tabs
+  degrade to a readable, stacked transcript. `assets/js/emisar_demo.js`
+  enhances every instance into a tabbed, typed replay with Claude-style
+  spinners (and honors `prefers-reduced-motion`). CSP-safe — no inline script.
   """
   def emisar_demo(assigns) do
+    script = demo_script(assigns.script)
+
     assigns =
       assigns
-      |> assign(:server_lines, Enum.filter(@demo_lines, fn {_, tab, _, _} -> tab == "server" end))
-      |> assign(:llm_lines, Enum.filter(@demo_lines, fn {_, tab, _, _} -> tab == "llm" end))
+      |> assign(:host, script.host)
+      |> assign(:prompts, script.prompts)
+      |> assign(:spaced, script.spaced)
+      |> assign(:label, script.label)
+      |> assign(:caption, script.caption)
+      |> assign(
+        :server_lines,
+        Enum.filter(script.lines, fn {_, tab, _, _} -> tab == "server" end)
+      )
+      |> assign(:llm_lines, Enum.filter(script.lines, fn {_, tab, _, _} -> tab == "llm" end))
 
     ~H"""
     <div
       data-emisar-demo
-      class="mx-auto mt-16 max-w-4xl overflow-hidden rounded-xl border border-zinc-800 bg-[#0c0c0e] shadow-2xl shadow-brand-950/40 ring-1 ring-white/5"
+      class={[
+        "overflow-hidden rounded-xl border border-zinc-800 bg-[#0c0c0e] shadow-2xl shadow-brand-950/40 ring-1 ring-white/5",
+        @spaced && "demo-spaced",
+        @class
+      ]}
     >
       <div class="flex items-center gap-4 border-b border-zinc-800/80 bg-zinc-950/60 px-4 py-2.5">
         <div class="flex items-center gap-1.5">
@@ -439,21 +696,22 @@ defmodule EmisarWeb.MarketingHTML do
           <span class="h-3 w-3 rounded-full bg-[#febc2e]"></span>
           <span class="h-3 w-3 rounded-full bg-[#28c840]"></span>
         </div>
-        <div class="flex items-center gap-1" role="tablist" aria-label="emisar demo">
+        <div class="flex items-center gap-1" role="tablist" aria-label={@label}>
           <button
+            :if={@server_lines != []}
             type="button"
             role="tab"
             data-demo-tab="server"
             aria-selected="true"
             class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-xs text-zinc-500 transition hover:text-zinc-300 aria-selected:bg-zinc-800/80 aria-selected:text-zinc-100"
           >
-            <.icon name="infrastructure.host" class="h-3.5 w-3.5" /> nomad-hvn03
+            <.icon name="infrastructure.host" class="h-3.5 w-3.5" /> {@host}
           </button>
           <button
             type="button"
             role="tab"
             data-demo-tab="llm"
-            aria-selected="false"
+            aria-selected={to_string(@server_lines == [])}
             class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-xs text-zinc-500 transition hover:text-zinc-300 aria-selected:bg-zinc-800/80 aria-selected:text-zinc-100"
           >
             <.icon name="product.agent" class="h-3.5 w-3.5 text-[#d97757]" /> claude
@@ -465,29 +723,31 @@ defmodule EmisarWeb.MarketingHTML do
         data-demo-screen
         class="h-[26rem] overflow-y-auto px-5 py-4 font-mono text-[12.5px] leading-[1.7] [scrollbar-width:thin]"
       >
-        <div data-demo-pane="server">
+        <div :if={@server_lines != []} data-demo-pane="server">
           <.demo_line
             :for={{seq, tab, kind, text} <- @server_lines}
             seq={seq}
             tab={tab}
             kind={kind}
             text={text}
+            prompts={@prompts}
           />
         </div>
-        <div data-demo-pane="llm" hidden>
+        <div data-demo-pane="llm" hidden={@server_lines != []}>
           <.demo_line
             :for={{seq, tab, kind, text} <- @llm_lines}
             seq={seq}
             tab={tab}
             kind={kind}
             text={text}
+            prompts={@prompts}
           />
         </div>
       </div>
 
       <div class="flex items-center justify-between border-t border-zinc-800/80 bg-zinc-950/60 px-4 py-2">
         <p class="text-[11px] text-zinc-500">
-          The agent used fs, debugging, docker, and nomad packs from the catalog. Only the high-risk action was paused for human approval.
+          {@caption}
         </p>
         <button
           type="button"
@@ -505,23 +765,38 @@ defmodule EmisarWeb.MarketingHTML do
   attr :tab, :string, required: true
   attr :kind, :string, required: true
   attr :text, :string, required: true
+  attr :prompts, :map, required: true, doc: "shell prompt per prompt-line kind"
 
   # Spinner lines are JS-only — render them hidden so no-JS/crawlers skip
   # them. phx-no-format keeps {@text} tight against the tags (otherwise the
   # formatter reflows it and the indentation leaks into the rendered text,
-  # which the typing animation's textContent read would then pick up).
+  # which the typing animation's textContent read would then pick up). The
+  # shell prompt rides `data-prompt` for the CSS ::before, out of textContent
+  # for the same reason. A trailing paste token renders as its own chip,
+  # which the replay drops in whole after typing the words before it.
   defp demo_line(assigns) do
+    {text, paste} = split_paste(assigns.text)
+    assigns = assign(assigns, text: text, paste: paste)
+
     ~H"""
     <div
       data-demo-line
       data-tab={@tab}
       data-kind={@kind}
       data-seq={@seq}
+      data-prompt={@prompts[@kind]}
       class={["demo-line", "demo-#{@kind}"]}
       hidden={@kind in ["cc-spin", "cc-spin-wait"]}
       phx-no-format
-    >{@text}</div>
+    >{@text}<span :if={@paste} class="demo-paste">{@paste}</span></div>
     """
+  end
+
+  defp split_paste(text) do
+    case Regex.run(~r/^(.*?)(\[Pasted text #\d+ \+\d+ lines\])$/, text) do
+      [_, before, paste] -> {before, paste}
+      nil -> {text, nil}
+    end
   end
 
   attr :title, :string, required: true
@@ -622,7 +897,7 @@ defmodule EmisarWeb.MarketingHTML do
             {@title}
           </h1>
           <p class="mt-5 text-lg leading-relaxed text-zinc-300 text-pretty">{@dek}</p>
-          <p class="mt-6 text-sm text-zinc-500">{@date} &middot; {@read_time}</p>
+          <p class="mt-6 text-sm text-zinc-400">{@date} &middot; {@read_time}</p>
         </div>
       </header>
 
@@ -635,13 +910,115 @@ defmodule EmisarWeb.MarketingHTML do
       </section>
 
       <.marketing_cta
-        headline="Give your AI agent production access — without the risks."
-        subcopy="Start free on the Free plan, or book a walkthrough on your own infrastructure."
-        secondary_label="Talk to sales"
-        secondary_path={EmisarWeb.MailTo.sales()}
+        headline="The best way to give your AI agents access to production."
+        subcopy="Connect your agent to the tools you run. Set the policy; emisar checks each request before it runs."
+        secondary_label="Follow the quickstart"
+        secondary_path={~p"/docs/quickstart"}
       />
 
       <.marketing_footer />
+    </div>
+    """
+  end
+
+  @doc """
+  The request-path figure in the technical guide. The AI agent calls the hosted control plane
+  over MCP, and the runner on the customer's server dials out to it before running declared
+  actions against local services. The network arrows point from the side that opens the
+  connection. Stacks vertically below `md`.
+  """
+  attr :class, :string, default: "my-10"
+
+  def request_path_diagram(assigns) do
+    ~H"""
+    <figure class={@class}>
+      <div class="flex flex-col md:grid md:py-3 md:pr-3 md:grid-cols-[minmax(0,1fr)_48px_minmax(0,1fr)_112px_minmax(0,1fr)_48px_minmax(0,1fr)]">
+        <.diagram_node title="AI agent" items={["Claude", "ChatGPT", "Cursor"]} />
+        <.diagram_link direction={:forward} labels={["MCP"]} />
+        <.diagram_node title="Control plane" items={["Identity", "Policy", "Approvals", "Audit"]} />
+        <.diagram_link direction={:back} labels={["outbound", "WebSocket"]} crosses_boundary />
+        <div class="relative -mx-3 flex flex-col rounded-xl border border-dashed border-zinc-700 p-[11px] md:col-span-3 md:-m-3 md:grid md:grid-cols-[minmax(0,1fr)_48px_minmax(0,1fr)]">
+          <span class="absolute -top-2.5 right-[18px] bg-zinc-950 px-1.5 text-[13px]/5 text-zinc-400 md:right-auto md:left-[18px]">
+            Your server
+          </span>
+          <.diagram_node title="Runner" items={["Pack hash", "Local rules", "Redaction", "Journal"]} />
+          <.diagram_link direction={:forward} />
+          <.diagram_node title="Services" items={["Postgres", "nginx", "Kubernetes"]} />
+        </div>
+      </div>
+      <figcaption class="mt-6 max-w-3xl text-sm/6 text-zinc-400">
+        The control plane is hosted by emisar. The runner opens the TLS connection to it, so your
+        server needs no inbound port for emisar. Requests and results travel both ways over that connection.
+      </figcaption>
+    </figure>
+    """
+  end
+
+  attr :title, :string, required: true
+  attr :items, :list, required: true
+
+  # Items read as a comma list on phones and as a column from md up.
+  # phx-no-format keeps each item tight against its separator.
+  defp diagram_node(assigns) do
+    ~H"""
+    <div class="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
+      <span class="block whitespace-nowrap text-sm/5 font-semibold text-zinc-100">{@title}</span>
+      <span class="mt-1 block text-[13px]/5 text-zinc-400 md:mt-2">
+        <span :for={{item, index} <- Enum.with_index(@items)} class="md:block" phx-no-format>{item}<span :if={index < length(@items) - 1} class="md:hidden">, </span></span>
+      </span>
+    </div>
+    """
+  end
+
+  attr :direction, :atom, required: true, values: [:forward, :back]
+  attr :labels, :list, default: []
+  attr :crosses_boundary, :boolean, default: false
+
+  # A 1px shaft with a 6x9 arrowhead: vertical below md, horizontal from md up.
+  # From md the boxes are 134px tall, so the shaft at 66px sits in their middle
+  # and the label block ends at 61px, the bottom of the first list row, which
+  # puts every label line on a baseline with the box text beside it. On phones a
+  # shaft that crosses the server boundary runs through its 12px inset, so it
+  # still stops 4px short of the next box like the others.
+  defp diagram_link(assigns) do
+    ~H"""
+    <div class="relative h-12 md:h-auto">
+      <span
+        aria-hidden="true"
+        class={[
+          "absolute left-[13px] top-1 border-l border-zinc-600",
+          if(@crosses_boundary, do: "-bottom-2", else: "bottom-1"),
+          "md:left-1 md:right-1 md:top-[66px] md:bottom-auto md:border-l-0 md:border-t"
+        ]}
+      ></span>
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 6 9"
+        class={[
+          "absolute left-[10.5px] h-[9px] w-[6px] text-zinc-500 md:top-[62px]",
+          if(@direction == :forward,
+            do: "bottom-[2.5px] rotate-90 md:left-auto md:right-1 md:bottom-auto md:rotate-0",
+            else: "top-[2.5px] -rotate-90 md:left-1 md:rotate-180"
+          )
+        ]}
+      >
+        <path d="M0 0L6 4.5L0 9Z" fill="currentColor" />
+      </svg>
+      <span
+        :if={@labels != []}
+        class="absolute left-[29px] top-1/2 -translate-y-1/2 whitespace-nowrap text-[13px]/5 text-zinc-400 md:hidden"
+      >
+        {Enum.join(@labels, " ")}
+      </span>
+      <span
+        :if={@labels != []}
+        class={[
+          "absolute inset-x-0 top-0 hidden h-[61px] flex-col items-center justify-end text-[13px]/5 text-zinc-400 md:flex",
+          @crosses_boundary && "md:pr-3"
+        ]}
+      >
+        <span :for={label <- @labels} class="[&:not(:last-child)]:mb-2">{label}</span>
+      </span>
     </div>
     """
   end

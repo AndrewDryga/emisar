@@ -13,34 +13,15 @@
         Action packs
       </.marketing_heading>
       <p class="mt-8 max-w-2xl text-lg leading-8 text-zinc-400 text-pretty">
-        Packs are the catalog emisar runs from: versioned, content-hashed bundles of declared
-        actions for the software you already run. Your agent can call only those actions.
-      </p>
-
-      <%!-- The whole integration story: one command per pack. --%>
-      <div class="mt-6 max-w-xl overflow-hidden rounded-xl border border-zinc-800 bg-black/40 font-mono text-[12.5px] leading-relaxed">
-        <div class="flex items-center gap-2 border-b border-zinc-800 bg-zinc-950 px-4 py-2 text-[11px] text-zinc-500">
-          <.icon name="interface.cli" class="h-3.5 w-3.5" /> install any pack in one command
-        </div>
-        <div class="space-y-1 px-4 py-4">
-          <p class="text-zinc-300">
-            <span class="select-none text-zinc-500">$ </span>sudo emisar pack install postgres --hash sha256:8f34c2&hellip;
-          </p>
-          <p class="text-zinc-500">
-            # verified against the pinned hash, then live for your agent to call them
-          </p>
-        </div>
-      </div>
-
-      <p class="mt-5 max-w-2xl text-sm text-zinc-500">
-        <span class="font-semibold text-zinc-300">
-          {@pack_count} packs &middot; {@action_count} declared actions
-        </span>
-        ship today across databases, containers, observability, cloud, networking, and more.
-        Install what you run, or <.link
+        Browse {@pack_count} packs with {@action_count} actions for the software you run.
+        Each pack shows what it can do, which credentials and permissions it needs, and how
+        to install it. Start with the <.link
+          navigate={~p"/docs/use-a-published-pack"}
+          class="text-brand-300 hover:text-brand-200"
+        >pack installation guide</.link>, or <.link
           href={~p"/docs/publishing-packs"}
-          class="group text-brand-300 hover:text-brand-200"
-        >author your own&nbsp;<.cta_arrow /></.link>.
+          class="text-brand-300 hover:text-brand-200"
+        >author your own</.link>.
       </p>
     </div>
   </section>
@@ -53,15 +34,15 @@
       <div class="relative max-w-md">
         <.icon
           name="action.search"
-          class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500"
+          class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400"
         />
         <input
           id="pack-search"
           type="search"
           autocomplete="off"
           aria-label={"Search #{@pack_count} action packs"}
-          placeholder={"Search #{@pack_count} packs — postgres, kubernetes, nginx…"}
-          class="w-full rounded-lg border-0 bg-zinc-900/80 py-2 pl-9 pr-3 text-sm text-zinc-100 ring-1 ring-zinc-800 placeholder:text-zinc-500 focus:ring-2 focus:ring-brand-500"
+          placeholder="Search by tool or task — postgres, replication lag…"
+          class="w-full rounded-lg border-0 bg-zinc-900/80 py-2 pl-9 pr-3 text-sm text-zinc-100 ring-1 ring-zinc-800 placeholder:text-zinc-400 focus:ring-2 focus:ring-brand-500"
         />
       </div>
       <nav class="flex flex-wrap gap-2" aria-label="Pack categories">
@@ -72,7 +53,7 @@
           class="inline-flex items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-950/60 px-3 py-1 text-xs font-medium text-zinc-400 transition hover:border-brand-500/40 hover:text-brand-200"
         >
           {label}
-          <span class="text-zinc-400">{length(packs)}</span>
+          <span data-pack-nav-count class="text-zinc-400">{length(packs)}</span>
         </a>
       </nav>
     </div>
@@ -92,14 +73,14 @@
             <.icon name={category_icon(slug)} class="h-4 w-4" />
           </span>
           {label}
-          <span data-pack-count={length(packs)} class="text-sm font-normal text-zinc-500">
+          <span data-pack-count={length(packs)} class="text-sm font-normal text-zinc-400">
             {length(packs)}
           </span>
         </h2>
         <div class="mt-6 grid grid-cols-1 gap-5 md:grid-cols-2">
           <article
             :for={pack <- packs}
-            data-pack-name={String.downcase(pack.name <> " " <> pack.id)}
+            data-pack-name={EmisarWeb.PacksRegistry.search_terms(pack)}
             class="group relative flex flex-col rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6 transition hover:border-brand-500/40"
           >
             <header class="flex items-start justify-between gap-3">
@@ -112,7 +93,7 @@
                     {pack.name}
                   </.link>
                 </h3>
-                <p class="mt-1 truncate font-mono text-xs text-zinc-500">
+                <p class="mt-1 truncate font-mono text-xs text-zinc-400">
                   {pack.id} · v{pack.version} · {pack.vendor}
                 </p>
               </div>
@@ -150,7 +131,7 @@
               >Browse pack&nbsp;<.cta_arrow /></.link>
               <.external_link
                 href={EmisarWeb.PacksRegistry.source_url(pack)}
-                class="text-xs text-zinc-500 hover:text-zinc-300"
+                class="text-xs text-zinc-400 hover:text-zinc-300"
               >
                 Source
               </.external_link>
@@ -164,7 +145,7 @@
         hidden
         role="status"
         aria-live="polite"
-        class="mt-12 text-center text-sm text-zinc-500"
+        class="mt-12 text-center text-sm text-zinc-400"
       >
         No packs match that search yet. You can
         <.link href={~p"/docs/publishing-packs"} class="text-brand-300 hover:text-brand-200">
@@ -190,7 +171,7 @@
             YAML reference
           </.marketing_button>
         </div>
-        <p class="mx-auto mt-6 max-w-xl text-xs leading-5 text-zinc-500">
+        <p class="mx-auto mt-6 max-w-xl text-xs leading-5 text-zinc-400">
           Missing a pack that more teams than yours would use? <.external_link
             href="https://github.com/andrewdryga/emisar/issues/new"
             class="text-brand-300 hover:text-brand-200"

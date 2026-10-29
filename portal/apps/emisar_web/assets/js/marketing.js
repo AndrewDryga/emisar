@@ -10,6 +10,7 @@
 //   * dismissible, auto-closing flashes after controller redirects
 //   * the animated "watch emisar work" home-page terminal demo (a no-op
 //     on every page that doesn't render it)
+//   * the animated How it works map on /how-it-works (a no-op elsewhere)
 //   * restrained on-scroll reveals (a no-op when no [data-reveal] is present)
 //   * Escape-to-dismiss + viewport clamping for the shared <.tooltip>,
 //     which a pack page's risk pills render — the console gets the same
@@ -29,6 +30,7 @@ import {initDocsNavScroll} from "./docs_nav_scroll.js"
 import {initTocScrollSpy} from "./docs-toc.js"
 import {initDropdowns} from "./dropdown.js"
 import {initEmisarDemo} from "./emisar_demo.js"
+import {initHowItWorksMap} from "./how_it_works_map.js"
 import {initStaticFlashes} from "./flash.js"
 import {initMobileNav} from "./mobile_nav.js"
 import {initOsTabs} from "./os_tabs.js"
@@ -43,6 +45,7 @@ setupCopyToClipboardDelegation()
 initStaticFlashes()
 initConsoleCasts()
 initEmisarDemo()
+initHowItWorksMap()
 initTocScrollSpy()
 // The docs sidebar (nav[aria-label="Docs"]) exists only on /docs/* pages.
 if (document.querySelector('nav[aria-label="Docs"]')) {

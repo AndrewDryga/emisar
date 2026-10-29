@@ -2,172 +2,226 @@
   <.marketing_nav signed_in?={@signed_in?} current={:compare} />
 
   <section class="py-16 sm:py-24">
-    <div class="mx-auto max-w-3xl px-6 lg:px-8">
-      <p class="text-sm font-semibold text-brand-400">Compare</p>
-      <.marketing_heading tag="h1" scale={:hero} class="mt-2">
-        Why not just give the LLM SSH?
-      </.marketing_heading>
-      <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
-        You can. Some people do. It works on the days it works.
-        Here's what changes when it doesn't.
-      </p>
+    <div class="mx-auto max-w-6xl px-6 lg:px-8">
+      <div class="max-w-3xl">
+        <p class="text-sm font-semibold text-brand-400">Compare</p>
+        <.marketing_heading tag="h1" scale={:hero} class="mt-2">
+          Why not just give the LLM SSH?
+        </.marketing_heading>
+        <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
+          SSH gives an agent the permissions of its host account. Emisar gives it named
+          operations, such as reading service logs or restarting a unit, so it can keep
+          investigating while you control which changes run.
+        </p>
+      </div>
 
-      <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">
-        Both approaches run real commands
-      </h2>
-      <p class="mt-3 text-base leading-7 text-zinc-400">
-        emisar isn't a sandbox. When the runner executes <code>nomad job revert</code>, it really rolls back the deploy, exactly as
-        SSH would. The difference is what happens <em>before</em> exec, and what's
-        left <em>after</em>.
-      </p>
+      <div class="mt-16 max-w-3xl">
+        <p class="text-xs font-semibold text-sky-300">The same task</p>
+        <h2 class="mt-2 text-3xl font-semibold text-zinc-50 text-balance">
+          Both approaches run real commands
+        </h2>
+        <p class="mt-4 text-base leading-7 text-zinc-400 text-pretty">
+          Both windows run the same rollback. Over SSH, the agent asks to run <code>ssh nomad-prod-1 'nomad job history api'</code>, and one "don't ask again for
+          ssh commands" answer lets it run any ssh command after that. With emisar, each call is
+          a declared action that emisar checks and records, and the risky
+          <code>nomad job revert</code>
+          waits until you approve that exact run.
+        </p>
+      </div>
 
-      <%!-- The difference, shown: the same revert two ways. Rose = an ungated
-           shell that also leaks; emerald = the declared, gated, audited action.
-           Mirrors the home demo's terminal look + the semantic palette. --%>
-      <div class="mt-8 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div class="overflow-hidden rounded-xl border border-rose-500/25 bg-black/40">
-          <div class="flex items-center gap-2 border-b border-rose-500/20 bg-rose-500/5 px-4 py-2.5">
-            <span class="h-2 w-2 rounded-full bg-rose-500/70"></span>
-            <span class="text-xs font-semibold text-rose-200">Raw SSH · a full shell</span>
-          </div>
-          <div class="space-y-1.5 px-4 py-4 font-mono text-[12.5px] leading-relaxed">
-            <p class="text-zinc-500"># one key opens the whole box</p>
-            <p class="text-zinc-300">$ nomad job revert api 17</p>
-            <p class="text-zinc-500">↳ done — no who, no why, no record</p>
-            <p class="text-zinc-300">$ cat /srv/api/.env</p>
-            <p class="text-rose-300">DB_PASSWORD=hunter2…</p>
-            <p class="text-zinc-500">↳ now sitting in the chat scrollback</p>
-          </div>
+      <%!-- The difference, shown: the same rollback in the home page's terminal,
+           twice. Over SSH one "don't ask again" answer covers every later ssh
+           command, so a secret ends up in the chat; through emisar each call is a
+           declared action and the revert waits for its own approval. --%>
+      <div class="mt-8 grid gap-8 lg:grid-cols-2 lg:gap-5">
+        <div class="min-w-0">
+          <p class="text-xs font-semibold text-rose-300">Raw SSH</p>
+          <.emisar_demo script={:raw_ssh} class="mt-3" />
         </div>
-        <div class="overflow-hidden rounded-xl border border-brand-500/25 bg-black/40">
-          <div class="flex items-center gap-2 border-b border-brand-500/20 bg-brand-500/5 px-4 py-2.5">
-            <span class="h-2 w-2 rounded-full bg-brand-500"></span>
-            <span class="text-xs font-semibold text-brand-200">claude · emisar MCP</span>
-          </div>
-          <div class="space-y-1.5 px-4 py-4 font-mono text-[12.5px] leading-relaxed">
-            <p class="text-zinc-300">nomad.job_revert(job: api, version: 17)</p>
-            <p class="text-zinc-500">reason: roll back the 502 spike</p>
-            <p class="text-amber-300">⏸ approval — nomad.job_* is gated</p>
-            <p class="text-brand-300">✓ approved · one use · recorded</p>
-            <p class="text-zinc-500">↳ output redacted · hash-chained journal</p>
-          </div>
+        <div class="min-w-0">
+          <p class="text-xs font-semibold text-brand-400">With emisar</p>
+          <.emisar_demo script={:ssh_emisar} class="mt-3" />
         </div>
       </div>
-      <p class="mt-3 text-base leading-7 text-zinc-400 text-pretty">
-        Both panels run the same revert.
-      </p>
+    </div>
+  </section>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">Side by side</h2>
+  <section class="border-y border-zinc-900 bg-black/20 py-16 sm:py-20">
+    <div class="mx-auto max-w-6xl px-6 lg:px-8">
+      <p class="text-xs font-semibold text-zinc-400">Side by side</p>
+      <h2 class="mt-2 text-3xl font-semibold text-zinc-50 text-balance">
+        Where the paths differ
+      </h2>
       <%!-- One data list, two layouts: a table on md+, stacked cards on mobile, so
         the 3-way comparison reads without a horizontal scroll on phones. --%>
       <% rows = [
-        {"What can the LLM run?", "Anything in the user's shell",
-         "Only declared actions; everything else rejected"},
-        {"What are the args?", "Free-text command line",
-         "Typed, validated, redacted at the boundary"},
-        {"What actually ran?", "Whatever was on PATH that day",
-         "Content-addressed pack: the runner recomputes the SHA-256, published hashes auto-pin, and changed contents are blocked until an admin reviews them"},
-        {"Approvals?",
-         "One chat approval can trust the SSH prefix and every production command behind it.",
-         "Policy gates with approver email + audit; skipping means a policy change, itself audited"},
-        {"Audit trail?", "Whatever lands in .bash_history",
-         "Hash-chained JSONL on host, plus a searchable cloud audit trail"},
-        {"Output redaction?", "None, so passwords leak into chat logs",
-         "20 patterns (bearer/JWT, GitHub/Slack/Stripe keys, secret assignments + your custom ones) masked on the host before egress"},
-        {"Lateral movement?", "SSH key on the model's box ≈ key everywhere",
-         "Per-runner token + per-user runner scopes every API key inherits, so revoking the user shrinks every key they created"},
-        {"Credential leaked?", "Rotate the SSH key on every host that trusts it",
-         "Revoke one scoped API key; host credentials never reached the model. MCP bridge keys are short-lived and rotated automatically"},
-        {"Recovery story?", "\"Read the chat scrollback and the logs and hope\"",
-         "emisar audit verify checks the retained host journal; the portal keeps inputs and output in run history, with approvals and state changes in the audit trail"}
+        {"What can the agent run?", "Anything the SSH account can run.",
+         "Only the actions in packs you installed. Anything else is rejected."},
+        {"How are arguments checked?", "They aren't. The agent writes the whole command line.",
+         "Each argument has a type and limits that the runner checks. Sensitive values are masked in the console and API."},
+        {"What code runs?", "Whatever is installed on the host at that moment.",
+         "The exact pack you trusted. Changed files are blocked until an admin reviews them."},
+        {"How does approval work?",
+         "A prompt like \"Do you want to run ssh …?\" One \"don't ask again\" covers every later ssh command.",
+         "Your policy decides which actions need approval. An approval covers that one run unless you allow reuse, and every decision is recorded."},
+        {"What is recorded?", "Login logs. Recording the commands takes a separate tool.",
+         "Each run's request, approval, and result in a searchable audit log, plus a host journal you can verify."},
+        {"Do secrets reach the model?", "Yes, if the command prints them.",
+         "The runner masks secrets that match its rules before output leaves the host."},
+        {"How far can it reach?", "Every host that trusts the key, with that account's rights.",
+         "Only the runners its member can use. Removing the member cuts off every key that acts as them."},
+        {"What if a key leaks?", "Rotate it and remove it from every host that trusts it.",
+         "Revoke that one key or OAuth access in the console."}
       ] %>
 
-      <%!-- Desktop: the comparison table --%>
-      <div class="mt-4 hidden overflow-hidden rounded-xl border border-zinc-900 md:block">
+      <div class="mt-5 hidden overflow-hidden rounded-lg ring-1 ring-white/10 md:block">
         <table class="w-full text-sm">
-          <thead class="bg-zinc-950/80 text-xs uppercase tracking-wider text-zinc-400">
+          <thead class="bg-black/40 text-xs text-zinc-400">
             <tr>
-              <th class="px-4 py-3 text-left font-medium">Concern</th>
-              <th class="px-4 py-3 text-left font-medium">Raw SSH</th>
-              <th class="px-4 py-3 text-left font-semibold text-brand-300">emisar action pack</th>
+              <th class="w-[22%] px-4 py-3 text-left font-medium">Concern</th>
+              <th class="w-[39%] px-4 py-3 text-left font-semibold text-rose-200">Raw SSH</th>
+              <th class="w-[39%] px-4 py-3 text-left font-semibold text-brand-300">
+                emisar action pack
+              </th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-zinc-900 text-zinc-300">
-            <tr :for={{concern, raw, emisar} <- rows} class="hover:bg-zinc-900/30">
-              <td class="px-4 py-3 align-top font-medium text-zinc-100">{concern}</td>
-              <td class="px-4 py-3 align-top text-zinc-400">{raw}</td>
-              <td class="px-4 py-3 align-top text-zinc-300">{emisar}</td>
+          <tbody class="divide-y divide-zinc-900 bg-zinc-950/70">
+            <tr :for={{concern, raw, emisar} <- rows}>
+              <td class="px-4 py-4 align-top font-medium text-zinc-100">{concern}</td>
+              <td class="px-4 py-4 align-top leading-6 text-zinc-400">{raw}</td>
+              <td class="px-4 py-4 align-top leading-6 text-zinc-300">{emisar}</td>
             </tr>
           </tbody>
         </table>
       </div>
 
-      <%!-- Mobile: one card per concern, the emisar answer accented --%>
-      <div class="mt-4 space-y-3 md:hidden">
+      <div class="mt-5 overflow-hidden rounded-lg bg-zinc-950/70 ring-1 ring-white/10 md:hidden">
         <div
           :for={{concern, raw, emisar} <- rows}
-          class="rounded-xl border border-zinc-900 bg-zinc-950/60 p-4"
+          class="border-b border-zinc-800 p-4 last:border-b-0"
         >
           <p class="text-sm font-semibold text-zinc-100">{concern}</p>
-          <div class="mt-3 space-y-3 text-sm">
+          <div class="mt-4 space-y-4 text-sm leading-6">
             <div>
-              <p class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-                Raw SSH
-              </p>
-              <p class="mt-0.5 text-zinc-400">{raw}</p>
+              <p class="text-xs font-semibold text-rose-300">Raw SSH</p>
+              <p class="mt-1 text-zinc-400">{raw}</p>
             </div>
             <div class="border-l-2 border-brand-500/40 pl-3">
-              <p class="text-[11px] font-semibold uppercase tracking-wider text-brand-400">
-                emisar
-              </p>
-              <p class="mt-0.5 text-zinc-300">{emisar}</p>
+              <p class="text-xs font-semibold text-brand-400">emisar</p>
+              <p class="mt-1 text-zinc-300">{emisar}</p>
             </div>
           </div>
         </div>
       </div>
+    </div>
+  </section>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
-        When raw SSH is the right answer
-      </h2>
-      <p class="mt-3 text-base leading-7 text-zinc-400">
-        Single-operator side projects, throwaway environments, and dev clusters
-        you can wipe. Declaring an action pack only pays off
-        when there's <em>another human</em> who needs to audit, override, or
-        recover from the AI's decisions.
-      </p>
-
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">When it isn't</h2>
-      <p class="mt-3 text-base leading-7 text-zinc-400">
-        Production, anything regulated, and anything where your VP of
-        Engineering will ask after an incident, "What did the model do, exactly,
-        and on whose authority?" Raw SSH can't answer that without a forensic
-        budget. With emisar, the answer is a query.
-      </p>
-
-      <div class="mt-12 rounded-xl border border-brand-900/40 bg-brand-950/20 p-5 text-sm text-zinc-300">
-        Try it: install the runner from the <.link
-          navigate={~p"/docs/quickstart"}
-          class="text-brand-400 hover:text-brand-300"
-        >quickstart</.link>, declare one action you'd otherwise SSH for, and point your model at
-        it. The
-        <.link navigate={~p"/pricing"} class="text-brand-400 hover:text-brand-300">
-          free tier
-        </.link>
-        covers 3 runners.
+  <section class="py-16 sm:py-24">
+    <div class="mx-auto max-w-6xl px-6 lg:px-8">
+      <div class="max-w-3xl">
+        <p class="text-xs font-semibold text-brand-400">For teams</p>
+        <h2 class="mt-2 text-3xl font-semibold text-zinc-50 text-balance">
+          Without one place, AI access over SSH becomes a risky mess
+        </h2>
+        <p class="mt-4 text-base leading-7 text-zinc-400 text-pretty">
+          On a team, each engineer who wants an agent on production sets it up their own way,
+          usually with an SSH key in the agent's config and a "don't ask again" answer in
+          their own chat client.
+        </p>
       </div>
 
-      <div class="mt-8 flex flex-wrap gap-x-6 gap-y-3 border-t border-zinc-900 pt-8 text-sm">
-        <.cta_link navigate={~p"/docs/security-model"}>How the trust boundary works</.cta_link>
-        <.cta_link navigate={~p"/use-cases/csi-data-loss"}>See it on a real incident</.cta_link>
-        <.cta_link navigate={~p"/guides/give-ai-agents-safe-production-access"}>Guide: safe production access for AI agents</.cta_link>
-        <.cta_link navigate={~p"/guides/prompt-injection-for-ops-teams"}>Guide: prompt injection for ops teams</.cta_link>
+      <div class="mt-10 max-w-5xl divide-y divide-zinc-900 border-y border-zinc-900">
+        <div class="py-5 sm:grid sm:grid-cols-[14rem_1fr] sm:gap-8">
+          <h3 class="text-sm font-semibold text-rose-200">Without one place</h3>
+          <p class="mt-2 text-base leading-7 text-zinc-400 text-pretty sm:mt-0">
+            Each agent can do whatever its key allows on every host that trusts that key.
+            Unless you add separate tools for SSH certificates and session recording,
+            nobody has a list of which agents hold which keys. Each person sets their own rules, and the
+            only shared record is login logs. When a key leaks or someone leaves, you have to
+            hunt for it in every authorized_keys file.
+          </p>
+        </div>
+        <div class="py-5 sm:grid sm:grid-cols-[14rem_1fr] sm:gap-8">
+          <h3 class="text-sm font-semibold text-brand-300">With emisar</h3>
+          <p class="mt-2 text-base leading-7 text-zinc-400 text-pretty sm:mt-0">
+            Every agent on the team uses the same reviewed actions under your account's
+            policy, and every run is recorded with who asked and where it ran. An agent can
+            reach only what its member can, and removing a member cuts off every agent that
+            acts as them.
+          </p>
+        </div>
       </div>
+
+      <.cta_link
+        navigate={~p"/docs/teams-and-access"}
+        class="mt-6 inline-block min-h-10 py-2.5 text-sm"
+      >Read about teams and access</.cta_link>
+    </div>
+  </section>
+
+  <section class="py-16 sm:py-24">
+    <div class="mx-auto max-w-6xl px-6 lg:px-8">
+      <div class="grid lg:grid-cols-[0.72fr_1.28fr]">
+        <div class="pb-10 lg:pb-0 lg:pr-12">
+          <p class="text-xs font-semibold text-rose-300">For supervised work</p>
+          <h2 class="mt-2 text-xl font-semibold text-zinc-100 text-balance">
+            When raw SSH is the right answer
+          </h2>
+          <p class="mt-4 max-w-md text-base leading-7 text-zinc-400 text-pretty">
+            A supervised task with a narrowly scoped account can be simpler over SSH,
+            especially when your team already operates command restrictions and
+            session recording. Throwaway environments can also make a broad shell
+            an acceptable tradeoff. Review the account's actual authority first.
+          </p>
+        </div>
+
+        <div class="border-t border-zinc-800 pt-10 lg:border-l lg:border-t-0 lg:pl-12 lg:pt-0">
+          <p class="text-xs font-semibold text-brand-400">With emisar</p>
+          <h2 class="mt-2 text-3xl font-semibold text-zinc-50 text-balance">When it isn't</h2>
+          <p class="mt-4 max-w-2xl text-base leading-7 text-zinc-400 text-pretty">
+            Use Emisar to let your agent keep working with commands you have reviewed.
+            The runner checks the inputs on the host, and each run has a record you can
+            inspect. Your policy decides what runs automatically, what needs approval,
+            and what is denied. These controls work for a solo operator or a team.
+          </p>
+
+          <div class="mt-8 max-w-2xl rounded-xl border border-brand-900/40 bg-brand-950/20 p-5 text-sm text-zinc-300">
+            Try it: install the runner from the <.link
+              navigate={~p"/docs/quickstart"}
+              class="text-brand-400 hover:text-brand-300"
+            >quickstart</.link>, run the included uptime action and inspect its result.
+            Then choose one published pack for a task you actually need. The
+            <.link navigate={~p"/pricing"} class="text-brand-400 hover:text-brand-300">
+              free tier
+            </.link>
+            covers 3 runners.
+          </div>
+        </div>
+      </div>
+
+      <nav
+        aria-label="Continue comparing emisar"
+        class="mt-12 flex flex-col flex-wrap items-center justify-center gap-x-8 gap-y-1 border-t border-zinc-900 pt-6 text-center text-sm sm:flex-row"
+      >
+        <.cta_link navigate={~p"/docs/security-model"} class="min-h-10 py-2.5">How the trust boundary works</.cta_link>
+        <.cta_link tone={:muted} navigate={~p"/use-cases/csi-data-loss"} class="min-h-10 py-2.5">See it on a real incident</.cta_link>
+        <.cta_link
+          tone={:muted}
+          navigate={~p"/guides/give-ai-agents-safe-production-access"}
+          class="min-h-10 py-2.5"
+        >Guide: safe production access for AI agents</.cta_link>
+        <.cta_link
+          tone={:muted}
+          navigate={~p"/guides/prompt-injection-for-ops-teams"}
+          class="min-h-10 py-2.5"
+        >Guide: prompt injection for ops teams</.cta_link>
+      </nav>
     </div>
   </section>
 
   <.marketing_cta
     headline="Stop handing AI agents raw SSH."
-    subcopy="The same real commands, but declared, policy-gated, approval-checked, and journaled. You don't have to bet your weekend on recovery."
+    subcopy="Give your agents the commands they need. Set rules for each action and keep a record of what ran."
     secondary_label="Talk to sales"
     secondary_path={EmisarWeb.MailTo.sales()}
   />

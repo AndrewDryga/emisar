@@ -89,6 +89,34 @@
         </div>
       </div>
 
+      <section class="mt-10">
+        <h2 class="text-xl font-semibold text-zinc-50">Use this pack with your agent</h2>
+        <p class="mt-3 text-base leading-7 text-zinc-400">
+          New to emisar? Start with the
+          <.link navigate={~p"/docs/quickstart"} class="text-brand-400 hover:text-brand-300">quickstart</.link>
+          to connect one Linux host and verify an action. With a runner connected,
+          review this pack's actions and host requirements,
+          then follow <.link
+            navigate={~p"/docs/use-a-published-pack"}
+            class="text-brand-400 hover:text-brand-300"
+          >installing and verifying a published pack</.link>.
+          Your policy decides which actions run, wait for approval, or are denied.
+        </p>
+        <p class="mt-3 text-base leading-7 text-zinc-400">
+          Connect <.link
+            navigate={~p"/docs/connect-cli-agent"}
+            class="text-brand-400 hover:text-brand-300"
+          >a CLI agent</.link>,
+          <.link
+            navigate={~p"/docs/connect-claude-ai"}
+            class="text-brand-400 hover:text-brand-300"
+          >Claude.ai</.link>
+          or
+          <.link navigate={~p"/docs/connect-chatgpt"} class="text-brand-400 hover:text-brand-300">ChatGPT</.link>
+          to discover the installed actions through the same infrastructure MCP.
+        </p>
+      </section>
+
       <%!-- Install snippet — copy-paste onto a runner host --%>
       <section class="mt-10">
         <h2 class="text-xl font-semibold text-zinc-50">Install</h2>
@@ -292,7 +320,11 @@
              <details> (crawlable while collapsed, no JS), which is what gives
              this page real reference weight instead of a bare id list. --%>
         <ul class="mt-4 overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40">
-          <li :for={action <- @pack.actions} class="border-b border-zinc-900 last:border-b-0">
+          <li
+            :for={action <- @pack.actions}
+            id={"action-" <> action.id}
+            class="scroll-mt-8 border-b border-zinc-900 last:border-b-0"
+          >
             <details class="group">
               <summary class="flex cursor-pointer items-center gap-4 px-5 py-4 transition-colors hover:bg-zinc-900/30">
                 <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-zinc-900 text-zinc-400">
@@ -323,6 +355,39 @@
                 >
                   {action.description}
                 </p>
+                <div :if={action.args != []} class="overflow-x-auto">
+                  <table class="w-full text-left text-xs leading-5">
+                    <caption class="pb-2 text-left font-medium text-zinc-200">Arguments</caption>
+                    <thead class="text-zinc-400">
+                      <tr>
+                        <th scope="col" class="py-2 pr-4">Name</th><th
+                          scope="col"
+                          class="py-2 pr-4"
+                        >
+                          Type
+                        </th><th scope="col" class="py-2">Required</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-zinc-800">
+                      <tr :for={arg <- action.args}>
+                        <th scope="row" class="py-2 pr-4 font-mono font-normal text-zinc-300">
+                          {arg["name"]}
+                        </th>
+                        <td class="py-2 pr-4 text-zinc-400">{arg["type"]}</td>
+                        <td class="py-2 text-zinc-400">
+                          {if arg["required"], do: "Yes", else: "No"}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <p class="mt-2 text-xs leading-5 text-zinc-400">
+                    See the action source for defaults, validation, and limits.
+                  </p>
+                </div>
+                <a
+                  href={"#action-" <> action.id}
+                  class="mr-4 inline-flex py-2 text-xs text-brand-300 hover:text-brand-200"
+                >Link to this action</a>
                 <.external_link
                   href={EmisarWeb.PacksRegistry.action_source_url(@pack, action)}
                   class="inline-flex text-xs text-zinc-400 hover:text-zinc-300"

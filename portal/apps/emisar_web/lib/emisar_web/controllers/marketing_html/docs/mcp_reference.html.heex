@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="mcp-reference"
-      updated="September 22, 2026"
+      updated="October 21, 2026"
       toc={[
         {"calling-the-endpoint", "Calling the endpoint"},
         {"command-line", "Use tools from the shell"},
@@ -385,17 +385,20 @@
 
         <h2 id="discovery">Discovery</h2>
         <p>
-          Start broad only when the task needs it. <code>list_packs</code>
-          gives a bounded overview. <code>find_actions</code>
-          ranks candidates. <code>get_action</code>
-          returns the exact argument schema and the current compatible runner refs. Without
-          explicit runner refs, it can return a trusted action with no runners you can use. Use
-          <code>list_runners</code>
-          for fleet
-          diagnosis or target selection. Pack and runner pages default to 15 items. Continue a list
-          by passing the previous response's <code>next_cursor</code>
-          (find_actions returns a ready-to-send <code>next</code>
-          call), and a cursor works only for the identical query. A mismatched cursor is rejected.
+          Use <code>find_actions</code>
+          to find an action, then <code>get_action</code>
+          to read its arguments and see which runners can execute it. If you already know
+          the target, pass its runner reference. Without one, discovery may return a trusted
+          action that none of your available runners can execute. Use <code>list_runners</code>
+          to choose a host, or <code>list_packs</code>
+          to browse the catalog.
+        </p>
+        <p>
+          Pack and runner lists return 15 items per page by default. To get the next page,
+          pass the previous response's <code>next_cursor</code>. <code>find_actions</code>
+          also returns a ready-to-send <code>next</code>
+          call. Keep the query unchanged
+          between pages; a cursor from a different query is rejected.
         </p>
         <p>
           <code>include: "executable"</code>
@@ -487,12 +490,17 @@
           waits 45 seconds by default, up to 60. <code>wait_for_run</code>
           waits the same and returns the current state when its deadline expires. The 45-second
           default keeps each call inside the 60-second tool limit some clients, such as Slack,
-          enforce. One
-          credential lineage can hold eight waits per portal node. The stdio bridge keeps up
-          to eight requests in flight on a 90-second HTTP deadline, and other calls stay
-          responsive during a wait. Legacy clients can also use <code>ping</code>.
-          Cancellation stops observation only. It does not undo committed infrastructure
-          work.
+          enforce.
+        </p>
+        <p>
+          An API key and the keys created by rotating it share a limit of eight simultaneous
+          waits per portal server. This group of keys is called a credential lineage.
+          The stdio bridge handles up to eight requests at once, each with a 90-second
+          HTTP deadline, so waiting for one result does not block other calls. Clients can also use <code>ping</code>.
+        </p>
+        <p>
+          Cancelling an MCP wait stops waiting for the result. It does not undo infrastructure
+          changes that have already been committed.
         </p>
         <p>
           To cancel a run that has not reached a runner, call <code>cancel_run</code>

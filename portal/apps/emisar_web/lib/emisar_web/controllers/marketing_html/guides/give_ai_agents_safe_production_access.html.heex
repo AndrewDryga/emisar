@@ -1,8 +1,8 @@
 <.guide_page
-  title="How to give an AI agent safe access to production"
-  dek="Agents do their best work when nobody is watching over their shoulder. Coding agents get that freedom from a sandbox, but production has no sandbox. What teams try instead, where each one cracks, and the division of labor that holds up."
-  date="July 2026"
-  read_time="7 min read"
+  title={@guide_meta.title}
+  dek={@guide_meta.dek}
+  date={@guide_meta.date}
+  read_time={@guide_meta.read_time}
 >
   <p>
     AI agents are at their best when you stop babysitting them. Anyone who has used one for real
@@ -31,7 +31,7 @@
     You need a different kind of boundary.
   </p>
 
-  <h2>You start by copy-pasting</h2>
+  <h2 id="copy-paste">You start by copy-pasting</h2>
   <p>
     The first version of "AI for ops" at most teams involves no access at all: you paste a log or a
     screenshot into the chat, the model suggests a command, you copy it into a terminal, run it,
@@ -48,7 +48,7 @@
     the <.link navigate={~p"/compare/copy-paste-ai-ops"}>full side-by-side</.link> if you want it.
   </p>
 
-  <h2>Give it SSH (the reckless default)</h2>
+  <h2 id="raw-ssh">Give it SSH (the reckless default)</h2>
   <p>
     The obvious upgrade is a shell. And when agents run without a sandbox, sometimes you grant it
     without knowing: the agent finds your <code>gcloud</code>
@@ -69,11 +69,11 @@
     log line the agent just read is enough. When something does go wrong, your record of what
     happened is a shell history written by the process you're now investigating. We put <.link navigate={
       ~p"/compare/raw-ssh-for-ai"
-    }>raw SSH side by side with the gated alternative</.link>;
-    the short version is that "be careful" is an instruction, not a control.
+    }>raw SSH side by side with the gated alternative</.link>.
+    The short version: "be careful" is an instruction, not a control.
   </p>
 
-  <h2>An MCP server per tool (better, until you count them)</h2>
+  <h2 id="mcp-per-tool">An MCP server per tool (better, until you count them)</h2>
   <p>
     The better instinct is <a
       href="https://modelcontextprotocol.io/"
@@ -93,14 +93,14 @@
   </p>
   <p>
     And there's a coverage problem nobody mentions until 2 a.m. MCP servers exist for products with
-    developer-relations budgets; your infrastructure is mostly not that. Nobody has written an MCP
+    developer-relations budgets. Most of your infrastructure isn't one of those. Nobody has written an MCP
     server for your LACP bond, your systemd units, your RAID controller, or the vendor appliance in
     rack 4. Those unglamorous corners are exactly where incidents like to happen. So the agent
     works the shiny parts through MCP, you keep SSH around "just for the rest," and you're back
     where you started.
   </p>
 
-  <h2>One MCP for all of infrastructure</h2>
+  <h2 id="one-mcp">One MCP for all of infrastructure</h2>
   <p>
     Follow that progression to its end and you get the idea behind emisar: instead of a server per
     product, one MCP whose vocabulary is <strong>actions</strong>
@@ -123,14 +123,14 @@
     explains why the host, not the cloud, gets the last word.
   </p>
 
-  <h2>Read production, write code</h2>
+  <h2 id="read-production-write-code">Read production, write code</h2>
   <p>
     For teams running infrastructure as code (we use Terraform a lot), this is how the pattern
     works day to day. It's our favorite part of the whole design.
   </p>
   <p>
     Give the agent the read actions freely. Policy allows them without ceremony because a read
-    can't hurt you. Reading is most of the job: tail the logs, check the failing unit, compare
+    can't change anything. Reading is most of the job: tail the logs, check the failing unit, compare
     replication lag across replicas, watch the error rate move. The agent keeps its eyes on real
     production the whole time it investigates, so it doesn't work from stale dashboards or ask you
     to paste the output.
@@ -154,7 +154,7 @@
     blast radius stays within the bounds you define.
   </p>
 
-  <h2>Start small</h2>
+  <h2 id="start-small">Start small</h2>
   <p>
     First, isolate your agents and run them in a sandbox: a throwaway container with nothing
     valuable inside. That alone prevents most of the stories above: an agent can't delete your home

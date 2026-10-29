@@ -187,6 +187,7 @@ defmodule EmisarWeb.Router do
     get "/docs/connect-claude-ai", MarketingController, :connect_claude_ai
     get "/docs/connect-chatgpt", MarketingController, :connect_chatgpt
     get "/docs/connect-cli-agent", MarketingController, :connect_cli_agent
+    get "/docs/connect-a-cli-client", DocsRedirectController, :connect_cli_client
     get "/docs/connect-agent-sandboxes", MarketingController, :connect_agent_sandboxes
     get "/docs/connect-coop", DocsRedirectController, :connect_coop
     get "/docs/connect-docker-sandboxes", DocsRedirectController, :connect_docker_sandboxes
@@ -195,6 +196,7 @@ defmodule EmisarWeb.Router do
     get "/docs/connect-multiple-accounts", MarketingController, :connect_multiple_accounts
     get "/docs/mcp-reference", MarketingController, :mcp_reference
     get "/docs/quickstart", MarketingController, :quickstart
+    get "/docs/investigate-a-service", MarketingController, :investigate_a_service
     get "/docs/use-a-published-pack", MarketingController, :use_a_published_pack
     get "/docs/action-packs", MarketingController, :action_packs
     get "/docs/security-model", MarketingController, :security_model
@@ -235,6 +237,7 @@ defmodule EmisarWeb.Router do
     get "/docs/scim", MarketingController, :scim
     get "/docs/runner-fleet", MarketingController, :runner_fleet
     get "/docs/production", MarketingController, :production
+    get "/docs/deployment", DocsRedirectController, :deployment
     get "/docs/audit-and-siem", MarketingController, :audit_and_siem
     get "/docs/host-install", MarketingController, :host_install
     get "/docs/containers", MarketingController, :containers
@@ -247,6 +250,7 @@ defmodule EmisarWeb.Router do
     get "/docs/billing", MarketingController, :billing
     get "/docs/limits", MarketingController, :limits
     get "/docs/runner-upgrades", MarketingController, :runner_upgrades
+    get "/docs/upgrades", DocsRedirectController, :upgrades
     get "/docs/bridge-upgrades", MarketingController, :bridge_upgrades
     get "/docs/credentials", MarketingController, :credentials
     get "/docs/runner-credentials", MarketingController, :runner_credentials

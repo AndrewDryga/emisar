@@ -249,7 +249,7 @@ defmodule EmisarWeb.PacksTest do
       assert html =~ ~s(href="/docs/publishing-packs")
 
       # The hero count reflects the real registry size (rendered into the
-      # "<n> packs · <m> declared actions" line).
+      # "Browse <n> packs with <m> actions" lead).
       assert html =~ "#{PublishedRegistry.pack_count()} packs"
     end
   end

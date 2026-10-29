@@ -34,7 +34,15 @@ invented UI as a real screenshot or edit what a real screen says.
 self-contained component on the page, a sibling of the `emisar_demo` panel: the site's own
 tokens (Inter, zinc cards, brand icon tiles, the `priv/icons` set, status pills), named
 states that advance on their own with a visible stepper the reader can click, and a
-complete still frame under reduced motion. It never binds to or hijacks scroll. Make it
+complete still frame under reduced motion. It never binds to or hijacks scroll. Pace it for
+reading: each state holds until its caption can be read (about 180 words a minute after its
+motion ends). The caption is the most prominent text in the element, beside the drawing,
+never a quiet footer line, with previous, pause, and next controls right next to it; manual
+navigation stops auto-advance. A "before" state first shows what is wrong: each old path
+actually working and its concrete danger (a secret printed in output and pasted into a chat,
+a command an agent runs with nothing checking it), one state per path. Never foreshadow a
+later step: no "No packs yet" text and no dashed placeholder slots; an element appears in the
+step that introduces it, and its container grows as content lands. Make it
 engaging through motion craft (light travelling a path, smooth state changes, a real
 product fragment at the moment that matters), never through toy gimmicks: no animated
 cursors, cartridges, shutters, or numbered balloons, and no wireframe look of thin boxes

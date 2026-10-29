@@ -1,0 +1,175 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav signed_in?={@signed_in?} current={:docs} />
+  <section class="py-12 sm:py-16">
+    <.docs_layout
+      current="investigate-a-service"
+      updated="October 28, 2026"
+      toc={[
+        {"prepare", "1. Start a test container"},
+        {"policy", "2. Check the approval rule"},
+        {"investigate", "3. Ask the agent to investigate"},
+        {"request", "4. Request a restart"},
+        {"approve", "5. Review the approval"},
+        {"verify", "6. Verify and clean up"}
+      ]}
+    >
+      <.docs_header current="investigate-a-service">
+        <:dek>
+          Run a throwaway nginx container on a dev host, then let your agent inspect it and
+          request a restart. You approve the restart in emisar and check the result.
+        </:dek>
+      </.docs_header>
+      <.docs_prerequisites>
+        <:item>
+          A Linux dev host or VM with Docker and a connected runner. Use a machine you can change
+          freely, not production.
+        </:item>
+        <:item>
+          The
+          <.link navigate={~p"/packs/docker"} class="text-brand-400 hover:text-brand-300">docker</.link>
+          pack. The installer offers it as a starter pack when it finds Docker; otherwise run <code>sudo emisar pack install docker</code>.
+          The runner restart in step 1 loads it.
+        </:item>
+        <:item>
+          An MCP client that has completed the <.link
+            navigate={~p"/docs/quickstart"}
+            class="text-brand-400 hover:text-brand-300"
+          >quickstart</.link>.
+        </:item>
+        <:item>
+          Access to approvals in the console. A policy change needs an owner or admin.
+        </:item>
+      </.docs_prerequisites>
+
+      <.docs_h2 id="prepare">1. Start a test container</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Start nginx in a container and check that it answers:
+      </p>
+      <.docs_code phx-no-format label="shell">docker run -d --name emisar-demo -p 8080:80 nginx:alpine
+curl -sI http://localhost:8080 | head -1</.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        You should see <code>HTTP/1.1 200 OK</code>. The runner also needs access to the Docker
+        daemon. Add its user to the <code>docker</code> group and restart the runner, as the
+        docker pack's setup describes:
+      </p>
+      <.docs_code phx-no-format label="shell">sudo usermod -aG docker emisar
+sudo systemctl restart emisar</.docs_code>
+      <.docs_callout kind={:warn} title="Docker access is root access">
+        Anything in the <code>docker</code> group can control the host through Docker. Do this on
+        a dev machine, and remove the access when you finish (step 6).
+      </.docs_callout>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Open the host in
+        <a href={~p"/app/runners"} class="text-brand-400 hover:text-brand-300">Runners</a>
+        and confirm that <code>docker.ps</code>, <code>docker.logs</code>, and
+        <code>docker.restart</code>
+        are available. The docker pack has 28 actions: 16 low risk, 3 medium, 8 high, and 1
+        critical.
+      </p>
+
+      <.docs_h2 id="policy">2. Check the approval rule</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        In <a href={~p"/app/policies"} class="text-brand-400 hover:text-brand-300">Policies</a>,
+        inspect the policy that applies to this runner. With the shipped defaults,
+        <code>docker.ps</code>
+        (low risk) and <code>docker.logs</code>
+        (medium) run on their own, and <code>docker.restart</code>
+        (high) waits for approval.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Check that no action override or standing grant (a reusable approval) lets the restart
+        run on its own. See <.link
+          navigate={~p"/docs/policies-and-approvals"}
+          class="text-brand-400 hover:text-brand-300"
+        >policies and approvals</.link>.
+      </p>
+
+      <.docs_h2 id="investigate">3. Ask the agent to investigate</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Use the runner name shown in the console. For example:
+      </p>
+      <.docs_code phx-no-format label="Prompt · replace dev-box with your runner name">Use emisar to check the emisar-demo container on runner dev-box.
+List the containers, then read its recent logs. Summarize what you find.
+Do not restart it yet.</.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The agent finds <code>docker.ps</code>
+        and <code>docker.logs</code>
+        and runs them without asking you. This is what came back in our test; the nginx log
+        includes the <code>curl</code>
+        request from step 1:
+      </p>
+      <.docs_code phx-no-format label="docker.ps and docker.logs results">docker.ps · exit 0
+CONTAINER ID   IMAGE          COMMAND                  CREATED          STATUS          PORTS                                     NAMES
+12d88303806d   nginx:alpine   "/docker-entrypoint.…"   58 seconds ago   Up 58 seconds   0.0.0.0:8080->80/tcp, [::]:8080->80/tcp   emisar-demo
+
+docker.logs · exit 0
+/docker-entrypoint.sh: Configuration complete; ready for start up
+192.168.215.1 - - [29/Oct/2026:04:00:28 +0000] "HEAD / HTTP/1.1" 200 0 "-" "curl/8.7.1" "-"</.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        In <a
+          href={~p"/app/runs"}
+          class="text-brand-400 hover:text-brand-300"
+        >Runs</a>, check the
+        target, actions, arguments, and output of each call. If a call is denied or fails, fix
+        the problem it shows before you continue.
+      </p>
+
+      <.docs_h2 id="request">4. Request a restart</.docs_h2>
+      <.docs_code phx-no-format label="Prompt · use the same runner">Restart the emisar-demo container on dev-box through emisar.
+Reason: try the approval flow on a test container.
+Wait for the result. Do not send another restart while this one is pending.</.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        emisar answers the agent with <code>pending_approval</code>
+        and a link to the approval. Open <a
+          href={~p"/app/approvals"}
+          class="text-brand-400 hover:text-brand-300"
+        >Approvals</a>.
+        The restart waits there, and the container is still running. If it ran right away,
+        check the policy and grants before you try again.
+      </p>
+
+      <.docs_h2 id="approve">5. Review the approval</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The approval shows the risk (high), your runner, and the exact command: <code>docker restart -t 10 emisar-demo</code>. Below it are the agent's reason and why
+        the request stopped: "The account policy requires approval for high-risk actions by
+        default." Leave "Allow the agent to reuse this approval" off, then approve this one
+        run. If anything looks wrong, deny it.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        By default you can approve your own request. If your team requires another approver or
+        several votes, follow that rule. After you approve, let the agent wait for the result of
+        the original request instead of sending a new one.
+      </p>
+
+      <.docs_h2 id="verify">6. Verify and clean up</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Open the run and wait for its result. Exit code <code>0</code>
+        means <code>docker restart</code>
+        finished, and its output is just the container name, <code>emisar-demo</code>. Ask the
+        agent to list the containers again. In our test, the STATUS column then read
+        <code>Up 16 seconds</code>
+        while CREATED still said about a minute ago. Then check nginx yourself:
+      </p>
+      <.docs_code phx-no-format label="shell">curl -sI http://localhost:8080 | head -1</.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        You should see <code>HTTP/1.1 200 OK</code> again.
+      </p>
+      <.docs_callout kind={:warn} title="If the result is missing">
+        Inspect the host before repeating a restart. A connection failure can hide a result
+        even when the action ran. Use
+        <.link navigate={~p"/docs/runs"} class="text-brand-400 hover:text-brand-300">run history</.link>
+        and the container's state to decide what to do next.
+      </.docs_callout>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Open <a href={~p"/app/audit"} class="text-brand-400 hover:text-brand-300">Audit</a>.
+        Newest first, it lists the second <code>docker.ps</code>, then "Run succeeded" for <code>docker.restart</code>, "Approval granted", "Approval decision recorded", and "Run
+        awaiting approval", followed by the earlier reads. When you are done, remove the
+        container and the runner's Docker access:
+      </p>
+      <.docs_code phx-no-format label="shell">docker rm -f emisar-demo
+sudo gpasswd -d emisar docker
+sudo systemctl restart emisar</.docs_code>
+    </.docs_layout>
+  </section>
+  <.marketing_footer />
+</div>

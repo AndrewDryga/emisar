@@ -29,8 +29,15 @@ defmodule EmisarWeb.DocsNav do
               path: "/docs/quickstart",
               icon: "docs.quickstart",
               keywords: "getting started setup first action install",
-              desc:
-                "Sign up, install a runner, and run your first audited action in under five minutes."
+              desc: "Connect a host, run a small check, then repeat it through your AI agent."
+            },
+            %{
+              slug: "investigate-a-service",
+              title: "Investigate a service",
+              path: "/docs/investigate-a-service",
+              icon: "docs.quickstart",
+              keywords: "walkthrough docker container nginx restart approval investigation dev",
+              desc: "Run a throwaway container, approve one restart, and check the result."
             }
           ]
         }

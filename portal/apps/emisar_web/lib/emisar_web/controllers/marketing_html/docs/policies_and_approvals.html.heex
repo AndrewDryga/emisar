@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="policies-and-approvals"
-      updated="October 4, 2026"
+      updated="October 21, 2026"
       toc={[
         {"how-decisions", "How a decision is made"},
         {"first-policy", "A sensible first policy"},
@@ -17,9 +17,8 @@
     >
       <.docs_header current="policies-and-approvals">
         <:dek>
-          Every run dispatch passes through your account's policy before it's sent to a
-          runner. The policy makes one of three decisions: run it, pause it for approval, or
-          deny it.
+          Your policy decides whether a requested action runs, waits for approval, or stops.
+          Set defaults by risk, then add rules for particular actions and hosts.
         </:dek>
       </.docs_header>
 
@@ -87,9 +86,6 @@
         the exposure is acceptable, allow the action:
       </p>
       <.docs_code phx-no-format label="Policy → overrides">overrides:
-  - name: <span class="text-brand-300">allow-journal-reads</span>
-    action: <span class="text-brand-300">linux.journalctl*</span>
-    decision: <span class="text-brand-300">allow</span>
   - name: <span class="text-brand-300">allow-nginx-config-dump</span>
     action: <span class="text-brand-300">nginx.config_dump</span>
     decision: <span class="text-brand-300">allow</span></.docs_code>

@@ -64,6 +64,25 @@ defmodule EmisarWeb.DocsComponents do
              the leading is. Code, tables, and figures all fit inside 42rem, so
              one cap on the column keeps every block on the same left edge. --%>
         <div class="min-w-0 max-w-2xl [&_p]:leading-7 [&_li]:leading-7">
+          <details :if={@toc != []} class="group mb-8 border-y border-zinc-800 xl:hidden">
+            <summary class="flex cursor-pointer list-none items-center justify-between gap-4 py-3 text-sm font-medium text-zinc-200 [&::-webkit-details-marker]:hidden">
+              On this page
+              <.icon
+                name="action.disclose"
+                class="h-4 w-4 transition-transform group-open:rotate-180"
+              />
+            </summary>
+            <nav aria-label="On this page" class="pb-4">
+              <ul class="space-y-1">
+                <li :for={{id, label} <- @toc}>
+                  <a
+                    href={"#" <> id}
+                    class="block py-2 text-sm text-zinc-400 transition-colors hover:text-brand-300"
+                  >{label}</a>
+                </li>
+              </ul>
+            </nav>
+          </details>
           {render_slot(@inner_block)}
           <.docs_prev_next current={@current} />
           <.docs_maintenance updated={@updated} evidence={@evidence} />
@@ -144,7 +163,7 @@ defmodule EmisarWeb.DocsComponents do
         open={group.label == DocsNav.group_label(@current)}
         class="group/nav"
       >
-        <summary class="flex cursor-pointer list-none items-center justify-between gap-2 rounded-sm px-2.5 py-1 font-mono text-xs font-semibold uppercase tracking-widest text-zinc-500 transition-colors hover:text-zinc-300 [&::-webkit-details-marker]:hidden">
+        <summary class="flex cursor-pointer list-none items-center justify-between gap-2 rounded-sm px-2.5 py-1 font-mono text-xs font-semibold uppercase tracking-wider text-zinc-400 transition-colors hover:text-zinc-300 [&::-webkit-details-marker]:hidden">
           {group.label}
           <.icon
             name="action.disclose"
@@ -174,7 +193,7 @@ defmodule EmisarWeb.DocsComponents do
       <p
         :if={section.label}
         class={[
-          "px-2.5 font-mono text-[11px] font-medium uppercase tracking-wide text-zinc-500",
+          "px-2.5 font-mono text-[11px] font-semibold uppercase tracking-wider text-zinc-400",
           if(section_index == 0, do: "mt-3", else: "mt-5")
         ]}
       >

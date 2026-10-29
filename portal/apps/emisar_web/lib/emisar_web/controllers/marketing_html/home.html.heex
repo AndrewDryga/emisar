@@ -17,11 +17,10 @@
           The best way to give your AI agents access to production.
         </.marketing_heading>
         <p class="rise-2 mt-6 max-w-2xl text-lg leading-relaxed text-zinc-300">
-          A Zero-Trust gateway connecting
-          Claude, Cursor, ChatGPT, and any AI agent to your infrastructure. One server handles
-          production access, debugging, alerts, and internal operations, with new capabilities
-          added as packs. No SSH keys, VPNs, or standing shell access — and every call is
-          recorded.
+          A Zero-Trust gateway connecting Claude, Cursor, ChatGPT, and other MCP agents
+          to your infrastructure. Give your agents the tools to investigate incidents,
+          manage deployments, and handle daily operations. You control what runs,
+          what needs approval, and what stays off-limits in one central place for your Team.
         </p>
         <div class="rise-3 mt-8 flex flex-wrap items-center gap-4">
           <.marketing_button href={~p"/sign_up"} icon="action.next">
@@ -53,7 +52,7 @@
           <span class="flex items-center gap-2">
             <.icon name="product.agent" class="h-3.5 w-3.5 text-brand-400" /> claude · emisar MCP
           </span>
-          <span class="hidden sm:inline">scoped to prod-nomad-cluster</span>
+          <span class="hidden sm:inline">example · scoped to prod-nomad-cluster</span>
         </div>
 
         <div class="p-3 sm:p-5">
@@ -101,9 +100,8 @@
              ships the root-cause fix as reviewable code, not a throwaway restart. --%>
 
         <div class="border-t border-zinc-800 bg-zinc-950/80 px-4 py-3 text-center font-mono text-[11px] text-zinc-400">
-          then <span class="text-zinc-300">claude</span>
-          opens a PR with the <span class="text-brand-300">durable fix</span>
-          — it fixes an application bug it found in the logs and updates the Nomad job spec.
+          Example workflow: investigate through emisar, then use your agent's coding tools
+          to prepare a fix for review.
         </div>
       </div>
     </div>
@@ -118,7 +116,9 @@
     <div class="mx-auto grid max-w-7xl grid-cols-2 px-6 sm:grid-cols-4 sm:divide-x sm:divide-zinc-900 lg:px-8">
       <div class="border-b border-zinc-900 px-4 py-6 text-center sm:border-b-0 sm:py-7">
         <div class="font-mono text-2xl font-bold tabular-nums text-zinc-50">{@action_count}</div>
-        <div class="mt-1 text-xs text-zinc-400">audited actions &middot; {@pack_count} packs</div>
+        <div class="mt-1 text-xs text-zinc-400">
+          available actions &middot; {@pack_count} packs
+        </div>
       </div>
       <.link
         navigate={~p"/zero-trust"}
@@ -131,7 +131,7 @@
       </.link>
       <div class="px-4 py-6 text-center sm:py-7">
         <div class="text-base font-semibold text-zinc-100">Audit logged</div>
-        <div class="mt-1 text-xs text-zinc-400">with a tamper-evident copy on the host</div>
+        <div class="mt-1 text-xs text-zinc-400">plus a hash-chained journal on each host</div>
       </div>
       <a
         href="https://github.com/andrewdryga/emisar/blob/main/LICENSE.md"
@@ -170,20 +170,20 @@
             running. Emisar gives your agent eyes and secure hands on production.
           </p>
           <p class="mt-8 text-sm">
-            <.cta_link navigate={~p"/packs"}>Browse the full catalog it can reach</.cta_link>
+            <.cta_link navigate={~p"/packs"}>Find actions for your stack</.cta_link>
           </p>
         </div>
 
         <div class="space-y-3">
           <%= for {icon, title, desc} <- [
             {"action.search", "Starts from real state",
-             "Before it writes a line, the agent reads live logs, metrics, configs, and process state. Its plan is based on what's actually running — not a stale guess from training data."},
+             "Give your agent live logs, metrics, and service state. It can follow the evidence without waiting for you to collect every result."},
             {"story.debug", "Debugs what it shipped",
-             "Deployed something that misbehaves? The agent inspects the running result, finds its own mistake, and proposes the fix. You don't have to gather the context for it."},
+             "Deployed something that misbehaves? Your agent can inspect the running result, find its mistake, and propose a fix. You don't have to gather the context for it."},
             {"story.alerting", "Works the incident",
-             "When the page fires, it triages across the fleet, lines up logs against metrics, and narrows the cause. Then it hands you a fix it can run the moment you approve."},
+             "When the page fires, your agent can investigate across the fleet, line up logs with metrics, and narrow down the cause. You get the evidence and a proposed fix."},
             {"product.run", "The change waits for you",
-             "When the fix actually changes something, that's the one moment you step in — one approval, scoped and logged. Everything safe runs without you."}
+             "Let routine work run on its own. Put restarts, deployments, and other changes behind approval. Your agent does the legwork; you decide when the change runs."}
           ] do %>
             <div class="flex gap-4 rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
               <div class="flex h-10 w-10 flex-none items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
@@ -206,13 +206,14 @@
   <section class="py-24 sm:py-32">
     <div data-reveal class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
-        <p class="text-base font-semibold text-brand-400">Three pillars</p>
+        <p class="text-base font-semibold text-brand-400">How access works</p>
         <.marketing_heading tag="h2" scale={:section} class="mt-2">
-          A catalog, a gate, and a ledger.
+          Connect your infrastructure through one MCP server.
         </.marketing_heading>
         <p class="mt-6 text-lg text-zinc-400 leading-relaxed">
-          Every request follows the same path. Packs group <b>vetted actions</b> into a versioned
-          catalog. Your policy decides which actions run, wait for approval, or are denied.
+          Add capabilities through packs, without buying another access tool or setting up
+          agent access in another system. Your agents get one organized catalog, governed
+          by the same policies, through the MCP connection they already use.
         </p>
       </div>
 
@@ -224,10 +225,9 @@
           </div>
           <h3 class="mt-6 text-xl font-semibold text-white">Versioned action catalog</h3>
           <p class="mt-3 text-sm text-zinc-400 leading-relaxed">
-            Packs live in a catalog, and each one is fingerprinted by its contents. The AI sees only the
-            actions you declared — it can't ask for anything else. An exact hash in the published
-            catalog is trusted automatically. Anything else — a pack edited on a host, one you wrote yourself —
-            waits for an admin to review it.
+            Start with published packs for the software you run. Each action defines its
+            command, arguments, and limits. Add your own procedures as custom
+            actions; an admin must trust a custom pack before it can run.
           </p>
           <div class="mt-6 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
             <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-400">
@@ -258,9 +258,9 @@
           </div>
           <h3 class="mt-6 text-xl font-semibold text-white">Policy &amp; approval</h3>
           <p class="mt-3 text-sm text-zinc-400 leading-relaxed">
-            Set allow, ask-for-approval, or deny for each risk tier, then override it for specific actions or for a runner group.
-            Approvals can require one person or several — or hand out a limited, revocable pass so
-            routine calls don't ask every time.
+            Choose which actions run automatically, need approval, or are denied. Set rules
+            by risk, action, host, or group. Require one or several approvers. For repeated
+            work, issue a standing grant. Limit its scope and revoke it at any time.
           </p>
           <div class="mt-6 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
             <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-400">
@@ -305,8 +305,10 @@
           </div>
           <h3 class="mt-6 text-xl font-semibold text-white">Audit + runner journal</h3>
           <p class="mt-3 text-sm text-zinc-400 leading-relaxed">
-            Portal records actor, decision, targets, exit code, and the exact command executed. Redacted output is kept in run history, and the runner host journal keeps a
-            hash-chained copy for forensic analysis.
+            Review the request, policy decision, and outcome in one place. Open the linked
+            run for command details and redacted output. The runner keeps a separate
+            hash-chained journal on the host. Team and Enterprise include audit-event
+            export to your SIEM.
           </p>
           <div class="mt-6 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
             <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-400">
@@ -367,9 +369,9 @@
           A real incident, start to finish.
         </.marketing_heading>
         <p class="mt-6 text-lg leading-relaxed text-zinc-400 text-pretty">
-          A CSI driver reformatted a live Pure FlashArray LUN and wiped 33 hours of metrics. Watch the agent
-          investigate through declared actions, stop the writes behind one approval, and hand
-          back the durable fix as a Terraform PR — over MCP, no SSH, every step on the record.
+          A CSI driver erased 33 hours of metrics by reformatting a live storage volume.
+          Follow the agent's investigation, the approved action that stopped further writes,
+          and the Terraform fix it prepared for review.
         </p>
       </div>
 
@@ -383,70 +385,89 @@
       <div class="mx-auto max-w-3xl text-center">
         <p class="text-base font-semibold text-brand-400">Why not just&hellip;</p>
         <.marketing_heading tag="h2" scale={:section} class="mt-2">
-          The alternatives, honestly.
+          Production access. Without the blank check.
         </.marketing_heading>
         <p class="mt-6 text-lg text-zinc-400 leading-relaxed">
-          A raw SSH key gives an AI full access to production — until it deletes your database.
-          A weekend-built MCP server is hard to maintain, tied to one cluster, hides errors, and ends up abandoned.
-          Copy-pasting works for one-off tasks, but it does not scale or use the full power of LLMs.
+          An agent with unrestricted host access and your SSH keys can investigate, deploy,
+          or delete. emisar gives your agent production tools with rules enforced before
+          each action. A custom MCP server puts those controls on your own build list.
         </p>
       </div>
 
-      <div class="mx-auto mt-16 overflow-hidden rounded-2xl border border-zinc-900 bg-zinc-950/60">
+      <% comparison_rows = [
+        {"Read logs and query metrics", true},
+        {"Deploy and restart services", true},
+        {"Run your own procedures", true},
+        {"Limit actions by policy", false},
+        {"Validate action arguments", false},
+        {"Require approval for changes", false},
+        {"Issue and revoke standing grants", false},
+        {"Record actions and policy decisions", false}
+      ] %>
+
+      <div class="mx-auto mt-16 hidden overflow-hidden rounded-2xl border border-zinc-900 bg-zinc-950/60 md:block">
         <div class="overflow-x-auto">
           <table class="w-full text-left text-sm">
+            <caption class="sr-only">
+              emisar compared with unrestricted agent access through SSH and a custom MCP server
+            </caption>
             <thead>
               <tr class="border-b border-zinc-900 text-xs uppercase tracking-wider text-zinc-400">
-                <th class="px-6 py-4 font-medium"></th>
-                <th class="px-6 py-4 font-semibold text-brand-300">emisar</th>
-                <th class="px-6 py-4 font-medium">Raw SSH key</th>
-                <th class="px-6 py-4 font-medium">Custom MCP server</th>
+                <th scope="col" class="px-6 py-4 font-medium">Capability</th>
+                <th scope="col" class="px-6 py-4 font-semibold text-brand-300">emisar</th>
+                <th scope="col" class="px-6 py-4 font-medium">Unrestricted SSH access</th>
+                <th scope="col" class="px-6 py-4 font-medium">Custom MCP server</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-zinc-900 text-zinc-300">
-              <%= for {row, em, ssh, mcp} <- [
-                {"Typed action contract", "yes", "no", "maybe"},
-                {"Pack drift blocks dispatch", "yes", "no", "no"},
-                {"Risk-tier policy + overrides", "yes", "no", "maybe"},
-                {"Approvals + standing grants", "yes", "no", "no"},
-                {"Encrypted, authenticated connection", "yes", "yes", "maybe"},
-                {"Per-user runner scopes", "yes", "no", "maybe"},
-                {"No inbound port on hosts", "yes", "no", "maybe"},
-                {"Audit trail; SIEM export on Team+", "yes", "no", "maybe"},
-                {"Setup time", "5 min", "instant + nightmares", "1-2 weeks"}
-              ] do %>
+              <%= for {row, ssh} <- comparison_rows do %>
                 <tr class="hover:bg-zinc-900/30">
-                  <td class="px-6 py-4 font-medium text-zinc-100">{row}</td>
+                  <th scope="row" class="px-6 py-4 font-medium text-zinc-100">{row}</th>
                   <td class="px-6 py-4">
-                    <%= if em == "yes" do %>
+                    <.state_chip state={:pass} label="Yes" />
+                  </td>
+                  <td class="px-6 py-4">
+                    <%= if ssh do %>
                       <.state_chip state={:pass} label="Yes" />
                     <% else %>
-                      <span class="font-medium text-brand-300">{em}</span>
+                      <span class="inline-flex items-center gap-1.5 text-zinc-400">
+                        <.icon name="state.not_included" class="h-4 w-4" />No
+                      </span>
                     <% end %>
                   </td>
-                  <%= for v <- [ssh, mcp] do %>
-                    <td class="px-6 py-4">
-                      <%= cond do %>
-                        <% v == "yes" -> %>
-                          <.state_chip state={:pass} label="Yes" />
-                        <% v == "maybe" -> %>
-                          <.state_chip state={:pending} label="Partial" />
-                        <% v == "no" -> %>
-                          <%!-- Absence, not a denial: a competitor lacking a
-                               feature stays muted so emisar's column wins by
-                               contrast — a table full of rose reads as fear. --%>
-                          <span class="inline-flex items-center gap-1.5 text-zinc-400">
-                            <.icon name="state.not_included" class="h-4 w-4" />No
-                          </span>
-                        <% true -> %>
-                          <span class="text-zinc-400">{v}</span>
-                      <% end %>
-                    </td>
-                  <% end %>
+                  <td class="px-6 py-4 text-zinc-400">Build it</td>
                 </tr>
               <% end %>
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <div class="mt-10 divide-y divide-zinc-800 border-y border-zinc-800 md:hidden">
+        <div :for={{row, ssh} <- comparison_rows} class="py-5">
+          <h3 class="text-sm font-semibold text-zinc-100">{row}</h3>
+          <dl class="mt-3 grid grid-cols-3 gap-3 text-sm">
+            <div>
+              <dt class="mb-2 text-xs font-medium text-brand-400">emisar</dt>
+              <dd><.state_chip state={:pass} label="Yes" /></dd>
+            </div>
+            <div>
+              <dt class="mb-2 text-xs text-zinc-400">Unrestricted SSH</dt>
+              <dd>
+                <%= if ssh do %>
+                  <.state_chip state={:pass} label="Yes" />
+                <% else %>
+                  <span class="inline-flex items-center gap-1.5 text-zinc-400">
+                    <.icon name="state.not_included" class="h-4 w-4" />No
+                  </span>
+                <% end %>
+              </dd>
+            </div>
+            <div>
+              <dt class="mb-2 text-xs text-zinc-400">Custom MCP</dt>
+              <dd class="text-zinc-400">Build it</dd>
+            </div>
+          </dl>
         </div>
       </div>
 
@@ -531,7 +552,8 @@
           </a>
           guide says an agent with access to real systems needs four things: least agency,
           deny-by-default tools, human approval for high-risk actions, and durable audit evidence.
-          emisar maps those controls to a portal audit and a separate hash-chained runner journal.
+          Emisar applies these controls to each action and records the work in the cloud audit
+          and a separate journal on the host.
           We ship core action controls on the Free plan.
         </p>
       </div>
@@ -543,6 +565,36 @@
           built to the control set it describes.
         </p>
       </div>
+    </div>
+  </section>
+
+  <section id="get-started" class="border-t border-zinc-900 py-20 sm:py-24">
+    <div class="mx-auto grid max-w-7xl gap-10 px-6 lg:grid-cols-[0.8fr_1.2fr] lg:gap-20 lg:px-8">
+      <div>
+        <.marketing_heading tag="h2" scale={:section}>
+          Deploy in about five minutes.
+        </.marketing_heading>
+        <p class="mt-6 text-lg leading-8 text-zinc-400">
+          Keep your existing infrastructure and AI client. The runner connects out,
+          so there's no inbound port to open or SSH key to hand over.
+        </p>
+        <.cta_link navigate={~p"/docs/quickstart"} class="mt-6 inline-block text-sm">Follow the quickstart</.cta_link>
+      </div>
+      <ol class="divide-y divide-zinc-800 border-y border-zinc-800">
+        <%= for {number, title, detail} <- [
+          {"01", "Install the runner", "Create a free account and copy the install command to your Linux host. The runner connects to emisar automatically."},
+          {"02", "Choose your packs", "Use the packs suggested for your host. Set which actions run on their own and which need approval."},
+          {"03", "Connect your agent", "Add emisar to your MCP client. Ask your agent to investigate a service, check a deployment, or handle a routine task."}
+        ] do %>
+          <li class="grid grid-cols-[2rem_minmax(0,1fr)] gap-4 py-6">
+            <span class="pt-0.5 font-mono text-sm text-brand-400">{number}</span>
+            <div>
+              <h3 class="text-lg font-semibold text-zinc-100">{title}</h3>
+              <p class="mt-2 text-base leading-7 text-zinc-400">{detail}</p>
+            </div>
+          </li>
+        <% end %>
+      </ol>
     </div>
   </section>
 
@@ -562,7 +614,7 @@
       <div class="mx-auto mt-16 grid max-w-5xl grid-cols-1 gap-6 lg:grid-cols-3">
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
           <h3 class="text-lg font-semibold text-white">Free</h3>
-          <p class="mt-2 text-sm text-zinc-400">For homelab and tinkering.</p>
+          <p class="mt-2 text-sm text-zinc-400">For a first host or a small setup.</p>
           <div class="mt-6 flex items-baseline gap-1">
             <span class="text-4xl font-bold text-white text-balance">$0</span>
             <span class="text-sm text-zinc-400">/ forever</span>
@@ -585,10 +637,10 @@
         </div>
         <div class="relative rounded-2xl border-2 border-brand-500/60 bg-zinc-950/80 p-8 shadow-2xl shadow-brand-950/40">
           <span class="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-brand-500 px-3 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-zinc-950">
-            Most popular
+            For teams
           </span>
           <h3 class="text-lg font-semibold text-white">Team</h3>
-          <p class="mt-2 text-sm text-zinc-400">For teams running real production.</p>
+          <p class="mt-2 text-sm text-zinc-400">For teams operating production.</p>
           <div class="mt-6 flex items-baseline gap-1">
             <span class="text-4xl font-bold text-white text-balance">$20</span>
             <span class="text-sm text-zinc-400">/ runner / month</span>
@@ -617,7 +669,9 @@
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
           <h3 class="text-lg font-semibold text-white">Enterprise</h3>
-          <p class="mt-2 text-sm text-zinc-400">For regulated environments &amp; fleets.</p>
+          <p class="mt-2 text-sm text-zinc-400">
+            For larger fleets and procurement requirements.
+          </p>
           <div class="mt-6 flex items-baseline gap-1">
             <span class="text-4xl font-bold text-white text-balance">Custom</span>
           </div>
@@ -658,7 +712,7 @@
       <div class="text-center">
         <p class="text-base font-semibold text-brand-400">FAQ</p>
         <.marketing_heading tag="h2" scale={:section} class="mt-2">
-          The skeptical questions, answered.
+          Before you get started.
         </.marketing_heading>
       </div>
 
@@ -690,7 +744,8 @@
             Give your AI production access. Without losing sleep.
           </.marketing_heading>
           <p class="mx-auto mt-6 max-w-xl text-lg text-zinc-400 leading-relaxed">
-            Three runners and a seven-day audit are included in the free plan. Sign up and let your AI agents take care of your infrastructure.
+            Let your agents investigate, deploy, and keep production running.
+            You set the rules. emisar enforces them on every action.
           </p>
           <form
             action={~p"/sign_up"}
@@ -719,7 +774,7 @@
             >Book a 30-minute demo</a>.
           </p>
           <p class="mt-4 text-xs text-zinc-400">
-            No credit card required. Cancel anytime.
+            Free for 3 runners. No credit card required.
           </p>
         </div>
       </div>

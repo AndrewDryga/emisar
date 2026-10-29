@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="integrations-entra"
-      updated="October 4, 2026"
+      updated="October 21, 2026"
       evidence="Live-tested against a Microsoft Entra tenant on August 25, 2026."
       toc={[
         {"sso", "Single sign-on"},
@@ -278,12 +278,18 @@
             Under <strong class="text-zinc-200">Users and groups</strong>, assign each person who
             needs an emisar account, or a group that contains them directly. Entra provisions
             only the direct members of an assigned group, never the members of a group nested
-            inside it. Then, on <strong class="text-zinc-200">Provisioning → Settings</strong>, set
+            inside it.
+          </p>
+          <p class="mt-3">
+            On <strong class="text-zinc-200">Provisioning → Settings</strong>, set
             <strong class="text-zinc-200">Scope</strong>
             to <strong class="text-zinc-200">Sync only assigned users and groups</strong>
             and turn <strong class="text-zinc-200">Provisioning Status</strong>
             on. Scope is separate from assignment and defaults to everyone. Change it, or Entra
-            sends the entire directory no matter what you assigned. Entra syncs roughly every 40
+            sends the entire directory no matter what you assigned.
+          </p>
+          <p class="mt-3">
+            Entra syncs roughly every 40
             minutes. New members appear under <strong class="text-zinc-200">Members</strong>
             after the next cycle. Their Entra groups then appear under <strong class="text-zinc-200">Groups &amp; access</strong>.
             An offboarding also waits for the next cycle. For an urgent one, also choose

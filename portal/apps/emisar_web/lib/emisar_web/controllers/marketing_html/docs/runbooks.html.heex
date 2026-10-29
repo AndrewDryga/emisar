@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="runbooks"
-      updated="September 8, 2026"
+      updated="October 21, 2026"
       toc={[
         {"shortest-path", "The shortest path"},
         {"create", "1. Create or import a draft"},
@@ -336,14 +336,16 @@
         concurrency.
       </p>
       <p class="mt-5 text-base text-zinc-400">
-        Review the displayed release and plan before you start. Start checks the current runners,
-        action contracts, and policy again. If the plan changed, emisar shows the updated plan
-        for another review without starting an execution. Publishing a newer release does not
-        replace the release already open in your Run page. When a step picks one
-        runner from a group, the plan shows which runner it picked and which group that runner
-        came from. After the run starts, the plan does not change: emisar does not add or replace
-        a target, it uses your arguments exactly as you entered them, and every step stays in its
-        stage.
+        Review the release and plan before selecting Start. Emisar checks the runners,
+        action definitions, and policy again. If the plan changes, emisar shows the updated
+        plan without starting the run. Review it before trying again. If a check fails, fix
+        the problem shown. Publishing a newer release
+        does not change the release already open on your Run page.
+      </p>
+      <p class="mt-5 text-base text-zinc-400">
+        When a step chooses a runner from a group, the plan shows the selected runner and
+        its group. Once the run starts, emisar uses those targets and arguments and keeps
+        every step in its assigned stage.
       </p>
       <.docs_screenshot
         src="/images/docs/runbooks/start.webp"

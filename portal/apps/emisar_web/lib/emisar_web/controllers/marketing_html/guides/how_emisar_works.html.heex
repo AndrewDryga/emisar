@@ -1,8 +1,8 @@
 <.guide_page
-  title="How emisar works"
-  dek="How do you give an AI agent access to production without worrying that it might hallucinate its way into dropping a database or taking the site down?"
-  date="July 2026"
-  read_time="9 min read"
+  title={@guide_meta.title}
+  dek={@guide_meta.dek}
+  date={@guide_meta.date}
+  read_time={@guide_meta.read_time}
 >
   <p>
     emisar is built to scratch our own itch. We like shipping fast with an AI agent, and we know
@@ -14,17 +14,19 @@
     whatever that shell has.
   </p>
   <p>
-    The approach we trust is to whitelist what the agent can do. The toolset is defined before the
+    The approach we trust is to allowlist what the agent can do. The toolset is defined before the
     agent asks for anything. Models are most useful in yolo mode. We wanted to keep the
     experience of stepping away and coming back to a finished job without handing over a shell.
   </p>
   <p>
-    The design separates a control plane that governs policy and is also the cloud portal, a
+    The design separates a control plane (the cloud portal) that governs policy, a
     runner that executes with minimal trust in the portal, and an MCP interface agents can use from
     wherever they run.
   </p>
 
-  <h2>What the agent can do</h2>
+  <.request_path_diagram />
+
+  <h2 id="actions">What the agent can do</h2>
   <p>
     An agent acting through emisar can invoke actions. An action is declared in a pack. Here is a
     trimmed excerpt of a real one:
@@ -39,14 +41,13 @@
     <span class="text-sky-300">type</span>: <span class="text-brand-300">string</span>
     <span class="text-sky-300">required</span>: <span class="text-violet-300">true</span>
     <span class="text-sky-300">validation</span>:
-      <span class="whitespace-pre-wrap break-all text-brand-300"><span class="text-sky-300">pattern</span>: "^[A-Za-z0-9@._:][A-Za-z0-9@._:-]&#123;0,127&#125;$"</span>
-      <span class="text-sky-300">max_length</span>: <span class="text-amber-300">128</span>
+      <span class="whitespace-pre-wrap break-all text-brand-300"><span class="text-sky-300">pattern</span>: "^[a-zA-Z0-9@:_.][a-zA-Z0-9@:_.\\-]&#123;0,127&#125;$"</span>
 
 <span class="text-sky-300">execution</span>:
   <span class="text-sky-300">command</span>:
     <span class="text-sky-300">binary</span>: <span class="text-brand-300">systemctl</span>
     <span class="text-sky-300">argv</span>: [<span class="text-brand-300">"restart"</span>, <span class="text-brand-300">"&#123;&#123; args.unit &#125;&#125;"</span>]
-  <span class="text-sky-300">timeout</span>: <span class="text-amber-300">60s</span>
+  <span class="text-sky-300">timeout</span>: <span class="text-amber-300">2m</span>
 
 <span class="text-sky-300">output</span>:
   <span class="text-sky-300">max_stdout_bytes</span>: <span class="text-amber-300">4096</span>
@@ -55,7 +56,7 @@
   <p>
     Actions are grouped into packs. A pack contains its manifest, action definitions, and any scripts
     those actions use. The version gives people a release name; the content hash identifies the exact
-    bytes installed on the runner. A hash in the portal's configured catalog auto-pins; any other
+    bytes installed on the runner. A hash in the portal's configured catalog is trusted automatically; any other
     hash needs an operator decision. If an action, validation rule, or script changes, the hash
     changes and the new pack needs its own trust decision.
   </p>
@@ -65,7 +66,7 @@
     can request that action. emisar does not make an allowed destructive operation harmless.
   </p>
 
-  <h2>Following one request</h2>
+  <h2 id="request">Following one request</h2>
   <p>
     This is an intentionally simplified example. A real incident usually takes tens of tool calls
     to inspect the service, read logs, check related systems, try a fix, and verify the result. Here
@@ -79,7 +80,7 @@
 
   <.docs_code phx-no-format label="1. read logs — run_action input">&#123;
   <span class="text-sky-300">"action_id"</span>: <span class="text-brand-300">"linux.journalctl"</span>,
-  <span class="whitespace-pre-wrap break-all text-brand-300"><span class="text-sky-300">"pack_ref"</span>: "linux-core@0.3.19/sha256:8d0ba17c…701c70ba"</span>,
+  <span class="whitespace-pre-wrap break-all text-brand-300"><span class="text-sky-300">"pack_ref"</span>: "linux-core@0.5.3/sha256:175630a9…3f794aa8"</span>,
   <span class="text-sky-300">"runner_refs"</span>: [
     <span class="whitespace-pre-wrap break-all text-brand-300">"api-iad-02~18a65e2f…6d2fc9"</span>
   ],
@@ -115,7 +116,7 @@
 
   <.docs_code phx-no-format label="2. restart service — run_action input">&#123;
   <span class="text-sky-300">"action_id"</span>: <span class="text-brand-300">"linux.systemctl_restart"</span>,
-  <span class="whitespace-pre-wrap break-all text-brand-300"><span class="text-sky-300">"pack_ref"</span>: "linux-core@0.3.19/sha256:8d0ba17c…701c70ba"</span>,
+  <span class="whitespace-pre-wrap break-all text-brand-300"><span class="text-sky-300">"pack_ref"</span>: "linux-core@0.5.3/sha256:175630a9…3f794aa8"</span>,
   <span class="text-sky-300">"runner_refs"</span>: [
     <span class="whitespace-pre-wrap break-all text-brand-300">"api-iad-02~18a65e2f…6d2fc9"</span>
   ],
@@ -127,9 +128,10 @@
 
   <p>
     The <code>pack_ref</code>
-    identifies the pack by a content hash over the pack tree. The <code>runner_refs</code>
-    identify the targets. The reason, evidence, and expected result travel with the request into the
-    audit record.
+    identifies the pack by a content hash over its manifest, actions, and scripts. The
+    <code>runner_refs</code>
+    identify the targets. The reason, evidence, and expected result travel with the request and are
+    stored with the run; the cloud audit records the reason.
   </p>
   <p>
     The control plane checks identity, scope, pack trust, and policy. It records the decision in the
@@ -152,7 +154,7 @@
   </p>
   <p>
     The child process receives a minimal environment and runs with the OS permissions of the runner
-    service user. Standard output and standard error are bounded and pattern-redacted before
+    service user. Standard output and standard error are size-limited and redacted by pattern before
     anything leaves the runner. If the timeout expires or the operation is cancelled, the runner
     terminates the process group.
   </p>
@@ -183,7 +185,7 @@
 
   <.docs_code phx-no-format label="3. verify service — run_action input">&#123;
   <span class="text-sky-300">"action_id"</span>: <span class="text-brand-300">"linux.systemctl_status"</span>,
-  <span class="whitespace-pre-wrap break-all text-brand-300"><span class="text-sky-300">"pack_ref"</span>: "linux-core@0.3.19/sha256:8d0ba17c…701c70ba"</span>,
+  <span class="whitespace-pre-wrap break-all text-brand-300"><span class="text-sky-300">"pack_ref"</span>: "linux-core@0.5.3/sha256:175630a9…3f794aa8"</span>,
   <span class="text-sky-300">"runner_refs"</span>: [
     <span class="whitespace-pre-wrap break-all text-brand-300">"api-iad-02~18a65e2f…6d2fc9"</span>
   ],
@@ -204,19 +206,19 @@
     <span class="whitespace-pre-wrap break-all text-brand-300"><span class="text-sky-300">"runner_ref"</span>: "api-iad-02~18a65e2f…6d2fc9"</span>,
     <span class="text-sky-300">"status"</span>: <span class="text-brand-300">"success"</span>,
     <span class="text-sky-300">"exit_code"</span>: <span class="text-amber-300">0</span>,
-    <span class="whitespace-pre-wrap break-words text-brand-300"><span class="text-sky-300">"stdout"</span>: "● checkout.service — Checkout API\n   Active: active (running)"</span>
+    <span class="whitespace-pre-wrap break-words text-brand-300"><span class="text-sky-300">"stdout"</span>: "● checkout.service - Checkout API\n   Active: active (running)"</span>
   &#125;]
 &#125;</.docs_code>
 
   <p>
-    A nonterminal response (one that is not the final result) includes a continuation object describing the next call. The
+    A response that is not final includes a continuation object describing the next call. The
     <code>operation_id</code>
     allows a client to recover an operation after losing a response. Separately, the runner keeps a
     replay record so the same accepted dispatch cannot start another process during its retention
     window.
   </p>
 
-  <h2>Audit, redaction, and privileges</h2>
+  <h2 id="audit">Audit, redaction, and permissions</h2>
   <p>
     The control plane keeps the fleet-wide audit. A runner that receives a dispatch also writes to a
     local hash-chained JSONL journal before starting the process and again when it reaches a terminal
@@ -232,28 +234,28 @@
     action remains destructive when it runs. emisar is not a VM, container, or kernel sandbox.
   </p>
   <p>
-    A compromised host already controls that host. emisar also does not run the agent loop: the
+    An attacker who has compromised a host already controls it. emisar also does not run the agent loop: the
     agent decides what to request, while emisar decides whether that request is available and
     allowed.
   </p>
   <p>
-    Local admission can make a runner stricter than the control plane through action allow and deny
-    patterns and a maximum accepted risk.
+    Local admission rules can make a runner stricter than the control plane, using allow and deny
+    patterns for action IDs and a maximum risk tier.
   </p>
 
-  <h2>The MCP surface</h2>
+  <h2 id="mcp-tools">The MCP tools</h2>
   <p>
     emisar exposes {EmisarWeb.MarketingHTML.mcp_tool_count()} fixed MCP tools.
   </p>
   <p>
-    Discovery uses <code>list_packs</code>, <code>find_actions</code>, and <code>get_action</code>. Execution uses <code>run_action</code>. Other tools handle waiting,
-    operation recovery, recent runs, and runbooks.
+    Discovery uses <code>list_packs</code>, <code>list_runners</code>, <code>find_actions</code>, and <code>get_action</code>. Execution uses <code>run_action</code>. Other tools handle waiting,
+    cancellation, operation recovery, recent runs, and runbooks.
   </p>
   <p>
     Packs add actions to the catalog. They do not add more MCP tool definitions.
   </p>
 
-  <h2>Signed dispatch</h2>
+  <h2 id="signed-dispatch">Signed dispatch</h2>
   <p>
     In normal mode, the runner trusts the hosted control plane to authenticate callers, evaluate
     policy, and send allowed work.
@@ -266,11 +268,14 @@
   </p>
   <p>
     The control plane can still delay or drop a dispatch. It cannot forge a new request, change its
-    arguments, widen its targets, or successfully replay it. The terminal result is not a CA-signed
-    receipt.
+    arguments, or widen its targets. The runner uses saved state to reject repeated requests.
+    Preserve that state when moving or resetting a host, or follow the <.link navigate={
+      ~p"/docs/signed-dispatch"
+    }>identity and trust rotation instructions</.link>.
+    The terminal result is not a CA-signed receipt.
   </p>
 
-  <h2>Private packs</h2>
+  <h2 id="private-packs">Private packs</h2>
   <p>
     Packs can also wrap internal workflows.
   </p>
@@ -283,5 +288,8 @@
     For example, <code>emisar.admin.access.diagnose</code>
     is a low-risk, read-only action. Given an account and member, it returns the account and
     membership details, confirmation and MFA state, active session count, and active API-key count.
+  </p>
+  <p>
+    To write a pack for your own procedures, follow <.link navigate={~p"/docs/publishing-packs"}>the pack-authoring guide</.link>.
   </p>
 </.guide_page>

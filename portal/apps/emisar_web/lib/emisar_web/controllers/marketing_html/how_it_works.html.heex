@@ -31,7 +31,7 @@
     </div>
   </section>
 
-  <%!-- The three parts --%>
+  <%!-- The three parts, then the map that plays how they work together --%>
   <section class="py-20 sm:py-24">
     <div class="mx-auto max-w-5xl px-6 lg:px-8">
       <div class="mx-auto max-w-2xl text-center">
@@ -39,29 +39,15 @@
           The three pieces.
         </h2>
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
-          The runner opens an outbound TLS WebSocket and exposes no inbound listener. Commands come back through that same connection.
+          Your AI agent connects to the emisar control plane over MCP. The runner opens an outbound
+          TLS WebSocket and exposes no inbound listener. The control plane relays requests and
+          results between them and enforces your policy.
         </p>
       </div>
-
-      <div class="mx-auto mt-12 grid max-w-3xl grid-cols-1 items-stretch gap-3 sm:grid-cols-[1fr_auto_1fr_auto_1fr]">
-        <%= for {icon, label, sub} <- [
-          {"product.runner", "Your AI agent", "Claude, Cursor, ChatGPT, or anything else that speaks MCP"},
-          {"infrastructure.cloud", "Emisar cloud", "Your catalog, your rules, approvals, and the audit trail"},
-          {"infrastructure.host", "The runner", "A small program on your server that does the work"}
-        ] do %>
-          <div class="flex flex-col items-center rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6 text-center">
-            <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
-              <.icon name={icon} class="h-5 w-5" />
-            </div>
-            <h3 class="mt-4 text-sm font-semibold text-zinc-50">{label}</h3>
-            <p class="mt-1 text-xs leading-5 text-zinc-400">{sub}</p>
-          </div>
-          <div :if={label != "The runner"} class="flex items-center justify-center text-zinc-700">
-            <.icon name="action.next" class="hidden h-5 w-5 sm:block" />
-            <.icon name="action.move_down" class="h-5 w-5 sm:hidden" />
-          </div>
-        <% end %>
-      </div>
+    </div>
+    <%!-- Wider than the text column, like a product picture: the map needs its three columns. --%>
+    <div class="mx-auto mt-12 max-w-[75rem] px-6 lg:px-8">
+      <.how_it_works_map />
     </div>
   </section>
 
@@ -74,10 +60,9 @@
           Watch a real incident resolve.
         </.marketing_heading>
         <p class="mt-6 text-lg leading-relaxed text-zinc-400 text-pretty">
-          A CSI driver reformatted a live LUN and wiped 33 hours of metrics. Watch the agent
-          investigate through declared actions, stop the writes behind one approval, and hand
-          back the durable fix as a Terraform PR. Everything goes over MCP, without SSH, and every
-          step is on the record.
+          A CSI driver erased 33 hours of metrics by reformatting a live storage volume.
+          Follow the agent's investigation, the approved action that stopped further writes,
+          and the Terraform fix it prepared for review.
         </p>
       </div>
 

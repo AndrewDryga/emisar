@@ -10,11 +10,12 @@
     <div class="mx-auto max-w-4xl px-6 lg:px-8">
       <p class="text-base font-semibold text-brand-400">About</p>
       <.marketing_heading tag="h1" scale={:display} class="mt-2">
-        LLMs are useful.<br />Production isn't a playground.
+        Put your AI agents to work in production.
       </.marketing_heading>
       <p class="mt-8 max-w-2xl text-lg leading-8 text-zinc-400">
-        We're building the boring, defensible layer that lets AI agents help operate real
-        infrastructure without becoming the next production incident.
+        Emisar gives agents the actions they need to inspect services, diagnose failures,
+        and make changes within your rules. Start with ready-made packs, then add your own
+        procedures when you need them.
       </p>
     </div>
   </section>
@@ -24,25 +25,23 @@
     <div class="mx-auto max-w-4xl px-6 lg:px-8">
       <p class="text-base font-semibold text-brand-400">Why this exists</p>
       <.marketing_heading tag="h2" scale={:section} class="mt-2">
-        Giving an LLM shell access is reckless. Giving it a catalog is sensible.
+        Useful agents need access to the systems they work on.
       </.marketing_heading>
       <div class="mt-8 space-y-6 text-lg leading-8 text-zinc-400">
         <p>
-          Give an LLM a terminal on a laptop and it works beautifully. Point it at the cluster
-          that runs your customers' payments and you've handed root to a process that's fast and
-          capable but wrong often enough to matter. There is no gate before the command and no record
-          after. That is an access problem, not a model problem.
+          An agent can help investigate a failing service, but it needs access to the system.
+          A general shell with broad permissions gives it room to make costly mistakes.
+          Collecting every command result by hand keeps you in the loop even for routine work.
         </p>
         <p>
-          Ops teams already solved the access problem for humans and CI with a finite, versioned
-          catalog of operations instead of a blank shell. emisar is that catalog for AI agents.
-          The model can only call the actions you declared, and policy decides what runs. A human
-          approves the risky ones, and every call lands in an audit log your security team will
-          accept.
+          We built emisar so you can give an agent access to the commands you choose.
+          Let routine checks run on their own, require approval for changes that need a review,
+          and follow the work in the console. Your agent can keep investigating without
+          waiting for you to copy the next result.
         </p>
       </div>
       <p class="mt-8 text-sm">
-        <.cta_link navigate={~p"/security"}>See exactly how the trust boundary holds</.cta_link>
+        <.cta_link navigate={~p"/security"}>See how emisar enforces your rules</.cta_link>
       </p>
     </div>
   </section>
@@ -53,7 +52,7 @@
       <div class="mx-auto max-w-2xl text-center">
         <p class="text-base font-semibold text-brand-400">What we believe</p>
         <.marketing_heading tag="h2" scale={:section} class="mt-2">
-          Our priors.
+          What we build for.
         </.marketing_heading>
       </div>
       <div class="mx-auto mt-16 grid max-w-5xl grid-cols-1 gap-6 md:grid-cols-3">
@@ -69,16 +68,17 @@
           <.icon name="story.visibility" class="h-7 w-7 text-brand-400" />
           <h3 class="mt-4 text-lg font-semibold text-zinc-50">Auditability is non-negotiable</h3>
           <p class="mt-2 text-sm text-zinc-400">
-            If a thing happens in production, it needs a searchable record in the cloud
-            and a tamper-evident journal on the host.
+            You should be able to see what an agent requested, why it ran, and what
+            happened. Emisar keeps that history in the console and a separate journal
+            on the host.
           </p>
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
           <.icon name="docs.setup" class="h-7 w-7 text-brand-400" />
-          <h3 class="mt-4 text-lg font-semibold text-zinc-50">Boring is a feature</h3>
+          <h3 class="mt-4 text-lg font-semibold text-zinc-50">Tools you can inspect</h3>
           <p class="mt-2 text-sm text-zinc-400">
-            We pick dull, defensible technology: Postgres, YAML, JSONL, and outbound TLS. There
-            are no clever distributed systems for your oncall to learn.
+            Packs are YAML. The runner and MCP bridge are open source. You can read
+            an action's definition and inspect the code that runs it.
           </p>
         </div>
       </div>
@@ -98,9 +98,8 @@
             an hour of greps and tails.
           </p>
           <p>
-            Both of those things are true. The job of emisar is to keep them true at the
-            same time: let the runner help, but never let it become the cause of the
-            next outage.
+            That's why I built emisar: to let an agent investigate and act through operations
+            I can review, with rules for what runs on its own and what needs me.
           </p>
           <p class="text-zinc-300">
             If that resonates — try it free, or

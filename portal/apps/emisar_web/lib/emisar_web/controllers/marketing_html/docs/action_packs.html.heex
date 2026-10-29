@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="action-packs"
-      updated="September 22, 2026"
+      updated="October 21, 2026"
       toc={[
         {"layout", "Layout"},
         {"pack-yaml", "pack.yaml"},
@@ -16,10 +16,9 @@
     >
       <.docs_header current="action-packs">
         <:dek>
-          An action pack is a versioned, content-addressed directory of YAML
-          action declarations. The runner loads the pack, advertises every
-          action to the control plane, and refuses anything outside this
-          catalog. This is the contract between your ops team and the LLM.
+          A pack defines actions your agent can request: the command, accepted arguments,
+          limits, and expected side effects. Use this reference to write and check the YAML
+          for a pack you maintain.
         </:dek>
       </.docs_header>
 

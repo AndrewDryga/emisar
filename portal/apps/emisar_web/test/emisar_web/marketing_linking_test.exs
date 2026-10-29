@@ -31,9 +31,9 @@ defmodule EmisarWeb.MarketingLinkingTest do
     |> Enum.flat_map(fn path ->
       html = conn |> get(path) |> html_response(200)
 
-      ~r/href="(\/[^"#?]*)/
-      |> Regex.scan(html)
-      |> Enum.map(fn [_, href] -> href end)
+      html
+      |> links_from_html()
+      |> Enum.reject(&(&1 == path))
     end)
     |> MapSet.new()
   end
@@ -60,16 +60,26 @@ defmodule EmisarWeb.MarketingLinkingTest do
       /guides/prompt-injection-for-ops-teams
     )
 
-    sources = hub_paths() -- ["/guides"]
+    sources = Enum.reject(hub_paths(), &String.starts_with?(&1, "/guides"))
 
     for guide <- guides do
       linkers =
         Enum.filter(sources, fn from ->
-          conn |> get(from) |> html_response(200) |> String.contains?(~s(href="#{guide}"))
+          html = conn |> get(from) |> html_response(200)
+          guide in links_from_html(html)
         end)
 
       assert linkers != [],
              "#{guide} is only reachable from /guides — give it an inbound link from a product page"
     end
+  end
+
+  defp links_from_html(html) do
+    html
+    |> LazyHTML.from_document()
+    |> LazyHTML.query("a[href]")
+    |> LazyHTML.attribute("href")
+    |> Enum.filter(&String.starts_with?(&1, "/"))
+    |> Enum.map(&(&1 |> URI.parse() |> Map.fetch!(:path)))
   end
 end

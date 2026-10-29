@@ -102,7 +102,7 @@ defmodule EmisarWeb.MarketingTest do
     assert html =~ "emisar"
     assert html =~ "Sign in"
     assert html =~ "Start free"
-    assert html =~ "pack trust"
+    assert html =~ "Add capabilities through packs"
     assert html =~ "Apache-2.0"
     refute html =~ "signed audit log"
     # A signed-out visitor gets the auth CTAs, not a dashboard link.
@@ -114,7 +114,7 @@ defmodule EmisarWeb.MarketingTest do
     html = conn |> get(~p"/use-cases") |> html_response(200)
 
     # Everyday daily-driver scenarios + the deep incident war stories.
-    assert html =~ "saves the night"
+    assert html =~ "From routine checks to incident investigation."
     assert html =~ "Pre-migration go"
     assert html =~ "The work that never makes a post-mortem"
     # The three real stories are featured and linked from the hub. The weaker
@@ -198,13 +198,13 @@ defmodule EmisarWeb.MarketingTest do
            |> LazyHTML.attribute("data-icon")
            |> length() == 2
 
-    assert home =~ "Audit trail; SIEM export on Team+"
+    assert squish(home) =~ "Team and Enterprise include audit-event export to your SIEM."
 
     trust = conn |> get(~p"/trust") |> html_response(200)
     assert trust =~ "Runner journal:"
-    assert trust =~ "retained runner journal&#39;s chain"
-    assert trust =~ "privileged host operator"
-    assert trust =~ "replaced or truncated the entire local journal"
+    assert trust =~ "journal entries still on disk"
+    assert trust =~ "Even if the chain is valid"
+    assert trust =~ "someone with full host access may have replaced or cut short the journal"
     assert trust =~ "Portal audit:"
     refute trust =~ "catches any edited or missing line"
   end
@@ -222,7 +222,9 @@ defmodule EmisarWeb.MarketingTest do
       assert text =~ "journal lines still on disk",
              "#{route} does not scope verification to retained evidence"
 
-      assert text =~ "replaced or truncated the entire local journal",
+      assert text =~ "replaced or truncated the entire local journal" or
+               text =~
+                 "Even if the chain is valid, someone with full host access may have replaced or cut short the journal",
              "#{route} does not state the whole-journal blind spot"
 
       refute text =~ "truncate the tail and re-chain"
@@ -325,21 +327,15 @@ defmodule EmisarWeb.MarketingTest do
            end)
   end
 
-  test "quickstart documents the optional auto-permit step, framed as safe server-side gating",
+  test "quickstart links client permissions to the setup flow without bypassing server policy",
        %{conn: conn} do
     html = conn |> get(~p"/docs/quickstart") |> html_response(200)
+    text = html |> LazyHTML.from_document() |> LazyHTML.text() |> squish()
 
-    # The collapsible + the WHY (safe BECAUSE emisar gates server-side).
-    assert html =~ "Stop your AI client asking permission for every emisar action"
-    assert html =~ "server-side"
-    assert html =~ "never bypasses emisar"
-    # install-mcp.sh offers to write this for the clients whose setting names
-    # emisar alone, so the page must not present it as hand-editing only.
-    assert html =~ "The installer offers to do this for"
-    # The verified Claude Code rule, server-rendered for the SEO surface.
-    assert html =~ "mcp__emisar__*"
-    assert html =~ "MCPTool(emisar__*)"
-    assert html =~ ~s(default_tools_approval_mode = "approve")
+    assert text =~ "allow emisar's tools automatically"
+    assert text =~ "For supported clients, the installer can allow emisar's tools automatically"
+    assert text =~ "Emisar still checks every request against your policy"
+    assert html =~ ~s(href="/app/agents")
   end
 
   test "docs states the supported deployment boundary", %{conn: conn} do
@@ -554,7 +550,13 @@ defmodule EmisarWeb.MarketingTest do
     # The whole incident is server-rendered for no-JS + crawlers — install,
     # the Claude tool call, the source-verification beat, and the approval beat.
     assert html =~
-             ">curl -fsSL https://emisar.dev/install.sh | sudo bash</div>"
+             ">curl -fsSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-… EMISAR_PACKS=linux-core,debugging,fs-search,docker,nomad bash</div>"
+
+    # The host lines are the installer's, `emisar status`'s, and the runner
+    # log's real output, not a summary of them.
+    assert html =~ ~r{>installed emisar runner-v\d+\.\d+\.\d+</div>}
+    assert html =~ ">Runner is connected and healthy.</div>"
+    assert html =~ "msg=cloud.run_finished"
 
     assert html =~ "emisar · nomad.alloc_stop(alloc:"
     assert html =~ "read NodeStageVolume in src/driver/index.js"
@@ -572,6 +574,49 @@ defmodule EmisarWeb.MarketingTest do
     refute html =~ "phx-no-format"
   end
 
+  test "how it works renders the map's controls and every step's caption for no-JS + crawlers",
+       %{conn: conn} do
+    map =
+      conn
+      |> get(~p"/how-it-works")
+      |> html_response(200)
+      |> LazyHTML.from_document()
+      |> LazyHTML.query("[data-hiw]")
+
+    # The hooks how_it_works_map.js drives: four acts, ten steps, and the controls.
+    assert map |> LazyHTML.query("[data-hiw-act]") |> Enum.map(&LazyHTML.text/1) ==
+             ["Before", "Set up", "Requests", "Record"]
+
+    assert map |> LazyHTML.query("[data-hiw-seg]") |> Enum.count() == 10
+
+    for control <- ~w(data-hiw-prev data-hiw-play data-hiw-next) do
+      assert map |> LazyHTML.query("[#{control}]") |> Enum.count() == 1
+    end
+
+    # Every step's caption is in the page, in order; the finished picture's caption shows.
+    assert map |> LazyHTML.query("[data-hiw-cap-n] .hiw-cap-t") |> Enum.map(&LazyHTML.text/1) ==
+             [
+               "An SSH key.",
+               "One wrong guess.",
+               "Install the runner.",
+               "emisar in the middle.",
+               "Connect your agent.",
+               "Add packs.",
+               "A request runs.",
+               "A person approves.",
+               "Refused.",
+               "On the record."
+             ]
+
+    assert map |> LazyHTML.query("[data-hiw-cap]") |> LazyHTML.text() |> squish() =~
+             "On the record. The audit trail holds all three decisions"
+
+    # The refused example is an action the drawn runner has (linux-core), so policy refuses it;
+    # an action from a pack no runner has would be unavailable, not refused.
+    assert map |> LazyHTML.query(~s([data-hiw-cap-n="9"])) |> LazyHTML.text() =~
+             "linux.reboot_host"
+  end
+
   test "zero-trust page cites the framework honestly without claiming endorsement", %{conn: conn} do
     html = conn |> get(~p"/zero-trust") |> html_response(200)
 
@@ -587,7 +632,7 @@ defmodule EmisarWeb.MarketingTest do
     # boundary must both be present — this is a security product, so the
     # framing is "we implement it", never "they endorse us".
     assert html =~ "not affiliated with, endorsed by, or sponsored by Anthropic"
-    assert html =~ "One pillar, not the whole framework"
+    assert html =~ "How emisar fits your security controls"
   end
 
   test "landing page surfaces the Zero Trust framework with the not-affiliated note", %{
@@ -839,8 +884,15 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ ~s(id="pack-search")
       assert html =~ "data-pack-name"
       assert html =~ "data-pack-section"
-      # The one-command install story is on the page, not buried in docs.
-      assert html =~ "sudo emisar pack install postgres"
+      assert html =~ ~s(href="/docs/use-a-published-pack")
+
+      search_texts =
+        html
+        |> LazyHTML.from_document()
+        |> LazyHTML.query("[data-pack-name]")
+        |> LazyHTML.attribute("data-pack-name")
+
+      assert Enum.any?(search_texts, &String.contains?(&1, "replication lag"))
     end
 
     test "a pack detail page emits SoftwareApplication + a 3-level breadcrumb", %{conn: conn} do
@@ -851,6 +903,24 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "BreadcrumbList"
       assert html =~ ~s("name":"Action packs")
     end
+  end
+
+  test "guides share metadata with the guide index", %{conn: conn} do
+    for path <- EmisarWeb.MarketingController.guide_paths() do
+      html = conn |> get(path) |> html_response(200)
+      assert html =~ "Updated October 21, 2026"
+    end
+  end
+
+  test "pack actions have link targets and declared argument summaries", %{conn: conn} do
+    html = conn |> get(~p"/packs/linux-core") |> html_response(200)
+    document = LazyHTML.from_document(html)
+    action = LazyHTML.query(document, ~s([id="action-linux.systemctl_restart"]))
+
+    assert LazyHTML.query(action, "tbody") |> LazyHTML.text() |> squish() =~ "unit string Yes"
+
+    assert LazyHTML.query(action, ~s(a[href="#action-linux.systemctl_restart"])) |> Enum.count() ==
+             1
   end
 
   describe "outbound link safety" do
@@ -1108,8 +1178,8 @@ defmodule EmisarWeb.MarketingTest do
     test "the home FAQ states the runner exit outcome without process internals", %{conn: conn} do
       html = conn |> get(~p"/") |> html_response(200)
 
-      assert html =~ "the runner stops the action if it exits"
-      assert html =~ "marks its in-flight runs as errored within minutes"
+      assert html =~ "when the runner exits, it stops the action it started"
+      assert html =~ "inspect the target before repeating a change"
       refute html =~ "PR_SET_PDEATHSIG"
       refute html =~ "setpgid"
       refute html =~ "dispatch-timeout sweep"
@@ -1120,22 +1190,32 @@ defmodule EmisarWeb.MarketingTest do
     } do
       html = conn |> get(~p"/guides/how-emisar-works") |> html_response(200) |> squish()
 
+      assert html =~ "Your server"
+      assert html =~ "outbound WebSocket"
+
+      assert html =~
+               "The runner opens the TLS connection to it, so your server needs no inbound port for emisar."
+
       assert html =~ "What the agent can do"
       assert html =~ "Following one request"
-      assert html =~ "Audit, redaction, and privileges"
-      assert html =~ "The MCP surface"
+      assert html =~ "Audit, redaction, and permissions"
+      assert html =~ "The MCP tools"
       assert html =~ "Signed dispatch"
 
       assert html =~
                "A customer-authorized bridge signs each request with a key the control plane never holds."
+
+      assert html =~ "An enforcing runner verifies that signature before execution."
+      assert html =~ "It cannot forge a new request, change its arguments, or widen its targets."
 
       assert html =~
                "The runner opens an outbound TLS WebSocket and exposes no inbound listener. Commands come back through that same connection."
 
       assert html =~ "Private packs"
       assert html =~ "not a VM, container, or kernel sandbox"
-      assert html =~ "emisar.admin.access.diagnose"
-      assert html =~ "fixed release-RPC script"
+      assert html =~ ~s(href="/docs/publishing-packs")
+      assert html =~ "The runner uses saved state to reject repeated requests."
+      assert html =~ "Preserve that state when moving or resetting a host"
       assert html =~ "linux-core/actions/systemctl_restart.yaml (trimmed)"
       assert html =~ "linux.journalctl"
       assert html =~ "1. read logs — run_action input"
@@ -1208,7 +1288,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "dedicated read-only credential"
 
       assert html =~
-               "A customer-authorized bridge signs each request with a key the control plane never holds."
+               "You can require requests signed by your MCP bridge."
 
       assert html =~ "MCP bridge keys are short-lived and rotate themselves"
       assert html =~ "Runner credentials rotate automatically"
@@ -1269,8 +1349,8 @@ defmodule EmisarWeb.MarketingTest do
       html = conn |> get(~p"/trust") |> html_response(200) |> squish()
 
       assert html =~ "Portal audit: actor, action, target"
-      assert html =~ "Run history: exact action arguments kept"
-      assert html =~ "masked in console and API views, not storage"
+      assert html =~ "Run history keeps exact arguments"
+      assert html =~ "hidden in console and API views but remain in storage"
       assert html =~ "Runner journal: a redacted copy of action arguments"
       refute html =~ "Every action: actor, redacted arguments"
     end
@@ -1281,9 +1361,12 @@ defmodule EmisarWeb.MarketingTest do
       html = conn |> get(~p"/trust") |> html_response(200)
 
       assert html =~ "Security controls you can verify"
-      assert html =~ "Security review material is available now"
-      assert html =~ "SOC 2 Type II audit preparation is underway"
-      assert html =~ "examination is not complete"
+
+      assert squish(html) =~
+               "Contact us for supporting documents, a completed security questionnaire"
+
+      assert html =~ "preparing for SOC 2 Type II"
+      assert html =~ "examination is not yet complete"
       assert html =~ "certificate of insurance is available on request"
       assert html =~ "Team and Enterprise plans"
       refute html =~ "emisar is SOC 2 certified"
@@ -1325,7 +1408,7 @@ defmodule EmisarWeb.MarketingTest do
 
       # The honesty rails (also covered by the copy test above, asserted
       # here as part of the page's required sections).
-      assert html =~ "One pillar, not the whole framework"
+      assert html =~ "How emisar fits your security controls"
     end
 
     test "the zero-trust page carries its CTAs and the framework PDF link", %{conn: conn} do
@@ -1529,7 +1612,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Why this exists"
       assert html =~ "Least privilege, always"
       assert html =~ "Auditability is non-negotiable"
-      assert html =~ "Boring is a feature"
+      assert html =~ "Tools you can inspect"
 
       # The founder note + its attribution.
       assert html =~ "A note from the founder"
@@ -2068,8 +2151,8 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Require SSO for the account"
       assert html =~ "Rotate a client secret"
       assert html =~ "Disable or delete a connection"
-      assert html =~ "the sessions that signed in through it end"
-      assert html =~ "Re-enabling the connection does not restore those sessions"
+      assert html =~ "Both actions end sessions created through that connection"
+      assert html =~ "If you enable the connection again, members must sign in again"
       assert html =~ "Troubleshooting"
       assert html =~ "Keep an owner signed in to this workspace through SSO while you test"
       assert html =~ "While SSO is required, the sign-in page offers no email sign-in"
@@ -2139,7 +2222,7 @@ defmodule EmisarWeb.MarketingTest do
       review_dates = [
         {"/docs/authentication", "October 4, 2026"},
         {"/docs/teams-and-access", "October 4, 2026"},
-        {"/docs/sso", "October 4, 2026"},
+        {"/docs/sso", "October 21, 2026"},
         {"/docs/scim", "October 4, 2026"}
       ]
 
@@ -2401,8 +2484,37 @@ defmodule EmisarWeb.MarketingTest do
       # in both layouts.
       assert html =~ "<table"
       assert html =~ "Both approaches run real commands"
-      assert html =~ "What can the LLM run?"
-      assert html =~ "Recovery story?"
+      assert html =~ "What can the agent run?"
+      assert html =~ "What if a key leaks?"
+    end
+
+    test "the raw-SSH comparison replays the same rollback in two landing-page terminals",
+         %{conn: conn} do
+      document =
+        conn
+        |> get(~p"/compare/raw-ssh-for-ai")
+        |> html_response(200)
+        |> LazyHTML.from_document()
+
+      [raw_ssh, with_emisar] =
+        document |> LazyHTML.query("[data-emisar-demo]") |> Enum.to_list()
+
+      # Over SSH one blanket answer covers every later command, including the
+      # read that puts a secret into the chat.
+      assert raw_ssh |> LazyHTML.query(~s([data-kind="cc-permit"])) |> LazyHTML.text() =~
+               "don't ask again for ssh commands"
+
+      assert raw_ssh |> LazyHTML.query(~s([data-kind="cc-leak"])) |> LazyHTML.text() =~
+               "DB_PASSWORD="
+
+      # Through emisar each call is a declared action and only the revert
+      # waits, for an approval of that one run.
+      assert LazyHTML.text(with_emisar) =~ ~s(emisar · nomad.job_revert(job: "api", version: 17\))
+      assert with_emisar |> LazyHTML.query(~s([data-kind="cc-pending"])) |> Enum.any?()
+      refute LazyHTML.text(with_emisar) =~ "DB_PASSWORD"
+
+      assert LazyHTML.text(document) =~
+               "Without one place, AI access over SSH becomes a risky mess"
     end
 
     test "the custom-MCP comparison renders both the desktop table and the mobile cards",
@@ -2421,12 +2533,56 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "The copy-paste loop"
       assert html =~ "Nothing runs unless you run it"
       assert html =~ "Review can turn into a reflex"
-      assert html =~ "That is the worst of both worlds"
+      assert squish(html) =~ "generated code reaches your shell without a careful review"
       assert html =~ "Nothing on its own. You run every command."
       assert html =~ "Copy-paste fits one-off work"
-      assert html =~ "When the command comes back, make it an action"
+      assert html =~ "Give the agent the checks you keep repeating."
       assert html =~ "/images/screenshots/audit-successes.webp"
       assert html =~ "<table"
+    end
+
+    test "the copy-paste comparison replays the same fix in two landing-page terminals",
+         %{conn: conn} do
+      document =
+        conn
+        |> get(~p"/compare/copy-paste-ai-ops")
+        |> html_response(200)
+        |> LazyHTML.from_document()
+
+      [copy_paste, with_emisar] =
+        document |> LazyHTML.query("[data-emisar-demo]") |> Enum.to_list()
+
+      # By hand, you ssh in from your laptop, then the logs, the command, and
+      # its output cross between the host's shell and Claude.
+      assert copy_paste |> LazyHTML.query(~s([data-demo-tab="server"])) |> LazyHTML.text() =~
+               "edge-sfo-03"
+
+      ssh = LazyHTML.query(copy_paste, ~s([data-kind="srv-local-prompt"]))
+      assert LazyHTML.attribute(ssh, "data-prompt") == ["ops@laptop:~$ "]
+      assert LazyHTML.text(ssh) == "ssh edge-sfo-03"
+
+      assert copy_paste
+             |> LazyHTML.query(~s([data-kind="srv-prompt"]))
+             |> LazyHTML.attribute("data-prompt") == [
+               "ops@edge-sfo-03:~$ ",
+               "ops@edge-sfo-03:~$ "
+             ]
+
+      # Each paste renders as its own chip after the typed words.
+      assert copy_paste |> LazyHTML.query(".demo-paste") |> Enum.map(&LazyHTML.text/1) == [
+               "[Pasted text #1 +4 lines]",
+               "[Pasted text #2 +4 lines]"
+             ]
+
+      # Through emisar the replay never leaves Claude: no host tab, and the
+      # output comes back from the actions.
+      assert with_emisar |> LazyHTML.query(~s([data-demo-tab="server"])) |> Enum.empty?()
+      assert LazyHTML.text(with_emisar) =~ ~s(emisar · linux.systemctl_restart(unit: "api")
+      refute LazyHTML.text(with_emisar) =~ "Pasted text"
+
+      # Teams: the shadow copy-paste loop next to one governed path.
+      assert LazyHTML.text(document) =~ "One place to govern AI access to production"
+      assert LazyHTML.query(document, ~s(a[href="/docs/teams-and-access"])) |> Enum.any?()
     end
 
     test "the sitemap lists the copy-paste workflow comparison", %{conn: conn} do
@@ -3286,11 +3442,11 @@ defmodule EmisarWeb.MarketingTest do
       "/use-cases/cassandra-migration" => ~w(/packs/cassandra /docs/security-model),
       "/use-cases/ingress-502" =>
         ~w(/use-cases/csi-data-loss /docs/security-model /docs/action-packs),
-      "/compare/raw-ssh-for-ai" => ~w(/docs/quickstart /pricing),
+      "/compare/raw-ssh-for-ai" => ~w(/docs/quickstart /pricing /docs/teams-and-access),
       "/compare/custom-mcp-server" =>
         ~w(/docs/security-model /docs/action-packs /compare/raw-ssh-for-ai),
       "/compare/copy-paste-ai-ops" =>
-        ~w(/docs/connect-claude-ai /docs/audit-and-siem /docs/security-model /docs/action-packs /compare/raw-ssh-for-ai)
+        ~w(/docs/connect-claude-ai /docs/audit-and-siem /docs/teams-and-access /docs/security-model /docs/action-packs /compare/raw-ssh-for-ai)
     }
 
     for {page, links} <- @cross_links do

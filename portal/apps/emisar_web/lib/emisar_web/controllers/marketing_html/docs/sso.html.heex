@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="sso"
-      updated="October 4, 2026"
+      updated="October 21, 2026"
       toc={[
         {"sso-login", "Setting up SSO login"},
         {"signing-in", "How members sign in"},
@@ -279,8 +279,9 @@
           navigate={~p"/docs/integrations/entra"}
           class="text-brand-400 hover:text-brand-300"
         >Entra guide</.link>.
-        You cannot enable this option
-        with no active SSO connection. emisar refuses to disable or
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        You need an active SSO connection before requiring SSO. emisar refuses to disable or
         delete the last active connection while the requirement remains on. Turn off Require
         SSO before retiring that last connection.
       </p>
@@ -316,14 +317,16 @@
 
       <.docs_h3 id="disable-provider">Disable or delete a connection</.docs_h3>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Disabling a connection stops new sign-ins but keeps the configuration, so you can
-        enable it again later. Deleting retires it and dismisses any manual-approval requests
-        still waiting on it. Either way, the sessions that signed in through it end; members and
-        audit history are kept, and email sign-in sessions remain. Re-enabling the connection
-        does not restore those sessions; members sign in again. A member left with no other way
-        to sign in (no verified email address and no other enabled connection) also loses its
-        API keys, the agent connections built on them, and its approved device access.
-        Re-enabling does not bring them back.
+        Disable a connection to stop new sign-ins while keeping its configuration. Delete it
+        to remove the connection and dismiss its pending manual-approval requests. Both actions
+        end sessions created through that connection. Members, audit history, and email sign-in
+        sessions remain. If you enable the connection again, members must sign in again.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        If a member has no verified email address and no other enabled connection, they lose
+        their only way to sign in. Emisar also revokes their API keys, the agent connections
+        using those keys, and their approved device access. Enabling the connection again
+        does not restore that access.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         An account can have several provider types, but only one enabled connection of each type.

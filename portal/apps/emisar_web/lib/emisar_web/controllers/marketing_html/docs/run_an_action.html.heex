@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="run-an-action"
-      updated="August 18, 2026"
+      updated="October 21, 2026"
       toc={[
         {"before", "Before you dispatch"},
         {"select", "1. Select a runner and action"},
@@ -16,10 +16,17 @@
     >
       <.docs_header current="run-an-action">
         <:dek>
-          Dispatch one declared action from the console. Review the action contract, enter its
-          arguments and reason, pass policy, and read the recorded result.
+          Choose an action, check what it will do, and run it from the console.
+          Then inspect its status, output, and audit record.
         </:dek>
       </.docs_header>
+
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        For a worked example, <.link
+          navigate={~p"/docs/investigate-a-service"}
+          class="text-brand-400 hover:text-brand-300"
+        >investigate a test service and approve a restart</.link>.
+      </p>
 
       <.docs_h2 id="before">Before you dispatch</.docs_h2>
       <.docs_prerequisites>
@@ -99,7 +106,7 @@
         command, policy facts, actor, timestamps, and exit code.
       </p>
       <ol class="mt-5 list-decimal space-y-3 pl-6 text-base text-zinc-400">
-        <li>Wait for a terminal status, one that will not change again.</li>
+        <li>Wait for the run to finish and check its final status.</li>
         <li>Read both standard output and standard error.</li>
         <li>Check the exit code and any structured result.</li>
         <li>Make sure the result matches the reason for the run.</li>
