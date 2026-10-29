@@ -42,68 +42,6 @@
           </a>
         </p>
       </div>
-
-      <%!-- The agent at work in production: investigate freely, act on approval.
-           Every call passes the gate — reads clear on policy, the one risky
-           change waits for a human. Simpler than a contract dump on purpose;
-           the full incident is the demo further down. --%>
-      <div class="rise-5 surface-glass mt-10 overflow-hidden rounded-xl border border-zinc-800">
-        <div class="flex items-center justify-between gap-3 border-b border-zinc-800 bg-zinc-950 px-4 py-2.5 font-mono text-[11px] text-zinc-400">
-          <span class="flex items-center gap-2">
-            <.icon name="product.agent" class="h-3.5 w-3.5 text-brand-400" /> claude · emisar MCP
-          </span>
-          <span class="hidden sm:inline">example · scoped to prod-nomad-cluster</span>
-        </div>
-
-        <div class="p-3 sm:p-5">
-          <.scan_line animate loop state={:pass} class="mb-4" />
-          <div class="divide-y divide-zinc-900/80 font-mono text-[11.5px] leading-6 tabular-nums sm:text-[12.5px]">
-            <%= for {call, kind} <- [
-                {"nomad.alloc_logs checkout", :read},
-                {"prom.query_instant rate(http_5xx)", :read},
-                {"nomad.job_history checkout", :read},
-                {"nomad.job_revert checkout", :write}
-              ] do %>
-              <div class="grid grid-cols-[1fr_auto] items-center gap-2 py-2.5 first:pt-0 last:pb-0 sm:gap-3">
-                <span class="flex min-w-0 items-center gap-2 text-zinc-300">
-                  <span class="flex-none text-brand-400">⏺</span>
-                  <span class="min-w-0 truncate">{call}</span>
-                </span>
-                <%= if kind == :write do %>
-                  <span class="flex flex-none items-center gap-1.5">
-                    <.state_chip state={:pending} label="approval" />
-                    <%!-- The approval beat would clip at 390px; reveal it sm+ and let
-                           mobile show just the pending "waiting on a human" signal. The
-                           hand, not an arrow, makes the human the thing that resolves it. --%>
-                    <span class="hidden items-center gap-1.5 sm:flex">
-                      <.icon name="state.awaiting_human" class="h-3 w-3 text-brand-400" />
-                      <.state_chip
-                        state={:pass}
-                        label="approved"
-                        class="w-[5.5rem] flex-none justify-center"
-                      />
-                    </span>
-                  </span>
-                <% else %>
-                  <.state_chip
-                    state={:pass}
-                    label="allowed"
-                    class="w-[5.5rem] flex-none justify-center"
-                  />
-                <% end %>
-              </div>
-            <% end %>
-          </div>
-        </div>
-
-        <%!-- The durable fix — emisar grounds the investigation; the agent then
-             ships the root-cause fix as reviewable code, not a throwaway restart. --%>
-
-        <div class="border-t border-zinc-800 bg-zinc-950/80 px-4 py-3 text-center font-mono text-[11px] text-zinc-400">
-          Example workflow: investigate through emisar, then use your agent's coding tools
-          to prepare a fix for review.
-        </div>
-      </div>
     </div>
   </section>
 

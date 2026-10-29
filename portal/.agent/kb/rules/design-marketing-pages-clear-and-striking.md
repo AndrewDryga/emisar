@@ -28,7 +28,17 @@ What a good page has instead:
 screen (forms, hashes, uppercase field labels, a requester's name) competes with the
 argument even when it is real; an excerpt of the moment that matters (the command, the
 policy line, Approve/Deny; the runs list with one waiting row) works. Never present
-invented UI as a real screenshot or edit what a real screen says.
+invented UI as a real screenshot or edit what a real screen says. The home hero's picture
+shows emisar's own job: an agent's requests meeting your policy (allowed, waiting for a
+person, refused) and the record they leave. Something an agent can do through emisar, such
+as charting a metrics query, may appear lower on the page but never leads the hero: a
+chart-led hero made emisar read as a Grafana replacement (2026-10-29). A mock of chat
+bubbles and tool-call rows with verdict chips beside an approval card read as "generic AI
+slop" that "doesn't sell the product" (2026-10-29): lead with the autonomy the agent gains,
+let control make it believable, and give the hero one striking idea of its own. A
+"production map" of glowing nodes, curved light paths, and a giant logo gate was "ultimate
+ai slop ... ugly as fuck" (2026-10-29): no network graphs, glow-on-everything, or label
+farms in the hero.
 
 **Explainer diagrams.** An animated diagram (how it works, the request path) is one
 self-contained component on the page, a sibling of the `emisar_demo` panel: the site's own

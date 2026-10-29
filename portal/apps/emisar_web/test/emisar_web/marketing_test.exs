@@ -1265,14 +1265,6 @@ defmodule EmisarWeb.MarketingTest do
       refute html =~ "a human&#39;s signature"
     end
 
-    test "the home hero aligns its peer verdict chips", %{conn: conn} do
-      html = conn |> get(~p"/") |> html_response(200)
-
-      # Three Allowed verdicts plus the Approved verdict share one visual column.
-      assert length(Regex.scan(~r/w-\[5\.5rem\] flex-none justify-center/, html)) == 4
-      refute html =~ "w-[6.25rem]"
-    end
-
     test "the home catalog snippet matches the published linux.systemctl_status contract", %{
       conn: conn
     } do

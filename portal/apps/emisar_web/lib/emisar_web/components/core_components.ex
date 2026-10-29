@@ -4388,39 +4388,23 @@ defmodule EmisarWeb.CoreComponents do
 
   @doc """
   A hairline at a decision point — the instant a request is checked at the gate.
-  The static track always renders; `animate` adds a single brand sweep that
-  honors `prefers-reduced-motion` (the sweep ends off-screen, so opted-out
-  visitors never see it). `state` colors it to a policy outcome.
+  `state` colors it to a policy outcome.
 
       <.scan_line />
-      <.scan_line animate state={:pass} />
   """
   attr :state, :atom, default: :pass, values: [:pass, :pending, :deny, :neutral]
-  attr :animate, :boolean, default: false
-
-  attr :loop, :boolean,
-    default: false,
-    doc: "periodic re-scan (long hold between) vs a single sweep"
-
   attr :class, :string, default: nil
 
   def scan_line(assigns) do
     ~H"""
-    <div class={["relative h-px w-full overflow-hidden", @class]} aria-hidden="true">
-      <div class={[
+    <div
+      class={[
         "h-px w-full bg-linear-to-r from-transparent to-transparent",
-        scan_via_class(@state)
-      ]}>
-      </div>
-      <div
-        :if={@animate}
-        class={[
-          if(@loop, do: "scan-sweep-loop", else: "scan-sweep"),
-          "absolute inset-y-0 left-0 w-1/4 bg-linear-to-r from-transparent to-transparent blur-[1px]",
-          scan_sweep_via_class(@state)
-        ]}
-      >
-      </div>
+        scan_via_class(@state),
+        @class
+      ]}
+      aria-hidden="true"
+    >
     </div>
     """
   end
@@ -4429,11 +4413,6 @@ defmodule EmisarWeb.CoreComponents do
   defp scan_via_class(:pending), do: "via-amber-500/50"
   defp scan_via_class(:deny), do: "via-rose-500/50"
   defp scan_via_class(:neutral), do: "via-zinc-700/60"
-
-  defp scan_sweep_via_class(:pass), do: "via-brand-400/80"
-  defp scan_sweep_via_class(:pending), do: "via-amber-400/80"
-  defp scan_sweep_via_class(:deny), do: "via-rose-400/80"
-  defp scan_sweep_via_class(:neutral), do: "via-zinc-400/70"
 
   @doc """
   A policy-outcome chip — what the gate decided. `:pass` (brand-green), `:pending`

@@ -689,44 +689,6 @@ pre::-webkit-scrollbar-track,
 }
 
 /* ---------------------------------------------------------------------------
-   Gate scan line (marketing `<.scan_line animate>`).
-
-   A single highlight that sweeps once across the decision point — the moment a
-   request is checked at the gate. The static track underneath always renders;
-   only the sweep moves, and it ends translated off-screen so the reduced-motion
-   override above (animation-duration: 0.01ms) simply lands it out of view with
-   no flash. Marketing-only; the component lives in core_components.ex.
-   --------------------------------------------------------------------------- */
-.scan-sweep {
-  animation: scan-sweep 2.4s ease-in-out 0.3s 1 both;
-}
-@keyframes scan-sweep {
-  from {
-    transform: translateX(-100%);
-  }
-  to {
-    transform: translateX(400%);
-  }
-}
-/* Looping variant for the home hero demo: one sweep, then a long hold
-   off-screen — the "agent at work" panel reads as live without a busy loop.
-   The global reduced-motion override near-zeros the duration, leaving it still. */
-.scan-sweep-loop {
-  animation: scan-sweep-loop 8s ease-in-out 1s infinite;
-}
-@keyframes scan-sweep-loop {
-  0% {
-    transform: translateX(-100%);
-  }
-  30% {
-    transform: translateX(400%);
-  }
-  100% {
-    transform: translateX(400%);
-  }
-}
-
-/* ---------------------------------------------------------------------------
    The Gate device (home hero — `<.gate_scene>`-style markup).
 
    The signature mark in motion: the three emerald dots (the request) brighten

@@ -321,7 +321,6 @@ Decorative, non-animating, `aria-hidden`, used **sparingly** (1–2 per page):
   (IntersectionObserver adds `.is-in`). **Progressive enhancement:** hiding only
   engages once JS adds `.js-reveal`, so crawlers/no-JS see everything.
 - `.gate-dot`/`gate-pulse` — the calm gate device pulse (the one loop).
-- `.scan-sweep` — single sweep across a decision point (`<.scan_line animate>`).
 - **Reduced motion is non-negotiable:** a global `@media (prefers-reduced-motion)`
   neutralizes animations/transitions; every signature also lands at its lit end
   state explicitly. Console hover-lifts/pings/spins are caught by the same global
@@ -372,8 +371,7 @@ genuinely missing (then it's shared, not one-off).
 `brand`, `gate_mark`.
 
 ### Marketing kit (the Gate primitives — marketing-only; home file per entry)
-- `scan_line animate? state` (`core_components.ex`) — the decision-point hairline
-  + optional sweep.
+- `scan_line state` (`core_components.ex`) — the decision-point hairline.
 - `state_chip state={:pass|:pending|:deny} label?` (`core_components.ex`) — the
   semantic outcome chip (thin wrapper over `<.chip>`; default words
   Allowed/Approval/Denied).
