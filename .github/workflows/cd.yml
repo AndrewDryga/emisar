@@ -19,7 +19,10 @@ jobs:
   portal-publish:
     name: CD - Publish portal image
     needs: ci
-    runs-on: ubuntu-latest
+    # Same runner image as CI's Portal - Image job, which wrote the contract:
+    # the image ID it pins comes from that Docker engine, and ubuntu-26.04's
+    # engine reports a different ID for the same loaded image.
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     concurrency:
       group: portal-publish
@@ -476,7 +479,8 @@ jobs:
       ((needs.ci.outputs.packs_release == 'true' && needs.packs-publish.result == 'success') ||
        (needs.ci.outputs.packs_release != 'true' && needs.packs-publish.result == 'skipped'))
     needs: [ci, portal-publish, admin-diagnostics-publish, packs-publish]
-    runs-on: ubuntu-latest
+    # Verifies the same image contracts as the publish jobs; keep their runner.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     concurrency:
       group: production-plan
