@@ -584,8 +584,10 @@ defmodule EmisarWeb.MarketingTest do
       |> LazyHTML.query("[data-hiw]")
 
     # The hooks how_it_works_map.js drives: four acts, ten steps, and the controls.
-    assert map |> LazyHTML.query("[data-hiw-act]") |> Enum.map(&LazyHTML.text/1) ==
-             ["Before", "Set up", "Requests", "Record"]
+    assert map
+           |> LazyHTML.query("[data-hiw-act]")
+           |> Enum.map(&(&1 |> LazyHTML.text() |> squish())) ==
+             ["Before emisar", "Set up", "Requests", "Record"]
 
     assert map |> LazyHTML.query("[data-hiw-seg]") |> Enum.count() == 10
 
@@ -596,8 +598,8 @@ defmodule EmisarWeb.MarketingTest do
     # Every step's caption is in the page, in order; the finished picture's caption shows.
     assert map |> LazyHTML.query("[data-hiw-cap-n] .hiw-cap-t") |> Enum.map(&LazyHTML.text/1) ==
              [
-               "An SSH key.",
-               "One wrong guess.",
+               "Before emisar: an SSH key.",
+               "Before emisar: one wrong guess.",
                "Install the runner.",
                "emisar in the middle.",
                "Connect your agent.",

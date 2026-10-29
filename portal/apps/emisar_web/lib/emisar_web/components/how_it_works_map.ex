@@ -17,11 +17,18 @@ defmodule EmisarWeb.HowItWorksMap do
     <div data-hiw class="hiw" data-s="10" data-act="3">
       <div class="hiw-panel">
         <div class="hiw-head">
-          <div class="hiw-acts" role="group" aria-label="Story chapters">
-            <button type="button" class="hiw-act" data-hiw-act="0">Before</button>
-            <button type="button" class="hiw-act" data-hiw-act="1">Set up</button>
-            <button type="button" class="hiw-act" data-hiw-act="2">Requests</button>
-            <button type="button" class="hiw-act" data-hiw-act="3" aria-current="step">Record</button>
+          <%!-- Two groups: the world before emisar, then the three acts with it. --%>
+          <div class="hiw-acts-row" role="group" aria-label="Story chapters">
+            <div class="hiw-acts">
+              <button type="button" class="hiw-act" data-hiw-act="0">
+                Before<span class="hiw-act-x"> emisar</span>
+              </button>
+            </div>
+            <div class="hiw-acts">
+              <button type="button" class="hiw-act" data-hiw-act="1">Set up</button>
+              <button type="button" class="hiw-act" data-hiw-act="2">Requests</button>
+              <button type="button" class="hiw-act" data-hiw-act="3" aria-current="step">Record</button>
+            </div>
           </div>
         </div>
 
@@ -40,11 +47,11 @@ defmodule EmisarWeb.HowItWorksMap do
                   one included, and the runner keeps its own hash-chained journal of the two runs on the host.</span>
                 </p>
                 <p class="hiw-cap-size" data-hiw-cap-n="1" aria-hidden="true">
-                  <strong class="hiw-cap-t">An SSH key.</strong>
+                  <strong class="hiw-cap-t">Before emisar: an SSH key.</strong>
                   <span class="hiw-cap-s">The agent runs commands itself. It reads a config file, the database password flows straight back to it, and it restarts Postgres with nothing checking first.</span>
                 </p>
                 <p class="hiw-cap-size" data-hiw-cap-n="2" aria-hidden="true">
-                  <strong class="hiw-cap-t">One wrong guess.</strong>
+                  <strong class="hiw-cap-t">Before emisar: one wrong guess.</strong>
                   <span class="hiw-cap-s">The agent means to reset the dev database, but on this server
                   <code>$DB_HOST</code>
                   points at production. The drop runs at once, and there is no undo.</span>
@@ -116,8 +123,8 @@ defmodule EmisarWeb.HowItWorksMap do
                 /></button>
               </div>
               <div class="hiw-prog" role="group" aria-label="Steps">
-                <button type="button" class="hiw-seg is-first is-done" data-hiw-seg="1"><i></i><span class="hiw-sr">Step 1 of 10: An SSH key</span></button>
-                <button type="button" class="hiw-seg is-done" data-hiw-seg="2"><i></i><span class="hiw-sr">Step 2 of 10: One wrong guess</span></button>
+                <button type="button" class="hiw-seg is-first is-done" data-hiw-seg="1"><i></i><span class="hiw-sr">Step 1 of 10: Before emisar, an SSH key</span></button>
+                <button type="button" class="hiw-seg is-done" data-hiw-seg="2"><i></i><span class="hiw-sr">Step 2 of 10: Before emisar, one wrong guess</span></button>
                 <button type="button" class="hiw-seg is-first is-done" data-hiw-seg="3"><i></i><span class="hiw-sr">Step 3 of 10: Install the runner</span></button>
                 <button type="button" class="hiw-seg is-done" data-hiw-seg="4"><i></i><span class="hiw-sr">Step 4 of 10: emisar in the middle</span></button>
                 <button type="button" class="hiw-seg is-done" data-hiw-seg="5"><i></i><span class="hiw-sr">Step 5 of 10: Connect your agent</span></button>

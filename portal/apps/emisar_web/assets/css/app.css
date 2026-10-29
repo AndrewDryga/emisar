@@ -859,6 +859,7 @@ pre::-webkit-scrollbar-track,
 /* Panel: the page's demo panel recipe */
 [data-hiw] .hiw-panel{position:relative;overflow:hidden;border:1px solid var(--color-zinc-800);border-radius:12px;background:#0c0c0e;box-shadow:0 0 0 1px rgba(255,255,255,.05),0 25px 50px -12px rgba(3,47,34,.4)}
 [data-hiw] .hiw-head{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:7px 16px 7px 7px;border-bottom:1px solid rgba(39,39,42,.8);background:rgba(9,9,11,.6)}
+[data-hiw] .hiw-acts-row{display:flex;gap:10px}
 [data-hiw] .hiw-acts{display:flex;gap:2px;padding:3px;border-radius:10px;background:rgba(255,255,255,.02);box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}
 [data-hiw] .hiw-act{position:relative;height:34px;padding:0 15px;border-radius:7px;font-size:14px;font-weight:500;color:var(--color-zinc-400);cursor:pointer;white-space:nowrap;transition:color .2s var(--e),background-color .2s var(--e),box-shadow .2s var(--e)}
 [data-hiw] .hiw-act::before{content:"";position:absolute;inset:-3px -1px}
@@ -1165,7 +1166,9 @@ pre::-webkit-scrollbar-track,
 /* Phones and tablets: the same parts stacked, agent above emisar above your server */
 @container hiw (max-width:1059px){
   [data-hiw] .hiw-head{padding:6px}
+  [data-hiw] .hiw-acts-row{flex:1;gap:6px}
   [data-hiw] .hiw-acts{flex:1}
+  [data-hiw] .hiw-acts+.hiw-acts{flex:3}
   [data-hiw] .hiw-act{flex:1;min-width:0;height:36px;padding:0 4px}
   [data-hiw] .hiw-act::before{inset:-4px -1px}
   [data-hiw] .hiw-nar{display:grid;grid-template-columns:1fr auto;align-items:center;gap:0 12px;padding:8px 10px 8px 16px;border-bottom:1px solid rgba(39,39,42,.8)}
@@ -1246,6 +1249,10 @@ pre::-webkit-scrollbar-track,
   [data-hiw] .hiw-svc{flex-direction:row;gap:6px;font-size:13px}
   [data-hiw] .hiw-svc .emisar-icon{width:18px;height:18px}
   [data-hiw] .hiw-empty{font-size:13px}
+}
+/* The first act names the world it shows; a narrow map keeps the tab short (the step titles say it). */
+@container hiw (max-width:560px){
+  [data-hiw] .hiw-act-x{display:none}
 }
 @container hiw (max-width:340px){
   [data-hiw] .hiw-stage{padding-left:10px;padding-right:10px}
