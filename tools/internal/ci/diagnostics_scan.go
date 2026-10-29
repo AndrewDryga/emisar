@@ -53,7 +53,6 @@ var diagnosticsNonaffected = map[string]nonaffectedRule{
 	"CVE-2023-45853": {"zlib", "1:1.2.13.dfsg-1", "no-minizip", "https://security-tracker.debian.org/tracker/CVE-2023-45853", []string{"zlib1g"}},
 	"CVE-2025-69720": {"ncurses", "6.4-4", "no-infocmp", "https://security-tracker.debian.org/tracker/CVE-2025-69720", []string{"libncursesw6", "libtinfo6"}},
 	"CVE-2026-16742": {"systemd", "252.39-1~deb12u2", "no-homed", "https://github.com/systemd/systemd/security/advisories/GHSA-jm29-p7hh-vjhv", []string{"libsystemd0", "libudev1"}},
-	"CVE-2026-84782": {"openssl", "3.0.22-1~deb12u1", "no-dtls", "https://openssl-library.org/news/secadv/20260929.txt", []string{"libssl3"}},
 	"CVE-2026-11940": {"python3.11", "3.11.2-6+deb12u9", "no-tarfile", "https://github.com/python/cpython/commit/be13e86f6b9788a6f4d0419dffef72cbae5865c9", []string{"libpython3.11-minimal", "libpython3.11-stdlib", "python3.11-minimal"}},
 	"CVE-2026-7210":  {"python3.11", "3.11.2-6+deb12u9", "no-expat", "https://mail.python.org/archives/list/security-announce@python.org/message/PNY5OMBDPM2FRUZTWFFPJ6LISWKV627K/", []string{"libpython3.11-minimal", "libpython3.11-stdlib", "python3.11-minimal"}},
 	"CVE-2026-53613": {"util-linux", "2.38.1-5+deb12u3", "findmnt-read-only", "https://github.com/util-linux/util-linux/security/advisories/GHSA-8gj5-72r3-428g", []string{"bsdutils", "libblkid1", "libmount1", "libsmartcols1", "libuuid1", "util-linux", "util-linux-extra"}},
@@ -412,10 +411,6 @@ func proveDiagnosticsNonaffected(bundle string, rule nonaffectedRule) error {
 		if err := allowOnly("./lib/libsystemd.so.0", "./lib/libudev.so.1"); err != nil {
 			return err
 		}
-	case "no-dtls":
-		if err := allowOnly("./lib/libcrypto.so.3"); err != nil {
-			return err
-		}
 	case "no-tarfile", "no-expat":
 		if err := provePrivatePython(bundle); err != nil {
 			return err
@@ -429,12 +424,12 @@ func proveDiagnosticsNonaffected(bundle string, rule nonaffectedRule) error {
 	}
 	for path, file := range elfs {
 		for _, library := range file.Libraries {
-			if strings.HasPrefix(library, "libssl.so") || strings.HasPrefix(library, "libexpat") {
+			if strings.HasPrefix(library, "libexpat") {
 				return fmt.Errorf("affected library imported by %s: %s", path, library)
 			}
 		}
 		for _, symbol := range file.Symbols {
-			if strings.HasPrefix(symbol.Name, "DTLS_") || strings.HasPrefix(symbol.Name, "DTLSv") || symbol.Name == "PyInit_pyexpat" || symbol.Name == "PyInit__elementtree" || strings.HasPrefix(symbol.Name, "zipOpenNewFileInZip4_") {
+			if symbol.Name == "PyInit_pyexpat" || symbol.Name == "PyInit__elementtree" || strings.HasPrefix(symbol.Name, "zipOpenNewFileInZip4_") {
 				return fmt.Errorf("affected implementation symbol in %s: %s", path, symbol.Name)
 			}
 		}
@@ -447,7 +442,7 @@ func proveDiagnosticsNonaffected(bundle string, rule nonaffectedRule) error {
 		}
 		name := entry.Name()
 		if strings.Contains(name, "minizip") || strings.Contains(name, "infocmp") || strings.Contains(name, "homed") || strings.Contains(name, "homework") ||
-			strings.HasPrefix(name, "libssl.so") || strings.HasPrefix(name, "libexpat") || strings.Contains(name, "pyexpat") || strings.Contains(name, "_elementtree") || strings.HasPrefix(name, "tarfile.") || name == "xml" {
+			strings.HasPrefix(name, "libexpat") || strings.Contains(name, "pyexpat") || strings.Contains(name, "_elementtree") || strings.HasPrefix(name, "tarfile.") || name == "xml" {
 			return fmt.Errorf("affected implementation present: %s", path)
 		}
 		return nil
