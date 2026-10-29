@@ -70,15 +70,112 @@
     </div>
   </section>
 
-  <%!-- One request, start to finish --%>
+  <%!-- How you shape it: one policy for the whole team, then each runner's own rules --%>
+  <section class="border-t border-zinc-900 py-20 sm:py-28">
+    <div class="mx-auto max-w-5xl px-6 lg:px-8">
+      <div class="mx-auto max-w-2xl text-center">
+        <h2 class="text-3xl font-bold tracking-tight text-white text-balance sm:text-4xl">
+          You set the rules once.
+        </h2>
+        <p class="mt-4 text-base leading-relaxed text-zinc-400">
+          One person sets the policy for the whole team, so no engineer keeps a private approval
+          list for their AI. Every agent in your workspace goes through the same rules.
+        </p>
+      </div>
+
+      <div class="mt-12 grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
+          <h3 class="text-sm font-semibold text-zinc-50">The default policy</h3>
+          <p class="mt-1 text-sm leading-relaxed text-zinc-400">
+            Every action has a risk tier, and the tier decides what happens.
+          </p>
+          <ul class="mt-4 divide-y divide-zinc-900">
+            <li
+              :for={
+                {tier, state, what, example} <- [
+                  {"low", :pass, "Runs right away", "linux.disk_usage"},
+                  {"medium", :pass, "Runs right away", "docker.logs"},
+                  {"high", :pending, "Waits for a person", "nomad.job_revert"},
+                  {"critical", :deny, "Never runs", "kubernetes.drain"}
+                ]
+              }
+              class="flex items-center gap-4 py-3"
+            >
+              <.risk_pill risk={tier} variant={:track} id={"policy-tier-#{tier}"} />
+              <span class="min-w-0 flex-1 text-sm text-zinc-300">
+                {what} <span class="text-zinc-500">· {example}</span>
+              </span>
+              <.state_chip state={state} />
+            </li>
+          </ul>
+        </div>
+
+        <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
+          <h3 class="text-sm font-semibold text-zinc-50">Your rules come first</h3>
+          <p class="mt-1 text-sm leading-relaxed text-zinc-400">
+            Rules match an action pattern, and the first match wins. A runner or a runner group
+            can have rules of its own.
+          </p>
+          <ol class="mt-4 divide-y divide-zinc-900">
+            <li class="flex items-center gap-3 py-3">
+              <span class="font-mono text-xs text-zinc-500">1</span>
+              <code class="font-mono text-sm text-zinc-200">*.delete_*</code>
+              <.state_chip state={:deny} class="ml-auto" />
+            </li>
+            <li class="flex items-center gap-3 py-3">
+              <span class="font-mono text-xs text-zinc-500">2</span>
+              <code class="font-mono text-sm text-zinc-200">nomad.job_*</code>
+              <.state_chip state={:pending} class="ml-auto" />
+            </li>
+            <li class="flex items-center gap-3 py-3">
+              <span class="font-mono text-xs text-zinc-500">3</span>
+              <span class="text-sm text-zinc-300">Anything else</span>
+              <span class="ml-auto text-sm text-zinc-400">its tier decides</span>
+            </li>
+          </ol>
+        </div>
+      </div>
+
+      <div class="mt-4 grid items-start gap-4 sm:grid-cols-2">
+        <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
+          <h3 class="text-sm font-semibold text-zinc-50">A person approves</h3>
+          <p class="mt-2 text-sm leading-relaxed text-zinc-400">
+            A request that needs approval waits for one approver or two, in the console or from
+            email. Approvals that keep repeating can become standing grants that expire on their
+            own.
+          </p>
+        </div>
+        <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
+          <h3 class="text-sm font-semibold text-zinc-50">Each host has the last word</h3>
+          <p class="mt-2 text-sm leading-relaxed text-zinc-400">
+            The runner can allow or deny actions itself and cap the risk it accepts, whatever the
+            cloud policy says.
+          </p>
+          <pre
+            phx-no-format
+            class="mt-4 overflow-x-auto rounded-xl border border-zinc-900 bg-black/40 p-4 font-mono text-[11.5px] leading-5 text-zinc-300"
+          ><span class="text-sky-300">admission</span>:
+  <span class="text-sky-300">deny</span>: [<span class="text-brand-300">"*.purge_*"</span>]
+  <span class="text-sky-300">max_risk</span>: <span class="text-brand-300">medium</span></pre>
+        </div>
+      </div>
+
+      <p class="mt-10 text-center text-sm">
+        <.cta_link navigate={~p"/docs/policies-and-approvals"}>Read the policy docs</.cta_link>
+      </p>
+    </div>
+  </section>
+
+  <%!-- One request, in detail: the map's approval step, field by field --%>
   <section class="border-t border-zinc-900 bg-zinc-950/40 py-20 sm:py-28">
     <div class="mx-auto max-w-4xl px-6 lg:px-8">
       <div class="mx-auto max-w-2xl text-center">
         <h2 class="text-3xl font-bold tracking-tight text-white text-balance sm:text-4xl">
-          One request, start to finish.
+          One request, in detail.
         </h2>
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
-          Here's a real one: checkout is failing, and the agent wants to restart the service.
+          Here is the approval step from the map, field by field: an agent asks to end one
+          database session that is holding a lock. The names and timings are illustrative.
         </p>
       </div>
 
@@ -93,19 +190,19 @@
               The agent asks
             </h3>
             <p class="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400">
-              The agent can't run commands, so asking is all it can do. The request is one action
-              from your catalog, the arguments to fill it in, and a reason a human can read later.
+              The agent picks an action from its catalog and supplies the runner, the arguments,
+              and a reason a person can read later.
             </p>
             <div class="mt-4 max-w-2xl overflow-hidden rounded-xl border border-zinc-900 bg-black/40">
               <div class="border-b border-zinc-900 bg-zinc-950/80 px-4 py-2 font-mono text-[10px] uppercase tracking-widest text-zinc-500">
-                the request
+                request summary · not an API payload
               </div>
               <pre class="overflow-x-auto p-4 font-mono text-[11.5px] leading-5 text-zinc-300">&#123;
   <span class="text-sky-300">"tool"</span>: <span class="text-brand-300">"run_action"</span>,
-  <span class="text-sky-300">"action_id"</span>: <span class="text-brand-300">"linux.systemctl_restart"</span>,
-  <span class="text-sky-300">"args"</span>: &#123; <span class="text-sky-300">"unit"</span>: <span class="text-brand-300">"checkout-api.service"</span> &#125;,
-  <span class="text-sky-300">"reason"</span>: <span class="text-brand-300">"checkout-api is returning 502s — restart it"</span>,
-  <span class="text-sky-300">"runner"</span>: <span class="text-brand-300">"api-iad-02"</span>
+  <span class="text-sky-300">"action_id"</span>: <span class="text-brand-300">"postgres.terminate_backend"</span>,
+  <span class="text-sky-300">"args"</span>: &#123; <span class="text-sky-300">"pid"</span>: <span class="text-amber-300">48213</span> &#125;,
+  <span class="text-sky-300">"reason"</span>: <span class="text-brand-300">"pid 48213 has held a lock on orders for 9 minutes; checkout writes time out"</span>,
+  <span class="text-sky-300">"runner"</span>: <span class="text-brand-300">"db-iad-01"</span>
 &#125;</pre>
             </div>
           </div>
@@ -121,20 +218,18 @@
               emisar checks it
             </h3>
             <p class="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400">
-              Before your rules even come into it, emisar checks the basics: the action really
-              is in your catalog, it comes from a pack version your account trusts, the arguments
-              fit the schema, and this agent is allowed to touch that server. A pack whose exact
-              hash is in the published catalog is pinned automatically. A pack whose content
-              changed on the host is blocked until an admin reviews it.
+              emisar checks that the agent may use this runner, the action belongs to a trusted
+              pack, and the arguments are valid. A pack whose hash matches the published catalog
+              is trusted automatically. An admin must review and trust custom or modified packs.
             </p>
             <div class="mt-4 max-w-2xl overflow-hidden rounded-xl border border-zinc-900 bg-black/40">
               <div class="border-b border-zinc-900 bg-zinc-950/80 px-4 py-2 font-mono text-[10px] uppercase tracking-widest text-zinc-500">
                 the checks
               </div>
-              <pre class="overflow-x-auto p-4 font-mono text-[11.5px] leading-5 text-zinc-300"><span class="text-brand-400">✓</span> <span class="text-zinc-500">action</span>   linux.systemctl_restart <span class="text-zinc-500">— in your catalog</span>
-<span class="text-brand-400">✓</span> <span class="text-zinc-500">pack</span>     linux-core @ 4e91ab27… <span class="text-zinc-500">— trusted for this account</span>
-<span class="text-brand-400">✓</span> <span class="text-zinc-500">args</span>     unit = <span class="text-brand-300">"checkout-api.service"</span> <span class="text-zinc-500">— fits the schema</span>
-<span class="text-brand-400">✓</span> <span class="text-zinc-500">runner</span>   api-iad-02 <span class="text-zinc-500">— allowed for this agent</span></pre>
+              <pre class="overflow-x-auto p-4 font-mono text-[11.5px] leading-5 text-zinc-300"><span class="text-brand-400">✓</span> <span class="text-zinc-500">action</span>   postgres.terminate_backend <span class="text-zinc-500">— in your catalog</span>
+<span class="text-brand-400">✓</span> <span class="text-zinc-500">pack</span>     postgres @ 3f9c1e27… <span class="text-zinc-500">— trusted for this account</span>
+<span class="text-brand-400">✓</span> <span class="text-zinc-500">args</span>     pid = <span class="text-amber-300">48213</span> <span class="text-zinc-500">— an integer from 1 to 4194304</span>
+<span class="text-brand-400">✓</span> <span class="text-zinc-500">runner</span>   db-iad-01 <span class="text-zinc-500">— this agent may use it</span></pre>
             </div>
           </div>
         </li>
@@ -149,15 +244,15 @@
               Your rules decide
             </h3>
             <p class="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400">
-              This is where your policy comes in: it can let an action run freely, refuse it
-              outright, or require a person to sign off. A service restart is disruptive enough
-              that it waits. Jordan gets the approval, reads the reason, and taps Approve.
+              Your policy allows the request, refuses it, or holds it for a person. Ending a
+              session is high risk, so the default policy holds it, and Jordan approves it before
+              the runner starts.
             </p>
             <div class="mt-4 max-w-2xl overflow-hidden rounded-xl border border-zinc-900 bg-black/40">
               <div class="border-b border-zinc-900 bg-zinc-950/80 px-4 py-2 font-mono text-[10px] uppercase tracking-widest text-zinc-500">
                 the decision
               </div>
-              <pre class="overflow-x-auto p-4 font-mono text-[11.5px] leading-5 text-zinc-300"><span class="text-zinc-500">policy</span>     Service restarts require approval
+              <pre class="overflow-x-auto p-4 font-mono text-[11.5px] leading-5 text-zinc-300"><span class="text-zinc-500">policy</span>     high risk → the default for its tier
 <span class="text-zinc-500">decision</span>   <span class="text-amber-300">require_approval</span> → waiting for a person
 <span class="text-zinc-500">approved</span>   <span class="text-brand-300">Jordan Lee · 41 seconds later ✓</span></pre>
             </div>
@@ -174,19 +269,18 @@
               The runner does the work
             </h3>
             <p class="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400">
-              The runner doesn't blindly trust the cloud. It re-checks the pack and the
-              arguments on your own server and runs that one command without a shell. Then it
-              scrubs anything that looks like a secret from the output before it leaves the
-              machine.
+              The runner checks the request against its installed pack and its local rules, then
+              runs the pack's fixed command. It masks secrets that match its patterns before the
+              output leaves the host.
             </p>
             <div class="mt-4 max-w-2xl overflow-hidden rounded-xl border border-zinc-900 bg-black/40">
               <div class="border-b border-zinc-900 bg-zinc-950/80 px-4 py-2 font-mono text-[10px] uppercase tracking-widest text-zinc-500">
                 on your server
               </div>
-              <pre class="overflow-x-auto p-4 font-mono text-[11.5px] leading-5 text-zinc-300"><span class="text-zinc-500">runner</span>   api-iad-02
+              <pre class="overflow-x-auto p-4 font-mono text-[11.5px] leading-5 text-zinc-300"><span class="text-zinc-500">runner</span>   db-iad-01
 <span class="text-zinc-500">check</span>    pack hash + arguments — verified again on the host <span class="text-brand-400">✓</span>
-<span class="text-zinc-500">run</span>      <span class="text-zinc-500">$</span> <span class="text-zinc-100">systemctl restart checkout-api.service</span>
-<span class="text-zinc-500">result</span>   exit <span class="text-amber-300">0</span> · 0.38s · secrets scrubbed from the output</pre>
+<span class="text-zinc-500">run</span>      <span class="text-zinc-500">$</span> <span class="text-zinc-100">psql -XAt -c "SELECT pg_terminate_backend(48213);"</span>
+<span class="text-zinc-500">result</span>   exit <span class="text-amber-300">0</span> · 0.04s · t</pre>
             </div>
           </div>
         </li>
@@ -200,23 +294,29 @@
               Everything is on the record
             </h3>
             <p class="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400">
-              The audit trail records the whole story: who asked, why, who approved, what ran,
-              and what came back. The host keeps its own copy, each line chained to the one
-              before it, so tampering shows. Search the trail in the console, or have your SIEM
-              poll it out.
+              Follow the request in the console from approval to result. The audit event links to
+              the run, where you can inspect the command and its output.
             </p>
             <div class="mt-4 max-w-2xl overflow-hidden rounded-xl border border-zinc-900 bg-black/40">
               <div class="border-b border-zinc-900 bg-zinc-950/80 px-4 py-2 font-mono text-[10px] uppercase tracking-widest text-zinc-500">
-                the audit entry (illustrative)
+                where to look
               </div>
-              <pre class="overflow-x-auto p-4 font-mono text-[11.5px] leading-5 text-zinc-300">&#123;
-  <span class="text-sky-300">"event"</span>: <span class="text-brand-300">"execution_completed"</span>,
-  <span class="text-sky-300">"action"</span>: <span class="text-brand-300">"linux.systemctl_restart"</span>,
-  <span class="text-sky-300">"requested_by"</span>: <span class="text-brand-300">"Maya Chen · Claude Code"</span>,
-  <span class="text-sky-300">"approved_by"</span>: <span class="text-brand-300">"Jordan Lee"</span>,
-  <span class="text-sky-300">"exit_code"</span>: <span class="text-amber-300">0</span>,
-  <span class="text-sky-300">"prev_hash"</span>: <span class="text-brand-300">"9a72d4…"</span>
-&#125;</pre>
+              <dl class="space-y-4 p-4 text-sm leading-6 text-zinc-400">
+                <div>
+                  <dt class="font-semibold text-zinc-100">Audit</dt>
+                  <dd>The request, the policy decision, Jordan's approval, and the outcome.</dd>
+                </div>
+                <div>
+                  <dt class="font-semibold text-zinc-100">Run history</dt>
+                  <dd>The arguments, the command, and the redacted output.</dd>
+                </div>
+                <div>
+                  <dt class="font-semibold text-zinc-100">Host journal</dt>
+                  <dd>
+                    A separate record the runner keeps on its own disk, chained line to line.
+                  </dd>
+                </div>
+              </dl>
             </div>
           </div>
         </li>

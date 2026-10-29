@@ -619,6 +619,23 @@ defmodule EmisarWeb.MarketingTest do
              "linux.reboot_host"
   end
 
+  test "how it works shows the rules you set, then one request in detail", %{conn: conn} do
+    document = conn |> get(~p"/how-it-works") |> html_response(200) |> LazyHTML.from_document()
+    text = document |> LazyHTML.text() |> squish()
+
+    # One policy for the whole team: the tier defaults, your overrides, the host's own rules.
+    assert text =~ "You set the rules once."
+    assert text =~ "Waits for a person · nomad.job_revert"
+    assert text =~ "admission: deny"
+
+    assert document |> LazyHTML.query(~s(a[href="/docs/policies-and-approvals"])) |> Enum.count() >
+             0
+
+    # The map's approval step, field by field, with the pack's own fixed command.
+    assert text =~ "One request, in detail."
+    assert text =~ ~s{psql -XAt -c "SELECT pg_terminate_backend(48213);"}
+  end
+
   test "zero-trust page cites the framework honestly without claiming endorsement", %{conn: conn} do
     html = conn |> get(~p"/zero-trust") |> html_response(200)
 
