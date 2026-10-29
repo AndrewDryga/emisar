@@ -2,32 +2,36 @@
   <.marketing_nav signed_in?={@signed_in?} current={:compare} />
 
   <section class="py-16 sm:py-24">
-    <div class="mx-auto max-w-3xl px-6 lg:px-8">
-      <p class="text-sm font-semibold text-brand-400">Compare</p>
-      <.marketing_heading tag="h1" scale={:hero} class="mt-2">
-        Custom MCP server vs emisar
-      </.marketing_heading>
-      <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
-        A custom MCP server makes sense when you need a small adapter over an API that already
-        handles authorization and audit. emisar fits ongoing agent work across real hosts,
-        through actions you can review and control. The decision is how much of that execution
-        system your team wants to build and maintain.
-      </p>
+    <div class="mx-auto max-w-6xl px-6 lg:px-8">
+      <div class="max-w-3xl">
+        <p class="text-sm font-semibold text-brand-400">Compare</p>
+        <.marketing_heading tag="h1" scale={:hero} class="mt-2">
+          Custom MCP server vs emisar
+        </.marketing_heading>
+        <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
+          A custom MCP server makes sense when you need a small adapter over an API that already
+          handles authorization and audit. emisar fits ongoing agent work across real hosts,
+          through actions you can review and control. The decision is how much of that execution
+          system your team wants to build and maintain.
+        </p>
+      </div>
 
-      <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">
-        A tool handler is the beginning
-      </h2>
-      <p class="mt-3 text-base leading-7 text-zinc-400">
-        Connecting a model's request to a command is the first step. You also need to check
-        who can call it and which inputs are valid, handle lost connections, and record the
-        result. Those checks must keep working as you add hosts, clients, and actions.
-      </p>
+      <div class="mt-16 max-w-3xl">
+        <h2 class="text-3xl font-semibold text-zinc-50 text-balance">
+          A tool handler is the beginning
+        </h2>
+        <p class="mt-4 text-base leading-7 text-zinc-400 text-pretty">
+          Connecting a model's request to a command is the first step. You also need to check
+          who can call it and which inputs are valid, handle lost connections, and record the
+          result. Those checks must keep working as you add hosts, clients, and actions.
+        </p>
+      </div>
 
       <%!-- The difference, shown: the same psql, two ways. Amber = the handler
            in a minimal example; emerald = the
            declared pack action. Same terminal look as /compare/raw-ssh. --%>
-      <div class="mt-8 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div class="overflow-hidden rounded-xl border border-amber-500/25 bg-black/40">
+      <div class="mt-8 grid gap-8 lg:grid-cols-2 lg:gap-5">
+        <div class="min-w-0 overflow-hidden rounded-xl border border-amber-500/25 bg-black/40">
           <div class="flex items-center gap-2 border-b border-amber-500/20 bg-amber-500/5 px-4 py-2.5">
             <span class="h-2 w-2 rounded-full bg-amber-500/70"></span>
             <span class="text-xs font-semibold text-amber-200">
@@ -51,7 +55,7 @@
             <p class="text-zinc-500">//&nbsp;&nbsp;OAuth + transport per client</p>
           </div>
         </div>
-        <div class="overflow-hidden rounded-xl border border-brand-500/25 bg-black/40">
+        <div class="min-w-0 overflow-hidden rounded-xl border border-brand-500/25 bg-black/40">
           <div class="flex items-center gap-2 border-b border-brand-500/20 bg-brand-500/5 px-4 py-2.5">
             <span class="h-2 w-2 rounded-full bg-brand-500"></span>
             <span class="text-xs font-semibold text-brand-200">postgres.yml · emisar pack action</span>
@@ -76,7 +80,7 @@
           </div>
         </div>
       </div>
-      <p class="mt-3 text-base leading-7 text-zinc-400 text-pretty">
+      <p class="mt-6 max-w-3xl text-base leading-7 text-zinc-400 text-pretty">
         Both run the same query. The left drops an unvalidated
         <code class="text-zinc-300">$&#123;pid&#125;</code>
         straight into a SQL string, one slip from injection. The right declares
@@ -84,14 +88,20 @@
         an integer that the runner re-validates before <code class="text-zinc-300">psql</code>
         ever sees it.
       </p>
+    </div>
+  </section>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
-        What you'd build and own
-      </h2>
-      <p class="mt-3 text-base leading-7 text-zinc-400">
-        You can build these controls yourself. Your team then owns their tests, updates,
-        and behavior when something fails.
-      </p>
+  <section class="border-y border-zinc-900 bg-black/20 py-16 sm:py-20">
+    <div class="mx-auto max-w-6xl px-6 lg:px-8">
+      <div class="max-w-3xl">
+        <h2 class="text-3xl font-semibold text-zinc-50 text-balance">
+          What you'd build and own
+        </h2>
+        <p class="mt-4 text-base leading-7 text-zinc-400 text-pretty">
+          You can build these controls yourself. Your team then owns their tests, updates,
+          and behavior when something fails.
+        </p>
+      </div>
       <%!-- One data list, two layouts: a table on md+, stacked cards on mobile, so
         the 3-way comparison reads without a horizontal scroll on phones. --%>
       <% rows = [
@@ -117,121 +127,149 @@
          "Run-state reconciled on reconnect; a dropped socket keeps the run alive and replays its result; children reaped on cancel and timeout"}
       ] %>
 
-      <%!-- Desktop: the comparison table --%>
-      <div class="mt-4 hidden overflow-hidden rounded-xl border border-zinc-900 md:block">
+      <div class="mt-5 hidden overflow-hidden rounded-lg ring-1 ring-white/10 md:block">
         <table class="w-full text-sm">
-          <thead class="bg-zinc-950/80 text-xs uppercase tracking-wider text-zinc-400">
+          <thead class="bg-black/40 text-xs text-zinc-400">
             <tr>
-              <th class="px-4 py-3 text-left font-medium">Concern</th>
-              <th class="px-4 py-3 text-left font-medium">You build &amp; maintain it</th>
-              <th class="px-4 py-3 text-left font-semibold text-brand-300">emisar ships it</th>
+              <th class="w-[22%] px-4 py-3 text-left font-medium">Concern</th>
+              <th class="w-[39%] px-4 py-3 text-left font-semibold text-amber-200">
+                You build &amp; maintain it
+              </th>
+              <th class="w-[39%] px-4 py-3 text-left font-semibold text-brand-300">
+                emisar ships it
+              </th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-zinc-900 text-zinc-300">
-            <tr :for={{concern, diy, emisar} <- rows} class="hover:bg-zinc-900/30">
-              <td class="px-4 py-3 align-top font-medium text-zinc-100">{concern}</td>
-              <td class="px-4 py-3 align-top text-zinc-400">{diy}</td>
-              <td class="px-4 py-3 align-top text-zinc-300">{emisar}</td>
+          <tbody class="divide-y divide-zinc-900 bg-zinc-950/70">
+            <tr :for={{concern, diy, emisar} <- rows}>
+              <td class="px-4 py-4 align-top font-medium text-zinc-100">{concern}</td>
+              <td class="px-4 py-4 align-top leading-6 text-zinc-400">{diy}</td>
+              <td class="px-4 py-4 align-top leading-6 text-zinc-300">{emisar}</td>
             </tr>
           </tbody>
         </table>
       </div>
 
-      <%!-- Mobile: one card per concern, the emisar answer accented --%>
-      <div class="mt-4 space-y-3 md:hidden">
+      <div class="mt-5 overflow-hidden rounded-lg bg-zinc-950/70 ring-1 ring-white/10 md:hidden">
         <div
           :for={{concern, diy, emisar} <- rows}
-          class="rounded-xl border border-zinc-900 bg-zinc-950/60 p-4"
+          class="border-b border-zinc-800 p-4 last:border-b-0"
         >
           <p class="text-sm font-semibold text-zinc-100">{concern}</p>
-          <div class="mt-3 space-y-3 text-sm">
+          <div class="mt-4 space-y-4 text-sm leading-6">
             <div>
-              <p class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-                You build it
-              </p>
-              <p class="mt-0.5 text-zinc-400">{diy}</p>
+              <p class="text-xs font-semibold text-amber-300">You build it</p>
+              <p class="mt-1 text-zinc-400">{diy}</p>
             </div>
             <div class="border-l-2 border-brand-500/40 pl-3">
-              <p class="text-[11px] font-semibold uppercase tracking-wider text-brand-400">
-                emisar
-              </p>
-              <p class="mt-0.5 text-zinc-300">{emisar}</p>
+              <p class="text-xs font-semibold text-brand-400">emisar</p>
+              <p class="mt-1 text-zinc-300">{emisar}</p>
             </div>
           </div>
         </div>
       </div>
+    </div>
+  </section>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
-        What emisar costs you
-      </h2>
-      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
-        <li>
-          <strong class="text-zinc-200">It's a vendor in your path.</strong>
-          We host the control plane.
-          Your runner connects from your host and keeps its own journal. You can block
-          actions on the runner even if the cloud allows them, but each request still
-          goes through our service.
-        </li>
-        <li>
-          <strong class="text-zinc-200">It's opinionated.</strong>
-          Actions are YAML packs, the policy model is risk tiers plus overrides, and the transport
-          is MCP. If your workflow doesn't fit that shape, you are better off with a server you
-          control than bending the workflow to fit ours.
-        </li>
-        <li>
-          <strong class="text-zinc-200">You choose the available actions.</strong>
-          Use published packs or add your own commands as custom actions. For an agent
-          that needs an unrestricted shell, see the <.link navigate={~p"/compare/raw-ssh-for-ai"}>SSH comparison</.link>.
-        </li>
-        <li>
-          <strong class="text-zinc-200">
-            It's another bill.
-          </strong>
-          Team is $20 per runner per month.
-        </li>
-      </ul>
-
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
-        Build it yourself when
-      </h2>
-      <p class="mt-3 text-base leading-7 text-zinc-400">
-        A small MCP adapter can be enough for one team's workflow, especially when the API
-        already handles access checks and audit records. It is a good fit when you don't
-        expect to add more hosts or clients.
-      </p>
-
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
-        Reach for emisar when
-      </h2>
-      <p class="mt-3 text-base leading-7 text-zinc-400">
-        Connect your agent once, then add capabilities as packs. Use the published catalog
-        for common infrastructure and wrap your own procedures as custom actions. Emisar
-        handles the shared access checks, execution, approvals, and records as your hosts
-        and workflows grow. You don't have to rebuild all of that and, which takes even more time,
-        maintain it as the environment evolves.
-      </p>
-
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
-        Try one task before choosing
-      </h2>
-      <p class="mt-3 text-base leading-7 text-zinc-400">
-        Use the
-        <.link navigate={~p"/docs/quickstart"} class="text-brand-400 hover:text-brand-300">quickstart</.link>
-        to connect a runner and run <code>linux.uptime</code>. Inspect the result and its record,
-        then choose a relevant action from the <.link
-          navigate={~p"/packs"}
-          class="text-brand-400 hover:text-brand-300"
-        >published packs</.link>.
-        For a longer example, the
-        <.link navigate={~p"/use-cases/csi-data-loss"} class="text-brand-400 hover:text-brand-300">CSI data-loss investigation</.link>
-        shows where the agent kept working and where a person had to decide.
-      </p>
-
-      <div class="mt-12 flex flex-wrap gap-x-6 gap-y-3 border-t border-zinc-900 pt-8 text-sm">
-        <.cta_link navigate={~p"/docs/security-model"}>How the trust boundary works</.cta_link>
-        <.cta_link navigate={~p"/docs/action-packs"}>The pack format</.cta_link>
-        <.cta_link navigate={~p"/compare/raw-ssh-for-ai"}>Compare with raw SSH</.cta_link>
+  <section class="py-16 sm:py-24">
+    <div class="mx-auto max-w-6xl px-6 lg:px-8">
+      <div class="max-w-3xl">
+        <h2 class="text-3xl font-semibold text-zinc-50 text-balance">
+          What emisar costs you
+        </h2>
       </div>
+
+      <div class="mt-10 max-w-5xl divide-y divide-zinc-900 border-y border-zinc-900">
+        <div class="py-5 sm:grid sm:grid-cols-[14rem_1fr] sm:gap-8">
+          <h3 class="text-sm font-semibold text-zinc-100">It's a vendor in your path.</h3>
+          <p class="mt-2 text-base leading-7 text-zinc-400 text-pretty sm:mt-0">
+            We host the control plane.
+            Your runner connects from your host and keeps its own journal. You can block
+            actions on the runner even if the cloud allows them, but each request still
+            goes through our service.
+          </p>
+        </div>
+        <div class="py-5 sm:grid sm:grid-cols-[14rem_1fr] sm:gap-8">
+          <h3 class="text-sm font-semibold text-zinc-100">It's opinionated.</h3>
+          <p class="mt-2 text-base leading-7 text-zinc-400 text-pretty sm:mt-0">
+            Actions are YAML packs, the policy model is risk tiers plus overrides, and the transport
+            is MCP. If your workflow doesn't fit that shape, you are better off with a server you
+            control than bending the workflow to fit ours.
+          </p>
+        </div>
+        <div class="py-5 sm:grid sm:grid-cols-[14rem_1fr] sm:gap-8">
+          <h3 class="text-sm font-semibold text-zinc-100">You choose the available actions.</h3>
+          <p class="mt-2 text-base leading-7 text-zinc-400 text-pretty sm:mt-0">
+            Use published packs or add your own commands as custom actions. For an agent
+            that needs an unrestricted shell, see the <.link
+              navigate={~p"/compare/raw-ssh-for-ai"}
+              class="text-brand-400 hover:text-brand-300"
+            >SSH comparison</.link>.
+          </p>
+        </div>
+        <div class="py-5 sm:grid sm:grid-cols-[14rem_1fr] sm:gap-8">
+          <h3 class="text-sm font-semibold text-zinc-100">It's another bill.</h3>
+          <p class="mt-2 text-base leading-7 text-zinc-400 text-pretty sm:mt-0">
+            Team is $20 per runner per month.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="py-16 sm:py-24">
+    <div class="mx-auto max-w-6xl px-6 lg:px-8">
+      <div class="grid lg:grid-cols-[0.72fr_1.28fr]">
+        <div class="pb-10 lg:pb-0 lg:pr-12">
+          <h2 class="text-xl font-semibold text-zinc-100 text-balance">
+            Build it yourself when
+          </h2>
+          <p class="mt-4 max-w-md text-base leading-7 text-zinc-400 text-pretty">
+            A small MCP adapter can be enough for one team's workflow, especially when the API
+            already handles access checks and audit records. It is a good fit when you don't
+            expect to add more hosts or clients.
+          </p>
+        </div>
+
+        <div class="border-t border-zinc-800 pt-10 lg:border-l lg:border-t-0 lg:pl-12 lg:pt-0">
+          <h2 class="text-3xl font-semibold text-zinc-50 text-balance">Reach for emisar when</h2>
+          <p class="mt-4 max-w-2xl text-base leading-7 text-zinc-400 text-pretty">
+            Connect your agent once, then add capabilities as packs. Use the published catalog
+            for common infrastructure and wrap your own procedures as custom actions. Emisar
+            handles the shared access checks, execution, approvals, and records as your hosts
+            and workflows grow. You don't have to rebuild all of that and, which takes even more time,
+            maintain it as the environment evolves.
+          </p>
+
+          <div class="mt-8 max-w-2xl rounded-xl border border-brand-900/40 bg-brand-950/20 p-5 text-sm text-zinc-300">
+            <h3 class="font-semibold text-zinc-100">Try one task before choosing</h3>
+            <p class="mt-2 leading-6">
+              Use the
+              <.link navigate={~p"/docs/quickstart"} class="text-brand-400 hover:text-brand-300">quickstart</.link>
+              to connect a runner and run <code>linux.uptime</code>. Inspect the result and its record,
+              then choose a relevant action from the <.link
+                navigate={~p"/packs"}
+                class="text-brand-400 hover:text-brand-300"
+              >published packs</.link>.
+              For a longer example, the
+              <.link
+                navigate={~p"/use-cases/csi-data-loss"}
+                class="text-brand-400 hover:text-brand-300"
+              >CSI data-loss investigation</.link>
+              shows where the agent kept working and where a person had to decide.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <nav
+        aria-label="Continue comparing emisar"
+        class="mt-12 flex flex-col flex-wrap items-center justify-center gap-x-8 gap-y-1 border-t border-zinc-900 pt-6 text-center text-sm sm:flex-row"
+      >
+        <.cta_link navigate={~p"/docs/security-model"} class="min-h-10 py-2.5">How the trust boundary works</.cta_link>
+        <.cta_link tone={:muted} navigate={~p"/docs/action-packs"} class="min-h-10 py-2.5">The pack format</.cta_link>
+        <.cta_link tone={:muted} navigate={~p"/compare/raw-ssh-for-ai"} class="min-h-10 py-2.5">Compare with raw SSH</.cta_link>
+      </nav>
     </div>
   </section>
 
