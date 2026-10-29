@@ -1041,7 +1041,8 @@ coordinated schema, instruction, documentation, and client-corpus updates.
       "approval": {
         "request_id": "apr_01J0D85QB2BWAAGXX9YZFZJEPR",
         "url": "https://emisar.dev/app/example/approvals/apr_01J0D85QB2BWAAGXX9YZFZJEPR",
-        "expires_at": "2026-07-13T15:12:10Z"
+        "expires_at": "2026-07-13T15:12:10Z",
+        "handoff": "If you have not yet told the user about this request, tell them now in this conversation that it waits for an authorized person to approve it in Emisar, and give them this approval's url. Do not retry it, approve it yourself, or treat a chat reply as approval."
       },
       "wait_until": "2026-07-13T15:12:10Z",
       "next": {
@@ -1062,9 +1063,21 @@ trust, advertised signing requirements, and attestation freshness immediately
 before release. Approval expiry cancels the run; an enforcing runner
 independently refuses a stale approval release or signature. The model follows
 `next` until terminal or `wait_until`, without asking for a second client-side
-confirmation. If the work is no longer needed while the run waits, the model
-calls [`cancel_run`](#cancel_run) on that run instead of leaving the request
-open until a human decides or it expires.
+confirmation.
+
+The first time an action or runbook returns `pending_approval`, the model tells
+the user in the current conversation what is waiting, that only an authorized
+person's approval in Emisar releases it, and the exact `approval.url`, relaying
+any returned reason or expiry without inventing details. It notifies once per
+approval request, keeps doing independent work, and never retries, self-approves,
+or accepts a chat reply in place of the approval. The server instructions state
+this. Every `approval` object repeats it in the fixed, server-written `handoff`
+sentence for clients that drop the instructions; the sentence asks for the
+notice only if the model has not given it yet, so a repeated wait frame does not
+prompt a second one. Emisar sends no external notification for it. If the work
+is no longer needed while the run waits, the model calls
+[`cancel_run`](#cancel_run) on that run instead of leaving the request open
+until a human decides or it expires.
 
 An approval is bound to the exact run facts. A standing grant is narrower than
 the API key: it matches the exact key, action ID, runner generation, and either
@@ -1399,7 +1412,8 @@ Example after a wait times out while approval is still pending:
     "approval": {
       "request_id": "apr_01J0D85QB2BWAAGXX9YZFZJEPR",
       "url": "https://emisar.dev/app/example/approvals/apr_01J0D85QB2BWAAGXX9YZFZJEPR",
-      "expires_at": "2026-07-13T15:12:10Z"
+      "expires_at": "2026-07-13T15:12:10Z",
+      "handoff": "If you have not yet told the user about this request, tell them now in this conversation that it waits for an authorized person to approve it in Emisar, and give them this approval's url. Do not retry it, approve it yourself, or treat a chat reply as approval."
     },
     "wait_until": "2026-07-13T15:12:10Z",
     "next": {
@@ -2121,9 +2135,9 @@ nor alters it. `get_operation` recovers the same execution as
 
 A `pending_approval` execution also carries the same bounded `approval` object
 a pending action run gets (the request ID, the console approval URL the model
-relays to the operator, and the hard expiry), plus `wait_until` set to that
-expiry. Both fields appear only while the whole-run approval is pending and
-its request is visible to the caller:
+relays to the operator, the hard expiry, and the fixed `handoff` sentence), plus
+`wait_until` set to that expiry. Both fields appear only while the whole-run
+approval is pending and its request is visible to the caller:
 
 ```json
 {
@@ -2135,7 +2149,8 @@ its request is visible to the caller:
   "approval": {
     "request_id": "8b7c9d4e-2f31-4a68-9c05-7d1e83b2a6f4",
     "url": "https://emisar.dev/app/example/approvals/8b7c9d4e-2f31-4a68-9c05-7d1e83b2a6f4",
-    "expires_at": "2026-07-13T15:12:10Z"
+    "expires_at": "2026-07-13T15:12:10Z",
+    "handoff": "If you have not yet told the user about this request, tell them now in this conversation that it waits for an authorized person to approve it in Emisar, and give them this approval's url. Do not retry it, approve it yourself, or treat a chat reply as approval."
   },
   "wait_until": "2026-07-13T15:12:10Z"
 }

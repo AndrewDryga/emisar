@@ -3195,6 +3195,13 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     held = call(conn, "wait_for_run", %{"run_id" => run.id, "timeout" => "0"})["run"]
     review = held["review"]
 
+    # Still pending after one of two votes, so the status read keeps the
+    # handoff and the wait continuation.
+    assert held["status"] == "pending_approval"
+    assert held["approval"]["request_id"] == request.id
+    assert_approval_handoff(held["approval"], account)
+    assert held["next"]["tool"] == "wait_for_run"
+
     assert review["request_id"] == request.id
     assert review["status"] == "pending"
     assert review["required_approvals"] == 2
@@ -4117,6 +4124,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
 
     execution_id = execution["execution"]["runbook_execution_id"]
     assert execution["execution"]["status"] == "pending_approval"
+    assert_approval_handoff(execution["execution"]["approval"], account)
 
     wait_next = %{
       "tool" => "wait_for_run",
@@ -4130,6 +4138,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
 
     assert waited["execution"]["status"] == "pending_approval"
     assert waited["execution"]["next"] == wait_next
+    assert waited["execution"]["approval"] == execution["execution"]["approval"]
 
     # A held execution is still waitable, so a real window stays open instead
     # of returning immediately as though approval were a terminal state.
@@ -4149,6 +4158,18 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
   end
 
   defp authorize(conn, raw), do: put_req_header(conn, "authorization", "Bearer " <> raw)
+
+  # A pending approval names its console page and repeats the user handoff.
+  defp assert_approval_handoff(approval, account) do
+    assert approval["url"] ==
+             "#{EmisarWeb.Endpoint.url()}/app/#{account.slug}/approvals/#{approval["request_id"]}"
+
+    assert approval["handoff"] ==
+             "If you have not yet told the user about this request, tell them now in this " <>
+               "conversation that it waits for an authorized person to approve it in Emisar, " <>
+               "and give them this approval's url. Do not retry it, approve it yourself, or " <>
+               "treat a chat reply as approval."
+  end
 
   defp named_reviewer(account, full_name) do
     membership =

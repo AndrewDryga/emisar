@@ -555,16 +555,25 @@ defmodule EmisarWeb.MCP.Service do
 
   defp fixed_approval(_run, _subject, false), do: {nil, nil}
 
+  # Fixed, server-authored text: every pending result repeats the user handoff
+  # the server instructions describe, for clients that drop those instructions.
+  # It never interpolates request data, so it cannot carry untrusted text.
+  @approval_handoff "If you have not yet told the user about this request, tell them now " <>
+                      "in this conversation that it waits for an authorized person to approve " <>
+                      "it in Emisar, and give them this approval's url. Do not retry it, " <>
+                      "approve it yourself, or treat a chat reply as approval."
+
   @doc """
-  The bounded `{request_id, url, expires_at}` approval object shared by run
-  and runbook-execution summaries, pointing the operator at the console
-  approval page.
+  The bounded `{request_id, url, expires_at, handoff}` approval object shared
+  by run and runbook-execution summaries, pointing the operator at the console
+  approval page and telling the model to hand that link to the user.
   """
   def approval_summary(%Approvals.Request{} = request, %Subject{} = subject) do
     %{
       request_id: request.id,
       url: "#{EmisarWeb.Endpoint.url()}/app/#{subject.account.slug}/approvals/#{request.id}",
-      expires_at: request.expires_at
+      expires_at: request.expires_at,
+      handoff: @approval_handoff
     }
   end
 

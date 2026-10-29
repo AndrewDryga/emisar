@@ -811,6 +811,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
         |> json_response(200)
 
       assert body["result"]["instructions"] =~ "recover through its operation ID"
+      assert body["result"]["instructions"] =~ "the exact `approval.url`"
 
       reloaded = Repo.get!(ApiKey, key.id)
 
@@ -1056,6 +1057,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       assert result["supportedVersions"] == ["2026-07-28", "2025-11-25", "2025-06-18"]
       assert get_in(result, ["capabilities", "tools", "listChanged"]) == false
       assert result["instructions"] =~ "recover through its operation ID"
+      assert result["instructions"] =~ "the exact `approval.url`"
       assert result["resultType"] == "complete"
       assert get_in(result, ["_meta", "io.modelcontextprotocol/serverInfo", "name"]) == "emisar"
       assert result["ttlMs"] == 3_600_000

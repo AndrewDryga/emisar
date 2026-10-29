@@ -1220,11 +1220,15 @@ defmodule EmisarWeb.RunbookRunLiveTest do
              )
 
       # The MCP projection hands the model the same bounded approval object an
-      # action run gets: the operator URL and hard expiry, nothing else.
+      # action run gets: the operator URL, the hard expiry, and the fixed
+      # handoff asking the model to give the user that URL, nothing else.
       assert {:ok, projection} = RunbookTools.project_execution(result, subject)
       assert projection.blocking.code == "approval_required"
 
-      assert projection.approval == %{
+      assert %{handoff: "If you have not yet told the user about this request" <> _} =
+               projection.approval
+
+      assert Map.delete(projection.approval, :handoff) == %{
                request_id: request.id,
                url: "#{EmisarWeb.Endpoint.url()}/app/#{account.slug}/approvals/#{request.id}",
                expires_at: request.expires_at
