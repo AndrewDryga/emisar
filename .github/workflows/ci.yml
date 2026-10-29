@@ -435,8 +435,8 @@ jobs:
       # nor the feed exists at gate time.
       - name: Install Trivy (pinned, checksum-verified)
         env:
-          TRIVY_VERSION: "0.74.0"
-          TRIVY_SHA256: 2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a
+          TRIVY_VERSION: "0.76.1"
+          TRIVY_SHA256: c7cbe3137fb8a48a17574bede3dd6beb16742d1e9772929940fc90082c39d9c0
         run: |
           set -euo pipefail
           artifact="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
@@ -464,7 +464,7 @@ jobs:
 
       - name: Upload tested image
         if: github.event_name == 'push' && needs.changes.outputs.portal_release == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: portal-image-${{ github.sha }}
           path: |
@@ -476,7 +476,7 @@ jobs:
 
       - name: Upload tested image SBOM
         if: github.event_name == 'push' && needs.changes.outputs.portal_release == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: portal-sbom-${{ github.sha }}
           path: /tmp/emisar-portal.cdx.json
@@ -508,8 +508,8 @@ jobs:
         run: ./run ops qualify-admin-diagnostics "$GITHUB_SHA" emisar/admin-diagnostics:ci
       - name: Install Trivy (pinned, checksum-verified)
         env:
-          TRIVY_VERSION: "0.74.0"
-          TRIVY_SHA256: 2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a
+          TRIVY_VERSION: "0.76.1"
+          TRIVY_SHA256: c7cbe3137fb8a48a17574bede3dd6beb16742d1e9772929940fc90082c39d9c0
         run: |
           set -euo pipefail
           artifact="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
@@ -547,7 +547,7 @@ jobs:
           trivy image --exit-code 1 --severity HIGH,CRITICAL emisar/admin-diagnostics:ci
       - name: Preserve diagnostic scan evidence even on failure
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: admin-diagnostics-scan-${{ github.sha }}
           path: |
@@ -566,7 +566,7 @@ jobs:
             /tmp/emisar-admin-diagnostics-image.tar.gz /tmp/emisar-admin-diagnostics.cdx.json /tmp/emisar-admin-diagnostics-contract.json
       - name: Upload qualified artifacts
         if: github.event_name == 'push'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: admin-diagnostics-${{ github.sha }}
           path: |
@@ -639,7 +639,7 @@ jobs:
         # version. A reachable finding in client-shipped security code blocks.
         working-directory: ${{ matrix.module }}
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
           govulncheck ./...
 
       - name: Summarize coverage
@@ -652,7 +652,7 @@ jobs:
 
       - name: Upload coverage
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ${{ matrix.module }}-coverage
           path: ${{ matrix.module }}/coverage.out
