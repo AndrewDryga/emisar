@@ -75,9 +75,9 @@ corpus without starting a client:
   -require-held-out)
 ```
 
-## Held-out release corpus
+## Held-out corpus
 
-Release qualification uses an uncommitted version 2 corpus created after the
+Held-out qualification uses an uncommitted version 2 corpus created after the
 candidate is locked:
 
 ```json
@@ -124,17 +124,35 @@ seeded fixture API key in that environment too. A person who tunes search or
 descriptions must not see the active partition. After a held-out failure is
 fixed generally, certify against a fresh held-out partition.
 
-## Release qualification workflow
+A positive held-out case pins exact `id@version/sha256:…` pack refs, so a
+republished pack invalidates the partition (`pack_not_allowed`). The secret
+cannot be read back, so rebuild it from the author's intent file, which stays
+out of this repository and off any machine that tunes search, descriptions, or
+the catalog:
 
-[`mcp-eval.yml`](../../../.github/workflows/mcp-eval.yml) has two modes:
+```sh
+curl -fsS https://registry.emisar.dev/v1/catalog.json -o /tmp/live.json
+packctl catalog build --packs ./packs --out /tmp/dist --previous /tmp/live.json
+(cd tools && go run ./cmd/mcpeval \
+   -mint-partition /path/to/intents.json \
+   -mint-catalog /tmp/dist/v1/catalog.json \
+   -out /tmp/held-out.json)
+(cd tools && go run ./cmd/mcpeval -scenarios /tmp/held-out.json -validate-corpus -require-held-out)
+base64 < /tmp/held-out.json | gh secret set MCP_EVAL_HELD_OUT_B64 --env mcp-certification
+```
 
-- the weekly/manual development run uses the committed corpus; and
-- a manual run with `qualification=true` uses the protected held-out corpus
-  and becomes release evidence.
+## Qualification workflow
+
+[`mcp-eval.yml`](../../../.github/workflows/mcp-eval.yml) runs only when
+dispatched by hand. It spends paid provider tokens, so it is optional: no
+release, gate, or release note depends on it. It has two modes:
+
+- a plain run uses the committed development corpus; and
+- a run with `qualification=true` uses the protected held-out corpus.
 
 Both modes install pinned client versions, build the candidate bridge from the
 workflow commit, boot three fixture runners, and run every case independently
-through Claude and Codex. Release qualification also requires an explicit model
+through Claude and Codex. Held-out qualification also requires an explicit model
 ID for both clients. Missing credentials or models, a missing held-out corpus,
 an invalid corpus, one failed case, or one failed client lane fails the job.
 Success requires Claude and Codex to pass the same corpus.

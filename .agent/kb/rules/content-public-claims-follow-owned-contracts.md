@@ -7,8 +7,9 @@ from the implementation that owns it. When two layers provide related
 controls, name the layer and state only what that layer proves.
 
 - MCP tool counts come from the compiled MCP schema registry.
-- Required MCP release clients come from the certification workflow's required
-  lanes; evaluator support alone does not make a provider a release gate.
+- Claims about which MCP clients were evaluated come from the evaluation
+  workflow's lanes. That workflow is optional and manual, so no public page or
+  release note presents it as a release gate.
 - Plan features follow the billing entitlement, not nearby pricing prose.
 - Portal audit events, linked run history, and the runner's host-local journal
   are separate evidence layers. Audit events contain actor and target fields
@@ -80,5 +81,5 @@ Marketing tests pin the pricing row to the billing contract, derive the home
 page count from the MCP schema registry, and require the Trust Center to name
 both audit layers. When one of these contracts changes, sweep public templates,
 structured data, docs, runbooks, and policy pages for the old count,
-entitlement, required certification lane, unqualified connectivity or signing
+entitlement, release-gate claim about client evaluation, unqualified connectivity or signing
 claim, raw-output or argument-storage wording, or unsupported supply-chain level.

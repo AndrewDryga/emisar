@@ -2,20 +2,19 @@ name: MCP Client Certification
 
 # Real-client MCP qualification. Every lane drives the exact candidate
 # emisar-mcp bridge against the seeded compose fleet through mcpeval's
-# fail-closed relay. Scheduled runs use the committed development corpus.
-# Release qualification uses a held-out corpus from the mcp-certification
-# environment and refuses to run unless every required provider and the
-# held-out partition are configured.
+# fail-closed relay. A plain run uses the committed development corpus; a run
+# with qualification=true uses a held-out corpus from the mcp-certification
+# environment and refuses to run unless every provider and the held-out
+# partition are configured.
 #
-# No pull-request trigger: this workflow spends provider tokens and reads
-# provider secrets. It has no deploy permission and talks only to localhost.
+# Manual and optional: it spends paid provider tokens, so nothing schedules it
+# and no release or gate depends on it. It reads provider secrets, has no
+# deploy permission, and talks only to localhost.
 on:
-  schedule:
-    - cron: "27 5 * * 1"
   workflow_dispatch:
     inputs:
       qualification:
-        description: Run the held-out release qualification
+        description: Run the held-out qualification
         required: true
         default: false
         type: boolean

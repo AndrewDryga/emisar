@@ -1,7 +1,7 @@
 ---
 name: release
-sources: [portal/apps/emisar_web/lib/emisar_web/changelog.ex, portal/config/config.exs, .github/workflows/runner-release.yml, .github/workflows/mcp-release.yml, .github/workflows/mcp-eval.yml, tools/cmd/mcpeval/config.go, packs/PUBLISHING.md]
-updated: 2026-09-10
+sources: [portal/apps/emisar_web/lib/emisar_web/changelog.ex, portal/config/config.exs, .github/workflows/runner-release.yml, .github/workflows/mcp-release.yml, .github/workflows/mcp-eval.yml, packs/PUBLISHING.md]
+updated: 2026-10-29
 ---
 
 # Cutting an emisar release
@@ -160,49 +160,18 @@ Never title a product release with a bare `vX.Y.Z`.
 10. **Commit** the changelog, version, license date, test, and reconciled catalog — one focused commit
    (e.g. `release: v0.25.0 — <title>`).
 11. **Push the commit** (`git push origin main`). *Outward-facing — confirm first.*
-11b. **Refresh the held-out partition if any pack it pins was republished.**
-    A `held_out` positive scenario is REQUIRED to carry exact
-    `id@version/sha256:…` pack refs (`tools/cmd/mcpeval/config.go`), so a pack
-    release inside the window invalidates the partition and certification fails
-    with `pack_not_allowed`. The partition lives only as the
-    `MCP_EVAL_HELD_OUT_B64` secret and cannot be read back, so it is REBUILT
-    rather than edited — from an intent file whose prompts and actions stay the
-    author's:
-
-    ```sh
-    curl -fsS https://registry.emisar.dev/v1/catalog.json -o /tmp/live.json
-    packctl catalog build --packs ./packs --out /tmp/dist --previous /tmp/live.json
-    (cd tools && go run ./cmd/mcpeval \
-       -mint-partition /path/to/intents.json \
-       -mint-catalog /tmp/dist/v1/catalog.json \
-       -out /tmp/held-out.json)
-    (cd tools && go run ./cmd/mcpeval -scenarios /tmp/held-out.json -validate-corpus -require-held-out)
-    base64 < /tmp/held-out.json | gh secret set MCP_EVAL_HELD_OUT_B64 --env mcp-certification
-    ```
-
-    Keep the intent file OUT of this repository and off the machine that tunes
-    search, descriptions, or the catalog — that separation is the only thing the
-    held-out property rests on, and an agent that touched those surfaces must
-    not author it.
-
-12. **Certify MCP clients against that exact commit before tagging.** Record
-    `anchor=$(git rev-parse HEAD)`, then dispatch `mcp-eval.yml` on `main` with
-    `qualification=true` and explicit `claude_model` and `codex_model` inputs. Select the resulting
-    `MCP Client Certification` run. Its `headSha` must equal `$anchor`, its
-    conclusion must be `success`, and its held-out artifact must contain
-    passing reports for Claude and Codex. A missing credential
-    or model, skipped lane, stale SHA, or failed held-out case blocks the
-    release; fix the general defect and certify a fresh held-out partition.
-13. **Create the signed tag** at the anchor (`git tag -s …`) and `git tag -v` it.
-14. **Push the tag** (`git push origin v0.25.0`). *Outward-facing — confirm first.*
-15. **Write the release notes** (Markdown, via `/content-director`) and **create the
+12. **Create the signed tag** at the anchor (`git tag -s …`) and `git tag -v` it.
+13. **Push the tag** (`git push origin v0.25.0`). *Outward-facing — confirm first.*
+14. **Write the release notes** (Markdown, via `/content-director`) and **create the
     GitHub release**: `gh release create v0.25.0 --verify-tag --title "Portal v0.25.0 — <title>" --notes-file <file>`. *Outward-facing — confirm first.*
+
+The real-client MCP evaluation (`mcp-eval.yml`) is optional and run by hand
+when you want that signal; it spends paid model tokens. No release step, gate,
+or release note depends on it.
 
 ## Verify
 
 - `git tag -v v0.25.0` → Good signature, points at the anchor.
-- The successful held-out MCP certification run has the same `headSha` as the
-  tag and passing reports for both required clients.
 - `gh release view v0.25.0` → the release is live with the notes.
 - `/changelog` renders the new entry at the top; `/changelog.xml` includes it.
 - The marketing test is green.
