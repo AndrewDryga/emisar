@@ -17,6 +17,43 @@ defmodule EmisarWeb.Changelog do
 
   @entries [
     %{
+      date: ~D[2026-10-29],
+      slug: "patched-web-server-and-approval-handoffs",
+      title: "A patched web server and approval handoffs",
+      tag: "v0.54.0",
+      summary:
+        "A security release. The portal's web server moves to Bandit 1.14.1, which fixes twelve advisories, including request smuggling through chunk extensions and unbounded HTTP/2 memory use. The same window patches the JOSE library behind single sign-on token checks, Erlang/OTP, Go, and every base image. MCP clients now hand a pending approval to the person waiting: the agent says what is waiting and links to the exact approval, and a subagent passes that notice to its parent agent.",
+      details: [
+        {"Security",
+         [
+           "Bandit 1.14.1 fixes twelve advisories, ten rated high: chunk-extension request smuggling, unbounded HTTP/2 and chunked-body memory, and quadratic Content-Length and port parsing. jose 1.11.13 fixes eight, including AES-GCM tag forgery and a JWE decompression bomb. Plug.Crypto 2.2.1 keeps the secret key base out of stack traces.",
+           "Erlang/OTP 29.1.2 fixes five CVEs across ssl, public_key, ssh, inets, and stdlib. Go 1.27.3 fixes a crypto/x509 certificate-chain flaw in the admin-runner diagnostics build.",
+           "Base images move to Debian bookworm and trixie 20261020, Alpine 3.24.3, Postgres 18.6 on Alpine 3.24.3, and Keycloak 26.8.1. Cloud SQL Auth Proxy 2.26.2 picks up HTTP/2 fixes. Hex 2.5.4 and rebar3 3.28.0 close build-tool advisories."
+         ]},
+        {"MCP",
+         [
+           "When an action or runbook first waits for approval, the server instructions and every approval result tell the agent to tell the user right away, with the exact approval link. The agent notifies once per request, keeps working on anything independent, and never treats a chat reply as approval. A subagent sends the notice to its parent agent."
+         ]},
+        {"Packs",
+         [
+           "BunnyCDN 0.1.11 rebuilds each Pull Zone edge rule from known fields and redacts header, cookie, query-string, and credential values. Earlier versions are retired."
+         ]},
+        {"Console",
+         [
+           "The sidebar is grouped into Connect, Operate, and Control: service accounts sit with runners and AI agents, runbooks with runs, and policy, packs, team, and billing together.",
+           "The policy editor keeps targeted rulesets open, hides approval settings that cannot apply, searches ruleset targets in one dropdown, and starts each ruleset's preview beside its editor."
+         ]},
+        {"Platform",
+         [
+           "Staticcheck 2026.2.2 reads Go 1.27 export data, so the patched build the gate carried is gone. CI tools move to Trivy 0.76.1, govulncheck 1.9.0, and mcp-publisher 1.8.1."
+         ]},
+        {"Website",
+         [
+           "How it works shows how you shape policy, draws the default policy as a risk-tier line, then follows one request in detail. The copy-paste and SSH comparison pages, the guides, and the home page are shorter and plainer."
+         ]}
+      ]
+    },
+    %{
       date: ~D[2026-10-11],
       slug: "correct-diagnostics-and-tighter-pack-boundaries",
       title: "Correct diagnostics and tighter pack boundaries",
