@@ -129,11 +129,11 @@
     works day to day. It's our favorite part of the whole design.
   </p>
   <p>
-    Give the agent the read actions freely. Policy allows them without ceremony because a read
-    can't change anything. Reading is most of the job: tail the logs, check the failing unit, compare
-    replication lag across replicas, watch the error rate move. The agent keeps its eyes on real
-    production the whole time it investigates, so it doesn't work from stale dashboards or ask you
-    to paste the output.
+    Let the agent run the diagnostic actions it needs without waiting for you. Choose those actions
+    for the information they expose: logs and query results can contain credentials or customer data.
+    Reading is most of the job: tail the logs, check the failing unit, compare replication lag across
+    replicas, watch the error rate move. The agent keeps its eyes on real production while it
+    investigates, so it doesn't work from stale dashboards or ask you to paste the output.
   </p>
   <p>
     Then the fix is code, not a live mutation. The agent writes the Terraform diff or the Ansible
