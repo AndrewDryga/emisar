@@ -938,9 +938,22 @@ defmodule EmisarWeb.MarketingTest do
   end
 
   test "guides share metadata with the guide index", %{conn: conn} do
-    for path <- EmisarWeb.MarketingController.guide_paths() do
-      html = conn |> get(path) |> html_response(200)
-      assert html =~ "Updated October 21, 2026"
+    index = get(conn, ~p"/guides")
+    index_document = index |> html_response(200) |> LazyHTML.from_document()
+
+    for guide <- index.assigns.guides do
+      article = get(conn, ~p"/guides/#{guide.slug}")
+      html = html_response(article, 200)
+
+      card_text =
+        index_document
+        |> LazyHTML.query(~s(a[href="/guides/#{guide.slug}"]))
+        |> LazyHTML.text()
+        |> squish()
+
+      assert article.assigns.guide_meta.date == guide.date
+      assert card_text =~ guide.date
+      assert html =~ guide.date
     end
   end
 

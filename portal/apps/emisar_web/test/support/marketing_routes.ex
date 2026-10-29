@@ -33,6 +33,7 @@ defmodule EmisarWeb.MarketingRoutes do
     /packs/postgres
     /packs/cassandra
     /guides/how-emisar-works
+    /guides/caddy-reload-demo
     /guides/give-ai-agents-safe-production-access
     /guides/prompt-injection-for-ops-teams
   )

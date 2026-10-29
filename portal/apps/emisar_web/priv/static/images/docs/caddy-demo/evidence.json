@@ -1,0 +1,543 @@
+{
+  "tested_on": "2026-10-29",
+  "method": "Scripted MCP bridge calls against a real runner and Caddy service in a disposable local workspace.",
+  "versions": {
+    "recorded_at": "2026-10-29T19:19:28.814246+00:00",
+    "caddy": "2.11.4",
+    "caddy_image": "caddy:2.11.4@sha256:0c994536bddb66445885237f1a5dcc1916bccea922661c76b4e9fc24061f9b52",
+    "runner_sha256": "89cd0adb4225bdb9d9976f7fb21d7cb00df56de9745fe3a48d79b79642b8011a",
+    "bridge_sha256": "e4abf448e7884ddf1c29b9900b5c867a58a5b574df6479a265c401b20a1ccb2a",
+    "control_plane_health": {
+      "version": "0.53.0",
+      "status": "ok"
+    },
+    "action_calls": "Scripted emisar-mcp CLI commands, no LLM session",
+    "local_only": true,
+    "signature_enforcement": false,
+    "public_claim_limit": "One disposable local path. Linux container shares Docker VM kernel uptime. No production or model-quality claim.",
+    "runner_and_bridge_source_commit": "1ad6cab0946a5cd6d2dca285badc0127f3f40a85"
+  },
+  "policy": {
+    "approval": {
+      "allow_self_approval": true,
+      "min_approvals": 1
+    },
+    "defaults": {
+      "critical": "deny",
+      "high": "require_approval",
+      "low": "allow",
+      "medium": "allow"
+    },
+    "overrides": [],
+    "schema_version": 2
+  },
+  "runner_admission": [
+    "linux.uptime",
+    "caddy.reload_config"
+  ],
+  "calls": {
+    "uptime": {
+      "tool": "run_action",
+      "arguments": {
+        "action_id": "linux.uptime",
+        "pack_ref": "linux-core@0.5.3/sha256:175630a9466f92471731f8d497b70665b4e213f4ce0ea21623dd98453f794aa8",
+        "runner_refs": [
+          "service-proof-20261029~af0eb241f95b45d597132b06d592bd71"
+        ],
+        "args": {},
+        "reason": "Read uptime on the disposable service host.",
+        "evidence": "This is an isolated local demonstration with synthetic data. The host permits only uptime and Caddy reload.",
+        "expected": "The read returns host uptime.",
+        "wait": "5s"
+      },
+      "response": {
+        "ok": true,
+        "runs": [
+          {
+            "status": "success",
+            "stdout": " 19:16:20 up 5 days,  3:55,  0 users,  load average: 4.80, 5.45, 6.49\n",
+            "exit_code": 0,
+            "run_id": "01a18917-7f13-7ecf-8044-230e32878fa9",
+            "action_id": "linux.uptime",
+            "pack_ref": "linux-core@0.5.3/sha256:175630a9466f92471731f8d497b70665b4e213f4ce0ea21623dd98453f794aa8",
+            "duration_ms": 4,
+            "operation_id": "op_5EH220PEEMGHGVMM4A5XDQACHK",
+            "runner_ref": "service-proof-20261029~af0eb241f95b45d597132b06d592bd71",
+            "emitted_stdout_bytes": 70,
+            "finished_at": "2026-10-29T19:16:20.999394Z",
+            "created_at": "2026-10-29T19:16:20.883941Z",
+            "truncated_stdout": false
+          }
+        ],
+        "action_id": "linux.uptime",
+        "pack_ref": "linux-core@0.5.3/sha256:175630a9466f92471731f8d497b70665b4e213f4ce0ea21623dd98453f794aa8",
+        "operation_id": "op_5EH220PEEMGHGVMM4A5XDQACHK"
+      },
+      "exit": 0,
+      "observed_at": "2026-10-29T19:16:21.044069+00:00"
+    },
+    "first_reload": {
+      "tool": "run_action",
+      "arguments": {
+        "action_id": "caddy.reload_config",
+        "pack_ref": "caddy@0.1.25/sha256:279d41883e657e2b1b36551ea0af96daf2d03e4e5e043cae9caeac0facc19aed",
+        "runner_refs": [
+          "service-proof-20261029~af0eb241f95b45d597132b06d592bd71"
+        ],
+        "args": {
+          "file": "/srv/Caddyfile"
+        },
+        "reason": "Reload Caddy on the disposable host so its HTTP response changes from before approval to after approval.",
+        "evidence": "This is an isolated local demonstration with synthetic data. The host permits only uptime and Caddy reload.",
+        "expected": "The HTTP body changes only after the required approval and successful runner result.",
+        "wait": "0"
+      },
+      "response": {
+        "ok": true,
+        "runs": [
+          {
+            "status": "pending_approval",
+            "run_id": "01a18917-8085-7901-8e37-99b966690a4a",
+            "action_id": "caddy.reload_config",
+            "pack_ref": "caddy@0.1.25/sha256:279d41883e657e2b1b36551ea0af96daf2d03e4e5e043cae9caeac0facc19aed",
+            "operation_id": "op_0EKM8QRZT23PHQK086YE2GZ59F",
+            "runner_ref": "service-proof-20261029~af0eb241f95b45d597132b06d592bd71",
+            "approval": {
+              "request_id": "01a18917-808c-7e6d-94e0-817abe68bfb0",
+              "expires_at": "2026-10-30T19:16:21.259524Z"
+            },
+            "review": {
+              "command": {
+                "text": "caddy reload --config /srv/Caddyfile",
+                "kind": "preview",
+                "truncated": false
+              },
+              "reason": "Reload Caddy on the disposable host so its HTTP response changes from before approval to after approval.",
+              "status": "pending",
+              "request_id": "01a18917-808c-7e6d-94e0-817abe68bfb0",
+              "expected": "The HTTP body changes only after the required approval and successful runner result.",
+              "evidence": "This is an isolated local demonstration with synthetic data. The host permits only uptime and Caddy reload.",
+              "approved_count": 0,
+              "decisions": [],
+              "required_approvals": 1,
+              "argument_count": 1
+            },
+            "created_at": "2026-10-29T19:16:21.253568Z",
+            "wait_until": "2026-10-30T19:16:21.259524Z"
+          }
+        ],
+        "action_id": "caddy.reload_config",
+        "pack_ref": "caddy@0.1.25/sha256:279d41883e657e2b1b36551ea0af96daf2d03e4e5e043cae9caeac0facc19aed",
+        "operation_id": "op_0EKM8QRZT23PHQK086YE2GZ59F"
+      },
+      "exit": 0,
+      "observed_at": "2026-10-29T19:16:21.320737+00:00"
+    },
+    "first_reload_final": {
+      "ok": true,
+      "run": {
+        "status": "validation_failed",
+        "exit_code": 0,
+        "run_id": "01a18917-8085-7901-8e37-99b966690a4a",
+        "action_id": "caddy.reload_config",
+        "pack_ref": "caddy@0.1.25/sha256:279d41883e657e2b1b36551ea0af96daf2d03e4e5e043cae9caeac0facc19aed",
+        "duration_ms": 0,
+        "operation_id": "op_0EKM8QRZT23PHQK086YE2GZ59F",
+        "runner_ref": "service-proof-20261029~af0eb241f95b45d597132b06d592bd71",
+        "failure_code": "argument_invalid",
+        "finished_at": "2026-10-29T20:18:43.138031Z",
+        "review": {
+          "reason": "Reload Caddy on the disposable host so its HTTP response changes from before approval to after approval.",
+          "status": "approved",
+          "request_id": "01a18917-808c-7e6d-94e0-817abe68bfb0",
+          "expected": "The HTTP body changes only after the required approval and successful runner result.",
+          "evidence": "This is an isolated local demonstration with synthetic data. The host permits only uptime and Caddy reload.",
+          "approved_count": 1,
+          "decisions": [
+            {
+              "actor": "Demo operator",
+              "decision": "approve",
+              "decided_at": "2026-10-29T20:18:43.029842Z"
+            }
+          ],
+          "required_approvals": 1,
+          "argument_count": 1
+        },
+        "created_at": "2026-10-29T19:16:21.253568Z"
+      }
+    },
+    "corrected_inspection": {
+      "tool": "get_action",
+      "arguments": {
+        "action_id": "caddy.reload_config",
+        "pack_ref": "caddy@0.1.25/sha256:279d41883e657e2b1b36551ea0af96daf2d03e4e5e043cae9caeac0facc19aed",
+        "runner_refs": [
+          "service-proof-20261029~af0eb241f95b45d597132b06d592bd71"
+        ]
+      },
+      "response": {
+        "ok": true,
+        "action": {
+          "description": "Live-swap the running config. No connection drops on success; rejected config keeps the old one running.",
+          "title": "caddy reload --config <file>",
+          "risk": "high",
+          "action_id": "caddy.reload_config",
+          "pack_ref": "caddy@0.1.25/sha256:279d41883e657e2b1b36551ea0af96daf2d03e4e5e043cae9caeac0facc19aed",
+          "args_schema": {
+            "type": "object",
+            "required": [],
+            "additionalProperties": false,
+            "properties": {
+              "file": {
+                "default": "/etc/caddy/Caddyfile",
+                "type": "string",
+                "description": "Config path.",
+                "pattern": "^/[a-zA-Z0-9_./\\-]{1,512}$",
+                "x-emisar-maxUtf8Bytes": 32768
+              }
+            },
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "x-emisar-maxEncodedBytes": 32768
+          },
+          "examples": [
+            {
+              "args": {},
+              "title": "Reload"
+            }
+          ],
+          "side_effects": [
+            "Replaces the in-memory config atomically.",
+            "Existing connections keep running on their handlers."
+          ]
+        },
+        "compatible_runners": [
+          {
+            "name": "service-proof-20261029",
+            "status": "connected",
+            "group": "service-proof",
+            "hostname": "service-proof",
+            "runner_ref": "service-proof-20261029~af0eb241f95b45d597132b06d592bd71",
+            "enforce_signatures": false
+          }
+        ],
+        "more_compatible_runners": false,
+        "observed_at": "2026-10-29T22:38:54.698250Z"
+      },
+      "exit": 0,
+      "observed_at": "2026-10-29T22:38:54.700642+00:00"
+    },
+    "corrected_reload": {
+      "tool": "run_action",
+      "arguments": {
+        "action_id": "caddy.reload_config",
+        "pack_ref": "caddy@0.1.25/sha256:279d41883e657e2b1b36551ea0af96daf2d03e4e5e043cae9caeac0facc19aed",
+        "runner_refs": [
+          "service-proof-20261029~af0eb241f95b45d597132b06d592bd71"
+        ],
+        "args": {
+          "file": "/opt/caddy-demo/Caddyfile"
+        },
+        "reason": "Reload the disposable Caddy service from /opt/caddy-demo/Caddyfile so its test HTTP response changes to after approval.",
+        "evidence": "Caddy validation returned Valid configuration. The first request was refused because /srv also held the runner configuration. This test Caddyfile now sits outside that protected directory; the runner protections are unchanged.",
+        "expected": "After actual console approval and successful runner execution, the loopback test URL returns after approval. The pending request must leave the current response unchanged.",
+        "wait": "0"
+      },
+      "response": {
+        "ok": true,
+        "runs": [
+          {
+            "status": "pending_approval",
+            "run_id": "01a189d0-f37b-7b86-b2cb-5d6b9eb9a67a",
+            "action_id": "caddy.reload_config",
+            "pack_ref": "caddy@0.1.25/sha256:279d41883e657e2b1b36551ea0af96daf2d03e4e5e043cae9caeac0facc19aed",
+            "operation_id": "op_68X9MCNCPMCB0T65VGW2C8SJ3F",
+            "runner_ref": "service-proof-20261029~af0eb241f95b45d597132b06d592bd71",
+            "approval": {
+              "request_id": "01a189d0-f3a3-73e4-9df6-a3a5450a12f9",
+              "expires_at": "2026-10-30T22:38:54.882803Z"
+            },
+            "review": {
+              "command": {
+                "text": "caddy reload --config /opt/caddy-demo/Caddyfile",
+                "kind": "preview",
+                "truncated": false
+              },
+              "reason": "Reload the disposable Caddy service from /opt/caddy-demo/Caddyfile so its test HTTP response changes to after approval.",
+              "status": "pending",
+              "request_id": "01a189d0-f3a3-73e4-9df6-a3a5450a12f9",
+              "expected": "After actual console approval and successful runner execution, the loopback test URL returns after approval. The pending request must leave the current response unchanged.",
+              "evidence": "Caddy validation returned Valid configuration. The first request was refused because /srv also held the runner configuration. This test Caddyfile now sits outside that protected directory; the runner protections are unchanged.",
+              "approved_count": 0,
+              "decisions": [],
+              "required_approvals": 1,
+              "argument_count": 1
+            },
+            "created_at": "2026-10-29T22:38:54.843740Z",
+            "wait_until": "2026-10-30T22:38:54.882803Z"
+          }
+        ],
+        "action_id": "caddy.reload_config",
+        "pack_ref": "caddy@0.1.25/sha256:279d41883e657e2b1b36551ea0af96daf2d03e4e5e043cae9caeac0facc19aed",
+        "operation_id": "op_68X9MCNCPMCB0T65VGW2C8SJ3F"
+      },
+      "exit": 0,
+      "observed_at": "2026-10-29T22:38:54.946013+00:00"
+    },
+    "corrected_reload_final": {
+      "ok": true,
+      "run": {
+        "status": "success",
+        "stderr": "{\"level\":\"warn\",\"ts\":1793314787.022148,\"msg\":\"unable to determine directory for user configuration; falling back to current directory\",\"error\":\"neither $XDG_CONFIG_HOME nor $HOME are defined\"}\n{\"level\":\"info\",\"ts\":1793314787.0246563,\"msg\":\"using config from file\",\"file\":\"/opt/caddy-demo/Caddyfile\"}\n{\"level\":\"info\",\"ts\":1793314787.0251195,\"msg\":\"adapted config to JSON\",\"adapter\":\"caddyfile\"}\n{\"level\":\"warn\",\"ts\":1793314787.0251243,\"msg\":\"Caddyfile input is not formatted; run 'caddy fmt --overwrite' to fix inconsistencies\",\"adapter\":\"caddyfile\",\"file\":\"/opt/caddy-demo/Caddyfile\",\"line\":2}\n",
+        "exit_code": 0,
+        "run_id": "01a189d0-f37b-7b86-b2cb-5d6b9eb9a67a",
+        "action_id": "caddy.reload_config",
+        "pack_ref": "caddy@0.1.25/sha256:279d41883e657e2b1b36551ea0af96daf2d03e4e5e043cae9caeac0facc19aed",
+        "duration_ms": 190,
+        "operation_id": "op_68X9MCNCPMCB0T65VGW2C8SJ3F",
+        "runner_ref": "service-proof-20261029~af0eb241f95b45d597132b06d592bd71",
+        "emitted_stderr_bytes": 594,
+        "finished_at": "2026-10-29T22:59:47.102980Z",
+        "review": {
+          "command": {
+            "text": "caddy reload --config /opt/caddy-demo/Caddyfile",
+            "kind": "executed",
+            "truncated": false
+          },
+          "reason": "Reload the disposable Caddy service from /opt/caddy-demo/Caddyfile so its test HTTP response changes to after approval.",
+          "status": "approved",
+          "request_id": "01a189d0-f3a3-73e4-9df6-a3a5450a12f9",
+          "expected": "After actual console approval and successful runner execution, the loopback test URL returns after approval. The pending request must leave the current response unchanged.",
+          "evidence": "Caddy validation returned Valid configuration. The first request was refused because /srv also held the runner configuration. This test Caddyfile now sits outside that protected directory; the runner protections are unchanged.",
+          "approved_count": 1,
+          "decisions": [
+            {
+              "actor": "Demo operator",
+              "decision": "approve",
+              "decided_at": "2026-10-29T22:59:46.628955Z"
+            }
+          ],
+          "required_approvals": 1,
+          "argument_count": 1
+        },
+        "created_at": "2026-10-29T22:38:54.843740Z",
+        "truncated_stderr": false
+      }
+    }
+  },
+  "independent_checks": [
+    {
+      "step": "before requests",
+      "http_body": "before approval"
+    },
+    {
+      "step": "while pending",
+      "http_body": "before approval"
+    },
+    {
+      "step": "after first approved request was refused",
+      "http_body": "before approval"
+    },
+    {
+      "step": "after corrected request succeeded",
+      "http_body": "after approval"
+    }
+  ],
+  "corrected_file_validation": {
+    "observed_at": "2026-10-29T22:38:40.792203+00:00",
+    "command": [
+      "caddy",
+      "validate",
+      "--config",
+      "/opt/caddy-demo/Caddyfile",
+      "--adapter",
+      "caddyfile"
+    ],
+    "exit": 0,
+    "stdout": "Valid configuration\n",
+    "stderr": "{\"level\":\"info\",\"ts\":1793313520.7832382,\"msg\":\"using config from file\",\"file\":\"/opt/caddy-demo/Caddyfile\"}\n{\"level\":\"info\",\"ts\":1793313520.7836711,\"msg\":\"adapted config to JSON\",\"adapter\":\"caddyfile\"}\n{\"level\":\"warn\",\"ts\":1793313520.783687,\"msg\":\"Caddyfile input is not formatted; run 'caddy fmt --overwrite' to fix inconsistencies\",\"adapter\":\"caddyfile\",\"file\":\"/opt/caddy-demo/Caddyfile\",\"line\":2}\n{\"level\":\"info\",\"ts\":1793313520.783978,\"logger\":\"http.auto_https\",\"msg\":\"automatic HTTPS is completely disabled for server\",\"server_name\":\"srv0\"}\n{\"level\":\"info\",\"ts\":1793313520.7840889,\"logger\":\"tls.cache.maintenance\",\"msg\":\"started background certificate maintenance\",\"cache\":\"0x165bf5c3c00\"}\n{\"level\":\"info\",\"ts\":1793313520.7841053,\"logger\":\"tls.cache.maintenance\",\"msg\":\"stopped background certificate maintenance\",\"cache\":\"0x165bf5c3c00\"}\n{\"level\":\"info\",\"ts\":1793313520.784117,\"logger\":\"http\",\"msg\":\"servers shutting down with eternal grace period\"}\n"
+  },
+  "runner_journal": [
+    {
+      "event_id": "evt_01M64HEZV69NGJHCFZFS652AHJ",
+      "time": "2026-10-29T19:16:20.966000117Z",
+      "event_type": "execution_started",
+      "group": "service-proof",
+      "runner_id": "service-proof-20261029",
+      "caller": {
+        "control_plane_request_id": "req_2IUrLctoVIyV98sH0k_GHg"
+      },
+      "pack_id": "linux-core",
+      "action_id": "linux.uptime",
+      "request": {
+        "args_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "reason": "Read uptime on the disposable service host."
+      },
+      "metadata": {
+        "kind": "exec",
+        "risk": "low"
+      },
+      "execution": {
+        "binary": "uptime",
+        "argv_sha256": "dd291cd6294bafef2a7e9c378eb320e87198d6dae214272addb569775750c802",
+        "cwd": "/",
+        "timeout": "5s",
+        "exit_code": 0,
+        "duration_ms": 0,
+        "timed_out": false,
+        "stdout_bytes": 0,
+        "stderr_bytes": 0,
+        "executed_command": "uptime"
+      }
+    },
+    {
+      "prev_hash": "1f0e669434aad0d963fc1f2b1c0ffcaae3b51a0b9312d80ba7605a10aea3a758",
+      "event_id": "evt_01M64HEZVCE32QPSHB35T16RAT",
+      "time": "2026-10-29T19:16:20.972937208Z",
+      "event_type": "execution_completed",
+      "group": "service-proof",
+      "runner_id": "service-proof-20261029",
+      "caller": {
+        "control_plane_request_id": "req_2IUrLctoVIyV98sH0k_GHg"
+      },
+      "pack_id": "linux-core",
+      "action_id": "linux.uptime",
+      "request": {
+        "args_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "reason": "Read uptime on the disposable service host."
+      },
+      "metadata": {
+        "kind": "exec",
+        "risk": "low"
+      },
+      "execution": {
+        "binary": "uptime",
+        "argv_sha256": "dd291cd6294bafef2a7e9c378eb320e87198d6dae214272addb569775750c802",
+        "cwd": "/",
+        "env_keys": [
+          "PATH"
+        ],
+        "timeout": "5s",
+        "exit_code": 0,
+        "duration_ms": 4,
+        "timed_out": false,
+        "stdout_sha256": "1ad1b7cee681e187a4da8457042e9a73921b26f6efd4ed0d03e4baa5f2749ff3",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stdout_preview": " 19:16:20 up 5 days,  3:55,  0 users,  load average: 4.80, 5.45, 6.49\n",
+        "stdout_bytes": 70,
+        "stderr_bytes": 0,
+        "executed_command": "uptime"
+      }
+    },
+    {
+      "prev_hash": "eab83262985272a58b48a04afb6790ee68536ebc2cb68eede2bbfda09bb31832",
+      "event_id": "evt_01M64N169TGN4NBNY1CAPVZBQ1",
+      "time": "2026-10-29T20:18:43.125396676Z",
+      "event_type": "validation_failed",
+      "group": "service-proof",
+      "runner_id": "service-proof-20261029",
+      "caller": {
+        "control_plane_request_id": "req_YNYgbZOb32ps-LdMIAsWpg"
+      },
+      "pack_id": "caddy",
+      "action_id": "caddy.reload_config",
+      "request": {
+        "reason": "Reload Caddy on the disposable host so its HTTP response changes from before approval to after approval."
+      },
+      "metadata": {
+        "kind": "exec",
+        "risk": "high"
+      },
+      "error": "argument file: path /srv/Caddyfile is inside the runner's own configuration or state"
+    },
+    {
+      "prev_hash": "a132b253f7189bd9e630dee53c41155635c0c6c3395273572dad336cf1d9c8a5",
+      "event_id": "evt_01M64Y83GZGRB0HB5B5VPZ3MSF",
+      "time": "2026-10-29T22:59:46.845918592Z",
+      "event_type": "execution_started",
+      "group": "service-proof",
+      "runner_id": "service-proof-20261029",
+      "caller": {
+        "control_plane_request_id": "req_6yHi3MqHeUu6G3ejq7xYWw"
+      },
+      "pack_id": "caddy",
+      "action_id": "caddy.reload_config",
+      "request": {
+        "args_sha256": "b5827d4907f5de18b9b284cd0571e2e65b418b8f41a5d2d5af8e48bd791fe17a",
+        "args_redacted": {
+          "file": "/opt/caddy-demo/Caddyfile"
+        },
+        "reason": "Reload the disposable Caddy service from /opt/caddy-demo/Caddyfile so its test HTTP response changes to after approval."
+      },
+      "metadata": {
+        "kind": "exec",
+        "risk": "high"
+      },
+      "execution": {
+        "binary": "caddy",
+        "argv": [
+          "reload",
+          "--config",
+          "/opt/caddy-demo/Caddyfile"
+        ],
+        "argv_sha256": "42e19ae7ff58be77c48b570f440aef19b781d40aadece2a68d25ca4566e54b53",
+        "cwd": "/",
+        "timeout": "1m0s",
+        "exit_code": 0,
+        "duration_ms": 0,
+        "timed_out": false,
+        "stdout_bytes": 0,
+        "stderr_bytes": 0,
+        "executed_command": "caddy reload --config /opt/caddy-demo/Caddyfile"
+      }
+    },
+    {
+      "prev_hash": "f0d4f579152e54f4e67469e38b327449a0d19b903d972805e0ba79780908af06",
+      "event_id": "evt_01M64Y83Q3XKE4SC7MASZ0JAD8",
+      "time": "2026-10-29T22:59:47.043143659Z",
+      "event_type": "execution_completed",
+      "group": "service-proof",
+      "runner_id": "service-proof-20261029",
+      "caller": {
+        "control_plane_request_id": "req_6yHi3MqHeUu6G3ejq7xYWw"
+      },
+      "pack_id": "caddy",
+      "action_id": "caddy.reload_config",
+      "request": {
+        "args_sha256": "b5827d4907f5de18b9b284cd0571e2e65b418b8f41a5d2d5af8e48bd791fe17a",
+        "args_redacted": {
+          "file": "/opt/caddy-demo/Caddyfile"
+        },
+        "reason": "Reload the disposable Caddy service from /opt/caddy-demo/Caddyfile so its test HTTP response changes to after approval."
+      },
+      "metadata": {
+        "kind": "exec",
+        "risk": "high"
+      },
+      "execution": {
+        "binary": "caddy",
+        "argv": [
+          "reload",
+          "--config",
+          "/opt/caddy-demo/Caddyfile"
+        ],
+        "argv_sha256": "42e19ae7ff58be77c48b570f440aef19b781d40aadece2a68d25ca4566e54b53",
+        "cwd": "/",
+        "env_keys": [
+          "PATH"
+        ],
+        "timeout": "1m0s",
+        "exit_code": 0,
+        "duration_ms": 190,
+        "timed_out": false,
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderr_sha256": "15470db7b2f3594c9d51ca8f212a8298eb385ad6ed27812dd0b64c1df10cebe2",
+        "stderr_preview": "{\"level\":\"warn\",\"ts\":1793314787.022148,\"msg\":\"unable to determine directory for user configuration; falling back to current directory\",\"error\":\"neither $XDG_CONFIG_HOME nor $HOME are defined\"}\n{\"level\":\"info\",\"ts\":1793314787.0246563,\"msg\":\"using config from file\",\"file\":\"/opt/caddy-demo/Caddyfile\"}\n{\"level\":\"info\",\"ts\":1793314787.0251195,\"msg\":\"adapted config to JSON\",\"adapter\":\"caddyfile\"}\n{\"level\":\"warn\",\"ts\":1793314787.0251243,\"msg\":\"Caddyfile input is not formatted; run 'caddy fmt --overwrite' to fix inconsistencies\",\"adapter\":\"caddyfile\",\"file\":\"/opt/caddy-demo/Caddyfile\",\"line\":2}\n",
+        "stdout_bytes": 0,
+        "stderr_bytes": 594,
+        "executed_command": "caddy reload --config /opt/caddy-demo/Caddyfile"
+      }
+    }
+  ],
+  "standing_grants_created": 0,
+  "scope": "One-time approvals only. This is one local test with synthetic data; it establishes no production capacity, model-decision quality, security-audit or connection-continuity result."
+}
