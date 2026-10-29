@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-const diagnosticsBase = "debian:bookworm-20260918-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251"
+const diagnosticsBase = "debian:bookworm-20261020-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8"
 
 // qualifyAdminDiagnostics is intentionally outside the Docker-free infra gate.
 // It builds once, extracts the final image, and executes those bytes on Linux
