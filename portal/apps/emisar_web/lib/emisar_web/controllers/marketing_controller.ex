@@ -594,10 +594,6 @@ defmodule EmisarWeb.MarketingController do
   # this list drives the index cards, per-guide meta + TechArticle JSON-LD,
   # and the sitemap. {slug, action/template, title, dek, date, read_time, meta}.
   @guides [
-    {"caddy-reload-demo", :caddy_reload_demo, "A real Caddy reload through emisar",
-     "A read, a request that waits, and a service change you can check. Includes the failed first attempt.",
-     "Tested October 29, 2026", "5 min read",
-     "See a real Caddy reload through emisar: an immediate uptime read, human approval, a host-side refusal and an independently checked service change."},
     {"how-emisar-works", :how_emisar_works, "How emisar works: the technical guide",
      "How do you give an AI agent access to production without worrying that it might hallucinate its way into dropping a database or taking the site down? We follow one service restart from the MCP request, through policy, to the runner on your host.",
      "Updated October 21, 2026", "6 min read",

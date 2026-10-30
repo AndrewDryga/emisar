@@ -2,6 +2,7 @@ defmodule EmisarWeb.DocsRedirectTest do
   use EmisarWeb.ConnCase, async: true
 
   @moved_pages %{
+    "/guides/caddy-reload-demo" => "/docs/investigate-a-service",
     "/docs/deployment" => "/docs/production",
     "/docs/connect-a-cli-client" => "/docs/connect-cli-agent",
     "/docs/upgrades" => "/docs/runner-upgrades"
@@ -33,6 +34,11 @@ defmodule EmisarWeb.DocsRedirectTest do
         assert body =~ canonical
       end
     end
+  end
+
+  test "the guide index omits the consolidated Caddy guide", %{conn: conn} do
+    body = conn |> get("/guides") |> html_response(200)
+    refute body =~ "/guides/caddy-reload-demo"
   end
 
   test "the curated agent guide does not advertise retired URLs", %{conn: conn} do

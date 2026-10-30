@@ -7,6 +7,11 @@ and sentence after it must add something new — a concrete example, a caveat, a
 limit, a next step, a link — not restate the idea in fresh words. If a passage
 only recaps what the reader just read, cut it.
 
+Before adding a page from test evidence, check the existing pages and name the
+reader's job. If an existing page serves that job, add only evidence that helps
+its reader; keep the rest in the task archive. A completed test or a different
+service does not, by itself, justify another walkthrough.
+
 The failure this targets is redundancy that masquerades as emphasis: a labelled
 "summary" paragraph that recaps the list above it, a value prop repeated in the
 step body and again in the closing callout, a memorable slogan that re-explains
