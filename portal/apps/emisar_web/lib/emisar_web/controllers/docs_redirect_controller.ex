@@ -5,7 +5,6 @@ defmodule EmisarWeb.DocsRedirectController do
   use EmisarWeb, :controller
 
   @retired_guides [
-    caddy_reload_demo: "/docs/investigate-a-service",
     deployment: "/docs/production",
     connect_cli_client: "/docs/connect-cli-agent",
     upgrades: "/docs/runner-upgrades",

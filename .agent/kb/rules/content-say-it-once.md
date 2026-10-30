@@ -12,6 +12,11 @@ reader's job. If an existing page serves that job, add only evidence that helps
 its reader; keep the rest in the task archive. A completed test or a different
 service does not, by itself, justify another walkthrough.
 
+The owner chose clean removal for the short-lived `/guides/caddy-reload-demo`,
+`/docs/connect-an-llm`, and `/guides/ai-agents-and-ssh-the-risks` pages. Keep these
+URLs as 404s without redirects. Established documentation redirects remain a
+separate decision.
+
 The failure this targets is redundancy that masquerades as emphasis: a labelled
 "summary" paragraph that recaps the list above it, a value prop repeated in the
 step body and again in the closing callout, a memorable slogan that re-explains

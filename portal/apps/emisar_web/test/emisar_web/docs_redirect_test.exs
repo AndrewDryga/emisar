@@ -2,7 +2,6 @@ defmodule EmisarWeb.DocsRedirectTest do
   use EmisarWeb.ConnCase, async: true
 
   @moved_pages %{
-    "/guides/caddy-reload-demo" => "/docs/investigate-a-service",
     "/docs/deployment" => "/docs/production",
     "/docs/connect-a-cli-client" => "/docs/connect-cli-agent",
     "/docs/upgrades" => "/docs/runner-upgrades"
@@ -46,8 +45,11 @@ defmodule EmisarWeb.DocsRedirectTest do
     for retired <- Map.keys(@moved_pages), do: refute(body =~ retired)
   end
 
-  test "removed case studies and unknown docs do not redirect to unrelated content", %{conn: conn} do
+  test "removed pages and unknown docs return404 without redirects", %{conn: conn} do
     for path <- [
+          "/guides/caddy-reload-demo",
+          "/docs/connect-an-llm",
+          "/guides/ai-agents-and-ssh-the-risks",
           "/use-cases/cassandra-ops",
           "/use-cases/postgres-ops",
           "/docs/no-such-guide"

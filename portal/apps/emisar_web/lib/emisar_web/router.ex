@@ -212,7 +212,6 @@ defmodule EmisarWeb.Router do
     get "/trust", MarketingController, :trust
     get "/how-it-works", MarketingController, :how_it_works
     get "/guides", MarketingController, :guides
-    get "/guides/caddy-reload-demo", DocsRedirectController, :caddy_reload_demo
     get "/guides/:slug", MarketingController, :guide
     get "/packs", MarketingController, :packs
     # Machine-facing registry endpoints (consumed by `emisar pack install`).
