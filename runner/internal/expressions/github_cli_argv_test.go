@@ -40,7 +40,7 @@ func TestGitHubCLIIssueCommentsJSON(t *testing.T) {
 func TestGitHubCLISearchTermsAndBounds(t *testing.T) {
 	action := githubCLIAction(t, "search_prs")
 	terms := []string{"repo:owner/repo", "state:open", "-label:wontfix", "label:help wanted", "--web", "$(touch injected)"}
-	args, err := validation.Validate(action.Args, map[string]any{"query": terms, "limit": 37}, nil)
+	args, err := validation.Validate(action.Args, map[string]any{"query": terms, "limit": 37}, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestGitHubCLISearchTermsAndBounds(t *testing.T) {
 	if !reflect.DeepEqual(argv, want) {
 		t.Fatalf("whole array elements must remain separate literal script operands: got %#v want %#v", argv, want)
 	}
-	args, err = validation.Validate(action.Args, map[string]any{"query": []string{"author:@me"}}, nil)
+	args, err = validation.Validate(action.Args, map[string]any{"query": []string{"author:@me"}}, nil, "")
 	if err != nil || args["limit"] != int64(100) {
 		t.Fatalf("default limit: %#v, %v", args, err)
 	}
@@ -68,7 +68,7 @@ func TestGitHubCLISearchTermsAndBounds(t *testing.T) {
 		{"limit overflow", map[string]any{"query": []string{"state:open"}, "limit": 101}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			if _, err := validation.Validate(action.Args, test.args, nil); err == nil {
+			if _, err := validation.Validate(action.Args, test.args, nil, ""); err == nil {
 				t.Fatalf("invalid args accepted: %#v", test.args)
 			}
 		})
@@ -82,7 +82,7 @@ func TestGitHubCLIPRReadsUseTheSharedCheckProjection(t *testing.T) {
 			if action.Execution.Script == nil || action.Execution.Script.Path != "scripts/pr_checks.sh" || action.Execution.Script.Interpreter != "/bin/sh" {
 				t.Fatalf("PR read does not use the tested shared script: %#v", action.Execution)
 			}
-			args, err := validation.Validate(action.Args, map[string]any{"repo": "owner/repo", "pr": 7}, nil)
+			args, err := validation.Validate(action.Args, map[string]any{"repo": "owner/repo", "pr": 7}, nil, "")
 			if err != nil {
 				t.Fatal(err)
 			}

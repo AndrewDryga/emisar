@@ -12,15 +12,11 @@ func PlanForScript(a *actionspec.Action, scriptPath, scriptSHA256 string, render
 	if interp == "" {
 		interp = "/bin/sh"
 	}
-	cwd := a.Execution.CWD
-	if cwd == "" {
-		cwd = "/"
-	}
 	argv := append([]string{scriptPath}, renderedArgv...)
 	return Plan{
 		Binary:       interp,
 		Argv:         argv,
-		CWD:          cwd,
+		CWD:          EffectiveCWD(a),
 		Env:          env,
 		Limits:       limits,
 		ScriptSHA256: scriptSHA256,

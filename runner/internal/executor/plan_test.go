@@ -79,4 +79,8 @@ func TestPlanForScript(t *testing.T) {
 	if len(got.Argv) != 1 || got.Argv[0] != "/s.py" {
 		t.Errorf("argv=%v", got.Argv)
 	}
+	a.Execution.CWD = "/work"
+	if got := PlanForScript(a, "/s.py", "", nil, nil, lim); got.CWD != "/work" {
+		t.Errorf("explicit cwd=%q", got.CWD)
+	}
 }

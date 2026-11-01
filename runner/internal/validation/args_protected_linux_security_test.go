@@ -35,14 +35,14 @@ func TestProtected_RefusesTheRunnersOwnProcEntry(t *testing.T) {
 		filepath.Join(self, "environ"),
 		filepath.Join(self, "cmdline"),
 	} {
-		_, err := Validate(schema, map[string]any{"path": target}, []string{self})
+		_, err := Validate(schema, map[string]any{"path": target}, []string{self}, "/")
 		if err == nil {
 			t.Fatalf("%s must be refused: it resolves into the runner's own /proc entry", target)
 		}
 		assertProtected(t, err)
 	}
 
-	if _, err := Validate(schema, map[string]any{"path": "/proc/1/status"}, []string{self}); err != nil {
+	if _, err := Validate(schema, map[string]any{"path": "/proc/1/status"}, []string{self}, "/"); err != nil {
 		t.Fatalf("another pid's entry must stay allowed, got %v", err)
 	}
 }

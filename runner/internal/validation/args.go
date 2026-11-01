@@ -2,6 +2,7 @@ package validation
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
@@ -32,7 +34,8 @@ const defaultMaxItems = 256
 // protected lists absolute roots no action argument may name, whatever the
 // pack declares. Callers outside the dispatch path (the authoring-time lints)
 // pass nil: they validate example values against a schema, not a real host.
-func Validate(schema []actionspec.Arg, raw map[string]any, protected []string) (map[string]any, error) {
+// cwd is the executor's effective working directory for protected-path checks.
+func Validate(schema []actionspec.Arg, raw map[string]any, protected []string, cwd string) (map[string]any, error) {
 	if raw == nil {
 		raw = map[string]any{}
 	}
@@ -66,7 +69,7 @@ func Validate(schema []actionspec.Arg, raw map[string]any, protected []string) (
 		if err != nil {
 			return nil, err
 		}
-		if err := refuseProtectedPaths(a, validated, protected); err != nil {
+		if err := refuseProtectedPaths(a, validated, protected, cwd); err != nil {
 			return nil, err
 		}
 		out[a.Name] = validated
@@ -401,9 +404,9 @@ func applyPathValidation(a actionspec.Arg, val *actionspec.Validation, v any) (a
 // this on `type: path` (or on a declared path rule) meant an author who wrote
 // `type: string` with only an anchored pattern — the mistake packs/AGENTS.md
 // already warns about for containment — silently lost the runner-identity
-// refusal as well. A value that is not an absolute path costs one Clean here
-// and resolves no further.
-func refuseProtectedPaths(a actionspec.Arg, v any, protected []string) error {
+// refusal as well. Relative candidates are checked against the execution CWD,
+// but the values returned to the command remain unchanged: many are identifiers.
+func refuseProtectedPaths(a actionspec.Arg, v any, protected []string, cwd string) error {
 	if len(protected) == 0 {
 		return nil
 	}
@@ -423,17 +426,41 @@ func refuseProtectedPaths(a actionspec.Arg, v any, protected []string) error {
 		return newError(a.Name, "path", "cannot safely resolve protected paths: %v", err)
 	}
 	lexical := cleanMany(protected)
+	var resolvedCWD string
 	for _, s := range values {
+		candidate := s
+		if !filepath.IsAbs(candidate) {
+			lexicalCandidate, err := filepath.Abs(cwd + string(filepath.Separator) + s)
+			if err != nil {
+				return newError(a.Name, "path", "cannot safely resolve working directory: %v", err)
+			}
+			if prefixInDenyList(lexicalCandidate, lexical) {
+				return protectedPathError(a, s)
+			}
+			if resolvedCWD == "" {
+				// Resolve before Abs or Join can clean a symlink followed by ..:
+				// the child chdir follows the link before walking to its parent.
+				resolvedCWD, err = filepath.EvalSymlinks(cwd)
+				if err == nil {
+					resolvedCWD, err = filepath.Abs(resolvedCWD)
+				}
+				if err != nil {
+					return newError(a.Name, "path", "cannot safely resolve working directory: %v", err)
+				}
+			}
+			// Keep raw string components until symlink resolution. Join would
+			// erase link/.. even though the command receives it unchanged.
+			candidate = resolvedCWD + string(filepath.Separator) + s
+		}
 		// Lexically first: the store is normally unreadable to the service
 		// user, but a direct or dot-dot path into it is still an exact refusal.
-		if prefixInDenyList(filepath.Clean(s), lexical) {
+		if prefixInDenyList(filepath.Clean(candidate), lexical) {
 			return protectedPathError(a, s)
 		}
-		// An identifier that merely looks like a path (a log group, a znode)
-		// never reaches an existing component, so tolerating an unreadable one
-		// keeps those args working; the refusal below is a denial check, and
-		// applyPathValidation still resolves a real path arg strictly.
-		target, err := resolveRuleForCheck(s)
+		// Identifiers (log groups, pagination tokens) may not be usable local
+		// paths. Resolve their inspectable ancestors for this denial check;
+		// declared path rules still resolve actual filesystem operands strictly.
+		target, err := resolveRuleForCheck(candidate)
 		if err != nil {
 			return newError(a.Name, "path", "cannot safely resolve path %s: %v", s, err)
 		}
@@ -479,39 +506,37 @@ func resolveManyRules(in []string) ([]string, error) {
 // symlinked parent resolves to /etc, and the resulting /etc/foo fails any
 // allowed_prefixes check pinned to /var/log/.
 func resolveForCheck(p string) (string, error) {
-	return resolvePathForCheck(p, false)
+	// Declared path validation returns this cleaned target for execution.
+	// The protected-root backstop instead inspects raw string operands,
+	// because those are passed to the command without rewriting their value.
+	return resolvePathForCheck(filepath.Clean(p), false)
 }
 
 // resolveRuleForCheck is the same walk for a path that may legitimately sit
 // somewhere this process cannot read: a declared allow/deny rule, or a value
 // refuseProtectedPaths is only comparing against the runner's own roots. It
-// canonicalizes every inspectable ancestor and lets an unreadable tail stay
-// lexical, so one unreadable rule cannot poison every otherwise-benign action
-// on a non-root runner. Neither caller grants execution — applyPathValidation
-// resolves the value it returns with resolveForCheck, which still rejects an
-// unreadable component — so this cannot turn an uninspectable input into an
-// executable path.
+// canonicalizes every inspectable ancestor and leaves an unreadable or non-path
+// tail lexical. Ordinary identifiers can exceed a filesystem's component limit
+// or name a child of a regular file. Declared path validation still resolves
+// its returned value strictly with resolveForCheck.
 func resolveRuleForCheck(p string) (string, error) {
 	return resolvePathForCheck(p, true)
 }
 
-// resolvePathForCheck is the containment walk both callers share. It was two
-// copies that differed in exactly one token — whether a permission error on an
-// ancestor is tolerated — which is the last place this module should carry a
-// second definition: a hardening applied to one copy would silently skip the
-// other.
-func resolvePathForCheck(p string, tolerateUnreadable bool) (string, error) {
+// resolvePathForCheck shares the containment walk while allowing denial-only
+// comparisons to retain tails that are unreadable or not usable local paths.
+func resolvePathForCheck(p string, allowLexicalTail bool) (string, error) {
 	cleaned := filepath.Clean(p)
 	if !filepath.IsAbs(cleaned) {
 		return cleaned, nil
 	}
-	if resolved, err := filepath.EvalSymlinks(cleaned); err == nil {
+	if resolved, err := filepath.EvalSymlinks(p); err == nil {
 		return resolved, nil
 	}
 	// Walk up until we find an existing parent. We may walk all the way to the
 	// volume root ("/"); that's fine — its EvalSymlinks is "/".
 	tail := ""
-	parent := cleaned
+	parent := p
 	for {
 		_, err := os.Lstat(parent)
 		switch {
@@ -523,13 +548,19 @@ func resolvePathForCheck(p string, tolerateUnreadable bool) (string, error) {
 			return filepath.Clean(filepath.Join(resolved, tail)), nil
 		case os.IsNotExist(err):
 			// Keep walking up; the leaf simply does not exist yet.
-		case tolerateUnreadable && os.IsPermission(err):
-			// Keep walking up; a rule may sit behind a directory we cannot read.
+		case allowLexicalTail && (os.IsPermission(err) || errors.Is(err, syscall.ENAMETOOLONG) || errors.Is(err, syscall.ENOTDIR)):
+			// A rule may be unreadable; an identifier may not be a local path.
 		default:
 			return "", fmt.Errorf("inspect path component %q: %w", parent, err)
 		}
-		tail = filepath.Join(filepath.Base(parent), tail)
-		next := filepath.Dir(parent)
+		// Split rather than Dir preserves symlink/.. in the existing prefix
+		// when the leaf is missing (for example, a file an action will create).
+		dir, base := filepath.Split(strings.TrimRight(parent, string(filepath.Separator)))
+		tail = filepath.Join(base, tail)
+		next := strings.TrimRight(dir, string(filepath.Separator))
+		if next == "" {
+			next = string(filepath.Separator)
+		}
 		if next == parent {
 			return "", fmt.Errorf("path %q has no resolvable existing component", cleaned)
 		}

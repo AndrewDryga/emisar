@@ -13,7 +13,7 @@ import (
 // This is the validation path the engine runs on every dispatch:
 //
 //	act, _ := reg.Action(req.ActionID)
-//	cleanArgs, err := validation.Validate(act.Args, req.Args)
+//	cleanArgs, err := validation.Validate(act.Args, req.Args, protected, cwd)
 //
 // The runner trusts only the action ID from the cloud; it re-validates every
 // supplied value against the schema it loaded LOCALLY from packs/. These tests
@@ -36,7 +36,7 @@ func dispatchValidate(t *testing.T, reg *Registry, actionID string, raw map[stri
 	if !ok {
 		t.Fatalf("action %q not found in the real library (id drifted?)", actionID)
 	}
-	_, err := validation.Validate(act.Args, raw, nil)
+	_, err := validation.Validate(act.Args, raw, nil, "")
 	return err
 }
 

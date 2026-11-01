@@ -19,6 +19,12 @@ pass is what runs `Clean` + `EvalSymlinks` over the value, collapses `..`,
 blocks a symlink escape, and requires an absolute path. It never runs off
 `pattern`.
 
+The runner's separate protected-root backstop covers every string-shaped value,
+including arguments without path rules. Compare relative operands against the
+executor's effective working directory, resolving symlinks before `..` components.
+Keep ordinary identifiers unchanged; this denial check does not make every string
+a filesystem path. Declared path rules still require absolute values.
+
 *Confinement* is a separate, positive test inside that same function, and only
 an allowlist performs it:
 

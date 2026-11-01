@@ -52,7 +52,7 @@ func TestTailscalePingArgv(t *testing.T) {
 		{"maximum_ipv6", map[string]any{"host": "fd7a:115c:a1e0::1", "count": 20}, 20},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			args, err := validation.Validate(action.Args, tt.raw, nil)
+			args, err := validation.Validate(action.Args, tt.raw, nil, "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -107,7 +107,7 @@ func TestTailscalePingRejectsInvalidArguments(t *testing.T) {
 		{"count_fractional", map[string]any{"host": "peer", "count": 1.5}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			if _, err := validation.Validate(action.Args, tt.args, nil); err == nil {
+			if _, err := validation.Validate(action.Args, tt.args, nil, ""); err == nil {
 				t.Fatalf("invalid ping operands accepted: %#v", tt.args)
 			}
 		})

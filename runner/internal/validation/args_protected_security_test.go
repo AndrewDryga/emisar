@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -13,9 +14,8 @@ import (
 // The runner's own config and state roots are refused for every path arg,
 // whatever the pack declared. These directories hold runner.env (the
 // enrollment key plus the operator's exported pack credentials) and the
-// control-plane bearer token, so a read of either impersonates the runner —
-// and the generic filesystem packs that would reach them are risk: low, which
-// the shipped default policy auto-runs with no approval.
+// control-plane bearer token. This backstop also covers installed actions that
+// accept a relative path without declaring their own path rules.
 
 func TestProtected_RefusedWithNoValidationBlock(t *testing.T) {
 	state := t.TempDir()
@@ -24,11 +24,107 @@ func TestProtected_RefusedWithNoValidationBlock(t *testing.T) {
 	// stand on its own.
 	schema := []actionspec.Arg{{Name: "path", Type: actionspec.ArgPath, Required: true}}
 
-	_, err := Validate(schema, map[string]any{"path": filepath.Join(state, "token")}, []string{state})
+	_, err := Validate(schema, map[string]any{"path": filepath.Join(state, "token")}, []string{state}, "/")
 	if err == nil {
 		t.Fatal("a path arg naming the runner's state must be refused even with no validation block")
 	}
 	assertProtected(t, err)
+}
+
+func TestProtected_RefusesRelativePaths(t *testing.T) {
+	root := t.TempDir()
+	for _, leaf := range []string{"config/runner.env", "data/token", "journal/events.jsonl"} {
+		for _, argType := range []actionspec.ArgType{actionspec.ArgPath, actionspec.ArgString, actionspec.ArgStringArray} {
+			t.Run(leaf+"/"+string(argType), func(t *testing.T) {
+				target := filepath.Join(root, leaf)
+				relative := strings.TrimPrefix(target, string(filepath.Separator))
+				for _, value := range []string{relative, "./" + relative, "../" + relative} {
+					var raw any = value
+					if argType == actionspec.ArgStringArray {
+						raw = []string{"ordinary-name", value}
+					}
+					schema := []actionspec.Arg{{Name: "target", Type: argType, Required: true}}
+					_, err := Validate(schema, map[string]any{"target": raw}, []string{root}, "/")
+					assertProtected(t, err)
+				}
+			})
+		}
+	}
+}
+
+func TestProtected_UsesExecutionWorkingDirectory(t *testing.T) {
+	root := t.TempDir()
+	state := filepath.Join(root, "state")
+	work := filepath.Join(root, "work")
+	for _, dir := range []string{filepath.Join(state, "child"), work} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(state, "token"), []byte("fixture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(work, "alias")
+	if err := os.Symlink(filepath.Join(state, "child"), link); err != nil {
+		t.Fatal(err)
+	}
+	outwardLink := filepath.Join(state, "outside")
+	if err := os.Symlink(work, outwardLink); err != nil {
+		t.Fatal(err)
+	}
+	runnerCWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	relativeCWD, err := filepath.Rel(runnerCWD, work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := []actionspec.Arg{{Name: "file", Type: actionspec.ArgString, Required: true}}
+	for _, tc := range []struct{ name, cwd, value string }{
+		{"absolute cwd", root, "state/token"},
+		{"relative cwd", relativeCWD, "../state/token"},
+		{"symlink cwd", link, "../token"},
+		{"symlink dotdot cwd", link + "/..", "token"},
+		{"symlink operand", work, "alias/../token"},
+		{"missing leaf through symlink", work, "alias/../missing/token"},
+		{"lexically protected cwd", outwardLink, "token"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Validate(schema, map[string]any{"file": tc.value}, []string{state}, tc.cwd)
+			assertProtected(t, err)
+		})
+	}
+	_, err = Validate(schema, map[string]any{"file": "token"}, []string{state}, filepath.Join(root, "missing-cwd"))
+	var validationError *Error
+	if !errors.As(err, &validationError) || validationError.Code != "path" {
+		t.Fatalf("unresolvable working directory must fail closed: %v", err)
+	}
+}
+
+func TestProtected_PreservesBenignRelativeValues(t *testing.T) {
+	root := t.TempDir()
+	state := filepath.Join(root, "state")
+	if err := os.WriteFile(filepath.Join(root, "ordinary-file"), []byte("fixture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	schema := []actionspec.Arg{
+		{Name: "name", Type: actionspec.ArgString},
+		{Name: "identifiers", Type: actionspec.ArgStringArray},
+		{Name: "file", Type: actionspec.ArgPath},
+	}
+	raw := map[string]any{
+		"name":        "ordinary-name",
+		"identifiers": []string{"relative/identifier", "state-backup/token", "", strings.Repeat("x", 300), "ordinary-file/remote-resource"},
+		"file":        "work/readme.txt",
+	}
+	got, err := Validate(schema, raw, []string{state}, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, raw) {
+		t.Fatalf("protected checks changed benign values: got %#v, want %#v", got, raw)
+	}
 }
 
 func TestProtected_RefusedDespiteUnrelatedDenylist(t *testing.T) {
@@ -45,7 +141,7 @@ func TestProtected_RefusedDespiteUnrelatedDenylist(t *testing.T) {
 		},
 	}}
 
-	_, err := Validate(schema, map[string]any{"path": filepath.Join(config, "runner.env")}, []string{config})
+	_, err := Validate(schema, map[string]any{"path": filepath.Join(config, "runner.env")}, []string{config}, "/")
 	if err == nil {
 		t.Fatal("a pack denylist that omits the runner's own root must not authorize the read")
 	}
@@ -63,7 +159,7 @@ func TestProtected_RefusesTheRootItselfAndSubpaths(t *testing.T) {
 		// Dot-dot back into the root resolves to the same place.
 		filepath.Join(state, "..", filepath.Base(state), "token"),
 	} {
-		if _, err := Validate(schema, map[string]any{"path": target}, []string{state}); err == nil {
+		if _, err := Validate(schema, map[string]any{"path": target}, []string{state}, "/"); err == nil {
 			t.Fatalf("path %s must be refused", target)
 		}
 	}
@@ -85,7 +181,7 @@ func TestProtected_RefusesSymlinkIntoTheRoot(t *testing.T) {
 	}
 
 	schema := []actionspec.Arg{{Name: "path", Type: actionspec.ArgPath, Required: true}}
-	if _, err := Validate(schema, map[string]any{"path": link}, []string{state}); err == nil {
+	if _, err := Validate(schema, map[string]any{"path": link}, []string{state}, "/"); err == nil {
 		t.Fatal("a symlink resolving into the runner's state must be refused")
 	}
 }
@@ -103,7 +199,7 @@ func TestProtected_AllowsPathsOutsideTheRoots(t *testing.T) {
 	schema := []actionspec.Arg{{Name: "path", Type: actionspec.ArgPath, Required: true}}
 
 	target := filepath.Join(logs, "syslog")
-	out, err := Validate(schema, map[string]any{"path": target}, []string{state})
+	out, err := Validate(schema, map[string]any{"path": target}, []string{state}, "/")
 	if err != nil {
 		t.Fatalf("an ordinary read outside the runner's own state must still pass: %v", err)
 	}
@@ -115,7 +211,7 @@ func TestProtected_AllowsPathsOutsideTheRoots(t *testing.T) {
 	if err := os.MkdirAll(sibling, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Validate(schema, map[string]any{"path": filepath.Join(sibling, "f")}, []string{state}); err != nil {
+	if _, err := Validate(schema, map[string]any{"path": filepath.Join(sibling, "f")}, []string{state}, "/"); err != nil {
 		t.Fatalf("a sibling sharing the root's name prefix must not be refused: %v", err)
 	}
 }
@@ -131,7 +227,7 @@ func TestProtected_CoversStringArrayArgsCarryingPaths(t *testing.T) {
 	}}
 
 	raw := map[string]any{"paths": []any{"/var/log/syslog", filepath.Join(state, "token")}}
-	if _, err := Validate(schema, raw, []string{state}); err == nil {
+	if _, err := Validate(schema, raw, []string{state}, "/"); err == nil {
 		t.Fatal("one protected element must refuse the whole array")
 	}
 }
@@ -149,7 +245,7 @@ func TestProtected_CoversPlainStringArgsCarryingPaths(t *testing.T) {
 		Validation: &actionspec.Validation{Pattern: `^/[A-Za-z0-9._/-]{1,256}$`},
 	}}
 
-	_, err := Validate(schema, map[string]any{"file": filepath.Join(config, "runner.env")}, []string{config})
+	_, err := Validate(schema, map[string]any{"file": filepath.Join(config, "runner.env")}, []string{config}, "/")
 	if err == nil {
 		t.Fatal("a string arg naming the runner's config must be refused")
 	}
@@ -178,7 +274,7 @@ func TestProtected_AllowsRemoteIdentifiersShapedLikePaths(t *testing.T) {
 		"relative/identifier",
 		filepath.Join(unreadable, "znode"),
 	} {
-		if _, err := Validate(schema, map[string]any{"group": target}, []string{t.TempDir()}); err != nil {
+		if _, err := Validate(schema, map[string]any{"group": target}, []string{t.TempDir()}, "/"); err != nil {
 			t.Fatalf("identifier %s must still validate: %v", target, err)
 		}
 	}
@@ -196,7 +292,7 @@ func TestProtected_RefusesCaseVariantsOfTheRoot(t *testing.T) {
 	variant := filepath.Join(filepath.Dir(config), "EMISAR", "runner.env")
 
 	schema := []actionspec.Arg{{Name: "path", Type: actionspec.ArgPath, Required: true}}
-	_, err := Validate(schema, map[string]any{"path": variant}, []string{config})
+	_, err := Validate(schema, map[string]any{"path": variant}, []string{config}, "/")
 	if err == nil {
 		t.Fatalf("case variant %s of the runner's config root must be refused", variant)
 	}
@@ -232,7 +328,7 @@ func TestDeniedPaths_RefuseCaseVariants(t *testing.T) {
 		filepath.Join(dir, "SHADOW"),
 		filepath.Join(dir, "PRIVATE", "server.key"),
 	} {
-		if _, err := Validate(schema, map[string]any{"path": target}, nil); err == nil {
+		if _, err := Validate(schema, map[string]any{"path": target}, nil, "/"); err == nil {
 			t.Fatalf("case variant %s must not slip past the deny rules", target)
 		}
 	}
@@ -243,7 +339,7 @@ func TestProtected_EmptyListLeavesValidationUnchanged(t *testing.T) {
 	schema := []actionspec.Arg{{Name: "path", Type: actionspec.ArgPath, Required: true}}
 
 	target := filepath.Join(state, "token")
-	if _, err := Validate(schema, map[string]any{"path": target}, nil); err != nil {
+	if _, err := Validate(schema, map[string]any{"path": target}, nil, "/"); err != nil {
 		t.Fatalf("with no protected roots configured the guard must not fire: %v", err)
 	}
 }

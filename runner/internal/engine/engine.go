@@ -377,7 +377,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		return e.refuse(ctx, ev, StatusBlockedByAdmission, act.ID, reason), nil
 	}
 
-	cleanArgs, err := validation.Validate(act.Args, req.Args, e.ProtectedPaths)
+	cleanArgs, err := validation.Validate(act.Args, req.Args, e.ProtectedPaths, executor.EffectiveCWD(act))
 	if err != nil {
 		detail := validationFailureDetail(err, req.Args, act.Args)
 		ev := e.actionEvent(req, act, audit.EventValidationFailed, now)

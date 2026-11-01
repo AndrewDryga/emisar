@@ -57,7 +57,7 @@ func TestRenderedCommandMatchesSharedCorpus(t *testing.T) {
 			if err := decoder.Decode(&raw); err != nil {
 				t.Fatalf("decode args: %v", err)
 			}
-			clean, err := validation.Validate(tc.Specs, raw, nil)
+			clean, err := validation.Validate(tc.Specs, raw, nil, "")
 			if err != nil {
 				t.Fatalf("validate: %v", err)
 			}
