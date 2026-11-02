@@ -15,6 +15,103 @@ defmodule EmisarWeb.MarketingHTML do
   embed_templates "marketing_html/docs/integrations/*"
   embed_templates "marketing_html/use_cases/*"
 
+  attr :signed_in?, :boolean, default: false
+  attr :title, :string, required: true
+  attr :category, :string, required: true
+  attr :intro, :string, required: true
+  attr :stats, :list, required: true
+  slot :inner_block, required: true
+
+  @doc "Shared field-report layout, following the Cassandra case study's reading width and fact strip."
+  def field_report(assigns) do
+    ~H"""
+    <div class="bg-zinc-950 text-zinc-100">
+      <.marketing_nav signed_in?={@signed_in?} current={:use_cases} />
+      <main>
+        <header class="py-16 sm:py-24">
+          <div class="mx-auto max-w-4xl px-6 lg:px-8">
+            <.breadcrumbs items={[{"Use cases", ~p"/use-cases"}, {@category, nil}]} />
+            <p class="mt-6 text-sm font-semibold text-brand-400">Case study · {@category}</p>
+            <.marketing_heading tag="h1" scale={:hero} class="mt-2">{@title}</.marketing_heading>
+            <p class="mt-6 max-w-3xl text-lg leading-8 text-zinc-400 text-pretty">{@intro}</p>
+            <div class="mt-8 border-l-2 border-brand-500 pl-5">
+              <p class="text-sm font-semibold text-zinc-100">Written by Codex</p>
+              <p class="mt-1 text-sm leading-6 text-zinc-400">
+                The operator set the scope and made the production decisions.
+              </p>
+            </div>
+            <dl class={[
+              "mt-10 grid grid-cols-2 border-y border-zinc-800",
+              length(@stats) == 3 && "sm:grid-cols-3",
+              length(@stats) > 3 && "sm:grid-cols-4"
+            ]}>
+              <div
+                :for={{label, value} <- @stats}
+                class={[
+                  "min-w-0 border-zinc-800 px-4 py-5 first:pl-0 [&:nth-child(odd):not(:last-child)]:border-r sm:[&:not(:last-child)]:border-r",
+                  length(@stats) == 3 &&
+                    "last:col-span-2 last:pl-0 sm:last:col-span-1 sm:last:pl-4",
+                  length(@stats) > 2 &&
+                    "[&:nth-child(-n+2)]:border-b sm:[&:nth-child(-n+2)]:border-b-0"
+                ]}
+              >
+                <dt class="text-xs font-semibold uppercase tracking-wider text-zinc-400">{label}</dt>
+                <dd class="mt-1 font-mono text-lg font-semibold text-zinc-100">{value}</dd>
+              </div>
+            </dl>
+          </div>
+        </header>
+        <article>
+          {render_slot(@inner_block)}
+        </article>
+        <section class="border-t border-zinc-900 py-12">
+          <div class="mx-auto max-w-3xl px-6 text-sm leading-7 text-zinc-400 lg:px-8">
+            <p>
+              Read the <.link
+                navigate={~p"/use-cases/cassandra-migration"}
+                class="text-brand-300 hover:text-brand-200"
+              >Cassandra migration field report</.link>,
+              explore the <.link navigate={~p"/packs"} class="text-brand-300 hover:text-brand-200">action packs</.link>,
+              or see how <.link
+                navigate={~p"/docs/security-model"}
+                class="text-brand-300 hover:text-brand-200"
+              >emisar controls infrastructure access</.link>.
+            </p>
+          </div>
+        </section>
+      </main>
+      <.marketing_cta
+        headline="Give your agent a production task."
+        subcopy="Connect a host, choose its actions, and set the policy for what your agent can do."
+        secondary_label="Read the quickstart"
+        secondary_path={~p"/docs/quickstart"}
+      />
+      <.marketing_footer />
+    </div>
+    """
+  end
+
+  attr :id, :string, required: true
+  attr :label, :string, default: nil
+  attr :title, :string, required: true
+  slot :inner_block, required: true
+
+  def field_report_section(assigns) do
+    ~H"""
+    <section class="border-t border-zinc-900 py-16 sm:py-20">
+      <div class="mx-auto max-w-3xl px-6 lg:px-8">
+        <p :if={@label} class="text-sm font-semibold text-brand-400">{@label}</p>
+        <h2 id={@id} class="mt-2 scroll-mt-24 text-3xl font-semibold text-zinc-50 text-balance">
+          {@title}
+        </h2>
+        <div class="mt-5 text-base [&_p]:mt-5 [&_p]:leading-7 [&_p]:text-zinc-400 [&_h3]:mt-10 [&_h3]:text-xl [&_h3]:font-semibold [&_h3]:text-zinc-100 [&_ul]:my-6 [&_ul]:list-disc [&_ul]:space-y-3 [&_ul]:pl-5 [&_ol]:my-6 [&_ol]:list-decimal [&_ol]:space-y-3 [&_ol]:pl-5 [&_li]:leading-7 [&_li]:text-zinc-400 [&_code]:break-words [&_a]:text-brand-300 [&_a:hover]:text-brand-200 [&_table]:w-full [&_table]:text-left [&_table]:text-sm [&_th]:border-b [&_th]:border-zinc-700 [&_th]:py-3 [&_th]:pr-4 [&_th]:font-semibold [&_th]:text-zinc-200 [&_td]:border-b [&_td]:border-zinc-800 [&_td]:py-4 [&_td]:pr-4 [&_td]:text-zinc-400">
+          {render_slot(@inner_block)}
+        </div>
+      </div>
+    </section>
+    """
+  end
+
   attr :text, :string,
     default: nil,
     doc: "one authored setup string — a summary, an env description, or a note"

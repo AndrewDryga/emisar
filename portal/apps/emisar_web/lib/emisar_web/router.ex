@@ -203,6 +203,10 @@ defmodule EmisarWeb.Router do
     get "/docs/signed-dispatch", MarketingController, :signed_dispatch
     get "/use-cases", MarketingController, :use_cases
     get "/use-cases/cassandra-migration", MarketingController, :cassandra_migration
+    get "/use-cases/website-cache-stampede", MarketingController, :website_cache_stampede
+    get "/use-cases/nomad-resource-sizing", MarketingController, :nomad_resource_sizing
+    get "/use-cases/application-migration", MarketingController, :application_migration
+    get "/use-cases/cassandra-backup-costs", MarketingController, :cassandra_backup_costs
     get "/use-cases/csi-data-loss", MarketingController, :csi_data_loss
     get "/use-cases/ingress-502", MarketingController, :ingress_502
     get "/compare/raw-ssh-for-ai", MarketingController, :raw_ssh_for_ai

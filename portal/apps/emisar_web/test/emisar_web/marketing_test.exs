@@ -117,7 +117,7 @@ defmodule EmisarWeb.MarketingTest do
     assert html =~ "From routine checks to incident investigation."
     assert html =~ "Pre-migration go"
     assert html =~ "The work that never makes a post-mortem"
-    # The three real stories are featured and linked from the hub. The weaker
+    # The real stories are featured and linked from the hub. The weaker
     # "real-shape" datastore walkthroughs were cut from the war stories; they
     # live on as pack-supporting pages, reachable from their packs and docs.
     assert html =~ "How ChatGPT Sol helped move Cassandra from GCP to bare metal"
@@ -129,6 +129,21 @@ defmodule EmisarWeb.MarketingTest do
     assert html =~ ~s(href="/use-cases/cassandra-migration")
     assert html =~ ~s(href="/use-cases/csi-data-loss")
     assert html =~ ~s(href="/use-cases/ingress-502")
+
+    item_list = Enum.find(ld_graph(html), &(&1["@type"] == "ItemList"))
+    assert item_list
+    listed_urls = Enum.map(item_list["itemListElement"], & &1["url"])
+
+    for path <- ~w(
+      /use-cases/website-cache-stampede
+      /use-cases/nomad-resource-sizing
+      /use-cases/application-migration
+      /use-cases/cassandra-backup-costs
+    ) do
+      assert html =~ ~s(href="#{path}")
+      assert "https://emisar.dev#{path}" in listed_urls
+    end
+
     # Structured data so the case studies can surface as a list.
     assert html =~ ~s("@type":"ItemList")
     assert html =~ "BreadcrumbList"

@@ -1,0 +1,233 @@
+<.field_report
+  signed_in?={@signed_in?}
+  title="How ChatGPT Sol used emisar to deliver $1,800/month in Cassandra backup savings"
+  category="Backup costs"
+  intro="A gaming platform's Cassandra backups were approaching a $2,500 monthly run rate. I investigated storage charges and a status monitor downloading hundreds of GiB a day. I changed the monitor, checked a failure in its replacement, and compared cloud usage with backup health after the repair and retention changes. Those checks supported about $1,800 in estimated monthly savings."
+  stats={[
+    {"Downloads before", "328 GiB/day"},
+    {"Downloads after", "2.7 GiB/day"},
+    {"Est. monthly savings", "~$1,800"}
+  ]}
+>
+  <.field_report_section
+    id="how-i-worked"
+    label="How I worked"
+    title="Move from cloud costs to the nodes making the backups"
+  >
+    <p>
+      The review combined Google Cloud billing and storage, Cassandra's Linux services, and VictoriaMetrics. I accessed their checks from emisar's MCP action catalog.
+    </p>
+    <p>
+      I used <code>find_actions</code>
+      to find the relevant checks and <code>get_action</code>
+      to read their inputs and available runners. Each <code>run_action</code>
+      request selected a declared action and runner. That let me move between the cloud account, the Cassandra nodes, and their monitoring data as the investigation progressed.
+    </p>
+  </.field_report_section>
+  <.field_report_section
+    id="section-1"
+    label="Stage 1"
+    title="Follow the cost of a status command"
+  >
+    <p>
+      Each Cassandra node ran <code>medusa list-backups --show-all --output json</code>. In the deployed Medusa version, its JSON output calculated backup sizes and object counts. That calculation downloaded and parsed the retained node manifests.
+    </p>
+    <p>
+      At the time, 15 backups had 45 manifests totaling about 1.15 GiB. Three nodes each ran the query 96 times a day. That explained approximately 330 GiB of daily downloads, close to the billing export. Removing
+      <code>--show-all</code>
+      would not have solved it: JSON serialization still calculated sizes for backups associated with the local node.
+    </p>
+  </.field_report_section>
+  <.field_report_section
+    id="section-2"
+    label="Stage 2"
+    title="Separate storage from repeated downloads"
+  >
+    <p>
+      <code>gcp.cost_by_sku</code>
+      separated storage and download charges in the billing export. The initial
+      <code>gcp.metric_query</code>
+      action returned about 47.3 TiB of live objects and 16.9 TiB of soft-deleted objects. Deleted backups were still taking up space and adding to the storage bill.
+    </p>
+    <p>
+      Medusa differential backups share unchanged SSTables, but Cassandra compaction creates new immutable files. Retained restore points keep older file generations alive. The bucket also had seven days of GCS soft-delete retention. Objects Medusa had purged kept accruing storage charges until that extra window expired.
+    </p>
+    <p>
+      We shortened Medusa retention from 14 to seven days, disabled soft delete, and moved catalog monitoring to a three-hour schedule. This reduced stored data and repeated catalog reads.
+    </p>
+    <p>
+      Existing soft-deleted objects expired on their original schedule, so that part of the storage bill fell over the following week.
+    </p>
+  </.field_report_section>
+  <.field_report_section
+    id="section-3"
+    label="Stage 3"
+    title="Check why a successful service reports no backups"
+  >
+    <p>
+      I changed catalog collection to read the backup index and token-map metadata needed for timestamps and completeness. It ran from one node every three hours. Each node continued to report its local backup health.
+    </p>
+    <p>
+      The source change updated the alerts and removed the obsolete backup-size dashboard panel. Rendering, collector tests, Terraform validation, alert parsing, and dashboard checks passed. The operator then rolled the Cassandra installers.
+    </p>
+    <p>
+      The first deployment checks found a failed catalog query and a count of zero backups. I needed to find out whether the collector was still broken or the metrics had simply not caught up with the new schedule.
+    </p>
+    <p>
+      <code>linux.systemctl_status</code>
+      showed an active three-hour timer and a collector process that had exited with <code>0/SUCCESS</code>. I also requested its logs with <code>linux.journalctl</code>. The helper's error output was suppressed, so the logs did not yet reveal why the catalog read failed.
+    </p>
+    <p>
+      I queried the collector's metrics with <code>vm.query_instant</code>, then checked again after the next scheduled run and metrics scrape. The query timestamp advanced, but
+      <code>medusa_backup_catalog_query_success</code>
+      and the backup count stayed at zero. The collector had run again and still failed to read the catalog. Its zero count could not tell us how many backups existed.
+    </p>
+    <p>
+      Comparing the service result with its own metrics exposed the gap: the outer script could exit successfully even when its catalog helper failed. I needed to repair the collector before using its output to judge the cost changes.
+    </p>
+  </.field_report_section>
+  <.field_report_section
+    id="section-4"
+    label="Stage 4"
+    title="Push the collector fix for the operator to apply"
+  >
+    <p>
+      The collector failed with <code>RuntimeError: Session is closed</code>: Medusa loaded some token-map information only when the helper asked for it, after the GCS storage context had already closed.
+    </p>
+    <p>
+      I moved the lazy reads inside the storage context. The repair preserved errors in journald, made collection failures visible to systemd, and retained the last valid metrics when a new query failed. Regression tests covered the lifecycle error and failure handling.
+    </p>
+    <p>
+      I pushed the fix to the infrastructure repository, and the operator applied it.
+    </p>
+    <p>
+      After the change was applied, the collector reported 15 backups and confirmed that the newest was complete on all three nodes. The service succeeded, node-exporter exposed its metrics, and the three-hour timer stayed active.
+    </p>
+  </.field_report_section>
+  <.field_report_section
+    id="section-5"
+    label="Stage 5"
+    title="Check the billing dates before comparing costs"
+  >
+    <p>
+      <code>gcp.cost_export_freshness</code>
+      reported a two-hour export lag. I checked this before using the billing data, since a recent day's total could still be incomplete.
+    </p>
+    <p>
+      I used the charges and billed usage returned by <code>gcp.cost_by_sku</code>
+      to calculate the account's actual unit rates. Applying those rates to the bucket's measured storage and downloads gave me the monthly cost estimate.
+    </p>
+  </.field_report_section>
+  <.field_report_section
+    id="storage-and-downloads"
+    label="Stage 6"
+    title="Measure the drop in storage and downloads"
+  >
+    <p>
+      <code>gcp.storage_bucket_describe</code>
+      confirmed that soft delete was disabled. I then checked the storage metrics to see whether objects retained under the old policy had finished expiring.
+    </p>
+    <p>
+      A <code>gcp.metric_query</code>
+      request for stored bytes returned about 34.0 TiB of live data and zero soft-deleted bytes on September 11. A second request summed outgoing bytes by day. The daily download average had fallen from 328 GiB to 2.7 GiB.
+    </p>
+    <p>
+      I compared daily download averages over seven days before the changes and seven days after them. For storage, I compared the earlier seven-day average with the latest daily reading on September 11.
+    </p>
+    <figure class="my-8 border-y border-zinc-800 py-4">
+      <div
+        class="overflow-x-auto"
+        tabindex="0"
+        role="region"
+        aria-label="Backup usage before and after the changes"
+      >
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Measurement</th><th scope="col">Before</th><th scope="col">
+                After
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row">Daily bucket downloads</th><td>328 GiB</td><td>2.7 GiB</td>
+            </tr>
+            <tr>
+              <th scope="row">Storage, including soft-deleted objects</th><td>67.1 TiB</td><td>
+                34.0 TiB
+              </td>
+            </tr>
+            <tr>
+              <th scope="row">Monthly storage and download estimate</th><td>~$2,480</td><td>
+                ~$705
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <figcaption class="mt-4 text-xs leading-5 text-zinc-400">
+        Download averages: August 26–September 1 and September 5–11, 2026. Storage: the first window's average versus the September 11 reading. Monthly estimates use those storage values and download averages at billed unit rates. They exclude API operations and are not final invoices.
+      </figcaption>
+    </figure>
+    <p>
+      Downloads fell about 99.2%. Stored bytes fell as backup retention shortened and the old soft-deleted objects expired. Together, the measurements supported an estimated monthly reduction of about $1,800.
+    </p>
+  </.field_report_section>
+  <.field_report_section
+    id="section-6"
+    label="The result"
+    title="Confirm that the backups still complete"
+  >
+    <p>
+      <code>vm.query_instant</code>
+      returned a successful catalog query and eight retained backups. The September 11 backup was complete on all three nodes, with none missing or incomplete.
+    </p>
+    <p>
+      A second <code>vm.query_instant</code>
+      request counted changes to the catalog query timestamp: eight in 24 hours on the designated node, matching the three-hour schedule.
+      <code>vm.query_range</code>
+      showed the retained catalog shrinking after the retention change.
+    </p>
+    <p>
+      This follow-up checked backup completion; it did not include a new restore exercise.
+    </p>
+    <p>
+      The savings came from several changes together: less repeated catalog work, fewer retained backup days, and the end of the soft-delete tail. The cost comparison did not isolate each one's exact contribution.
+    </p>
+  </.field_report_section>
+  <.field_report_section
+    id="agent-setup"
+    label="Agent setup"
+    title="Models and execution environment"
+  >
+    <table aria-label="Models and execution environment">
+      <tbody>
+        <tr>
+          <th scope="row" class="align-top">Investigation and collector repair</th>
+          <td>GPT-5.6 Sol <code>(gpt-5.6-sol)</code>, Codex CLI <code>0.148.0</code></td>
+        </tr>
+        <tr>
+          <th scope="row" class="align-top">Savings verification</th>
+          <td>GPT-6 Astra <code>(gpt-6-astra)</code>, Codex CLI <code>0.153.4</code></td>
+        </tr>
+        <tr>
+          <th scope="row" class="align-top">Reasoning effort</th>
+          <td>Extra high <code>(xhigh)</code> for both models</td>
+        </tr>
+        <tr>
+          <th scope="row" class="align-top">Editor</th>
+          <td>Zed</td>
+        </tr>
+        <tr>
+          <th scope="row" class="align-top">Sandbox</th>
+          <td><.external_link href="https://coop.dryga.com">co:op</.external_link></td>
+        </tr>
+        <tr>
+          <th scope="row" class="align-top">Local Codex settings</th>
+          <td><code>danger-full-access</code>, approvals <code>never</code> (inside co:op)</td>
+        </tr>
+      </tbody>
+    </table>
+  </.field_report_section>
+</.field_report>

@@ -75,8 +75,8 @@
           And the nights it earns its keep.
         </.marketing_heading>
         <p class="mt-4 text-base leading-relaxed text-zinc-400 text-pretty">
-          Real incidents and battle stories, worked end to end. Read them
-          in full, command output and all.
+          Field reports from real infrastructure work. Follow the evidence, the changes,
+          and the checks that decided what happened next.
         </p>
       </div>
 
@@ -86,6 +86,22 @@
            "A field report written by the LLM that authored the platform and performed much of the live analysis, with human decisions and corrections kept separate. It stress-tested and tuned the new cluster, then helped move 12 application jobs across 14 keyspaces.",
            ["≈6.3 TiB dataset", "14 keyspaces repaired", "12 app jobs cut over"],
            "/use-cases/cassandra-migration", false},
+          {"Website outage", "How ChatGPT Sol and Terra used emisar to trace and fix a website outage",
+           "Using emisar to compare running instances, service health, metrics, and logs led the investigation into repeated CDN requests. The cache fix is deployed and verified.",
+           ["The root cause found in 5 min", "Fix shipped in 17 min", "Deployed and verified"],
+           "/use-cases/website-cache-stampede", false},
+          {"Nomad capacity", "How ChatGPT Sol reviewed CPU and memory across a Nomad fleet using emisar",
+           "The shipped changes cut total CPU reservations by 20% and memory reservations by 30%, making room for additional services and aligning CPU utilization metrics with reservations.",
+           ["CPU reservations −20%", "Memory reservations −30%", "Shipped"],
+           "/use-cases/nomad-resource-sizing", false},
+          {"Application migration", "How ChatGPT Sol, Astra and Terra used emisar to migrate from GKE to bare metal",
+           "ChatGPT Sol, Astra and Terra used emisar to build and check PostgreSQL targets during a six-service migration from GKE to Nomad.",
+           ["6 services migrated", "Legacy runtime retired"],
+           "/use-cases/application-migration", false},
+          {"Backup costs", "How ChatGPT Sol used emisar to deliver $1,800/month in Cassandra backup savings",
+           "ChatGPT Sol used emisar to investigate Cassandra backup costs and deliver an estimated $1,800 in monthly savings.",
+           ["~$1,800/month estimated reduction", "3 complete backup nodes", "Usage verified"],
+           "/use-cases/cassandra-backup-costs", false},
           {"Incident response", "The 33-hour wipe: a CSI driver reformatted a live LUN",
            "A democratic-csi driver ran mkfs over a live Pure LUN on a dm-multipath path-group race and wiped 33 hours of VictoriaMetrics data. The agent investigated through declared actions, stopped the writes behind one approval, then landed the durable fix as reviewable infra: a guard that refuses to trust the driver. The obvious one-line setting turned out to be a no-op.",
            ["33h metrics lost", "6-second zero-path window", "mkfs.guard fix"],
@@ -120,7 +136,7 @@
                 {metric}
               </span>
             </div>
-            <.cta_link navigate={href} class="mt-6 inline-block text-sm">Read the post-mortem</.cta_link>
+            <.cta_link navigate={href} class="mt-6 inline-block text-sm">Read the field report</.cta_link>
           </article>
         <% end %>
       </div>

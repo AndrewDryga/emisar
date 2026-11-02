@@ -417,33 +417,28 @@
     </div>
   </section>
 
-  <%!-- Case studies — proof the demo wasn't cherry-picked: the storage wipe from
-       the demo written up in full, plus a completely different failure on the
-       network. These are the two REAL incidents; the weaker "real-shape" datastore
-       walkthroughs (Postgres/Cassandra) were cut from the showcase — they live on
-       as pack-supporting pages, reachable from their packs and docs. Each card
-       links to its post-mortem; the hub link below carries the everyday wins too. --%>
+  <%!-- Featured field reports: the storage incident and the live Cassandra migration. --%>
   <section class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
     <div data-reveal class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
         <p class="text-base font-semibold text-brand-400">Case studies</p>
         <.marketing_heading tag="h2" scale={:section} class="mt-2">
-          Two incidents, in full.
+          Two field reports, in full.
         </.marketing_heading>
         <p class="mt-6 text-lg leading-relaxed text-zinc-400 text-pretty">
-          The storage wipe from the demo, written up end to end — and a completely different
-          failure on the network. Both real, both logged with the command output to prove it.
+          The storage wipe from the demo and a live Cassandra migration from GCP to bare metal.
+          Follow the investigation, the changes, and the checks.
         </p>
       </div>
 
       <div class="mx-auto mt-16 grid max-w-3xl grid-cols-1 gap-6 sm:grid-cols-2">
-        <%= for {tag, title, scenario, icon, href} <- [
+        <%= for {tag, title, scenario, icon, href, cta} <- [
           {"storage", "A CSI driver wiped 33 hours of metrics",
            "The incident from the demo, in full — including the twist. The obvious one-line fix was a no-op, so the durable fix the agent shipped is a guard that refuses to trust the driver.",
-           "infrastructure.database", ~p"/use-cases/csi-data-loss"},
-          {"ingress", "A fleet-wide 502 no backend was causing",
-           "Every app behind one edge threw intermittent 502s — yet every backend was green. The agent traced it across five layers to an OOM loop and a stuck node still advertising a dead ingress, then stopped the bleed behind gated approvals.",
-           "infrastructure.network", ~p"/use-cases/ingress-502"}
+           "infrastructure.database", ~p"/use-cases/csi-data-loss", "Read the post-mortem"},
+          {"database migration", "How ChatGPT Sol helped move Cassandra from GCP to bare metal",
+           "The agent stress-tested and tuned a new bare-metal cluster, then helped move 12 application jobs across 14 keyspaces while production kept writing.",
+           "infrastructure.database", ~p"/use-cases/cassandra-migration", "Read the field report"}
         ] do %>
           <div class="group flex flex-col rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:-translate-y-0.5 hover:border-brand-500/40">
             <div class="flex items-center justify-between">
@@ -456,7 +451,7 @@
             </div>
             <h3 class="mt-6 text-lg font-semibold text-white">{title}</h3>
             <p class="mt-3 text-sm text-zinc-400 leading-relaxed">{scenario}</p>
-            <.cta_link navigate={href} class="mt-4 inline-block text-sm">Read the post-mortem</.cta_link>
+            <.cta_link navigate={href} class="mt-4 inline-block text-sm">{cta}</.cta_link>
           </div>
         <% end %>
       </div>

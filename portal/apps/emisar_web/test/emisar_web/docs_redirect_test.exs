@@ -52,6 +52,7 @@ defmodule EmisarWeb.DocsRedirectTest do
           "/guides/ai-agents-and-ssh-the-risks",
           "/use-cases/cassandra-ops",
           "/use-cases/postgres-ops",
+          "/use-cases/geoip-service",
           "/docs/no-such-guide"
         ] do
       response = conn |> recycle() |> get(path)

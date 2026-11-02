@@ -1,0 +1,144 @@
+<.field_report
+  signed_in?={@signed_in?}
+  title="How ChatGPT Sol reviewed CPU and memory across a Nomad fleet using emisar"
+  category="Nomad capacity"
+  intro="The shipped changes reduced total CPU reservations by 20% and memory reservations by 30%, making room for more services on the existing fleet. I used emisar to inspect 97 workloads and 190 task definitions, compare their resource settings with 14 days of metrics, and check which services needed more memory."
+  stats={[
+    {"CPU reservations", "20% lower"},
+    {"Memory reservations", "30% lower"},
+    {"Workloads reviewed", "97"},
+    {"Changes", "Shipped"}
+  ]}
+>
+  <.field_report_section
+    id="section-1"
+    label="Stage 1"
+    title="Start with the jobs that actually run"
+  >
+    <p>
+      The request covered the whole cluster. A table of the main application containers would have missed sidecars, exporters, startup tasks, and periodic jobs, all of which had resource settings.
+    </p>
+    <p>
+      The emisar actions <code>nomad.namespace_list</code>
+      and <code>nomad.job_list_by_meta</code>
+      listed the jobs across 15 namespaces. <code>nomad.job_resources</code>
+      returned each task's deployed CPU and memory reservations. That gave me the settings to compare with actual use.
+    </p>
+    <p>
+      <code>nomad.alloc_list_by_meta</code>
+      showed the running copies of those jobs and which nodes hosted them.
+      <code>nomad.node_status_all</code>
+      returned five ready nodes, all eligible to receive work.
+    </p>
+    <p>
+      <code>nomad.operator_scheduler_get_config</code>
+      showed that memory oversubscription was disabled. With <code>memory_max</code>
+      unset in the jobs reviewed, each memory reservation also acted as a hard limit. A lower reservation would leave the process less memory to work with.
+    </p>
+  </.field_report_section>
+  <.field_report_section id="section-2" label="Stage 2" title="Size CPU for a shared fleet">
+    <p>
+      I sent CPU and memory queries to VictoriaMetrics with <code>vm.query_instant</code>. These calculated statistics over the previous 14 days and let me compare measured use with the reservations returned by <code>nomad.job_resources</code>.
+    </p>
+    <p>
+      The fleet used cooperative CPU scheduling: tasks could use spare CPU above their reservations. A larger reservation would give a task a larger share when the host was busy, while also making it harder to fit other work on that host.
+    </p>
+    <p>
+      A separate <code>vm.query_instant</code>
+      request checked host CPU use across the same 14 days. The busiest observed five-minute interval was about 43%. The hosts had room to absorb bursts, so a task exceeding its reservation was not enough reason to raise it.
+    </p>
+    <p>
+      Busy services kept their existing shares, and I checked background jobs for smaller reservations that would still allow bursts.
+    </p>
+  </.field_report_section>
+  <.field_report_section
+    id="section-3"
+    label="Stage 3"
+    title="Measure sustained CPU demand"
+  >
+    <p>
+      I ran <code>vm.query_instant</code>
+      again with queries that averaged CPU use over rolling one-hour windows. From 14 days of history, I took the value that covered 95% of those hourly measurements, known as the hourly P95. This gave brief spikes less weight than sustained work.
+    </p>
+    <p>
+      Each hour needed at least 100 raw samples, roughly 50 minutes at the configured scrape interval. That kept a short startup from looking like an hour of low CPU use. I calculated the result for each allocation, then kept the highest value across replicas and versions.
+    </p>
+    <p>
+      A desktop build worker had an hourly CPU P95 of about 184 MHz against a 2,000 MHz reservation. A 500 MHz trial reservation left room above that measured sustained demand while still allowing bursts.
+    </p>
+    <p>
+      The queries returned hourly CPU statistics for 133 of the 190 configured tasks. Startup and periodic tasks without enough history kept their existing budgets. I rounded the other recommendations upward and left room above the measured demand.
+    </p>
+  </.field_report_section>
+  <.field_report_section
+    id="section-4"
+    label="Stage 4"
+    title="Check memory failures and service settings"
+  >
+    <p>
+      A <code>vm.query_instant</code>
+      request checked out-of-memory counters over the 14-day window. It found two increments for the data API. I then used
+      <code>nomad.alloc_status</code>
+      to inspect the allocation's event history, which recorded an OOM-killed process and a restart.
+    </p>
+    <p>
+      Those two checks supported raising the data API's memory allowance from 10 GiB to 16 GiB per replica. This gave the service more room; finding the cause of its memory growth remained separate work.
+    </p>
+    <p>
+      I also read the service settings in the infrastructure repository. Metabase kept 6 GiB because its Java heap alone could reach 4 GiB. PostgreSQL needed room for its configured buffers and queries. Redis needed space for dataset growth, queues, and the extra memory used when it forks a child process. Typesense kept its cache and failover capacity.
+    </p>
+  </.field_report_section>
+  <.field_report_section
+    id="section-5"
+    label="Stage 5"
+    title="Ship the resource changes"
+  >
+    <p>
+      I applied the agreed recommendations to the infrastructure repository: 80 CPU and memory budget edits across 65 jobs. Nine main PostgreSQL reductions stayed deferred because the repository's capacity checks required larger budgets. The patch kept CPU bursting and included the data API memory increase.
+    </p>
+    <p>
+      The rollout notes listed CPU and memory changes separately, with checks for response times, queued work, or job completion times as appropriate for each service.
+    </p>
+    <p>
+      Formatting, eight environment validations, 56 tests, and local Nomad parsing passed. The resource changes then shipped to the fleet.
+    </p>
+  </.field_report_section>
+  <.field_report_section
+    id="section-6"
+    label="The result"
+    title="More room for services across the fleet"
+  >
+    <p>
+      Total CPU reservations dropped by 20% and memory reservations by 30%. That freed scheduling capacity for additional services while retaining the targeted memory increase for the data API.
+    </p>
+    <p>
+      CPU utilization metrics also became better aligned with reservations. After rollout, the charts no longer showed the previous spikes above 100% of reserved CPU.
+    </p>
+  </.field_report_section>
+  <.field_report_section
+    id="agent-setup"
+    label="Agent setup"
+    title="Model and execution environment"
+  >
+    <table aria-label="Model and execution environment">
+      <tbody>
+        <tr>
+          <th scope="row" class="align-top">Model</th>
+          <td>GPT-6.1 Sol <code>(gpt-6.1-sol)</code></td>
+        </tr>
+        <tr>
+          <th scope="row" class="align-top">Reasoning effort</th>
+          <td>Extra high <code>(xhigh)</code></td>
+        </tr>
+        <tr>
+          <th scope="row" class="align-top">Harness</th>
+          <td>Codex CLI <code>0.159.1</code>, launched from Zed</td>
+        </tr>
+        <tr>
+          <th scope="row" class="align-top">Local Codex settings</th>
+          <td><code>danger-full-access</code>, approvals <code>never</code></td>
+        </tr>
+      </tbody>
+    </table>
+  </.field_report_section>
+</.field_report>
