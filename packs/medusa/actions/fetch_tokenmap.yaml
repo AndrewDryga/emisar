@@ -1,0 +1,34 @@
+schema_version: 1
+id: medusa.fetch_tokenmap
+title: Show the token map saved in a Medusa backup
+kind: script
+risk: low
+description: >
+  Show the token map one backup recorded, each node's name with the tokens it
+  owned at backup time, using `medusa fetch-tokenmap`. The live ring is
+  `cassandra.nodetool_ring`. Exits 1 when no backup has that name.
+side_effects:
+  - Reads the backup's token map from the configured storage.
+  - Read-only.
+args:
+  - name: backup_name
+    type: string
+    required: true
+    description: Name of the backup, as `medusa.list_backups` shows it.
+    validation:
+      max_length: 64
+      pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$"
+execution:
+  script:
+    path: scripts/medusa.sh
+    interpreter: /bin/bash
+  argv: ["tokenmap", "{{ args.backup_name }}"]
+  timeout: 10m
+output:
+  parser: text
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 65536
+examples:
+  - title: Show the tokens a backup recorded
+    args:
+      backup_name: "nightly-20261029"

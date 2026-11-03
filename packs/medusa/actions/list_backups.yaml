@@ -1,0 +1,42 @@
+schema_version: 1
+id: medusa.list_backups
+title: List Medusa backups
+kind: script
+risk: low
+description: >
+  List the Medusa backups that include this node, oldest first, with when each
+  started and finished, using `medusa list-backups`. A backup that some node
+  has not finished reads `Incomplete [n of m nodes finished]`. Set `show_all`
+  to list every backup under the configured prefix, including ones this node
+  is not part of. A failing storage call is retried for about six minutes
+  before the error is reported.
+side_effects:
+  - Lists backup metadata in the configured storage.
+  - Removes index entries for backups whose files are already gone, when the credentials allow deletes.
+  - Does not change any backup's data.
+search_terms:
+  - when was the last backup
+  - backup missing
+  - incomplete backup
+args:
+  - name: show_all
+    type: boolean
+    required: false
+    default: false
+    description: List every backup under the prefix, not only those that include this node.
+execution:
+  script:
+    path: scripts/medusa.sh
+    interpreter: /bin/bash
+  argv: ["list-backups", "{{ args.show_all }}"]
+  timeout: 10m
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 65536
+examples:
+  - title: List this node's backups
+    args: {}
+  - title: List every backup in the bucket
+    args:
+      show_all: true

@@ -1,0 +1,73 @@
+schema_version: 1
+id: medusa.backup_node
+title: Back up this Cassandra node with Medusa
+kind: script
+risk: medium
+description: >
+  Back up this node to the configured storage with `medusa backup-node`:
+  snapshot every keyspace through nodetool, save the schema and token map,
+  upload the SSTables, then clear the snapshot. Differential mode, the default,
+  uploads only files storage does not hold yet and shares the rest with
+  earlier backups; full mode uploads every file again. The same `backup_name`
+  taken on every node forms one cluster backup. Medusa reports success even
+  when the snapshot fails and records an empty or partial backup; this action
+  fails instead and names the backup so `medusa.delete_backup` can remove it.
+side_effects:
+  - Takes a nodetool snapshot, which keeps SSTables on disk until the upload ends.
+  - Uploads SSTables, the schema, and the token map to the configured storage, up to Medusa's `transfer_max_bandwidth`.
+  - Reads every SSTable it uploads, at idle I/O and lowest CPU priority.
+  - Fails without changes when this node already has a backup with that name.
+  - Canceling it leaves the snapshot and an incomplete backup; `cassandra.nodetool_clearsnapshot` and `medusa.delete_backup` remove them.
+search_terms:
+  - take a backup
+  - back up before an upgrade
+  - backup before a schema change
+args:
+  - name: backup_name
+    type: string
+    required: true
+    description: >
+      Name for the backup, used for this node's copy and its snapshot tag `medusa-<name>`.
+      Use the same name on every node for a cluster backup.
+    validation:
+      max_length: 64
+      pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$"
+  - name: mode
+    type: string
+    required: false
+    default: differential
+    description: "`differential` uploads only new files; `full` uploads every file."
+    validation:
+      enum: ["differential", "full"]
+  - name: check_hashes
+    type: boolean
+    required: false
+    default: false
+    description: Compare MD5 hashes as well as sizes when deciding which files storage already holds.
+execution:
+  script:
+    path: scripts/medusa.sh
+    interpreter: /bin/bash
+  argv: ["backup", "{{ args.backup_name }}", "{{ args.mode }}", "{{ args.check_hashes }}"]
+  timeout: 6h
+  timeout_min: 10m
+  timeout_max: 24h
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 262144
+  redact:
+    # Medusa 0.27-0.30 logs a failed `nodetool clearsnapshot` command line,
+    # including `-pw <password>` when medusa.ini sets nodetool_password.
+    - name: nodetool-password-flag
+      type: regex
+      pattern: '(\s-pw\s+)\S+'
+      replacement: '${1}[REDACTED]'
+examples:
+  - title: Nightly differential backup
+    args:
+      backup_name: "nightly-20261029"
+  - title: Full backup before an upgrade
+    args:
+      backup_name: "pre-upgrade-5-0"
+      mode: full

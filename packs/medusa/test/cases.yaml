@@ -1,0 +1,274 @@
+# What one disposable node with MinIO over HTTP cannot show: completeness
+# across several nodes, `all-nodes` against `current-node` deletes, several
+# datacenters, or a remote restore; IAM roles, GCS, Azure, TLS, or JMX and CQL
+# encryption; and a restore of a backup with no data for this node, whose guard
+# was checked against a stub. Medusa's stop and start commands drive a hold
+# file that the SUT's supervisor watches, not systemd; `./run test pack-access
+# medusa` proves the host-access recipes.
+services: [cassandra]
+# The Cassandra rows match the cassandra pack's; Medusa itself is pinned to
+# 0.31.1 in the client image.
+versions:
+  - version: "5.0.9-bookworm"
+    digest: "@sha256:7ee3eda0f01d80fa4cf93cefb2b1b993bd356a98b7200827d2af5113475534d1"
+    default: true
+  - version: "4.1.11"
+    digest: "@sha256:dad4cd7ee4281df4e96944a1faebfebd2e50ee19a9f0a1d42ac0bb17c820dd74"
+# Every case boots its own JVM node and MinIO, and the restore cases restart
+# Cassandra, so split the cases across matrix rows.
+shards: 5
+# A backup starts Medusa's Python CLI and two nodetool JVMs, at the idle CPU
+# and I/O priority Medusa gives itself. Next to three other cases booting their
+# nodes, it ran past the harness's 30-second command limit.
+workers: 2
+
+secret_env: [MEDUSA_CQL_PASSWORD, AWS_SECRET_ACCESS_KEY]
+env:
+  # A login-only role: Medusa reads only the schema and token map.
+  MEDUSA_CQL_USERNAME: medusa
+  MEDUSA_CQL_PASSWORD: packtest-canary-medusa-cql-2d81
+  AWS_ACCESS_KEY_ID: medusa-packtest
+  AWS_SECRET_ACCESS_KEY: packtest-canary-medusa-s3-5c1e
+  MEDUSA_RESTORE_TEMP_DIR: /srv/medusa-restore
+cases:
+  - action: medusa.show_config
+    expect:
+      stdout_contains:
+        - Medusa 0.31.1
+        - storage_provider = s3_compatible
+        - fqdn = 127.0.0.1
+        - ssl_verify = False (default)
+        - "Set in the file, not shown: stop_cmd, start_cmd"
+        - "Environment overrides passed to Medusa, not shown: MEDUSA_CQL_USERNAME, MEDUSA_CQL_PASSWORD, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY"
+      stdout_not_contains: ['[REDACTED]', packtest-cassandra-stop]
+
+  - action: medusa.list_backups
+    arrange:
+      - &backup_b1
+        argv: [medusa, --without-log-timestamp, backup-node, --backup-name, b1]
+    expect:
+      stdout_contains: ["b1 (started: "]
+      stdout_not_contains: [Incomplete]
+
+  - name: medusa.list_backups-empty
+    action: medusa.list_backups
+    expect:
+      stderr_contains: [No backups found in index]
+
+  - action: medusa.backup_status
+    args: {backup_name: b1}
+    arrange: [*backup_b1]
+    expect:
+      stdout_contains: [b1, "1 nodes completed, 0 nodes incomplete, 0 nodes missing"]
+      stdout_not_contains: [Incomplete]
+
+  - name: medusa.backup_status-missing
+    action: medusa.backup_status
+    args: {backup_name: no-such-backup}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [No such backup]
+
+  - action: medusa.verify_backup
+    args: {backup_name: b1, check_hashes: true}
+    arrange: [*backup_b1]
+    expect:
+      stdout_contains: ["- Completion: OK!", "- Manifest validated: OK!!"]
+
+  - name: medusa.verify_backup-missing-file
+    action: medusa.verify_backup
+    args: {backup_name: b1}
+    arrange:
+      - *backup_b1
+      # Remove one SSTable from the node's shared differential files, with the
+      # storage client Medusa itself uses.
+      - argv:
+          - /opt/medusa/bin/python
+          - -c
+          - |
+            import boto3
+            s3 = boto3.client("s3", endpoint_url="http://minio:9000", region_name="us-east-1")
+            listing = s3.list_objects_v2(Bucket="medusa-packtest", Prefix="packtest/127.0.0.1/data/")
+            key = next(o["Key"] for o in listing["Contents"] if o["Key"].endswith("-Data.db"))
+            s3.delete_object(Bucket="medusa-packtest", Key=key)
+    expect:
+      status: failure
+      exit: [1]
+      stdout_contains: ["- Manifest validation: Failed!"]
+
+  - action: medusa.last_complete_backup
+    arrange: [*backup_b1]
+    expect:
+      stdout_contains: [b1]
+      stdout_not_contains: [Could not find]
+
+  - name: medusa.last_complete_backup-none
+    action: medusa.last_complete_backup
+    expect:
+      stdout_contains: [Could not find any full backup for the cluster]
+
+  - action: medusa.fetch_tokenmap
+    args: {backup_name: b1}
+    arrange: [*backup_b1]
+    expect:
+      stdout_contains: [127.0.0.1]
+
+  - action: medusa.report_last_backup
+    arrange: [*backup_b1]
+    expect:
+      stderr_contains: ["Latest complete backup:", "- Name: b1"]
+    probes:
+      - argv: [medusa, --without-log-timestamp, list-backups]
+        expect:
+          stdout_contains: ["b1 (started: "]
+
+  - action: medusa.backup_node
+    args: {backup_name: d2}
+    arrange: [*backup_b1]
+    expect:
+      stderr_contains: [kept from previous backup]
+    probes:
+      - argv: [medusa, --without-log-timestamp, status, --backup-name, d2, --output, json]
+        expect:
+          stdout_contains: ['"backup_type": "differential"', '"completed_nodes": 1']
+
+  - name: medusa.backup_node-full
+    action: medusa.backup_node
+    args: {backup_name: full1, mode: full, check_hashes: true}
+    expect:
+      stderr_contains: ["Backup done: full1 (full)"]
+    probes:
+      - argv: [medusa, --without-log-timestamp, status, --backup-name, full1, --output, json]
+        expect:
+          stdout_contains: ['"backup_type": "full"', '"completed_nodes": 1']
+      # The snapshot Medusa took is gone once the upload finished.
+      - argv: [nodetool, listsnapshots]
+        expect:
+          stdout_contains: [Snapshot Details]
+          stdout_not_contains: [medusa-full1]
+
+  - name: medusa.backup_node-existing-name
+    action: medusa.backup_node
+    args: {backup_name: b1}
+    arrange: [*backup_b1]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [Backup b1 already exists]
+
+  - name: medusa.backup_node-option-shaped-name
+    action: medusa.backup_node
+    args: {backup_name: "--fqdn=other-node"}
+    expect:
+      status: failure
+      reason: argument_invalid
+      error_contains: [must match pattern]
+
+  - name: medusa.backup_node-snapshot-fails
+    action: medusa.backup_node
+    args: {backup_name: snapfail}
+    runner_user: root
+    runner_reason: Only root can take write access away from a table directory Cassandra owns on the shared data volume.
+    arrange:
+      - argv: [/bin/sh, -c, "chmod 0555 /var/lib/cassandra/data/packtest/events-*"]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [Creating snapshot failed, "The nodetool snapshot failed, so backup snapfail is missing data"]
+
+  - action: medusa.purge
+    arrange:
+      - argv: [medusa, --without-log-timestamp, backup-node, --backup-name, p1]
+      - argv: [medusa, --without-log-timestamp, backup-node, --backup-name, p2]
+      - argv: [medusa, --without-log-timestamp, backup-node, --backup-name, p3]
+    expect:
+      stderr_contains: [1 backups are candidate to be purged]
+    probes:
+      # medusa.ini keeps two backups, so the oldest goes.
+      - argv: [medusa, --without-log-timestamp, list-backups]
+        expect:
+          stdout_contains: ["p2 (started: ", "p3 (started: "]
+          stdout_not_contains: ["p1 (started: "]
+
+  - action: medusa.delete_backup
+    args: {backup_name: b1}
+    arrange:
+      - *backup_b1
+      - argv: [medusa, --without-log-timestamp, backup-node, --backup-name, b2]
+    probes:
+      # Only the named backup goes; the later one that shares its files stays.
+      - argv: [medusa, --without-log-timestamp, list-backups]
+        expect:
+          stdout_contains: ["b2 (started: "]
+          stdout_not_contains: ["b1 (started: "]
+
+  - name: medusa.delete_backup-missing
+    action: medusa.delete_backup
+    args: {backup_name: no-such-backup}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [The backup no-such-backup does not exist]
+
+  - name: medusa.delete_backup-unknown-scope
+    action: medusa.delete_backup
+    args: {backup_name: b1, scope: every-cluster}
+    expect:
+      status: failure
+      reason: argument_invalid
+      error_contains: [value must be one of]
+
+  - action: medusa.restore_node
+    # Medusa's verify waits for the restarted node, which takes longer than the
+    # harness's 30-second command limit; the probes below wait for it instead.
+    args: {backup_name: r1, verify: false}
+    runner_user: root
+    runner_reason: Medusa stops Cassandra, then moves and chowns files in its data directory.
+    arrange:
+      - argv: [cqlsh, --disable-history, -u, cassandra, -p, packtest-canary-medusa-admin-7f3a, -e, "INSERT INTO packtest.events (id, value) VALUES (1, 'before-backup');", "127.0.0.1", "9042"]
+      - argv: [medusa, --without-log-timestamp, backup-node, --backup-name, r1]
+      - argv: [cqlsh, --disable-history, -u, cassandra, -p, packtest-canary-medusa-admin-7f3a, -e, "INSERT INTO packtest.events (id, value) VALUES (2, 'after-backup'); DELETE FROM packtest.events WHERE id = 1;", "127.0.0.1", "9042"]
+      - argv: [nodetool, flush, packtest, events]
+    expect:
+      stderr_contains: [Starting Cassandra]
+    probes:
+      # The node serves the backup's rows again: the row deleted after the
+      # backup is back and the row written after it is gone.
+      - argv: [cqlsh, --disable-history, -u, cassandra, -p, packtest-canary-medusa-admin-7f3a, -e, "SELECT value FROM packtest.events;", "127.0.0.1", "9042"]
+        retry_for: 4m
+        retry_every: 10s
+        expect:
+          stdout_contains: [before-backup]
+          stdout_not_contains: [after-backup]
+      - argv: [nodetool, status]
+        retry_for: 2m
+        retry_every: 10s
+        expect:
+          stdout_contains: [UN]
+
+  - name: medusa.restore_node-needs-root
+    action: medusa.restore_node
+    args: {backup_name: b1}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [Restoring needs the Emisar service to run as root]
+    probes:
+      - argv: [nodetool, status]
+        expect:
+          stdout_contains: [UN]
+
+  - name: medusa.restore_node-missing-backup
+    action: medusa.restore_node
+    args: {backup_name: no-such-backup}
+    runner_user: root
+    runner_reason: The refusal for non-root runners would otherwise stop the case before Medusa looks up the backup.
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [No such backup]
+    probes:
+      - argv: [nodetool, status]
+        expect:
+          stdout_contains: [UN]

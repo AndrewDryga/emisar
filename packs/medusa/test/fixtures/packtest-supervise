@@ -1,0 +1,18 @@
+#!/bin/sh
+# Run Cassandra and start it again whenever it stops, unless Medusa's stop
+# command left the hold file. The container, and the network namespace
+# runner-tools shares, stays up while a restore has Cassandra down. Docker's
+# stop signal reaches this script, so pass it on instead of waiting for SIGKILL.
+set -eu
+child=
+trap 'if [ -n "$child" ]; then kill -TERM "$child" 2>/dev/null || true; wait "$child" || true; fi; exit 0' TERM INT
+mkdir -p /packtest-control
+while :; do
+    if [ ! -e /packtest-control/hold ]; then
+        docker-entrypoint.sh cassandra -f &
+        child=$!
+        wait "$child" || true
+        child=
+    fi
+    sleep 1
+done

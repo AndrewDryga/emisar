@@ -1,0 +1,37 @@
+schema_version: 1
+id: medusa.report_last_backup
+title: Report how old the latest Medusa backups are
+kind: script
+risk: medium
+description: >
+  Report this node's latest backup, the cluster's latest complete backup with
+  how long ago it finished, and the latest started backup with the nodes that
+  have not finished or never ran it, its size, and its file count, using
+  `medusa report-last-backup`. Medusa writes the report to its log, so it
+  arrives on stderr. When storage has no latest-backup marker for this node,
+  Medusa rebuilds the backup index, which lists every object under the prefix
+  and connects to the node over CQL. Medusa exits 0 even when the report
+  fails; this action fails instead.
+side_effects:
+  - May delete a stale latest-backup marker and rebuild the backup index in the configured storage.
+  - An index rebuild lists every object under the prefix.
+  - Does not change any backup's data.
+search_terms:
+  - backup too old
+  - backups stopped running
+  - stale backup
+args: []
+execution:
+  script:
+    path: scripts/medusa.sh
+    interpreter: /bin/bash
+  argv: ["report-last"]
+  timeout: 30m
+  timeout_max: 2h
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 262144
+examples:
+  - title: Report backup age on this node
+    args: {}

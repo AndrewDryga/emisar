@@ -1,0 +1,15 @@
+recipes:
+  - access: 0
+    recipe: 0
+    fixture: debian
+    action: medusa.list_backups
+    prepare:
+      - install -d -m 0755 /etc/medusa
+      - printf '[storage]\nstorage_provider = local\nbucket_name = packtest\n' > /etc/medusa/medusa.ini && chown root:root /etc/medusa/medusa.ini && chmod 0600 /etc/medusa/medusa.ini
+    probe: test -r /etc/medusa/medusa.ini
+  - access: 1
+    recipe: 0
+    fixture: debian
+    action: medusa.restore_node
+    prepare: ["true"]
+    probe: test "$(id -u)" = 0

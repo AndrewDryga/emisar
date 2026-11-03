@@ -1,0 +1,8 @@
+#!/bin/sh
+# Medusa's stop_cmd in the SUT: hold Cassandra down, flush it, and stop the
+# JVM. stopdaemon can report an error when the JVM exits mid-call; Medusa then
+# waits for the CQL port to close either way.
+set -eu
+touch /packtest-control/hold
+nodetool drain
+nodetool stopdaemon || true

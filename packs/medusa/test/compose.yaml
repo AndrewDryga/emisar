@@ -1,0 +1,83 @@
+services:
+  runner-tools:
+    build:
+      context: ${EMISAR_ROOT}/packs/medusa/test
+      dockerfile: Dockerfile
+      target: client
+      args:
+        PACKTEST_IMAGE: ${PACKTEST_IMAGE:-cassandra:${PACKTEST_VERSION:-5.0.9-bookworm}${PACKTEST_DIGEST-}}
+    image: emisar-packtest-medusa-tools:latest
+    # Medusa reaches the node's CQL and JMX ports on loopback, as it does on a
+    # real node, and MinIO by its service name.
+    network_mode: service:cassandra
+    # The cassandra group (999 in both pinned images) the host-access recipe
+    # grants; the runner remains the nonroot 65532 identity outside restores.
+    group_add: ["999"]
+    volumes:
+      # Backups read snapshots from the data directory; restores replace it.
+      - cassandra_data:/var/lib/cassandra
+      - control:/packtest-control
+
+  cassandra:
+    build:
+      context: ${EMISAR_ROOT}/packs/medusa/test
+      dockerfile: Dockerfile
+      target: sut
+      args:
+        PACKTEST_IMAGE: ${PACKTEST_IMAGE:-cassandra:${PACKTEST_VERSION:-5.0.9-bookworm}${PACKTEST_DIGEST-}}
+    image: emisar-packtest-medusa-sut:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      CASSANDRA_CLUSTER_NAME: packtest
+      # One token keeps the token map Medusa records small and exact.
+      CASSANDRA_NUM_TOKENS: "1"
+      # Loopback is stable across runs and is the address the token map
+      # records, which medusa.ini pins as this node's fqdn.
+      CASSANDRA_LISTEN_ADDRESS: 127.0.0.1
+      MAX_HEAP_SIZE: 512M
+      HEAP_NEWSIZE: 128M
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          nodetool status | grep -q UN &&
+          (cqlsh -u cassandra -p packtest-canary-medusa-admin-7f3a -e "CREATE KEYSPACE IF NOT EXISTS packtest WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1};
+          CREATE TABLE IF NOT EXISTS packtest.events (id int PRIMARY KEY, value text);
+          CREATE ROLE IF NOT EXISTS medusa WITH PASSWORD = 'packtest-canary-medusa-cql-2d81' AND LOGIN = true;" >/dev/null ||
+          (cqlsh -u cassandra -p cassandra -e "ALTER ROLE cassandra WITH PASSWORD = 'packtest-canary-medusa-admin-7f3a';" >/dev/null && exit 1))
+      interval: 10s
+      start_period: 120s
+      start_interval: 5s
+      timeout: 10s
+      retries: 30
+    volumes:
+      - cassandra_data:/var/lib/cassandra
+      - control:/packtest-control
+
+  # Backup storage. MinIO is a helper here, not the product under test, so its
+  # version stays pinned independently of the Cassandra rows. The healthcheck
+  # creates the bucket, which Medusa never does.
+  minio:
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: medusa-packtest
+      MINIO_ROOT_PASSWORD: packtest-canary-medusa-s3-5c1e
+    volumes:
+      - /data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          mc alias set packtest http://127.0.0.1:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" >/dev/null &&
+          mc mb --ignore-existing packtest/medusa-packtest >/dev/null
+      interval: 5s
+      start_period: 30s
+      start_interval: 1s
+      retries: 10
+
+volumes:
+  cassandra_data:
+  control:

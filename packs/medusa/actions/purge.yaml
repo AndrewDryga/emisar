@@ -1,0 +1,37 @@
+schema_version: 1
+id: medusa.purge
+title: Purge Medusa backups past retention
+kind: script
+risk: high
+description: >
+  Delete this node's backups that exceed the retention in
+  `/etc/medusa/medusa.ini` with `medusa purge`: those older than
+  `max_backup_age` days and the oldest beyond `max_backup_count`. A limit of 0
+  turns it off. Incomplete backups count toward `max_backup_count`, and
+  nothing keeps at least one complete backup. Medusa then deletes this node's
+  files that no remaining backup uses once they are older than
+  `backup_grace_period_in_days`. `medusa.show_config` shows the limits and
+  `medusa.list_backups` shows what exists.
+side_effects:
+  - Permanently deletes backups and their files from the configured storage; this cannot be undone.
+  - Applies retention limits from /etc/medusa/medusa.ini that the action's arguments do not show.
+  - Deletes only this node's backups; other nodes keep theirs until purged on those nodes.
+search_terms:
+  - backup bucket full
+  - backup storage cost
+  - delete old backups
+args: []
+execution:
+  script:
+    path: scripts/medusa.sh
+    interpreter: /bin/bash
+  argv: ["purge"]
+  timeout: 6h
+  timeout_max: 24h
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 262144
+examples:
+  - title: Apply the configured retention
+    args: {}

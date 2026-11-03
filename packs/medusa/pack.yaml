@@ -1,0 +1,135 @@
+schema_version: 1
+
+id: medusa
+name: Cassandra Medusa backups
+version: 0.1.0
+description: >
+  Back up and restore Apache Cassandra nodes with Cassandra Medusa: list
+  backups and read one backup's status, verify the files a backup stored, read
+  the token map it captured, report how old the latest backups are, take full
+  or differential node backups, purge backups past retention or delete one by
+  name, and restore a node in place. Each action runs Medusa on the node it
+  targets; a cluster backup is the same backup name taken on every node.
+vendor: emisar
+homepage: https://emisar.dev/packs/medusa
+
+requires:
+  os:
+    - linux
+  binaries:
+    - medusa
+    - bash
+    - python3
+
+# Debian and Kali ship an unrelated `medusa` login tool at /usr/bin/medusa, so
+# the bare name would recommend this pack on hosts without Cassandra. Only
+# Cassandra Medusa installs medusa-wrapper (since 0.21.0).
+detect:
+  binaries:
+    - medusa-wrapper
+
+setup:
+  summary: >
+    Every action runs the `medusa` CLI on the Cassandra node it targets, with
+    Medusa's own settings from `/etc/medusa/medusa.ini`: storage provider,
+    bucket, prefix, this node's `fqdn`, and retention. Medusa reads storage
+    credentials from that file's `key_file`, or from the provider's default
+    chain (`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`, an instance role, or
+    a GCP service account). It reads the schema and token map from the local
+    node over CQL and takes snapshots through `nodetool`. Built for Medusa
+    0.27.0 or later on Python 3.11 or 3.12, against Cassandra 4.1 and 5.0.
+  env:
+    - name: MEDUSA_CQL_USERNAME
+      description: >
+        CQL role Medusa logs in with, overriding `cql_username` in `medusa.ini`.
+        Create it with `CREATE ROLE medusa WITH PASSWORD = '<password>' AND LOGIN = true`;
+        Medusa only reads the schema and token map, which every login role can read.
+        Add it to the runner's `execution.inherit_env`.
+    - name: MEDUSA_CQL_PASSWORD
+      description: >
+        Password for that role, overriding `cql_password` in `medusa.ini`. Add it to the
+        runner's `execution.inherit_env`.
+    - name: MEDUSA_RESTORE_TEMP_DIR
+      description: >
+        Directory `medusa.restore_node` downloads the backup into before it stops
+        Cassandra. The download holds every table, including `system_auth`, so create
+        one only root can read (`sudo install -d -m 0700 <dir>`), on the data filesystem
+        with room for this node's whole backup, and add it to the runner's
+        `execution.inherit_env`.
+      default: /tmp
+  notes:
+    - "Install Medusa on each node with `sudo pip3 install cassandra-medusa` or the `cassandra-medusa` Debian package for Ubuntu jammy or Debian bookworm. See [Medusa's installation guide](https://github.com/thelastpickle/cassandra-medusa/blob/v0.31.1/docs/Installation.md)."
+    - "Write `/etc/medusa/medusa.ini` from Medusa's `medusa-example.ini`, owned by root and writable by no one else: Medusa runs the `stop_cmd`, `start_cmd`, `nodetool_executable`, and `[checks] query` it names. If file logging is on, give `[logging] file` an absolute path."
+    - "Storage credentials: point `key_file` at an AWS credentials file (S3 and S3-compatible), a service-account JSON key (GCS), or an Azure JSON key, or leave it unset to use the provider's default chain. For S3, use an IAM user or role with the `MedusaStorageStrategy` policy from [Medusa's S3 guide](https://github.com/thelastpickle/cassandra-medusa/blob/v0.31.1/docs/aws_s3_setup.md). Those credentials can write and delete every backup under the prefix."
+    - "Set `ssl_verify = True` for a TLS storage endpoint. Medusa's default skips certificate checks for S3-compatible storage."
+    - "Pin `fqdn` in `[storage]` to the name this node has in the token map, which is its address when `resolve_ip_addresses = False`. If the two differ, backups show as incomplete and a restore cannot find this node's tokens."
+    - "Medusa supports one `data_file_directories` entry per node. With JMX authentication, set `nodetool_username` and `nodetool_password_file_path` rather than `nodetool_password`, which Medusa before 0.31.0 logs when clearing a snapshot fails."
+    - "A failing storage call is retried for about six minutes before Medusa reports it, so a wrong credential or endpoint shows up as a slow failure."
+    - "A cluster backup is `medusa.backup_node` with the same `backup_name` on every node, for example from a runbook. The node snapshots are not simultaneous. `medusa.backup_status` shows which nodes finished."
+    - "`medusa.restore_node` restores every keyspace in the backup, including `system_schema` and `system_auth`, so it also rolls back schema and roles. Restoring a backup older than `gc_grace_seconds` can bring deleted data back once the cluster repairs."
+    - "Not exposed: `backup-cluster` and `restore-cluster` reach other nodes over SSH, outside each runner's scope; `purge-decommissioned` can delete every backup when node names change; table-level and sstableloader restores wait for a later version."
+  host_access:
+    - actions:
+        - medusa.show_config
+        - medusa.list_backups
+        - medusa.backup_status
+        - medusa.verify_backup
+        - medusa.last_complete_backup
+        - medusa.fetch_tokenmap
+        - medusa.report_last_backup
+        - medusa.backup_node
+        - medusa.purge
+        - medusa.delete_backup
+      requirement: Read Medusa's configuration and storage credentials, and the Cassandra data directories a backup uploads.
+      recipes:
+        - name: Use Cassandra group access for Medusa's files
+          commands:
+            - "sudo usermod -aG cassandra emisar"
+            - "sudo chgrp cassandra /etc/medusa/medusa.ini"
+            - "sudo chmod 0640 /etc/medusa/medusa.ini"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "id -nG emisar | tr ' ' '\\n' | grep -Fx cassandra"
+            - "sudo -u emisar test -r /etc/medusa/medusa.ini"
+          impact: >
+            When `key_file` names a credentials file, give it the same group and mode
+            (`sudo chgrp cassandra <key_file>` and `sudo chmod 0640 <key_file>`). Backups
+            also need the data directories readable by the cassandra group, as the
+            Cassandra packages install them. Every process running as emisar can then
+            read Medusa's storage credentials, which can write and delete every backup
+            under the prefix, the CQL and JMX credentials in `medusa.ini`, Cassandra's
+            configuration, and raw SSTables.
+    - actions:
+        - medusa.restore_node
+      requirement: Stop and start Cassandra and replace its data and commit log files.
+      recipes:
+        - name: Run the Emisar service as root
+          commands:
+            - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
+            - "printf '%s\\n' '[Service]' 'User=root' 'Group=root' | sudo tee /etc/systemd/system/emisar.service.d/10-medusa-host-access.conf >/dev/null"
+            - "sudo systemctl daemon-reload"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "test \"$(systemctl show emisar --property=User --value)\" = root"
+          impact: >
+            Every Emisar action on this runner executes as root. medusa.restore_node then
+            runs the `stop_cmd` and `start_cmd` from `/etc/medusa/medusa.ini` as root, and
+            can replace any table's data on this node.
+  verify: medusa.list_backups
+
+actions:
+  # Inspection
+  - actions/show_config.yaml
+  - actions/list_backups.yaml
+  - actions/backup_status.yaml
+  - actions/verify_backup.yaml
+  - actions/last_complete_backup.yaml
+  - actions/fetch_tokenmap.yaml
+  - actions/report_last_backup.yaml
+  # Backup
+  - actions/backup_node.yaml
+  # Retention
+  - actions/purge.yaml
+  - actions/delete_backup.yaml
+  # Restore
+  - actions/restore_node.yaml

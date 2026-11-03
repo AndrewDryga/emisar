@@ -1,0 +1,34 @@
+schema_version: 1
+id: medusa.show_config
+title: Show Medusa's configuration
+kind: script
+risk: low
+description: >
+  Show the Medusa version and the settings in `/etc/medusa/medusa.ini` that
+  decide where backups go and how long they stay: storage provider, bucket,
+  prefix, endpoint, TLS checks, this node's `fqdn`, retention limits, and the
+  credential file path, marking each value Medusa takes by default. Values
+  come from an allowlist of Medusa's own keys (Medusa 0.31.1). Passwords,
+  encryption keys, `stop_cmd` and `start_cmd`, and any `MEDUSA_*` or cloud
+  credential environment overrides the runner passes appear by name only.
+  Fails when the `medusa` on PATH is not Cassandra Medusa.
+side_effects:
+  - Runs `medusa --version` and reads `/etc/medusa/medusa.ini`.
+  - Read-only.
+search_terms:
+  - medusa not configured
+  - wrong backup bucket
+  - backup retention settings
+args: []
+execution:
+  script:
+    path: scripts/show_config.sh
+    interpreter: /bin/bash
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 16384
+examples:
+  - title: Show the Medusa settings on this node
+    args: {}

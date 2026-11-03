@@ -1,0 +1,39 @@
+schema_version: 1
+id: medusa.backup_status
+title: Show a Medusa backup's status
+kind: script
+risk: low
+description: >
+  Show one backup across the cluster with `medusa status`: whether it is
+  complete, when it started and finished, how many nodes completed, which
+  nodes are incomplete or missing compared with the token map it recorded, and
+  its file count and size. Exits 1 when no backup has that name;
+  `medusa.list_backups` shows the names.
+side_effects:
+  - Reads the backup's metadata from the configured storage.
+  - Does not change any backup's data.
+search_terms:
+  - did the backup finish
+  - incomplete backup
+args:
+  - name: backup_name
+    type: string
+    required: true
+    description: Name of the backup, as `medusa.list_backups` shows it.
+    validation:
+      max_length: 64
+      pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$"
+execution:
+  script:
+    path: scripts/medusa.sh
+    interpreter: /bin/bash
+  argv: ["status", "{{ args.backup_name }}"]
+  timeout: 10m
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 65536
+examples:
+  - title: Check a nightly backup
+    args:
+      backup_name: "nightly-20261029"

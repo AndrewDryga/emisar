@@ -1,0 +1,48 @@
+schema_version: 1
+id: medusa.delete_backup
+title: Delete a Medusa backup
+kind: script
+risk: high
+description: >
+  Delete one named backup from storage with `medusa delete-backup`, for this
+  node only (`current-node`, the default) or for every node that holds it
+  (`all-nodes`). Medusa then deletes this node's files that no remaining backup
+  uses once they are older than `backup_grace_period_in_days`. Exits 1 when no
+  backup has that name; `medusa.list_backups` shows the names.
+side_effects:
+  - Permanently deletes the backup's files and index entries from the configured storage; this cannot be undone.
+  - With `all-nodes`, deletes every node's copy, including nodes this runner does not manage.
+  - Deletes unused files past the grace period, as medusa.purge does.
+search_terms:
+  - delete a failed backup
+  - remove an incomplete backup
+args:
+  - name: backup_name
+    type: string
+    required: true
+    description: Name of the backup, as `medusa.list_backups` shows it.
+    validation:
+      max_length: 64
+      pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$"
+  - name: scope
+    type: string
+    required: false
+    default: current-node
+    description: "`current-node` deletes this node's copy; `all-nodes` deletes every node's copy."
+    validation:
+      enum: ["current-node", "all-nodes"]
+execution:
+  script:
+    path: scripts/medusa.sh
+    interpreter: /bin/bash
+  argv: ["delete", "{{ args.backup_name }}", "{{ args.scope }}"]
+  timeout: 6h
+  timeout_max: 24h
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 262144
+examples:
+  - title: Remove a failed backup from this node
+    args:
+      backup_name: "nightly-20261029"

@@ -1,0 +1,29 @@
+schema_version: 1
+id: medusa.last_complete_backup
+title: Show the latest complete Medusa cluster backup
+kind: script
+risk: low
+description: >
+  Show the name of the newest backup that every node finished, using `medusa
+  get-last-complete-cluster-backup`. When no backup is complete it prints
+  `Could not find any full backup for the cluster` and still succeeds.
+side_effects:
+  - Lists backup metadata in the configured storage.
+  - Does not change any backup's data.
+search_terms:
+  - latest good backup
+  - which backup to restore
+args: []
+execution:
+  script:
+    path: scripts/medusa.sh
+    interpreter: /bin/bash
+  argv: ["last-complete"]
+  timeout: 10m
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 65536
+examples:
+  - title: Find the newest complete backup
+    args: {}

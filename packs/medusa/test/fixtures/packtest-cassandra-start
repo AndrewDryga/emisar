@@ -1,0 +1,5 @@
+#!/bin/sh
+# Medusa's start_cmd in the SUT: release the hold so the supervisor starts
+# Cassandra again.
+set -eu
+rm -f /packtest-control/hold

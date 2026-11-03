@@ -1,0 +1,55 @@
+schema_version: 1
+id: medusa.restore_node
+title: Restore this Cassandra node from a Medusa backup
+kind: script
+risk: critical
+description: >
+  Restore this node in place from one of its backups with `medusa restore-node
+  --in-place`: download the node's backup, stop Cassandra with the `stop_cmd`
+  in `/etc/medusa/medusa.ini`, empty the commit log, replace every keyspace's
+  data with the backup's, including `system_schema` and `system_auth`, then
+  start Cassandra with `start_cmd` and, with `verify`, wait until it answers.
+  Writes made after the backup are lost on this node, and data deleted longer
+  ago than `gc_grace_seconds` before the backup can return when the cluster
+  repairs. Needs the Emisar service running as root. Fails before downloading
+  anything when it is not root, and fails when the backup holds no data for
+  this node, which Medusa would report as success.
+side_effects:
+  - Stops Cassandra on this node; it serves nothing until the restore finishes and it starts again.
+  - Replaces all table data on this node, including schema and roles, and empties the commit log.
+  - Downloads the whole node backup into MEDUSA_RESTORE_TEMP_DIR before stopping Cassandra.
+  - Runs the stop_cmd and start_cmd from /etc/medusa/medusa.ini as root.
+  - A failure after Cassandra stops can leave it stopped.
+search_terms:
+  - restore from backup
+  - recover lost data
+  - roll back a node
+args:
+  - name: backup_name
+    type: string
+    required: true
+    description: Name of this node's backup, as `medusa.list_backups` shows it.
+    validation:
+      max_length: 64
+      pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$"
+  - name: verify
+    type: boolean
+    required: false
+    default: true
+    description: Wait for Cassandra to answer again after it starts.
+execution:
+  script:
+    path: scripts/medusa.sh
+    interpreter: /bin/bash
+  argv: ["restore", "{{ args.backup_name }}", "{{ args.verify }}"]
+  timeout: 6h
+  timeout_min: 30m
+  timeout_max: 24h
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 262144
+examples:
+  - title: Restore this node from a nightly backup
+    args:
+      backup_name: "nightly-20261029"

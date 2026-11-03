@@ -1,0 +1,48 @@
+schema_version: 1
+id: medusa.verify_backup
+title: Verify a Medusa backup's stored files
+kind: script
+risk: low
+description: >
+  Check one backup with `medusa verify`: every node finished, and every file
+  in each node's manifest exists in storage with the recorded size, and with
+  the recorded MD5 hash when `check_hashes` is set. It downloads nothing, so it
+  does not prove the backup restores. Exits 1 and prints `Manifest validation:
+  Failed!` when a file is missing or different, or when no backup has that
+  name.
+side_effects:
+  - Reads object metadata for every file in the backup.
+  - Does not change any backup's data.
+search_terms:
+  - is the backup good
+  - corrupt backup
+  - check backup integrity
+args:
+  - name: backup_name
+    type: string
+    required: true
+    description: Name of the backup, as `medusa.list_backups` shows it.
+    validation:
+      max_length: 64
+      pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$"
+  - name: check_hashes
+    type: boolean
+    required: false
+    default: false
+    description: Also compare each file's MD5 hash in storage with the manifest.
+execution:
+  script:
+    path: scripts/medusa.sh
+    interpreter: /bin/bash
+  argv: ["verify", "{{ args.backup_name }}", "{{ args.check_hashes }}"]
+  timeout: 30m
+  timeout_max: 4h
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 65536
+examples:
+  - title: Verify sizes and hashes of a backup
+    args:
+      backup_name: "nightly-20261029"
+      check_hashes: true
