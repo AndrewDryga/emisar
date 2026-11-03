@@ -1175,9 +1175,7 @@ defmodule EmisarWeb.TeamLiveTest do
   end
 
   describe "service accounts" do
-    test "connection guidance explains identity, connection and inherited access once", %{
-      conn: conn
-    } do
+    test "connection guidance explains identity, connection and access once", %{conn: conn} do
       {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Memberships.create_service_account(account_id: account.id)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/service-accounts")
@@ -1186,17 +1184,19 @@ defmodule EmisarWeb.TeamLiveTest do
       assert has_element?(lv, "aside", "Apps keep working when people leave")
       assert has_element?(lv, "aside", "Choose it under Connect as")
       assert has_element?(lv, "aside", "Create API key")
-      assert has_element?(lv, "aside", "New accounts inherit your runner and pack access.")
+      assert has_element?(lv, "aside", "Set its runner and pack access when you add it")
       assert has_element?(lv, "aside", "Edit access")
       refute has_element?(lv, "aside", "Service account basics")
     end
 
-    test "an owner adds one and sees the reach it starts with", %{conn: conn} do
+    test "a service account added with the default choice reaches no runners", %{conn: conn} do
       {conn, _owner, account} = register_and_log_in(conn)
-      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/service-accounts/new")
-      subscribe_team(account)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/service-accounts/new")
 
-      assert html =~ "The service account starts with your runner and pack access."
+      assert has_element?(
+               lv,
+               "input[name='service_account[runner_access_mode]'][value='none']:checked"
+             )
 
       html =
         lv
@@ -1204,9 +1204,69 @@ defmodule EmisarWeb.TeamLiveTest do
         |> render_submit()
 
       assert html =~ "Ryker is ready"
+
+      service_account =
+        Emisar.Accounts.Membership.Query.all()
+        |> Emisar.Accounts.Membership.Query.by_kind(:service_account)
+        |> Emisar.Repo.one()
+
+      assert Emisar.Accounts.runner_access_for_memberships([service_account])[service_account.id] ==
+               Emisar.Accounts.RunnerAccess.none()
+    end
+
+    test "an owner adds one with the runner and pack access chosen on the form", %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+
+      runner =
+        Fixtures.Runners.create_runner(account_id: account.id, name: "db-primary", group: "db")
+
+      Fixtures.Catalog.create_trusted_pack_version(account_id: account.id, pack_id: "postgres")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "pg.up", pack_id: "postgres")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/service-accounts/new")
+      subscribe_team(account)
+
+      lv
+      |> form("#service_account_form", %{
+        "service_account" => %{"runner_access_mode" => "restricted"}
+      })
+      |> render_change()
+
+      lv
+      |> form("#service_account_form", %{
+        "service_account" => %{
+          "runner_access_mode" => "restricted",
+          "scope" => ["runner:#{runner.id}"]
+        }
+      })
+      |> render_change()
+
+      lv
+      |> form("#service_account_form", %{
+        "service_account" => %{
+          "runner_access_mode" => "restricted",
+          "scope" => ["runner:#{runner.id}"],
+          "pack_access_mode" => "restricted"
+        }
+      })
+      |> render_change()
+
+      html =
+        lv
+        |> form("#service_account_form", %{
+          "service_account" => %{
+            "display_name" => "Ryker",
+            "runner_access_mode" => "restricted",
+            "scope" => ["runner:#{runner.id}"],
+            "pack_access_mode" => "restricted",
+            "pack_scope" => ["pack:postgres"]
+          }
+        })
+        |> render_submit()
+
+      assert html =~ "Ryker is ready"
       assert html =~ "Operator"
-      assert html =~ "All runners"
-      assert html =~ "All packs"
+      assert html =~ "db-primary"
+      assert html =~ "postgres"
 
       service_account =
         Emisar.Accounts.Membership.Query.all()
@@ -1214,6 +1274,16 @@ defmodule EmisarWeb.TeamLiveTest do
         |> Emisar.Repo.one()
 
       assert service_account.display_name == "Ryker"
+
+      assert Emisar.Accounts.runner_access_for_memberships([service_account])[service_account.id] ==
+               %Emisar.Accounts.RunnerAccess{
+                 mode: :restricted,
+                 groups: [],
+                 runner_ids: [runner.id],
+                 pack_mode: :restricted,
+                 pack_ids: ["postgres"]
+               }
+
       assert_team_broadcast(lv, "service_account.created", service_account.id)
 
       assert has_element?(
@@ -1229,17 +1299,123 @@ defmodule EmisarWeb.TeamLiveTest do
              )
     end
 
-    test "a blank name stays on the form with its error", %{conn: conn} do
+    test "clearing runner access and choosing it again keeps the pack selection", %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "dba")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "pg.up", pack_id: "postgres")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/service-accounts/new")
+
+      lv
+      |> form("#service_account_form", %{"service_account" => %{"runner_access_mode" => "all"}})
+      |> render_change()
+
+      lv
+      |> form("#service_account_form", %{
+        "service_account" => %{"pack_access_mode" => "restricted"}
+      })
+      |> render_change()
+
+      lv
+      |> form("#service_account_form", %{
+        "service_account" => %{"pack_scope" => ["pack:postgres"]}
+      })
+      |> render_change()
+
+      assert has_element?(lv, "#service_account_form input[value='pack:postgres']:checked")
+
+      lv
+      |> form("#service_account_form", %{"service_account" => %{"runner_access_mode" => "none"}})
+      |> render_change()
+
+      lv
+      |> form("#service_account_form", %{"service_account" => %{"runner_access_mode" => "all"}})
+      |> render_change()
+
+      assert has_element?(lv, "#service_account_form input[value='pack:postgres']:checked")
+    end
+
+    test "a blank name stays on the form with its error, keeping the access choice", %{
+      conn: conn
+    } do
       {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/service-accounts/new")
 
       html =
         lv
-        |> form("#service_account_form", %{"service_account" => %{"display_name" => " "}})
+        |> form("#service_account_form", %{
+          "service_account" => %{"display_name" => " ", "runner_access_mode" => "all"}
+        })
         |> render_submit()
 
       assert html =~ "can&#39;t be blank"
+
+      assert has_element?(
+               lv,
+               "input[name='service_account[runner_access_mode]'][value='all']:checked"
+             )
+
       refute html =~ "is ready"
+    end
+
+    test "a runner retired while composing fails inline, keeping the typed name", %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/service-accounts/new")
+
+      lv
+      |> form("#service_account_form", %{
+        "service_account" => %{"runner_access_mode" => "restricted"}
+      })
+      |> render_change()
+
+      Fixtures.Runners.mark_deleted(runner)
+
+      html =
+        lv
+        |> form("#service_account_form", %{
+          "service_account" => %{
+            "display_name" => "Ryker",
+            "runner_access_mode" => "restricted",
+            "scope" => ["runner:#{runner.id}"]
+          }
+        })
+        |> render_submit()
+
+      assert html =~ "Choose at least one runner group or runner"
+      assert has_element?(lv, "input[name='service_account[display_name]'][value='Ryker']")
+      refute html =~ "is ready"
+
+      refute Emisar.Accounts.Membership.Query.all()
+             |> Emisar.Accounts.Membership.Query.by_kind(:service_account)
+             |> Emisar.Repo.one()
+    end
+
+    test "a scoped admin can't grant runners beyond their own access", %{conn: conn} do
+      {_owner_conn, _owner, account} = register_and_log_in(conn)
+      {:ok, scoped} = Emisar.Accounts.RunnerAccess.restricted(["web"], [])
+
+      admin =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+        |> Fixtures.Memberships.force_runner_access(scoped)
+
+      {:ok, lv, _html} =
+        build_conn()
+        |> log_in_member(admin)
+        |> live(~p"/app/#{account}/settings/service-accounts/new")
+
+      html =
+        lv
+        |> form("#service_account_form", %{
+          "service_account" => %{"display_name" => "Ryker", "runner_access_mode" => "all"}
+        })
+        |> render_submit()
+
+      assert html =~ "You can only grant runner access that you currently have."
+      refute html =~ "is ready"
+
+      refute Emisar.Accounts.Membership.Query.all()
+             |> Emisar.Accounts.Membership.Query.by_kind(:service_account)
+             |> Emisar.Repo.one()
     end
 
     test "an operator can't add one, even with a crafted event", %{conn: conn} do

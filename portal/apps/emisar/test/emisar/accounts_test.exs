@@ -6860,14 +6860,97 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "create_service_account/2" do
-    test "adds a named operator seat with the subject's own reach, audited and announced" do
+  describe "change_service_account/2" do
+    test "resolves a runner and pack selection against the account's own" do
       {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+      database = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      web = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
+      Fixtures.Catalog.create_trusted_pack_version(account_id: account.id, pack_id: "postgres")
+
+      attrs = %{
+        "display_name" => "Ryker",
+        "runner_access_mode" => "restricted",
+        "scope" => ["group:database", "runner:#{database.id}", "runner:#{web.id}"],
+        "pack_access_mode" => "restricted",
+        "pack_scope" => ["pack:postgres"]
+      }
+
+      assert {:ok, changeset} = Accounts.change_service_account(attrs, subject)
+
+      assert changeset.valid?
+
+      assert Ecto.Changeset.get_field(changeset, :runner_access) == %RunnerAccess{
+               mode: :restricted,
+               groups: ["database"],
+               runner_ids: [web.id],
+               pack_mode: :restricted,
+               pack_ids: ["postgres"]
+             }
+
+      assert Ecto.Changeset.get_field(changeset, :scope) ==
+               ["group:database", "runner:#{web.id}"]
+    end
+
+    test "a runner or pack from another account is an error on its mode field" do
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
+      other_account = Fixtures.Accounts.create_account()
+      foreign_runner = Fixtures.Runners.create_runner(account_id: other_account.id)
+
+      Fixtures.Catalog.create_trusted_pack_version(
+        account_id: other_account.id,
+        pack_id: "postgres"
+      )
+
+      runner_attrs = %{
+        "display_name" => "Ryker",
+        "runner_access_mode" => "restricted",
+        "scope" => ["runner:#{foreign_runner.id}"]
+      }
+
+      pack_attrs = %{
+        "display_name" => "Ryker",
+        "runner_access_mode" => "all",
+        "pack_access_mode" => "restricted",
+        "pack_scope" => ["pack:postgres"]
+      }
+
+      assert {:ok, runner_changeset} = Accounts.change_service_account(runner_attrs, subject)
+
+      assert "requires at least one runner group or runner" in errors_on(runner_changeset).runner_access_mode
+
+      assert {:ok, pack_changeset} = Accounts.change_service_account(pack_attrs, subject)
+      assert "requires at least one available pack" in errors_on(pack_changeset).pack_access_mode
+    end
+
+    test "a member without manage_team gets no changeset" do
+      account = Fixtures.Accounts.create_account()
+
+      subject =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+        |> Fixtures.Subjects.subject_for()
+
+      assert Accounts.change_service_account(%{}, subject) == {:error, :unauthorized}
+    end
+  end
+
+  describe "create_service_account/2" do
+    test "adds a named operator seat with the chosen reach, audited and announced" do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      Fixtures.Catalog.create_trusted_pack_version(account_id: account.id, pack_id: "postgres")
       Accounts.subscribe_account_team(account.id)
       Audit.subscribe_account_audit(account.id)
 
+      attrs = %{
+        "display_name" => "Ryker",
+        "runner_access_mode" => "restricted",
+        "scope" => ["runner:#{runner.id}"],
+        "pack_access_mode" => "restricted",
+        "pack_scope" => ["pack:postgres"]
+      }
+
       assert {:ok, %Membership{} = service_account} =
-               Accounts.create_service_account(%{"display_name" => "Ryker"}, subject)
+               Accounts.create_service_account(attrs, subject)
 
       assert %Membership{
                kind: :service_account,
@@ -6879,7 +6962,13 @@ defmodule Emisar.AccountsTest do
              } = service_account
 
       assert Accounts.runner_access_for_membership(account.id, service_account.id) ==
-               RunnerAccess.all()
+               %RunnerAccess{
+                 mode: :restricted,
+                 groups: [],
+                 runner_ids: [runner.id],
+                 pack_mode: :restricted,
+                 pack_ids: ["postgres"]
+               }
 
       service_account_id = service_account.id
       assert_receive {:list_changed, :team, "service_account.created", ^service_account_id}
@@ -6893,13 +6982,30 @@ defmodule Emisar.AccountsTest do
 
       assert event.actor_id == subject.membership_id
       assert event.target_label == "Ryker"
-      assert event.payload["runner_access"]["mode"] == "all"
+
+      assert event.payload["runner_access"] == %{
+               "mode" => "restricted",
+               "groups" => [],
+               "runner_ids" => [runner.id],
+               "pack_mode" => "restricted",
+               "pack_ids" => ["postgres"]
+             }
 
       event_id = event.id
       assert_receive {:audit_event, %AuditEvent{id: ^event_id}}
     end
 
-    test "a scoped admin's service account starts with that admin's reach" do
+    test "reaches no runners when no access is chosen" do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+
+      assert {:ok, service_account} =
+               Accounts.create_service_account(%{"display_name" => "Ryker"}, subject)
+
+      assert Accounts.runner_access_for_membership(account.id, service_account.id) ==
+               RunnerAccess.none()
+    end
+
+    test "refuses runner access beyond the subject's own, writing nothing" do
       account = Fixtures.Accounts.create_account()
       {:ok, scoped} = RunnerAccess.restricted(["web"], [])
 
@@ -6908,62 +7014,53 @@ defmodule Emisar.AccountsTest do
         |> Fixtures.Memberships.force_runner_access(scoped)
 
       subject = Fixtures.Subjects.subject_for(admin)
-      Accounts.subscribe_account_team(account.id)
+      attrs = %{"display_name" => "Ryker", "runner_access_mode" => "all"}
 
-      assert {:ok, service_account} =
-               Accounts.create_service_account(%{"display_name" => "Ryker"}, subject)
+      assert Accounts.create_service_account(attrs, subject) ==
+               {:error, :runner_access_exceeds_subject}
 
-      assert Accounts.runner_access_for_membership(account.id, service_account.id) == scoped
-
-      service_account_id = service_account.id
-      assert_receive {:list_changed, :team, "service_account.created", ^service_account_id}
+      refute Membership.Query.all() |> Membership.Query.by_kind(:service_account) |> Repo.one()
     end
 
-    test "leaves out runners deleted while they sat in the creator's scope" do
-      account = Fixtures.Accounts.create_account()
-      kept = Fixtures.Runners.create_runner(account_id: account.id)
-      deleted = Fixtures.Runners.create_runner(account_id: account.id)
-      {:ok, scoped} = RunnerAccess.restricted([], [kept.id, deleted.id])
-      {:ok, expected} = RunnerAccess.restricted([], [kept.id])
+    test "rejects a runner or group from another account, writing nothing" do
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
+      foreign_runner = Fixtures.Runners.create_runner(group: "foreign")
 
-      admin =
-        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
-        |> Fixtures.Memberships.force_runner_access(scoped)
+      for scope <- [["runner:#{foreign_runner.id}"], ["group:foreign"]] do
+        attrs = %{
+          "display_name" => "Ryker",
+          "runner_access_mode" => "restricted",
+          "scope" => scope
+        }
 
-      Fixtures.Runners.mark_deleted(deleted)
-      subject = Fixtures.Subjects.subject_for(admin)
-      Accounts.subscribe_account_team(account.id)
+        assert {:error, changeset} = Accounts.create_service_account(attrs, subject)
 
-      assert {:ok, service_account} =
-               Accounts.create_service_account(%{"display_name" => "Ryker"}, subject)
+        assert "requires at least one runner group or runner" in errors_on(changeset).runner_access_mode
+      end
 
-      assert Accounts.runner_access_for_membership(account.id, service_account.id) == expected
-
-      service_account_id = service_account.id
-      assert_receive {:list_changed, :team, "service_account.created", ^service_account_id}
+      refute Membership.Query.all() |> Membership.Query.by_kind(:service_account) |> Repo.one()
     end
 
-    test "reaches nothing when every runner in the creator's scope is gone" do
-      account = Fixtures.Accounts.create_account()
-      deleted = Fixtures.Runners.create_runner(account_id: account.id)
-      {:ok, scoped} = RunnerAccess.restricted([], [deleted.id])
+    test "a runner deleted after the form validated is refused at the write" do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
 
-      admin =
-        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
-        |> Fixtures.Memberships.force_runner_access(scoped)
+      attrs = %{
+        "display_name" => "Ryker",
+        "runner_access_mode" => "restricted",
+        "scope" => ["runner:#{runner.id}"]
+      }
 
-      Fixtures.Runners.mark_deleted(deleted)
-      subject = Fixtures.Subjects.subject_for(admin)
-      Accounts.subscribe_account_team(account.id)
+      assert {:ok, changeset} = Accounts.change_service_account(attrs, subject)
+      assert changeset.valid?
 
-      assert {:ok, service_account} =
-               Accounts.create_service_account(%{"display_name" => "Ryker"}, subject)
+      Fixtures.Runners.mark_deleted(runner)
 
-      assert Accounts.runner_access_for_membership(account.id, service_account.id) ==
-               RunnerAccess.none()
+      assert {:error, changeset} = Accounts.create_service_account(attrs, subject)
 
-      service_account_id = service_account.id
-      assert_receive {:list_changed, :team, "service_account.created", ^service_account_id}
+      assert "requires at least one runner group or runner" in errors_on(changeset).runner_access_mode
+
+      refute Membership.Query.all() |> Membership.Query.by_kind(:service_account) |> Repo.one()
     end
 
     test "a service account needs a name" do
@@ -7061,6 +7158,67 @@ defmodule Emisar.AccountsTest do
 
       event_id = event.id
       assert_receive {:audit_event, %AuditEvent{id: ^event_id}}
+    end
+
+    test "a scoped admin's service account starts with that admin's reach" do
+      account = Fixtures.Accounts.create_account()
+      {:ok, scoped} = RunnerAccess.restricted(["web"], [])
+
+      admin =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+        |> Fixtures.Memberships.force_runner_access(scoped)
+
+      subject = Fixtures.Subjects.subject_for(admin)
+
+      assert {:ok, %{service_account: service_account}} =
+               Multi.new()
+               |> Accounts.put_service_account(account, %{display_name: "Ryker"}, subject)
+               |> Repo.commit_multi()
+
+      assert Accounts.runner_access_for_membership(account.id, service_account.id) == scoped
+    end
+
+    test "leaves out runners deleted while they sat in the creator's scope" do
+      account = Fixtures.Accounts.create_account()
+      kept = Fixtures.Runners.create_runner(account_id: account.id)
+      deleted = Fixtures.Runners.create_runner(account_id: account.id)
+      {:ok, scoped} = RunnerAccess.restricted([], [kept.id, deleted.id])
+      {:ok, expected} = RunnerAccess.restricted([], [kept.id])
+
+      admin =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+        |> Fixtures.Memberships.force_runner_access(scoped)
+
+      Fixtures.Runners.mark_deleted(deleted)
+      subject = Fixtures.Subjects.subject_for(admin)
+
+      assert {:ok, %{service_account: service_account}} =
+               Multi.new()
+               |> Accounts.put_service_account(account, %{display_name: "Ryker"}, subject)
+               |> Repo.commit_multi()
+
+      assert Accounts.runner_access_for_membership(account.id, service_account.id) == expected
+    end
+
+    test "reaches nothing when every runner in the creator's scope is gone" do
+      account = Fixtures.Accounts.create_account()
+      deleted = Fixtures.Runners.create_runner(account_id: account.id)
+      {:ok, scoped} = RunnerAccess.restricted([], [deleted.id])
+
+      admin =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+        |> Fixtures.Memberships.force_runner_access(scoped)
+
+      Fixtures.Runners.mark_deleted(deleted)
+      subject = Fixtures.Subjects.subject_for(admin)
+
+      assert {:ok, %{service_account: service_account}} =
+               Multi.new()
+               |> Accounts.put_service_account(account, %{display_name: "Ryker"}, subject)
+               |> Repo.commit_multi()
+
+      assert Accounts.runner_access_for_membership(account.id, service_account.id) ==
+               RunnerAccess.none()
     end
 
     test "an operator cannot add one" do

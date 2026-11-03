@@ -12,7 +12,7 @@ defmodule Emisar.Accounts do
   use Supervisor
   alias Ecto.Multi
   alias Emisar.Accounts.{Account, Authorizer, InvitationInput, Membership, SignUpInput}
-  alias Emisar.Accounts.{MembershipRunnerScope, RunnerAccess}
+  alias Emisar.Accounts.{MembershipRunnerScope, RunnerAccess, ServiceAccountInput}
   alias Emisar.{ApiKeys, Approvals, Audit, Auth, Billing, Crypto, Mail}
   alias Emisar.Auth.Subject
   alias Emisar.{Marketing, Repo, Slug, SSO}
@@ -4287,7 +4287,7 @@ defmodule Emisar.Accounts do
              subject,
              Authorizer.invite_member_permission()
            ) do
-      allowlist = invitation_access_facts(Repo, account_id, attrs)
+      allowlist = access_selection_facts(Repo, account_id, attrs)
       {:ok, InvitationInput.changeset(attrs, allowlist)}
     end
   end
@@ -4423,7 +4423,7 @@ defmodule Emisar.Accounts do
   # runner foreign keys: a later deletion leaves an inert grant, and execution
   # resolves live runners again. Do not lock the fleet while inviting a person.
   defp validate_invitation(repo, attrs, %Subject{account: %Account{id: account_id}} = subject) do
-    allowlist = invitation_access_facts(repo, account_id, attrs)
+    allowlist = access_selection_facts(repo, account_id, attrs)
     changeset = InvitationInput.changeset(attrs, allowlist)
 
     with {:ok, invitation} <- Ecto.Changeset.apply_action(changeset, :insert),
@@ -4433,32 +4433,34 @@ defmodule Emisar.Accounts do
     end
   end
 
-  # `none`/`all` name no runners and `all` packs names none either, so the
-  # mount-time form builder reads nothing (IL-18); a malformed selection resolves
-  # nothing and the input changeset fails it closed.
-  defp invitation_access_facts(repo, account_id, attrs) do
+  # The account facts a grant form's selection (an invitation's or a service
+  # account's) is allowlisted against. `none`/`all` name no runners and `all`
+  # packs names none either, so the mount-time form builders read nothing
+  # (IL-18); a malformed selection resolves nothing and the input changeset fails
+  # it closed.
+  defp access_selection_facts(repo, account_id, attrs) do
     RunnerAccess.allowlist(
-      invitation_runner_facts(repo, account_id, attrs),
-      invitation_pack_facts(repo, account_id, attrs)
+      selected_runner_facts(repo, account_id, attrs),
+      selected_pack_facts(repo, account_id, attrs)
     )
   end
 
-  defp invitation_runner_facts(repo, account_id, attrs) do
-    case RunnerAccess.selection_refs(invitation_scope_values(attrs)) do
+  defp selected_runner_facts(repo, account_id, attrs) do
+    case RunnerAccess.selection_refs(selected_scope_values(attrs)) do
       {:ok, {[], []}} -> []
       {:ok, {groups, runner_ids}} -> runner_facts(repo, account_id, groups, runner_ids)
       {:error, :invalid_runner_access} -> []
     end
   end
 
-  defp invitation_pack_facts(repo, account_id, attrs) do
+  defp selected_pack_facts(repo, account_id, attrs) do
     case Map.get(attrs, "pack_access_mode") || Map.get(attrs, :pack_access_mode) do
       mode when mode in ["restricted", :restricted] -> account_pack_ids(repo, account_id)
       _mode -> []
     end
   end
 
-  defp invitation_scope_values(attrs) do
+  defp selected_scope_values(attrs) do
     case Map.get(attrs, "runner_access_mode") || Map.get(attrs, :runner_access_mode) do
       mode when mode in ["restricted", :restricted] ->
         List.wrap(Map.get(attrs, "scope") || Map.get(attrs, :scope))
@@ -4804,12 +4806,39 @@ defmodule Emisar.Accounts do
   # -- Service accounts ------------------------------------------------
 
   @doc """
-  Adds a service account named by `attrs` (`display_name`): the Member an app
-  connects as. It starts with the subject's own current runner and pack access,
-  which the Team page narrows like any member's. Requires `manage_team`.
+  Builds the add-service-account changeset for one raw submission
+  (`display_name`, `runner_access_mode`, `scope`, `pack_access_mode`,
+  `pack_scope`) — what the add form renders and validates against. Requires
+  `manage_team`.
 
-  Returns `{:ok, %Membership{}}` or
-  `{:error, %Ecto.Changeset{} | :unauthorized | :not_found}`.
+  A selected runner or pack scope is resolved against the account's live runners
+  and packs so a stale or foreign pick surfaces on its field; the write
+  revalidates on submission, so this stays advisory. The default selection reads
+  nothing, keeping the LiveView's mount-time builder query-free.
+
+  Returns `{:ok, %Ecto.Changeset{}}` or `{:error, :unauthorized}`.
+  """
+  def change_service_account(attrs, %Subject{account: %Account{id: account_id}} = subject)
+      when is_map(attrs) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()) do
+      allowlist = access_selection_facts(Repo, account_id, attrs)
+      {:ok, ServiceAccountInput.changeset(attrs, allowlist)}
+    end
+  end
+
+  @doc """
+  Adds a service account — the Member an app connects as — from one raw
+  submission, the same attrs `change_service_account/2` validates: it starts
+  with exactly the runner and pack access the form chose. Requires
+  `manage_team`, and the subject's own current access must cover that grant.
+
+  The submission is revalidated against the account's live runners and packs as
+  the transaction's first step, so a runner deleted while the form was open
+  cannot slip into the grant.
+
+  Returns `{:ok, %Membership{}}` or `{:error, %Ecto.Changeset{} | :unauthorized |
+  :not_found | :runner_access_exceeds_subject}`.
   """
   def create_service_account(attrs, %Subject{account: %Account{id: account_id}} = subject)
       when is_map(attrs) do
@@ -4819,13 +4848,30 @@ defmodule Emisar.Accounts do
       |> put_membership_account_lock(account_id)
       |> put_current_actor(subject, Authorizer.manage_team_permission())
       |> Multi.merge(fn %{account: account, actor: actor} ->
-        put_service_account(Multi.new(), account, attrs, actor)
+        Multi.new()
+        |> Multi.run(:service_account_access, fn repo, _changes ->
+          validate_service_account(repo, attrs, actor)
+        end)
+        |> insert_service_account(account, attrs, actor)
       end)
       |> Repo.commit_multi(after_commit: &broadcast_service_account_created(&1.service_account))
       |> case do
         {:ok, %{service_account: service_account}} -> {:ok, service_account}
         {:error, reason} -> {:error, reason}
       end
+    end
+  end
+
+  # The authoritative gate, as for an invitation: the SAME input changeset the
+  # form uses, rebuilt against the account's live runners and packs, and a grant
+  # the actor's own current access covers.
+  defp validate_service_account(repo, attrs, %Subject{account: %Account{id: account_id}} = actor) do
+    allowlist = access_selection_facts(repo, account_id, attrs)
+    changeset = ServiceAccountInput.changeset(attrs, allowlist)
+
+    with {:ok, input} <- Ecto.Changeset.apply_action(changeset, :insert),
+         :ok <- ensure_runner_access_grant_allowed(actor, input.runner_access) do
+      {:ok, input.runner_access}
     end
   end
 
@@ -4861,8 +4907,9 @@ defmodule Emisar.Accounts do
   `:service_account_audit` row naming `subject`. Merge it into a transaction that
   already holds the workspace row lock; OAuth consent does, to create the account
   an app connects as. The service account starts with `subject`'s current runner
-  and pack access. Requires `manage_team` and `subject` in `account`; otherwise
-  the `:service_account` step fails with `:unauthorized`.
+  and pack access (the add form chooses it instead: `create_service_account/2`).
+  Requires `manage_team` and `subject` in `account`; otherwise the
+  `:service_account` step fails with `:unauthorized`.
   """
   def put_service_account(%Multi{} = multi, %Account{} = account, attrs, %Subject{} = subject)
       when is_map(attrs) do
@@ -4873,23 +4920,31 @@ defmodule Emisar.Accounts do
       |> Multi.run(:service_account_access, fn repo, _changes ->
         {:ok, drop_deleted_runners(repo, account.id, runner_access_for_subject(subject))}
       end)
-      |> Multi.insert(:service_account, fn %{service_account_access: access} ->
-        Membership.Changeset.create_service_account(account.id, attrs, access)
-      end)
-      |> Multi.run(:service_account_scopes, fn repo,
-                                               %{service_account: service_account} = changes ->
-        replace_runner_access_rows(repo, service_account.id, changes.service_account_access)
-      end)
-      |> Multi.insert(:service_account_audit, fn %{service_account: service_account} = changes ->
-        Audit.Events.service_account_created(
-          subject,
-          service_account,
-          changes.service_account_access
-        )
-      end)
+      |> insert_service_account(account, attrs, subject)
     else
       {:error, reason} -> Multi.error(multi, :service_account, reason)
     end
+  end
+
+  # The service account, its access rows and its audit row, for the access an
+  # earlier `:service_account_access` step of the SAME multi resolved — a merged
+  # multi's steps see only their own changes.
+  defp insert_service_account(multi, %Account{} = account, attrs, %Subject{} = subject) do
+    multi
+    |> Multi.insert(:service_account, fn %{service_account_access: access} ->
+      Membership.Changeset.create_service_account(account.id, attrs, access)
+    end)
+    |> Multi.run(:service_account_scopes, fn repo,
+                                             %{service_account: service_account} = changes ->
+      replace_runner_access_rows(repo, service_account.id, changes.service_account_access)
+    end)
+    |> Multi.insert(:service_account_audit, fn %{service_account: service_account} = changes ->
+      Audit.Events.service_account_created(
+        subject,
+        service_account,
+        changes.service_account_access
+      )
+    end)
   end
 
   # The copied grant keeps only runners that still exist: a runner deleted while

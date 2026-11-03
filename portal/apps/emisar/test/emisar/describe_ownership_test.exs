@@ -19,7 +19,7 @@ defmodule Emisar.DescribeOwnershipTest do
   # Same name, genuinely different module under test — not a collision.
   @coincidences ~w(
     parse/1 create/1 validate/1 validate/2 escape/1 execute/1 form/1
-    digest/1 fetch/1 tarball_url/2
+    digest/1 fetch/1 tarball_url/2 changeset/2
   )
 
   # Four more were merged in the same pass: the invitation functions

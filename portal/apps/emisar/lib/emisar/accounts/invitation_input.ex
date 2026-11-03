@@ -9,7 +9,7 @@ defmodule Emisar.Accounts.InvitationInput do
   """
   use Ecto.Schema
   import Ecto.Changeset
-  alias Emisar.Accounts.RunnerAccess
+  alias Emisar.Accounts.AccessSelection
 
   @primary_key false
   embedded_schema do
@@ -47,16 +47,12 @@ defmodule Emisar.Accounts.InvitationInput do
     |> Emisar.EmailAddress.validate(:email)
     |> validate_inclusion(:role, roles())
     |> normalize_owner_access()
-    |> validate_inclusion(:runner_access_mode, modes())
-    |> validate_inclusion(:pack_access_mode, pack_modes())
-    |> validate_runner_access(allowlist)
+    |> then(&AccessSelection.validate(&1, allowlist, get_field(&1, :role)))
   end
 
-  # Read at runtime: pinning these into module attributes would make this input
+  # Read at runtime: pinning these into a module attribute would make this input
   # schema a COMPILE dependency of Auth, closing a cycle back through Accounts.
   defp roles, do: Enum.map(Emisar.Auth.roles(), &Atom.to_string/1)
-  defp modes, do: Enum.map(RunnerAccess.modes(), &Atom.to_string/1)
-  defp pack_modes, do: Enum.map(RunnerAccess.pack_modes(), &Atom.to_string/1)
 
   defp normalize_owner_access(changeset) do
     if get_field(changeset, :role) == "owner" do
@@ -67,35 +63,6 @@ defmodule Emisar.Accounts.InvitationInput do
       |> put_change(:pack_scope, [])
     else
       changeset
-    end
-  end
-
-  defp validate_runner_access(%Ecto.Changeset{} = changeset, allowlist) do
-    mode = get_field(changeset, :runner_access_mode)
-    scope = get_field(changeset, :scope) || []
-    pack_mode = get_field(changeset, :pack_access_mode)
-    pack_scope = get_field(changeset, :pack_scope) || []
-
-    case RunnerAccess.from_selection(mode, scope, allowlist, pack_mode, pack_scope) do
-      {:ok, selected} ->
-        # The role decides what the selection may actually grant, so an invite to
-        # a role that carries no reach resets it here rather than at the write —
-        # the form re-renders from `:runner_access` and shows the operator the
-        # cleared state before they send it.
-        access = RunnerAccess.for_role(get_field(changeset, :role), selected)
-
-        changeset
-        |> put_change(:scope, RunnerAccess.selection_values(access.groups, access.runner_ids))
-        |> put_change(:pack_scope, RunnerAccess.pack_selection_values(access.pack_ids))
-        |> put_change(:runner_access, access)
-        |> put_change(:runner_access_mode, to_string(access.mode))
-        |> put_change(:pack_access_mode, to_string(access.pack_mode))
-
-      {:error, :invalid_pack_access} ->
-        add_error(changeset, :pack_access_mode, "requires at least one available pack")
-
-      {:error, :invalid_runner_access} ->
-        add_error(changeset, :runner_access_mode, "requires at least one runner group or runner")
     end
   end
 end

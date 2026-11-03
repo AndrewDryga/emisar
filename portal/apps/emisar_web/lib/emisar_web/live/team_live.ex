@@ -71,7 +71,11 @@ defmodule EmisarWeb.TeamLive do
      )
      |> ConfirmDialog.init()
      |> assign_invite_form()
-     |> reset_service_account_form()}
+     # Only the add page renders this form, and building it re-reads the session's
+     # authority, so it is built there (handle_params), not on every mount.
+     |> assign(:service_account_form, nil)
+     |> assign(:added_service_account, nil)
+     |> assign(:added_service_account_access, nil)}
   end
 
   def handle_params(params, _uri, socket) do
@@ -87,7 +91,8 @@ defmodule EmisarWeb.TeamLive do
           {:noreply, assign(socket, :loading?, true)}
         end
 
-      # Runner names are loaded only to name a restricted reach on the receipt.
+      # The same runner and pack lists the invite's access pickers choose from;
+      # the receipt names a restricted reach from them too.
       :new_service_account ->
         socket =
           socket
@@ -551,7 +556,7 @@ defmodule EmisarWeb.TeamLive do
 
   def handle_event("validate", %{"invite" => params} = event, socket) do
     case Accounts.change_invitation(
-           keep_pack_selection(socket, params),
+           keep_pack_selection(socket.assigns.form, params),
            socket.assigns.current_subject
          ) do
       {:ok, changeset} -> {:noreply, assign_form(socket, LiveForm.on_change(changeset, event))}
@@ -564,8 +569,17 @@ defmodule EmisarWeb.TeamLive do
   def handle_event("invite_another", _params, socket),
     do: {:noreply, reset_invite_form(socket)}
 
-  def handle_event("validate_service_account", %{"service_account" => params}, socket) do
-    {:noreply, assign(socket, :service_account_form, to_form(params, as: "service_account"))}
+  def handle_event("validate_service_account", %{"service_account" => params} = event, socket) do
+    case Accounts.change_service_account(
+           keep_pack_selection(socket.assigns.service_account_form, params),
+           socket.assigns.current_subject
+         ) do
+      {:ok, changeset} ->
+        {:noreply, assign_service_account_form(socket, LiveForm.on_change(changeset, event))}
+
+      {:error, :unauthorized} ->
+        {:noreply, socket}
+    end
   end
 
   def handle_event("add_service_account", %{"service_account" => params}, socket) do
@@ -698,15 +712,16 @@ defmodule EmisarWeb.TeamLive do
 
   defp submitted_pack_selection(_params, mode, draft), do: {mode, draft}
 
-  # The same absence, for the invite form — its draft lives in the changeset.
-  defp keep_pack_selection(%{assigns: %{form: %Phoenix.HTML.Form{} = form}}, params)
+  # The same absence, for the invite and service-account forms — their drafts
+  # live in the changeset.
+  defp keep_pack_selection(%Phoenix.HTML.Form{} = form, params)
        when not is_map_key(params, "pack_access_mode") do
     params
     |> Map.put("pack_access_mode", to_string(form[:pack_access_mode].value))
     |> Map.put("pack_scope", List.wrap(form[:pack_scope].value))
   end
 
-  defp keep_pack_selection(_socket, params), do: params
+  defp keep_pack_selection(_form, params), do: params
 
   # Groups lead — a group is the wider grant, so the visible tags start there.
   # The invite form. Split out of render/1, which carried four unrelated
@@ -1472,21 +1487,33 @@ defmodule EmisarWeb.TeamLive do
        |> assign(:added_service_account, service_account)
        |> assign(:added_service_account_access, facts.runner_access)}
     else
+      # The domain rebuilt the form's own validation against live runners, so a
+      # blank name or a stale runner pick belongs back under its field.
       {:error, %Ecto.Changeset{} = changeset} ->
-        {:noreply,
-         assign(socket, :service_account_form, to_form(changeset, as: "service_account"))}
+        {:noreply, assign_service_account_form(socket, changeset)}
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, MemberErrors.message(reason))}
     end
   end
 
+  # Accounts owns the form's defaults and the selection's allowlist, as for the
+  # invite form. A subject that can't add one gets no form — the page shows the
+  # "you can't add service accounts" state instead.
   defp reset_service_account_form(socket) do
-    socket
-    |> assign(:service_account_form, to_form(%{"display_name" => ""}, as: "service_account"))
-    |> assign(:added_service_account, nil)
-    |> assign(:added_service_account_access, nil)
+    socket =
+      socket
+      |> assign(:added_service_account, nil)
+      |> assign(:added_service_account_access, nil)
+
+    case Accounts.change_service_account(%{}, socket.assigns.current_subject) do
+      {:ok, changeset} -> assign_service_account_form(socket, changeset)
+      {:error, :unauthorized} -> assign(socket, :service_account_form, nil)
+    end
   end
+
+  defp assign_service_account_form(socket, %Ecto.Changeset{} = changeset),
+    do: assign(socket, :service_account_form, to_form(changeset, as: "service_account"))
 
   defp do_invite(socket, params) do
     case Accounts.invite_user_to_account_and_deliver(
@@ -2353,6 +2380,12 @@ defmodule EmisarWeb.TeamLive do
         form={@service_account_form}
         added={@added_service_account}
         access={@added_service_account_access}
+        loading?={@loading?}
+        pack_access_restricted?={@pack_access_restricted?}
+        pack_advertisements={@pack_advertisements}
+        pack_load_error?={@pack_load_error?}
+        runner_load_error?={@runner_load_error?}
+        runners={@runners}
         runners_by_id={@runners_by_id}
       />
 
@@ -3183,7 +3216,7 @@ defmodule EmisarWeb.TeamLive do
             }>Key setup</.doc_link>.
           </p>
           <p :if={@can_manage_team?}>
-            New accounts inherit your runner and pack access. Use Edit access to narrow it.
+            Set its runner and pack access when you add it, and change it later with Edit access.
           </p>
           <p :if={not @can_manage_team?}>Only owners and admins add or change service accounts.</p>
         </.docs_rail>
@@ -3209,11 +3242,17 @@ defmodule EmisarWeb.TeamLive do
   attr :form, :any, required: true
   attr :added, Accounts.Membership, default: nil
   attr :access, Accounts.RunnerAccess, default: nil
+  attr :loading?, :boolean, required: true
+  attr :pack_access_restricted?, :boolean, required: true
+  attr :pack_advertisements, :map, required: true
+  attr :pack_load_error?, :boolean, required: true
+  attr :runner_load_error?, :boolean, required: true
+  attr :runners, :list, required: true
   attr :runners_by_id, :map, required: true
 
-  # Adding a service account asks only for its name: it starts with the adding
-  # admin's own reach, which the roster's access editor narrows like any
-  # member's. The receipt states that reach and how an app connects as it.
+  # Adding a service account asks for its name and its reach, through the
+  # invite form's access fields; its role is fixed at Operator, so there is no
+  # role choice. The receipt states that reach and how an app connects as it.
   defp service_account_form(assigns) do
     ~H"""
     <div class="max-w-2xl">
@@ -3278,20 +3317,36 @@ defmodule EmisarWeb.TeamLive do
           phx-submit="add_service_account"
           class="mt-6 space-y-5"
         >
-          <div>
-            <.input
-              field={@form[:display_name]}
-              type="text"
-              label="Name"
-              placeholder="e.g. Ryker"
-              autocomplete="off"
-              required
+          <.input
+            field={@form[:display_name]}
+            type="text"
+            label="Name"
+            placeholder="e.g. Ryker"
+            autocomplete="off"
+            required
+          />
+
+          <fieldset>
+            <legend class="text-sm font-medium text-zinc-300">Access</legend>
+            <.access_scope_fields
+              runner_mode_name="service_account[runner_access_mode]"
+              runner_mode_value={@form[:runner_access_mode].value}
+              runner_scope_name="service_account[scope][]"
+              runner_scope_selected={List.wrap(@form[:scope].value)}
+              pack_mode_name="service_account[pack_access_mode]"
+              pack_mode_value={@form[:pack_access_mode].value}
+              pack_scope_name="service_account[pack_scope][]"
+              pack_scope_selected={List.wrap(@form[:pack_scope].value)}
+              runners={@runners}
+              advertisements={@pack_advertisements}
+              grant_limited?={@pack_access_restricted?}
+              loading?={@loading?}
+              runner_load_error?={@runner_load_error?}
+              pack_load_error?={@pack_load_error?}
+              runner_submit_error_field={@form[:runner_access_mode]}
+              pack_submit_error_field={@form[:pack_access_mode]}
             />
-            <p class="mt-2 text-xs text-zinc-400">
-              The service account starts with your runner and pack access. You can narrow it later with Edit
-              access on the Service accounts page.
-            </p>
-          </div>
+          </fieldset>
 
           <:actions>
             <.button phx-disable-with="Adding…">Add service account</.button>

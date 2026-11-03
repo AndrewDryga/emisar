@@ -123,12 +123,12 @@
         Add one from <a
           href={~p"/app/service-accounts"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-        >Settings → Service accounts</a>. It has the Operator role and starts with your runner and
-        pack access; narrow it with Actions → Edit access like any member's. It has no email
-        address and cannot sign in, so it is never invited, never enrolls MFA, and never links an
-        SSO identity. Only owners and admins add and manage service accounts. Giving one access,
-        connecting an app as it, or creating its keys also needs runner and pack access that
-        covers the service account's access.
+        >Settings → Service accounts</a>. It has the Operator role, and you choose its runner and
+        pack access when you add it; change it later with Actions → Edit access like any member's.
+        It has no email address and cannot sign in, so it is never invited, never enrolls MFA, and
+        never links an SSO identity. Only owners and admins add and manage service accounts.
+        Giving one access, connecting an app as it, or creating its keys also needs runner and
+        pack access that covers the service account's access.
       </p>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
@@ -136,7 +136,8 @@
           <span>
             <strong class="text-zinc-200">An app that signs in with OAuth.</strong>
             When the app asks you to authorize it, choose the service account under Connect as,
-            or create a new one named after the app.
+            or create a new one named after the app. A new one starts with your runner and pack
+            access.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
