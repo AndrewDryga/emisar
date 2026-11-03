@@ -7,6 +7,12 @@ versions:
   default: true
 secret_env:
 - STRIPE_API_KEY
+inherit_env:
+  - STRIPE_ACCOUNT_ID
+  - STRIPE_API_KEY
+  - STRIPE_EVIDENCE_DIR
+  - STRIPE_FIXTURE_URL
+  - STRIPE_MODE
 env:
   STRIPE_API_KEY: sk_test_packtest-canary-stripe-58c9
   STRIPE_MODE: test

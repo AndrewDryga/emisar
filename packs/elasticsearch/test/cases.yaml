@@ -4,6 +4,7 @@ versions:
     digest: "@sha256:82ac14f43fe701992e601f4cc81e1c0d7dbc5a2576d8cd736006452925df4026"
     default: true
 secret_env: [ELASTIC_PASSWORD]
+inherit_env: [ELASTIC_PASSWORD, ELASTIC_URL, ELASTIC_USER]
 env:
   ELASTIC_PASSWORD: packtest-canary-elasticsearch-5a28
   ELASTIC_URL: "http://elasticsearch:9200"

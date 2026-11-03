@@ -11,6 +11,7 @@ versions:
   - version: 25.8.33.6-alpine
     digest: "@sha256:87e0a5b72f5465b18eacca7c76850e7ff551c9795c50e451f5646299e5e24146"
 secret_env: [CH_PASSWORD]
+inherit_env: [CH_HOST, CH_PASSWORD, CH_USER]
 env:
   CH_HOST: clickhouse
   CH_PASSWORD: packtest-canary-clickhouse-98e4f2

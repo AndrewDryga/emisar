@@ -14,6 +14,7 @@ shards: 6
 # Two concurrent stacks keep provider imports inside Airflow 2's startup bound.
 workers: 2
 secret_env: [AIRFLOW_PASSWORD, PACKTEST_VARIABLE_VALUE, PACKTEST_CONN_PASSWORD, PACKTEST_CONN_EXTRA_TOKEN]
+inherit_env: [AIRFLOW_API_VERSION, AIRFLOW_PASSWORD, AIRFLOW_URL, AIRFLOW_USERNAME]
 env:
   AIRFLOW_URL: "http://airflow:8080"
   AIRFLOW_USERNAME: admin

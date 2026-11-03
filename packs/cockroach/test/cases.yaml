@@ -3,6 +3,7 @@ versions:
   - version: v26.3.2
     digest: "@sha256:bc15746ef2c2493b2cfd46a76898a745587d068b1a259fff3c4447c3f3b36ea2"
     default: true
+inherit_env: [COCKROACH_URL]
 env:
   COCKROACH_URL: "postgresql://root@cockroach:26257/defaultdb?sslmode=disable"
 defaults:

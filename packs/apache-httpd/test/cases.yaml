@@ -3,6 +3,7 @@ versions:
   - version: "2.4.68"
     digest: "@sha256:03f858efb82c25cb0f9962946615cdcdaf26927cb971722149b563197cfd0fdd"
     default: true
+inherit_env: [HTTPD_ACCESS_LOG, HTTPD_ERROR_LOG, HTTPD_STATUS_URL]
 env:
   HTTPD_ACCESS_LOG: /usr/local/apache2/logs/access_log
   HTTPD_ERROR_LOG: /usr/local/apache2/logs/error_log

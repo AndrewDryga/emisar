@@ -10,6 +10,7 @@ versions:
   - version: "7.0.41"
     digest: "@sha256:b096b4cb9269f3ebcf363be63f1c50920f786879d03a1890347a3bf33f1f0df0"
 secret_env: [MONGO_URI]
+inherit_env: [MONGO_URI]
 env:
   MONGO_URI: "mongodb://root:packtest-canary-mongodb-c936@mongodb:27017/?authSource=admin"
 defaults:

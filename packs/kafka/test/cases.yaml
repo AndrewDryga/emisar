@@ -3,6 +3,7 @@ versions:
   - version: "4.3.1"
     digest: "@sha256:77e3df9054047a88b520d0cc46e16696d3b22022e1d580aeccd2632df6532837"
     default: true
+inherit_env: [KAFKA_BOOTSTRAP]
 env:
   KAFKA_BOOTSTRAP: kafka:9092
 cases:

@@ -82,6 +82,7 @@ versions:
     default: true
 
 secret_env: [PGPASSWORD]
+inherit_env: [PGDATABASE, PGHOST, PGPASSWORD, PGUSER]
 env:
   PGHOST: postgres
   PGUSER: postgres
@@ -110,9 +111,17 @@ cases:
       stderr_contains: [no password supplied]
 ```
 
-`env` is passed to the runner and its actions only when `test-config.yaml`
-allowlists the variable. A case can override values with `env` or remove them
-with `unset_env`. Structured action arguments are encoded as JSON.
+`env` reaches the steps and the runner. The runner passes a variable on to the
+pack's actions only when `inherit_env` names it. The runner always passes
+`PATH`, `LANG`, `LC_ALL`, and `TERM`, and `test-config.yaml` adds only what
+every runner-tools container provides (`HOME`). The harness stages a private
+copy of that file for each pack with the plan's `inherit_env` names added, so a
+pack's credential and endpoint names stay in its own `cases.yaml`. Changing
+them runs only that pack's CI rows; any change under `dev/test-packs/` runs
+every pack's. The runner still refuses hijack names such as `LD_PRELOAD`. A
+fixture that runs the runner itself copies `$PACKTEST_RUNNER_CONFIG`, the same
+staged file. A case can override values with `env` or remove them with
+`unset_env`. Structured action arguments are encoded as JSON.
 
 `arrange`, `probes`, and `cleanup` execute argv arrays without a shell. Use
 `[/bin/sh, -c, ...]` only when shell syntax is part of the test. Probes may set

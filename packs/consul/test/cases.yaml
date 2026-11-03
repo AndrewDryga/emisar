@@ -3,6 +3,12 @@ versions:
   - version: "2.0.4"
     digest: "@sha256:1c59f007df8ea1c21b2558dc73ef8d99047bc895d9e52e635d1e745e35fe9a54"
     default: true
+inherit_env:
+  - CONSUL_CACERT
+  - CONSUL_CLIENT_CERT
+  - CONSUL_CLIENT_KEY
+  - CONSUL_HTTP_ADDR
+  - CONSUL_HTTP_TOKEN
 env:
   CONSUL_HTTP_ADDR: "http://consul:8500"
   CONSUL_HTTP_TOKEN: packtest-canary-consul-token-71e4

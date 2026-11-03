@@ -25,7 +25,7 @@ private)
 bounds)
   scratch=$(mktemp -d /tmp/nomad-node-bounds.XXXXXX)
   trap 'rm -rf "$scratch"' EXIT
-  cp /workspace/test-packs/test-config.yaml "$scratch/config.yaml"
+  cp "$PACKTEST_RUNNER_CONFIG" "$scratch/config.yaml"
   chmod 600 "$scratch/config.yaml"
   # Literal command substitutions are hostile inputs, never commands to run.
   # shellcheck disable=SC2016

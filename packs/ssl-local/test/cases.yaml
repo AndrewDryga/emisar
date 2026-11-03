@@ -11,6 +11,7 @@ versions:
   - version: "trixie-20260918-slim"
     digest: "@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a"
     default: true
+inherit_env: [PK12_PASSWORD]
 env:
   PK12_PASSWORD: packtest-p12-pass
 defaults:

@@ -8,6 +8,7 @@ versions:
     default: true
   - version: "25.12.1"
     digest: "@sha256:6885a72b10e360c2eb6889be72c83c815f9f9c19a913bb2a578ccdf5d7e95139"
+inherit_env: [SYMBOLICATOR_CACHE_DIR]
 env:
   SYMBOLICATOR_URL: http://127.0.0.1:3021
   SYMBOLICATOR_CONFIG: /etc/symbolicator/config.yml

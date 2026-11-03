@@ -4,6 +4,7 @@ versions:
     digest: "@sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d"
     default: true
 secret_env: [IPMI_PASSWORD]
+inherit_env: [IPMI_ALLOWED_HOSTS, IPMI_PASSWORD, IPMI_USER]
 env:
   IPMI_ALLOWED_HOSTS: APPROVED-BMC
   IPMI_USER: packtest-monitor

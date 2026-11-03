@@ -81,7 +81,7 @@ reads|isolation|bounds)
 	}
 	trap finish EXIT
 	trap 'exit 143' HUP INT TERM
-	cp /workspace/test-packs/test-config.yaml "$scratch/config.yaml"
+	cp "$PACKTEST_RUNNER_CONFIG" "$scratch/config.yaml"
 	chmod 600 "$scratch/config.yaml"
 	if [ "$mode" = reads ]; then
 		create_child "$kind" default

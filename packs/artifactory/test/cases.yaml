@@ -14,6 +14,7 @@ versions:
 shards: 4
 workers: 2
 secret_env: [ARTIFACTORY_PASSWORD]
+inherit_env: [ARTIFACTORY_PASSWORD, ARTIFACTORY_URL, ARTIFACTORY_USER]
 env:
   ARTIFACTORY_URL: "http://artifactory:8082"
   ARTIFACTORY_USER: admin

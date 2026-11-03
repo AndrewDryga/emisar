@@ -4,6 +4,7 @@ versions:
     digest: "@sha256:9e9fde4d32eedce0b661d9ab91e826b62dddf28e928c230ec55f1866cac66b01"
     default: true
 secret_env: [TFE_TOKEN]
+inherit_env: [TFE_ADDRESS, TFE_TOKEN]
 env:
   TFE_ADDRESS: http://tfc-api:8080
   TFE_TOKEN: packtest-canary-tfe-token-6d2a

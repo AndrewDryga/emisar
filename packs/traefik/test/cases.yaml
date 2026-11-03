@@ -3,6 +3,7 @@ versions:
   - version: v3.7.13
     digest: "@sha256:f86a2cab1b5c649070c49f883c743dd32d8485a56e3368c5f93b9e91f1e91259"
     default: true
+inherit_env: [TRAEFIK_METRICS_URL, TRAEFIK_PING_URL, TRAEFIK_URL]
 env:
   TRAEFIK_URL: http://127.0.0.1:8080
   TRAEFIK_PING_URL: http://127.0.0.1:8082

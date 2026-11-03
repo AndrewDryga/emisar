@@ -11,6 +11,7 @@ versions:
 shards: 9
 
 secret_env: [CQLSH_PASSWORD]
+inherit_env: [CASSANDRA_CONF, CQLSH_HOST, CQLSH_PASSWORD, CQLSH_PORT]
 env:
   CQLSH_HOST: 127.0.0.1
   CQLSH_PASSWORD: packtest-canary-cassandra-49ab

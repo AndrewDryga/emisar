@@ -4,6 +4,7 @@ versions:
     digest: "@sha256:47f14a6acb98f48d798a07df7c83f23a6e636e1cf724c5f8ff165cb32667a1e2"
     default: true
 secret_env: [VAULT_TOKEN]
+inherit_env: [VAULT_ADDR, VAULT_TOKEN]
 env:
   VAULT_ADDR: "http://vault:8200"
   VAULT_TOKEN: packtest-canary-vault-token-f34c

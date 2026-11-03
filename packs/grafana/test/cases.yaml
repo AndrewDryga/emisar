@@ -4,6 +4,7 @@ versions:
     digest: "@sha256:b28bae15e219c998fb0e0424ed724930cc61b1f61fb404d47c862f9a23f9e572"
     default: true
 secret_env: [GRAFANA_PASSWORD]
+inherit_env: [GRAFANA_PASSWORD, GRAFANA_URL, GRAFANA_USER]
 env:
   GRAFANA_PASSWORD: packtest-canary-grafana-61df
   GRAFANA_URL: "http://grafana:3000"

@@ -4,6 +4,7 @@ versions:
     digest: "@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372"
     default: true
 secret_env: [MC_HOST_minio]
+inherit_env: [MC_HOST_minio]
 env:
   MC_HOST_minio: "http://minio_admin:packtest-canary-minio-74a9@minio:9000"
 defaults:

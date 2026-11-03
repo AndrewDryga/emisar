@@ -4,6 +4,7 @@ versions:
     digest: "@sha256:9e9fde4d32eedce0b661d9ab91e826b62dddf28e928c230ec55f1866cac66b01"
     default: true
 secret_env: [SENTRY_AUTH_TOKEN]
+inherit_env: [SENTRY_AUTH_TOKEN, SENTRY_URL]
 env:
   SENTRY_AUTH_TOKEN: packtest-canary-sentry-token-51c2
   SENTRY_URL: http://sentry-api:8080

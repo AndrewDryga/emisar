@@ -23,6 +23,13 @@ shards: 5
 workers: 2
 
 secret_env: [MEDUSA_CQL_PASSWORD, AWS_SECRET_ACCESS_KEY]
+inherit_env:
+  - AWS_ACCESS_KEY_ID
+  - AWS_SECRET_ACCESS_KEY
+  - CASSANDRA_CONF
+  - MEDUSA_CQL_PASSWORD
+  - MEDUSA_CQL_USERNAME
+  - MEDUSA_RESTORE_TEMP_DIR
 env:
   # A login-only role: Medusa reads only the schema and token map.
   MEDUSA_CQL_USERNAME: medusa

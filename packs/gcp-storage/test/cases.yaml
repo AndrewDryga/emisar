@@ -4,6 +4,7 @@ versions:
     digest: "@sha256:be4876b4311056bf3ce236a14a7dea1288e70b7cfea2454ea15e4165c819921f"
     default: true
 secret_env: [CLOUDSDK_AUTH_ACCESS_TOKEN]
+inherit_env: [CLOUDSDK_API_ENDPOINT_OVERRIDES_STORAGE, CLOUDSDK_AUTH_ACCESS_TOKEN]
 env:
   CLOUDSDK_API_ENDPOINT_OVERRIDES_STORAGE: http://gcp-api:8080/storage/v1/
   CLOUDSDK_AUTH_ACCESS_TOKEN: packtest-canary-gcp-access-token-27be

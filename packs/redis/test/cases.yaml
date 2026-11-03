@@ -6,6 +6,7 @@ versions:
   - version: "7.4.11"
     digest: "@sha256:71da9275c5f3fcb97d0fa0c8c5b36cc995327265420f17a04bfd544f458059f7"
 secret_env: [REDISCLI_AUTH]
+inherit_env: [REDISCLI_AUTH]
 env:
   REDISCLI_AUTH: packtest-canary-redis-c08d17
 cases:

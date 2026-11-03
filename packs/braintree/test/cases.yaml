@@ -8,6 +8,12 @@ versions:
 secret_env:
 - BRAINTREE_PUBLIC_KEY
 - BRAINTREE_PRIVATE_KEY
+inherit_env:
+  - BRAINTREE_ENVIRONMENT
+  - BRAINTREE_EVIDENCE_DIR
+  - BRAINTREE_FIXTURE_URL
+  - BRAINTREE_PRIVATE_KEY
+  - BRAINTREE_PUBLIC_KEY
 env:
   BRAINTREE_PUBLIC_KEY: packtest-canary-braintree-public-749a
   BRAINTREE_PRIVATE_KEY: packtest-canary-braintree-private-28ac

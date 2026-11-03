@@ -3,6 +3,7 @@ versions:
   - version: v1.153.0
     digest: "@sha256:5eff7af5341e401471002f58d106d399e614a62f3d240f2dbc21901e49eed5dd"
     default: true
+inherit_env: [VM_URL]
 env:
   VM_URL: "http://victoriametrics:8428/prometheus"
 defaults:

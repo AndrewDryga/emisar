@@ -4,6 +4,7 @@ versions:
     digest: "@sha256:985cdc6c1d9b0a65b83377f666efd2f740b47f02ac55be1ced3d18f7d3b0e829"
     default: true
 secret_env: []
+inherit_env: [TF_BIN, TF_DIR, TF_PLAN_DIR, TF_STATE_CANDIDATE_DIR]
 env:
   TF_DIR: /fixture/live
   TF_STATE_CANDIDATE_DIR: /fixture/candidates

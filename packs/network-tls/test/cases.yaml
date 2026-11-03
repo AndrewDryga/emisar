@@ -1,5 +1,12 @@
 services: [tcp, rdap-api]
 secret_env: [RDAP_RESPONSE_CANARY]
+inherit_env:
+  - CURL_CA_BUNDLE
+  - NET_RDAP_BOOTSTRAP_URL
+  - NET_RDAP_PACKTEST
+  - PACKTEST_WHOIS_MODE
+  - http_proxy
+  - no_proxy
 env:
   RDAP_RESPONSE_CANARY: packtest-canary-rdap-contact-62c37
 versions:

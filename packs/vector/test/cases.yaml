@@ -6,6 +6,7 @@ versions:
   - version: "0.55.0-debian"
     digest: "@sha256:a4be1111b40303524aae2ffb02cd59cef2a4e9753bd13d265bf0233e921828d9"
 secret_env: [VECTOR_RESPONSE_CANARY]
+inherit_env: [VECTOR_API, VECTOR_METRICS_URL, VECTOR_RESPONSE_CANARY]
 env:
   VECTOR_API: http://vector:8686
   VECTOR_METRICS_URL: http://vector:9598/metrics

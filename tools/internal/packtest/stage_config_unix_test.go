@@ -24,7 +24,7 @@ func TestStageConfigProducesAConfigTheRunnerAccepts(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	staged, err := stageConfig(source)
+	staged, err := stageConfig(source, nil)
 	if err != nil {
 		t.Fatalf("stageConfig: %v", err)
 	}
@@ -67,12 +67,12 @@ func TestStageConfigIsNotReusedAcrossRuns(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	first, err := stageConfig(source)
+	first, err := stageConfig(source, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.RemoveAll(filepath.Dir(first)) })
-	second, err := stageConfig(source)
+	second, err := stageConfig(source, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -44,7 +44,7 @@ matrix)
 	}
 	trap finish EXIT
 	trap 'exit 143' HUP INT TERM
-	cp /workspace/test-packs/test-config.yaml "$scratch/config.yaml"
+	cp "$PACKTEST_RUNNER_CONFIG" "$scratch/config.yaml"
 	chmod 600 "$scratch/config.yaml"
 	export CURL_CA_BUNDLE="$root/ca.crt"
 	run_action() {

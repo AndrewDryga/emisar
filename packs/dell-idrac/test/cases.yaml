@@ -4,6 +4,7 @@ versions:
     digest: "@sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d"
     default: true
 secret_env: [IDRAC_PASSWORD]
+inherit_env: [IDRAC_ALLOWED_HOSTS, IDRAC_INSECURE, IDRAC_PASSWORD, IDRAC_USER]
 env:
   IDRAC_ALLOWED_HOSTS: IDRAC
   IDRAC_USER: packtest-monitor

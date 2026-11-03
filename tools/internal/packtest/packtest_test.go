@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"go.yaml.in/yaml/v3"
 )
 
 func TestRunExecutesBehaviorProbeAndCleanup(t *testing.T) {
@@ -484,6 +486,12 @@ func TestPlanValidationRejectsFalseCoverage(t *testing.T) {
 				"target": {Argv: []string{"echo", "dynamic"}},
 			},
 		}}}, "duplicates a static argument"},
+		{"inherit_env entry that is not a name", Plan{Services: []string{"fixture"}, Versions: testVersions(), InheritEnv: []string{"TOKEN=value"}, Cases: []Case{
+			{Action: "example.read", Expect: Expectation{StdoutContains: []string{"ok"}}},
+		}}, "is not an environment variable name"},
+		{"inherit_env entry listed twice", Plan{Services: []string{"fixture"}, Versions: testVersions(), InheritEnv: []string{"TOKEN", "TOKEN"}, Cases: []Case{
+			{Action: "example.read", Expect: Expectation{StdoutContains: []string{"ok"}}},
+		}}, `lists "TOKEN" twice`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -738,6 +746,110 @@ func TestSelectVersionRejectsUnknownFamiliesAndPrecedesShards(t *testing.T) {
 	plan.Versions[0].Env = map[string]string{"MODE": "basic"}
 	if _, err := SelectVersion(plan, "3"); err == nil {
 		t.Fatal("accepted unknown version with family environment")
+	}
+}
+
+// Each pack's actions run against its own staged copy of the harness config,
+// which adds the names that plan lists in inherit_env and no other pack's. A
+// fixture that runs the runner itself finds the same copy in
+// PACKTEST_RUNNER_CONFIG.
+func TestRunGivesEachPackItsOwnInheritEnv(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture executable is POSIX shell")
+	}
+	root := t.TempDir()
+	for _, pack := range []string{"alpha", "beta"} {
+		name := strings.ToUpper(pack) + "_URL"
+		packDir := filepath.Join(root, "packs", pack)
+		write(t, filepath.Join(packDir, "pack.yaml"), "id: "+pack+"\nversion: 0.1.0\n")
+		write(t, filepath.Join(packDir, "actions", "read.yaml"), "id: "+pack+".read\nrisk: low\n")
+		write(t, filepath.Join(packDir, "test", "cases.yaml"), `services: [fixture]
+versions:
+  - version: "1"
+    digest: "@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    default: true
+inherit_env: [`+name+`]
+cases:
+  - action: `+pack+`.read
+    expect: {stdout_contains: [ok]}
+    probes:
+      - argv: [/bin/sh, -c, 'cat "$PACKTEST_RUNNER_CONFIG"']
+        expect: {stdout_contains: [`+name+`]}
+`)
+	}
+	seen := filepath.Join(root, "seen")
+	emisar := filepath.Join(root, "emisar")
+	// The harness calls `emisar --config <path> action run <action> ...`.
+	writeExecutable(t, emisar, "#!/bin/sh\ncp \"$2\" \""+seen+"-$5\"\nprintf '{\"status\":\"success\",\"exit_code\":0,\"stdout\":\"ok\"}\\n'\n")
+	harnessConfig := filepath.Join(root, "test-config.yaml")
+	write(t, harnessConfig, "execution:\n  inherit_env:\n    - HOME\nevents:\n  jsonl_path: "+filepath.Join(root, "events.jsonl")+"\n")
+	write(t, filepath.Join(root, "events.jsonl"), "")
+
+	var output bytes.Buffer
+	totals, err := Run(Config{Emisar: emisar, PacksDir: filepath.Join(root, "packs"), Config: harnessConfig,
+		Reports: filepath.Join(root, "reports"), Out: &output})
+	if err != nil || totals.Pass != 2 || totals.Fail != 0 {
+		t.Fatalf("totals=%+v err=%v\n%s", totals, err, output.String())
+	}
+	for pack, want := range map[string][]string{"alpha": {"HOME", "ALPHA_URL"}, "beta": {"HOME", "BETA_URL"}} {
+		data, err := os.ReadFile(seen + "-" + pack + ".read")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var config struct {
+			Execution struct {
+				InheritEnv []string `yaml:"inherit_env"`
+			} `yaml:"execution"`
+		}
+		if err := yaml.Unmarshal(data, &config); err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(config.Execution.InheritEnv, want) {
+			t.Errorf("%s ran with inherit_env %v, want %v", pack, config.Execution.InheritEnv, want)
+		}
+	}
+}
+
+func TestStageConfigAddsInheritEnvAndKeepsEveryOtherSetting(t *testing.T) {
+	source := filepath.Join(t.TempDir(), "test-config.yaml")
+	write(t, source, "schema_version: 1\nexecution:\n  # Shared names only.\n  inherit_env:\n    - HOME\n  default_timeout: 30s\nevents:\n  jsonl_path: /tmp/packtest-events.jsonl\n")
+
+	staged, err := stageConfig(source, []string{"MEDUSA_CQL_USERNAME", "HOME", "AWS_ACCESS_KEY_ID"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(filepath.Dir(staged)) })
+	data, err := os.ReadFile(staged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config struct {
+		SchemaVersion int `yaml:"schema_version"`
+		Execution     struct {
+			InheritEnv     []string `yaml:"inherit_env"`
+			DefaultTimeout string   `yaml:"default_timeout"`
+		} `yaml:"execution"`
+		Events struct {
+			JSONLPath string `yaml:"jsonl_path"`
+		} `yaml:"events"`
+	}
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"HOME", "MEDUSA_CQL_USERNAME", "AWS_ACCESS_KEY_ID"}; !slices.Equal(config.Execution.InheritEnv, want) {
+		t.Errorf("inherit_env = %v, want %v", config.Execution.InheritEnv, want)
+	}
+	if config.SchemaVersion != 1 || config.Execution.DefaultTimeout != "30s" || config.Events.JSONLPath != "/tmp/packtest-events.jsonl" {
+		t.Errorf("staging changed other settings: %+v", config)
+	}
+}
+
+func TestStageConfigRefusesAConfigWithoutInheritEnv(t *testing.T) {
+	source := filepath.Join(t.TempDir(), "test-config.yaml")
+	write(t, source, "events:\n  jsonl_path: /tmp/packtest-events.jsonl\n")
+	_, err := stageConfig(source, []string{"MEDUSA_CQL_USERNAME"})
+	if err == nil || !strings.Contains(err.Error(), "no execution.inherit_env list") {
+		t.Fatalf("stageConfig error = %v, want the missing list named", err)
 	}
 }
 

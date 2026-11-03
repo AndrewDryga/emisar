@@ -17,7 +17,7 @@ finish() {
   exit "$status"
 }
 trap finish EXIT
-cp /workspace/test-packs/test-config.yaml "$scratch/config"
+cp "$PACKTEST_RUNNER_CONFIG" "$scratch/config"
 chmod 600 "$scratch/config"
 export NET_RDAP_PACKTEST=1 NET_RDAP_BOOTSTRAP_URL=http://rdap-api:8080/bootstrap.json
 export PATH=/opt/packtest-whois/bin:/opt/jq-without-regex:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin

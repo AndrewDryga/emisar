@@ -92,15 +92,18 @@ type Runner struct {
 }
 
 type Plan struct {
-	Services  []string          `yaml:"services"`
-	Versions  []Version         `yaml:"versions"`
-	Runner    Runner            `yaml:"runner,omitempty"`
-	SecretEnv []string          `yaml:"secret_env,omitempty"`
-	Env       map[string]string `yaml:"env,omitempty"`
-	Defaults  Defaults          `yaml:"defaults,omitempty"`
-	Shards    int               `yaml:"shards,omitempty"`
-	Workers   int               `yaml:"workers,omitempty"`
-	Cases     []Case            `yaml:"cases"`
+	Services  []string  `yaml:"services"`
+	Versions  []Version `yaml:"versions"`
+	Runner    Runner    `yaml:"runner,omitempty"`
+	SecretEnv []string  `yaml:"secret_env,omitempty"`
+	// InheritEnv names the variables this pack's actions receive from the
+	// runner's environment, on top of the harness config's shared list.
+	InheritEnv []string          `yaml:"inherit_env,omitempty"`
+	Env        map[string]string `yaml:"env,omitempty"`
+	Defaults   Defaults          `yaml:"defaults,omitempty"`
+	Shards     int               `yaml:"shards,omitempty"`
+	Workers    int               `yaml:"workers,omitempty"`
+	Cases      []Case            `yaml:"cases"`
 }
 
 type CaseRef struct {
@@ -421,18 +424,13 @@ func Run(config Config) (Totals, error) {
 	if info, err := os.Stat(config.Emisar); err != nil || info.Mode()&0o111 == 0 {
 		return Totals{}, fmt.Errorf("emisar binary not found or executable at %s", config.Emisar)
 	}
-	staged, err := stageConfig(config.Config)
+	// Each pack stages its own copy of this config (runPack); the journal path
+	// is the same in every copy.
+	eventsPath, err := eventsPathFrom(config.Config)
 	if err != nil {
 		return Totals{}, err
 	}
-	// The staged copy is a 0600 runner config in a private temp directory. Only
-	// the test cleaned it up, so every real invocation left one behind.
-	defer os.RemoveAll(filepath.Dir(staged))
-	config.Config = staged
-	config.eventsPath, err = eventsPathFrom(config.Config)
-	if err != nil {
-		return Totals{}, err
-	}
+	config.eventsPath = eventsPath
 	if err := os.MkdirAll(config.Reports, 0o755); err != nil {
 		return Totals{}, err
 	}
@@ -495,8 +493,17 @@ func withDefaults(config Config) Config {
 	return config
 }
 
+// runnerConfigEnv hands a pack's steps the path of its staged runner config,
+// for fixtures that run the runner themselves.
+const runnerConfigEnv = "PACKTEST_RUNNER_CONFIG"
+
 // stageConfig copies the harness config somewhere this process owns and no one
-// else can write, and returns that path.
+// else can write, adds a plan's inherit_env names to its
+// execution.inherit_env, and returns that path.
+//
+// The shared file lists only what every pack's runner-tools container provides.
+// A pack's credential and endpoint names live in its own cases.yaml, so adding
+// one changes only that pack's files, and CI runs only that pack's rows.
 //
 // The runner refuses a config owned by neither root nor itself, and one that is
 // group- or world-writable, because whoever holds that write bit chooses the
@@ -510,10 +517,16 @@ func withDefaults(config Config) Config {
 // Copying rather than relaxing the check keeps the harness exercising the real
 // admission path, and works for a root and a nonroot runner_user alike, since
 // the copy is owned by whoever is running.
-func stageConfig(path string) (string, error) {
+func stageConfig(path string, inherit []string) (string, error) {
 	contents, err := os.ReadFile(path)
 	if err != nil {
 		return "", fmt.Errorf("read harness config %s: %w", path, err)
+	}
+	if len(inherit) > 0 {
+		contents, err = extendInheritEnv(contents, inherit)
+		if err != nil {
+			return "", fmt.Errorf("stage harness config %s: %w", path, err)
+		}
 	}
 	// A private 0700 directory rather than a fixed name in the shared /tmp, so
 	// nothing else can pre-create the path we are about to write.
@@ -526,6 +539,56 @@ func stageConfig(path string) (string, error) {
 		return "", fmt.Errorf("stage harness config at %s: %w", staged, err)
 	}
 	return staged, nil
+}
+
+// extendInheritEnv appends names missing from execution.inherit_env and keeps
+// every other setting as written. A config without that list is an error: the
+// staged copy would otherwise drop the names the plan asked for.
+func extendInheritEnv(contents []byte, names []string) ([]byte, error) {
+	var document yaml.Node
+	if err := yaml.Unmarshal(contents, &document); err != nil {
+		return nil, err
+	}
+	var top *yaml.Node
+	if document.Kind == yaml.DocumentNode && len(document.Content) == 1 {
+		top = document.Content[0]
+	}
+	list := yamlMappingValue(yamlMappingValue(top, "execution"), "inherit_env")
+	if list == nil || list.Kind != yaml.SequenceNode {
+		return nil, fmt.Errorf("no execution.inherit_env list to add %s to", strings.Join(names, ", "))
+	}
+	present := make(map[string]bool, len(list.Content)+len(names))
+	for _, item := range list.Content {
+		present[item.Value] = true
+	}
+	for _, name := range names {
+		if !present[name] {
+			list.Content = append(list.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: name})
+			present[name] = true
+		}
+	}
+	var out bytes.Buffer
+	encoder := yaml.NewEncoder(&out)
+	encoder.SetIndent(2)
+	if err := encoder.Encode(&document); err != nil {
+		return nil, err
+	}
+	if err := encoder.Close(); err != nil {
+		return nil, err
+	}
+	return out.Bytes(), nil
+}
+
+func yamlMappingValue(node *yaml.Node, key string) *yaml.Node {
+	if node == nil || node.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if node.Content[i].Value == key {
+			return node.Content[i+1]
+		}
+	}
+	return nil
 }
 
 // eventsPathFrom reads the audit journal path out of the harness config, which
@@ -597,6 +660,9 @@ func validatePlan(pack string, plan Plan, actions map[string]actionDefinition) e
 		return err
 	}
 	if err := validateSecretEnv(plan.SecretEnv, plan.Env); err != nil {
+		return err
+	}
+	if err := validateInheritEnv(plan.InheritEnv); err != nil {
 		return err
 	}
 	if len(plan.Services) == 0 {
@@ -833,6 +899,7 @@ var (
 	digestPattern  = regexp.MustCompile(`^@sha256:[a-f0-9]{64}$`)
 	caseIDPattern  = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,127}$`)
 	canaryPattern  = regexp.MustCompile(`packtest-canary-[A-Za-z0-9._-]+`)
+	envNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 	ipv4Pattern    = regexp.MustCompile(`(?:[0-9]{1,3}\.){3}[0-9]{1,3}`)
 )
 
@@ -879,6 +946,23 @@ func validateSecretEnv(keys []string, env map[string]string) error {
 			}
 			seenValues[canary] = key
 		}
+	}
+	return nil
+}
+
+// validateInheritEnv checks the names a plan adds to its runner's
+// execution.inherit_env. Which names are safe is the runner's call: it refuses
+// hijack names such as LD_PRELOAD and BASH_ENV when it loads the staged config.
+func validateInheritEnv(names []string) error {
+	seen := make(map[string]bool, len(names))
+	for i, name := range names {
+		if !envNamePattern.MatchString(name) {
+			return fmt.Errorf("inherit_env[%d] %q is not an environment variable name", i, name)
+		}
+		if seen[name] {
+			return fmt.Errorf("inherit_env lists %q twice", name)
+		}
+		seen[name] = true
 	}
 	return nil
 }
@@ -1055,6 +1139,17 @@ func runPack(config Config, ref PlanRef, output io.Writer) (Totals, error) {
 	if err := validatePlan(ref.Name, plan, actions); err != nil {
 		return Totals{}, err
 	}
+	// Every pack's actions run against a private copy of the harness config
+	// that adds the names this plan lists in inherit_env, so one pack's test
+	// inputs never reach another pack's actions. The copy is 0600 in a private
+	// temp directory; only the test cleaned it up, so every real invocation
+	// once left one behind.
+	staged, err := stageConfig(config.Config, plan.InheritEnv)
+	if err != nil {
+		return Totals{}, err
+	}
+	defer os.RemoveAll(filepath.Dir(staged))
+	config.Config = staged
 	tests := plan.Cases
 	if config.Case != "" {
 		tests = nil
@@ -1080,6 +1175,8 @@ func runPack(config Config, ref PlanRef, output io.Writer) (Totals, error) {
 			env = environment(env, version.Env)
 		}
 	}
+	// A fixture that runs the runner itself reads the same staged config.
+	env = environment(env, map[string]string{runnerConfigEnv: staged})
 	selected, err := SelectVersion(ref, versionName)
 	if err != nil {
 		return Totals{}, err

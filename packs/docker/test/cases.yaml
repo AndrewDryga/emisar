@@ -6,6 +6,7 @@
 # the runner. So every one of them is a real case now, driving a real daemon,
 # with a probe for what it actually changed.
 services: [docker-cli, docker-dind]
+inherit_env: [DOCKER_CONFIG, DOCKER_HOST]
 env:
   DOCKER_HOST: tcp://docker-dind:2375
   DOCKER_CONFIG: /opt/docker-fixture/config/enabled

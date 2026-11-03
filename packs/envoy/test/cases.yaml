@@ -3,6 +3,7 @@ versions:
   - version: v1.39.1
     digest: "@sha256:57e14a549d7bd43c8d3f6d03e8cfa653e037d4b38e133acd9b54f38c524401b4"
     default: true
+inherit_env: [ENVOY_ADMIN]
 env:
   ENVOY_ADMIN: "http://envoy:9901"
 defaults:

@@ -4,6 +4,12 @@ versions:
     digest: "@sha256:9e9fde4d32eedce0b661d9ab91e826b62dddf28e928c230ec55f1866cac66b01"
     default: true
 secret_env: [BUNNY_API_KEY, BUNNY_PURGE_URL]
+inherit_env:
+  - BUNNY_API_KEY
+  - BUNNY_CORE_API_BASE
+  - BUNNY_LOGGING_API_BASE
+  - BUNNY_ORIGIN_ERRORS_API_BASE
+  - BUNNY_PACKTEST
 env:
   BUNNY_API_KEY: packtest-canary-bunny-key-c8e41
   BUNNY_PURGE_URL: https://cdn.example.test/video/intro.mp4?token=packtest-canary-bunny-purge-token-6a21

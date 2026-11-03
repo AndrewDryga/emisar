@@ -3,6 +3,7 @@ versions:
   - version: v3.15.0
     digest: "@sha256:efd719c99d83b060d9daefdcf00360461adf279f45ef5391f8d111892118753e"
     default: true
+inherit_env: [PROM_URL]
 env:
   PROM_URL: "http://prometheus:9090"
 cases:

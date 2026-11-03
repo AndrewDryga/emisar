@@ -6,6 +6,7 @@ versions:
   - version: 11.4.7
     digest: "@sha256:7a71606ee6ff6a1173f13e4dc1ee27bd0169c09a74515149a9e0ac82994cfac7"
 secret_env: [SUPERTOKENS_API_KEY]
+inherit_env: [SUPERTOKENS_API_KEY, SUPERTOKENS_URL]
 env:
   SUPERTOKENS_API_KEY: packtest-canary-supertokens-4f2a9c1e
   SUPERTOKENS_URL: "http://supertokens:3567"

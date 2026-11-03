@@ -6,6 +6,7 @@ versions:
   - version: "1.10.5"
     digest: "@sha256:d52fdb89745d8309de690d53c29d6baec8867e920051eb50b2c7f7f85c127e43"
 secret_env: [NOMAD_PACKTEST_CANARY, NOMAD_NODE_PRELOAD_CANARY, NOMAD_NODE_RESPONSE_CANARY]
+inherit_env: [NOMAD_ADDR, NOMAD_TOKEN]
 env:
   NOMAD_ADDR: "http://nomad:4646"
   # The ACL management token every case authenticates with (the SUT bootstraps

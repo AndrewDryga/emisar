@@ -8,6 +8,7 @@ versions:
   - version: "16.15"
     digest: "@sha256:ca0bd484cb98bf4b24eb1010e73fb3fcbd6714d240fbc1a10eea5b7dbecb641d"
 secret_env: [PGPASSWORD]
+inherit_env: [PGDATABASE, PGHOST, PGPASSWORD, PGUSER]
 env:
   PGDATABASE: testdb
   PGHOST: postgres

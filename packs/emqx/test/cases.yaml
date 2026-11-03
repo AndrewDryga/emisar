@@ -6,6 +6,7 @@ versions:
     digest: "@sha256:5ecbf93d04e34aaf4096af074e93b773d0838c8ea668cfabdec7976b272d9606"
     default: true
 secret_env: [EMQX_API_KEY, EMQX_API_SECRET]
+inherit_env: [EMQX_API_KEY, EMQX_API_SECRET, EMQX_URL]
 env:
   EMQX_API_KEY: packtest-canary-emqx-key-3b7d
   EMQX_API_SECRET: packtest-canary-emqx-secret-9e1f

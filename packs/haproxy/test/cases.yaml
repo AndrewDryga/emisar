@@ -3,6 +3,7 @@ versions:
   - version: "3.4.5"
     digest: "@sha256:76928c0d6b39bdd5f1c15d519cf48c47a6aa18c1dc552f7af1c146d2aa003c14"
     default: true
+inherit_env: [HAPROXY_SOCK]
 env:
   HAPROXY_SOCK: /run/haproxy/admin.sock
 cases:
