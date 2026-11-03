@@ -30,7 +30,14 @@ run() {
   emisar --config "$scratch/config" action run net.whois_summary --arg "domain=$1" \
     --reason 'Verify bounded registration summary' >"$scratch/result" 2>"$scratch/err" || result_status=$?
   # Check all result channels, not just stdout; the outer harness checks events.
-  ! grep -Fq packtest-canary-rdap-contact-62c37 "$scratch/result" "$scratch/err"
+  # An explicit exit: under set -e, a negated grep never stops the script.
+  # finish prints both files on failure, so remove them to keep the canary out
+  # of the log.
+  if grep -Fq packtest-canary-rdap-contact-62c37 "$scratch/result" "$scratch/err"; then
+    echo "The RDAP response canary reached the action result or stderr for $1." >&2
+    rm -f "$scratch/result" "$scratch/err"
+    exit 1
+  fi
   count=$((count + 1))
 }
 success() {
