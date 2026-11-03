@@ -87,9 +87,9 @@ window.checkCodeTransition = () => {
 	if err := session.Navigate("/"); err != nil {
 		t.Fatal(err)
 	}
-	if err := chromedp.Run(session.Context,
-		chromedp.Poll("typeof window.checkCodeTransition === 'function'", nil),
-		chromedp.Evaluate("window.checkCodeTransition()", nil)); err != nil {
+	if err := chromedp.Do(session.Context,
+		chromedp.Poll[chromedp.Void]("typeof window.checkCodeTransition === 'function'"),
+		chromedp.Evaluate[chromedp.Void]("window.checkCodeTransition()")); err != nil {
 		t.Fatal(err)
 	}
 }

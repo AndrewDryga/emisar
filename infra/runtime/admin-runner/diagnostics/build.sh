@@ -95,7 +95,7 @@ done
 # from the Compose source archive.
 cp /compose-source-build/GO-LICENSE /bundle/compose/GO-LICENSE
 diagnostics_record_origin /bundle/compose/GO-LICENSE compiler-image \
-  golang:1.27.3-alpine3.24@sha256:d530cf60723abf1ffae0cd16bb546b379ec0550d2f3815e5b16ed69dbc00fba4 \
+  golang:1.27.3-alpine3.24@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb \
   $'stdlib\tv1.27.3\tall\tgolang/go\tgo1.27.3'
 # Retain all signed build dependencies honestly, separately from shipped bytes.
 dpkg-query -W -f='${db:Status-Abbrev}\t${Package}\t${Version}\t${Architecture}\t${source:Package}\t${source:Version}\n' | \

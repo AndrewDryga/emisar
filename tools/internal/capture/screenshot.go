@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 )
@@ -23,8 +24,11 @@ import (
 // to the front first: Chrome composites no frames for a tab it considers
 // hidden, and a capture of such a tab never returns (see browser.FullScreenshot).
 func Screenshot(ctx context.Context, outDir, name string) error {
-	var buffer []byte
-	if err := chromedp.Run(ctx, page.BringToFront(), chromedp.FullScreenshot(&buffer, 90)); err != nil {
+	if _, err := chromedp.Call(ctx, page.BringToFront, cdp.Empty{}); err != nil {
+		return err
+	}
+	buffer, err := chromedp.Run(ctx, chromedp.FullScreenshot(90))
+	if err != nil {
 		return err
 	}
 	path := filepath.Join(outDir, name+".png")
@@ -42,9 +46,9 @@ func Screenshot(ctx context.Context, outDir, name string) error {
 // selector. Provider guides use it for the instruction panel so account chrome,
 // plan badges, and other tenant-specific controls never enter a public asset.
 func ScreenshotElement(ctx context.Context, outDir, name, selector string) error {
-	var buffer []byte
-	if err := chromedp.Run(ctx, chromedp.Screenshot(selector, &buffer, chromedp.ByQuery)); err != nil {
-		return err
+	buffer, actionErr := chromedp.Run(ctx, chromedp.Screenshot(chromedp.CSS(selector)))
+	if actionErr != nil {
+		return actionErr
 	}
 	path := filepath.Join(outDir, name+".png")
 	// 0600 to match Screenshot: a captured control from a live IdP console
@@ -68,7 +72,5 @@ func ClickRadio(ctx context.Context, label string) (bool, error) {
   radio.click();
   return true;
 })()`, label)
-	var clicked bool
-	err := chromedp.Run(ctx, chromedp.Evaluate(script, &clicked))
-	return clicked, err
+	return chromedp.Run(ctx, chromedp.Evaluate[bool](script))
 }

@@ -80,9 +80,9 @@ window.checkTooltip = () => {
 	if err := session.Navigate("/"); err != nil {
 		t.Fatal(err)
 	}
-	if err := chromedp.Run(session.Context,
-		chromedp.Poll("typeof window.checkTooltip === 'function'", nil),
-		chromedp.Evaluate("window.checkTooltip()", nil)); err != nil {
+	if err := chromedp.Do(session.Context,
+		chromedp.Poll[chromedp.Void]("typeof window.checkTooltip === 'function'"),
+		chromedp.Evaluate[chromedp.Void]("window.checkTooltip()")); err != nil {
 		t.Fatal(err)
 	}
 }

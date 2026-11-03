@@ -95,7 +95,7 @@ assert(document.querySelector('#empty').textContent === 'Empty', 'empty content 
 			if err := session.Navigate("/"); err != nil {
 				t.Fatal(err)
 			}
-			if err := chromedp.Run(session.Context, chromedp.Poll("window.copyReady === true", nil)); err != nil {
+			if err := chromedp.Do(session.Context, chromedp.Poll[chromedp.Void]("window.copyReady === true")); err != nil {
 				t.Fatal(err)
 			}
 			script := `(async () => {
@@ -103,8 +103,8 @@ const assert = (ok, message) => { if (!ok) throw new Error(message) };
 const one = document.querySelector('#one'), two = document.querySelector('#two');
 const click = async element => { element.click(); await Promise.resolve(); await Promise.resolve(); };
 ` + test.script + `})()`
-			if err := chromedp.Run(session.Context, chromedp.Evaluate(script, nil,
-				func(p *runtime.EvaluateParams) *runtime.EvaluateParams { return p.WithAwaitPromise(true) })); err != nil {
+			if err := chromedp.Do(session.Context, chromedp.Evaluate[chromedp.Void](script,
+				func(p *runtime.EvaluateParams) { p.AwaitPromise = new(true) })); err != nil {
 				t.Fatal(err)
 			}
 		})

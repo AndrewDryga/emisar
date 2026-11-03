@@ -7,9 +7,9 @@
 # current security patch because CI and release builds use go-version-file.
 # Go has no asdf plugin by default — run `asdf plugin add golang` once, then install.
 erlang 29.1.2
-elixir 1.20.4-otp-29
+elixir 1.20.5-otp-29
 golang 1.27.3
 # infra/ — Google Cloud DNS in Terraform; run `asdf plugin add terraform` once.
 terraform 1.17.1
 # infra/ — the canonical gate and CI use this same linter release.
-tflint 0.64.0
+tflint 0.65.0

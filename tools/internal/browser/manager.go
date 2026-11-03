@@ -19,7 +19,9 @@ import (
 	"time"
 
 	"github.com/chromedp/cdproto/browser"
+	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/chromedp"
+	"github.com/chromedp/chromedp/remote"
 )
 
 type State struct {
@@ -296,13 +298,13 @@ func (m *Manager) Stop(ctx context.Context) error {
 		}
 		return err
 	}
-	allocator, cancelAllocator := chromedp.NewRemoteAllocator(ctx, state.WSEndpoint)
+	allocator, cancelAllocator := remote.NewAllocator(ctx, state.WSEndpoint)
 	defer cancelAllocator()
 	browserContext, cancelBrowser := chromedp.NewContext(allocator)
 	defer cancelBrowser()
-	if err := chromedp.Run(browserContext, chromedp.ActionFunc(func(actionContext context.Context) error {
-		return browser.Close().Do(actionContext)
-	})); err != nil && endpointAlive(state.WSEndpoint) {
+	// A remote allocator owns only its tab. Send the explicit browser close
+	// through that target, as before; Cancel would leave the daemon running.
+	if _, err := chromedp.Call(browserContext, browser.Close, cdp.Empty{}); err != nil && endpointAlive(state.WSEndpoint) {
 		return err
 	}
 	for range 50 {

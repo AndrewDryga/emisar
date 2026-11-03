@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chromedp/cdproto/cdp"
 	cdpruntime "github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 )
@@ -180,7 +181,7 @@ func TestReadyFailureDiagnostics(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer session.Close()
-	if err := chromedp.Run(session.Context, chromedp.Evaluate(`document.body.innerHTML='<main data-phx-main></main>'`, nil)); err != nil {
+	if err := chromedp.Do(session.Context, chromedp.Evaluate[chromedp.Void](`document.body.innerHTML='<main data-phx-main></main>'`)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -198,23 +199,32 @@ func TestReadyFailureDiagnostics(t *testing.T) {
 		entered := make(chan struct{}, 1)
 		listener, stopListener := context.WithCancel(session.Context)
 		defer stopListener()
-		chromedp.ListenTarget(listener, func(event any) {
-			if called, ok := event.(*cdpruntime.EventConsoleAPICalled); ok && len(called.Args) == 1 && string(called.Args[0].Value) == `"diagnostic-stalled"` {
-				select {
-				case entered <- struct{}{}:
-				default:
+		events := chromedp.Events(listener, cdpruntime.ConsoleAPICalled)
+		go func() {
+			for called, err := range events {
+				if err != nil {
+					return
+				}
+				if len(called.Args) == 1 && string(called.Args[0].Value) == `"diagnostic-stalled"` {
+					select {
+					case entered <- struct{}{}:
+					default:
+					}
 				}
 			}
-		})
+		}()
 		// Polling returns before reading images on a disconnected root; only the
 		// failure diagnostic enters this getter and receives no CDP reply.
-		if err := chromedp.Run(session.Context, chromedp.Evaluate(`Object.defineProperty(document,'images',{configurable:true,get(){console.log('diagnostic-stalled');for(;;){}}})`, nil)); err != nil {
+		if err := chromedp.Do(session.Context, chromedp.Evaluate[chromedp.Void](`Object.defineProperty(document,'images',{configurable:true,get(){console.log('diagnostic-stalled');for(;;){}}})`)); err != nil {
 			t.Fatal(err)
 		}
 		defer func() {
 			cleanup, cancel := context.WithTimeout(session.Context, 2*time.Second)
 			defer cancel()
-			if err := chromedp.Run(cleanup, cdpruntime.TerminateExecution(), chromedp.Evaluate(`delete document.images`, nil)); err != nil {
+			if _, err := chromedp.Call(cleanup, cdpruntime.TerminateExecution, cdp.Empty{}); err != nil {
+				t.Errorf("terminate stalled diagnostic: %v", err)
+			}
+			if err := chromedp.Do(cleanup, chromedp.Evaluate[chromedp.Void](`delete document.images`)); err != nil {
 				t.Errorf("terminate stalled diagnostic: %v", err)
 			}
 		}()
@@ -234,7 +244,7 @@ func TestReadyFailureDiagnostics(t *testing.T) {
 		}
 		select {
 		case <-entered:
-		default:
+		case <-time.After(time.Second):
 			t.Error("fixture did not enter the stalled diagnostic")
 		}
 		if outer.Err() != nil || session.Context.Err() != nil {
@@ -256,7 +266,7 @@ func TestReadyFailureDiagnostics(t *testing.T) {
 		}
 	})
 
-	if err := chromedp.Run(session.Context, chromedp.Evaluate(`document.querySelector('main').classList.add('phx-connected')`, nil)); err != nil {
+	if err := chromedp.Do(session.Context, chromedp.Evaluate[chromedp.Void](`document.querySelector('main').classList.add('phx-connected')`)); err != nil {
 		t.Fatal(err)
 	}
 	if err := session.Ready(time.Second, ""); err != nil {
@@ -295,9 +305,10 @@ func TestShotRunsClicksAndFillsInOrderAndNotifiesTheForm(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	var edits [][]string
-	if err := chromedp.Run(session.Context, chromedp.Evaluate("window.edits", &edits)); err != nil {
-		t.Fatal(err)
+
+	edits, actionErr := chromedp.Run(session.Context, chromedp.Evaluate[[][]string]("window.edits"))
+	if actionErr != nil {
+		t.Fatal(actionErr)
 	}
 	want := [][]string{{"input", "path", path}, {"change", "path", path}, {"blur", "path", path}, {"input", "empty", ""}, {"change", "empty", ""}, {"blur", "empty", ""}, {"click", "done", path}}
 	if !slices.EqualFunc(edits, want, slices.Equal[[]string]) {
@@ -442,14 +453,24 @@ func TestRemoteSessionCanCreateIsolatedContext(t *testing.T) {
 	if err := session.Navigate("/"); err != nil {
 		t.Fatal(err)
 	}
-	var cookies string
-	if err := chromedp.Run(session.Context, chromedp.Evaluate("document.cookie", &cookies)); err != nil {
-		t.Fatal(err)
+
+	cookies, actionErr1 := chromedp.Run(session.Context, chromedp.Evaluate[string]("document.cookie"))
+	if actionErr1 != nil {
+		t.Fatal(actionErr1)
 	}
 	if strings.Contains(cookies, "auth=yes") {
 		t.Fatal("isolated session inherited the persistent profile cookie")
 	}
 	session.Close()
+	if _, err := manager.State(); err != nil {
+		t.Fatalf("closing sessions stopped the daemon: %v", err)
+	}
+	if err := manager.Stop(context.Background()); err != nil {
+		t.Fatalf("stopping remote daemon: %v", err)
+	}
+	if _, err := manager.State(); err == nil {
+		t.Fatal("daemon remained live after Stop")
+	}
 }
 
 // countProcessesMentioning counts live processes whose cmdline contains needle. /proc scan, so

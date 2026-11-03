@@ -59,7 +59,7 @@ services:
     # so a republished tag can't silently change what CI's signing-e2e/sso-e2e run.
     # Refresh (tag bump or security patch) with:
     #   docker buildx imagetools inspect postgres:18.6-alpine --format '{{.Manifest.Digest}}'
-    image: postgres:18.6-alpine@sha256:83148c0bc09eac4d598b70a61e1404d0212b76c95c504bfd6c81a4c59ec91792
+    image: postgres:18.6-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -90,7 +90,7 @@ services:
     # Pinned to the exact multi-arch index so a republished tag can't change the
     # SSO e2e stack. Refresh with:
     #   docker buildx imagetools inspect quay.io/keycloak/keycloak:26.8.1 --format '{{.Manifest.Digest}}'
-    image: quay.io/keycloak/keycloak:26.8.1@sha256:79c623a22abacf3fe6c00a5fb30f5b7843d717b234033b80995891c06116d244
+    image: quay.io/keycloak/keycloak:26.8.1@sha256:a78d6b79572168cb25886b80a8b5b8d4ed4390743e3eecb810538683e209dd6b
     # Network SIDECAR of the portal: shares the portal's namespace (loopback +
     # published ports) so the portal reaches Keycloak at the SAME localhost:8443
     # the host browser uses — making the OIDC issuer one consistent localhost

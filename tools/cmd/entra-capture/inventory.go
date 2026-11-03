@@ -53,22 +53,32 @@ type graph struct {
 func openGraph(ctx context.Context) (*graph, error) {
 	var mu sync.Mutex
 	token := ""
-	chromedp.ListenTarget(ctx, func(ev any) {
-		request, ok := ev.(*network.EventRequestWillBeSent)
-		if !ok || !strings.Contains(request.Request.URL, "graph.microsoft.com") {
-			return
-		}
-		for name, value := range request.Request.Headers {
-			text, _ := value.(string)
-			if strings.EqualFold(name, "authorization") && bearer.MatchString(text) {
-				mu.Lock()
-				token = text
-				mu.Unlock()
+	listener, stopListener := context.WithCancel(ctx)
+	defer stopListener()
+	requests := chromedp.Events(listener, network.RequestWillBeSent)
+	go func() {
+		for request, err := range requests {
+			if err != nil {
+				return
+			}
+			if !strings.Contains(request.Request.URL, "graph.microsoft.com") {
+				continue
+			}
+			for name, value := range request.Request.Headers {
+				text, _ := value.(string)
+				if strings.EqualFold(name, "authorization") && bearer.MatchString(text) {
+					mu.Lock()
+					token = text
+					mu.Unlock()
+				}
 			}
 		}
-	})
-	if err := chromedp.Run(ctx,
-		network.Enable(),
+	}()
+	if _, err := chromedp.Call(ctx, network.Enable, network.EnableParams{}); err != nil {
+		return nil, err
+	}
+
+	if err := chromedp.Do(ctx,
 		chromedp.Navigate("https://entra.microsoft.com/#view/Microsoft_AAD_IAM/StartboardApplicationsMenuBlade/~/AppAppsPreview"),
 	); err != nil {
 		return nil, err
@@ -80,7 +90,7 @@ func openGraph(ctx context.Context) (*graph, error) {
 		if found != "" {
 			return &graph{token: found, client: &http.Client{Timeout: 60 * time.Second}}, nil
 		}
-		if err := chromedp.Run(ctx, chromedp.Sleep(2*time.Second)); err != nil {
+		if err := chromedp.Do(ctx, chromedp.Sleep(2*time.Second)); err != nil {
 			return nil, err
 		}
 	}
@@ -229,7 +239,7 @@ func appVerdict(row graphRow, env map[string]string) string {
 // auditTenant lists every app registration and enterprise application with a
 // verdict, and removes the ones that are ours when remove is set.
 func auditTenant(ctx context.Context, env map[string]string, remove bool) error {
-	if err := chromedp.Run(ctx, chromedp.EmulateViewport(1520, 950)); err != nil {
+	if err := chromedp.Do(ctx, chromedp.EmulateViewport(1520, 950)); err != nil {
 		return err
 	}
 	g, err := openGraph(ctx)

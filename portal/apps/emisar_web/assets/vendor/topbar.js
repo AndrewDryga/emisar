@@ -1,38 +1,11 @@
 /**
  * @license MIT
- * topbar 2.0.0, 2023-02-04
- * https://buunguyen.github.io/topbar
- * Copyright (c) 2021 Buu Nguyen
+ * topbar 3.0.1
+ * http://buunguyen.github.io/topbar
+ * Copyright (c) 2026 Buu Nguyen
  */
 (function (window, document) {
   "use strict";
-
-  // https://gist.github.com/paulirish/1579671
-  (function () {
-    var lastTime = 0;
-    var vendors = ["ms", "moz", "webkit", "o"];
-    for (var x = 0; x < vendors.length && !window.requestAnimationFrame; ++x) {
-      window.requestAnimationFrame =
-        window[vendors[x] + "RequestAnimationFrame"];
-      window.cancelAnimationFrame =
-        window[vendors[x] + "CancelAnimationFrame"] ||
-        window[vendors[x] + "CancelRequestAnimationFrame"];
-    }
-    if (!window.requestAnimationFrame)
-      window.requestAnimationFrame = function (callback, element) {
-        var currTime = new Date().getTime();
-        var timeToCall = Math.max(0, 16 - (currTime - lastTime));
-        var id = window.setTimeout(function () {
-          callback(currTime + timeToCall);
-        }, timeToCall);
-        lastTime = currTime + timeToCall;
-        return id;
-      };
-    if (!window.cancelAnimationFrame)
-      window.cancelAnimationFrame = function (id) {
-        clearTimeout(id);
-      };
-  })();
 
   var canvas,
     currentProgress,
@@ -82,13 +55,13 @@
     },
     createCanvas = function () {
       canvas = document.createElement("canvas");
+      canvas.role = "presentation";
       var style = canvas.style;
       style.position = "fixed";
       style.top = style.left = style.right = style.margin = style.padding = 0;
       style.zIndex = 100001;
-      style.display = "none";
+      canvas.hidden = true;
       if (options.className) canvas.classList.add(options.className);
-      document.body.appendChild(canvas);
       addEvent(window, "resize", repaint);
     },
     topbar = {
@@ -101,12 +74,13 @@
         if (delay) {
           if (delayTimerId) return;
           delayTimerId = setTimeout(() => topbar.show(), delay);
-        } else  {
+        } else {
           showing = true;
           if (fadeTimerId !== null) window.cancelAnimationFrame(fadeTimerId);
           if (!canvas) createCanvas();
+          if (!canvas.parentElement) document.body.appendChild(canvas);
           canvas.style.opacity = 1;
-          canvas.style.display = "block";
+          canvas.hidden = false;
           topbar.progress(0);
           if (options.autoRun) {
             (function loop() {
@@ -143,7 +117,7 @@
           if (topbar.progress("+.1") >= 1) {
             canvas.style.opacity -= 0.05;
             if (canvas.style.opacity <= 0.05) {
-              canvas.style.display = "none";
+              canvas.hidden = true;
               fadeTimerId = null;
               return;
             }

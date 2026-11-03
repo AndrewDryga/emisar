@@ -54,7 +54,7 @@ func diagnosticsFixture(t *testing.T) string {
 		case "cli-plugins/docker-compose", "compose/LICENSE", "compose/NOTICE":
 			kind, source, owner = "github-source", "https://codeload.github.com/docker/compose/tar.gz/5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de", "docker-compose\t5.5.1\tamd64\tdocker/compose\tv5.5.1"
 		case "compose/GO-LICENSE":
-			kind, source, owner = "compiler-image", "golang:1.27.3-alpine3.24@sha256:d530cf60723abf1ffae0cd16bb546b379ec0550d2f3815e5b16ed69dbc00fba4", "stdlib\tv1.27.3\tall\tgolang/go\tgo1.27.3"
+			kind, source, owner = "compiler-image", "golang:1.27.3-alpine3.24@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb", "stdlib\tv1.27.3\tall\tgolang/go\tgo1.27.3"
 		}
 		origins = append(origins, "./"+path+"\t"+kind+"\t"+source+"\t"+owner+"\n")
 	}
@@ -84,7 +84,7 @@ func diagnosticsFixture(t *testing.T) string {
 	build := fmt.Sprintf(`source_url=https://codeload.github.com/docker/compose/tar.gz/5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de
 source_sha256=c72877db37172d8ee55f565e4fed20067af89015e986b190768fd4ee621025f2
 source_commit=5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de
-toolchain_image=golang:1.27.3-alpine3.24@sha256:d530cf60723abf1ffae0cd16bb546b379ec0550d2f3815e5b16ed69dbc00fba4
+toolchain_image=golang:1.27.3-alpine3.24@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb
 toolchain_version=go1.27.3
 go_mod_sha256=cdf5424bec2a7c75fa955a56efc88fb1731db5cca019cf63d4a1980a218e0868
 go_sum_sha256=8e96090883306abcd19ed57025a3e108b0b1cf6a6dff220c73d1aa77bb408a10

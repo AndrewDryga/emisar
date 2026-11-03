@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 )
@@ -60,9 +61,10 @@ func (s *Session) MarkAnchor(anchor Anchor, attribute string) error {
  if(!el&&t.Heading)el=[...document.querySelectorAll('h1,h2,h3,h4,div,span,p,label,legend')].filter(n=>visible(n)&&n.textContent.trim()===t.Heading).sort((a,b)=>a.querySelectorAll('*').length-b.querySelectorAll('*').length)[0]||null;
  if(!el)return false;if(t.Climb)el=el.closest(t.Climb)||el;if(!visible(el))return false;el.setAttribute(attribute,'1');return true;
 })(` + string(encoded) + `,` + string(attributeJSON) + `)`
-	var marked bool
-	if err := chromedp.Run(s.Context, chromedp.Evaluate(script, &marked)); err != nil {
-		return err
+
+	marked, actionErr := chromedp.Run(s.Context, chromedp.Evaluate[bool](script))
+	if actionErr != nil {
+		return actionErr
 	}
 	if !marked {
 		return fmt.Errorf("anchor not found or visible")
@@ -86,8 +88,11 @@ func writeImage(path string, data []byte) error {
 func (s *Session) FullScreenshot(path string) error {
 	ctx, cancel := context.WithTimeout(s.Context, 20*time.Second)
 	defer cancel()
-	var image []byte
-	if err := chromedp.Run(ctx, page.BringToFront(), chromedp.FullScreenshot(&image, 100)); err != nil {
+	if _, err := chromedp.Call(ctx, page.BringToFront, cdp.Empty{}); err != nil {
+		return err
+	}
+	image, err := chromedp.Run(ctx, chromedp.FullScreenshot(100))
+	if err != nil {
 		return err
 	}
 	return writeImage(path, image)
@@ -96,8 +101,11 @@ func (s *Session) FullScreenshot(path string) error {
 func (s *Session) ViewportScreenshot(path string) error {
 	ctx, cancel := context.WithTimeout(s.Context, 20*time.Second)
 	defer cancel()
-	var image []byte
-	if err := chromedp.Run(ctx, page.BringToFront(), chromedp.CaptureScreenshot(&image)); err != nil {
+	if _, err := chromedp.Call(ctx, page.BringToFront, cdp.Empty{}); err != nil {
+		return err
+	}
+	image, err := chromedp.Run(ctx, chromedp.CaptureScreenshot())
+	if err != nil {
 		return err
 	}
 	return writeImage(path, image)
@@ -106,8 +114,11 @@ func (s *Session) ViewportScreenshot(path string) error {
 func (s *Session) ElementScreenshot(selector, path string, scale float64) error {
 	ctx, cancel := context.WithTimeout(s.Context, 20*time.Second)
 	defer cancel()
-	var image []byte
-	if err := chromedp.Run(ctx, page.BringToFront(), chromedp.ScreenshotScale(selector, scale, &image, chromedp.ByQuery)); err != nil {
+	if _, err := chromedp.Call(ctx, page.BringToFront, cdp.Empty{}); err != nil {
+		return err
+	}
+	image, err := chromedp.Run(ctx, chromedp.ScreenshotScale(chromedp.CSS(selector), scale))
+	if err != nil {
 		return err
 	}
 	return writeImage(path, image)
@@ -116,9 +127,7 @@ func (s *Session) ElementScreenshot(selector, path string, scale float64) error 
 func (s *Session) CurrentURL() (string, error) {
 	ctx, cancel := context.WithTimeout(s.Context, 5*time.Second)
 	defer cancel()
-	var current string
-	err := chromedp.Run(ctx, chromedp.Location(&current))
-	return current, err
+	return chromedp.Run(ctx, chromedp.Location())
 }
 
 // A step finds its element from page JavaScript, like the docs captures:
@@ -144,7 +153,9 @@ func (s *Session) runStep(step Step) error {
 	var center []float64
 	for {
 		center = nil
-		if err := chromedp.Run(ctx, chromedp.Evaluate(stepTargetScript+"("+string(encoded)+")", &center)); err == nil && len(center) == 2 {
+		var actionErr1 error
+		center, actionErr1 = chromedp.Run(ctx, chromedp.Evaluate[[]float64](stepTargetScript+"("+string(encoded)+")"))
+		if actionErr1 == nil && len(center) == 2 {
 			break
 		}
 		select {
@@ -156,10 +167,10 @@ func (s *Session) runStep(step Step) error {
 	if step.Fill == nil {
 		// A real mouse click at the element's center, so focus moves the way a
 		// person's click moves it.
-		return chromedp.Run(s.Context, chromedp.MouseClickXY(center[0], center[1]))
+		return chromedp.Do(s.Context, chromedp.MouseClickXY(center[0], center[1]))
 	}
 	field, _ := json.Marshal(step.Fill)
-	return chromedp.Run(s.Context, chromedp.Evaluate(fillScript+"("+string(field)+")", nil))
+	return chromedp.Do(s.Context, chromedp.Evaluate[chromedp.Void](fillScript+"("+string(field)+")"))
 }
 
 // signInSlug names the workspace a capture signs in to: the one whose sign-in page the
@@ -207,7 +218,7 @@ func (s *Session) Shot(options ShotOptions) ([]string, error) {
 	// A tab left behind the sign-in tab paints no frames, so requestAnimationFrame
 	// never fires and a JS.show reveal (a dialog opened by a step) stays hidden.
 	if len(options.Steps) > 0 {
-		if err := chromedp.Run(s.Context, page.BringToFront()); err != nil {
+		if _, err := chromedp.Call(s.Context, page.BringToFront, cdp.Empty{}); err != nil {
 			return nil, err
 		}
 	}

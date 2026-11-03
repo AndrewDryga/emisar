@@ -45,7 +45,7 @@ defmodule EmisarWeb.MixProject do
     [
       {:phoenix, "~> 1.8"},
       {:phoenix_ecto, "~> 4.7"},
-      {:phoenix_html, "~> 4.3"},
+      {:phoenix_html, "~> 4.4"},
       {:phoenix_live_reload, "~> 1.6", only: :dev},
       {:phoenix_live_view, "~> 1.2"},
       # Phoenix.LiveViewTest's HTML parser. Floki was the previous one

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/fetch"
 	cdpinput "github.com/chromedp/cdproto/input"
 	"github.com/chromedp/cdproto/page"
@@ -38,8 +39,8 @@ func (p *paddleTargetSet) Refresh() (int, error) {
 	listContext, cancelList := context.WithTimeout(p.session.Context, 5*time.Second)
 	defer cancelList()
 	var lastError error
-	err := chromedp.Run(listContext, chromedp.ActionFunc(func(actionContext context.Context) error {
-		tree, treeErr := page.GetFrameTree().Do(actionContext)
+	err := chromedp.Do(listContext, chromedp.Func(func(actionContext context.Context, _ *chromedp.Target) error {
+		tree, treeErr := chromedp.Call(actionContext, page.GetFrameTree, cdp.Empty{})
 		if treeErr != nil {
 			return treeErr
 		}
@@ -47,20 +48,18 @@ func (p *paddleTargetSet) Refresh() (int, error) {
 		visit = func(frame *page.FrameTree) {
 			if isPaddleURL(frame.Frame.URL) {
 				key := string(frame.Frame.ID)
-				executionContext, worldErr := page.CreateIsolatedWorld(frame.Frame.ID).
-					WithWorldName("emisar-paddle-e2e").
-					Do(actionContext)
+				executionContext, worldErr := chromedp.Call(actionContext, page.CreateIsolatedWorld, page.CreateIsolatedWorldParams{FrameID: frame.Frame.ID, WorldName: "emisar-paddle-e2e"})
 				if worldErr != nil {
 					lastError = worldErr
 				} else {
-					p.contexts[key] = executionContext
+					p.contexts[key] = executionContext.ExecutionContextID
 				}
 			}
 			for _, child := range frame.ChildFrames {
 				visit(child)
 			}
 		}
-		visit(tree)
+		visit(tree.FrameTree)
 		return nil
 	}))
 	if err != nil {
@@ -102,37 +101,30 @@ func (p *paddleTargetSet) run(action func(context.Context, cdpruntime.ExecutionC
 
 func evaluatePaddleBool(ctx context.Context, executionContext cdpruntime.ExecutionContextID, script string) (bool, error) {
 	var value bool
-	err := chromedp.Run(ctx, chromedp.ActionFunc(func(actionContext context.Context) error {
-		result, exception, err := cdpruntime.Evaluate(script).
-			WithContextID(executionContext).
-			WithReturnByValue(true).
-			WithUserGesture(true).
-			Do(actionContext)
+	err := chromedp.Do(ctx, chromedp.Func(func(actionContext context.Context, _ *chromedp.Target) error {
+		result, err := chromedp.Call(actionContext, cdpruntime.Evaluate, cdpruntime.EvaluateParams{Expression: script, ContextID: executionContext, ReturnByValue: new(true), UserGesture: new(true)})
 		if err != nil {
 			return err
 		}
-		if exception != nil {
-			return fmt.Errorf("evaluating the Paddle frame failed: %s", exception.Text)
+		if result.ExceptionDetails != nil {
+			return fmt.Errorf("evaluating the Paddle frame failed: %s", result.ExceptionDetails.Text)
 		}
-		return json.Unmarshal([]byte(result.Value), &value)
+		return json.Unmarshal([]byte(result.Result.Value), &value)
 	}))
 	return value, err
 }
 
 func evaluatePaddleString(ctx context.Context, executionContext cdpruntime.ExecutionContextID, script string) (string, error) {
 	var value string
-	err := chromedp.Run(ctx, chromedp.ActionFunc(func(actionContext context.Context) error {
-		result, exception, err := cdpruntime.Evaluate(script).
-			WithContextID(executionContext).
-			WithReturnByValue(true).
-			Do(actionContext)
+	err := chromedp.Do(ctx, chromedp.Func(func(actionContext context.Context, _ *chromedp.Target) error {
+		result, err := chromedp.Call(actionContext, cdpruntime.Evaluate, cdpruntime.EvaluateParams{Expression: script, ContextID: executionContext, ReturnByValue: new(true)})
 		if err != nil {
 			return err
 		}
-		if exception != nil {
-			return fmt.Errorf("evaluating the Paddle frame failed: %s", exception.Text)
+		if result.ExceptionDetails != nil {
+			return fmt.Errorf("evaluating the Paddle frame failed: %s", result.ExceptionDetails.Text)
 		}
-		return json.Unmarshal([]byte(result.Value), &value)
+		return json.Unmarshal([]byte(result.Result.Value), &value)
 	}))
 	return value, err
 }
@@ -162,8 +154,9 @@ func fillPaddle(targets *paddleTargetSet, selectors []string, value, label strin
 			if focusErr != nil || !focused {
 				return false, focusErr
 			}
-			if insertErr := chromedp.Run(frameContext, chromedp.ActionFunc(func(actionContext context.Context) error {
-				return cdpinput.InsertText(value).Do(actionContext)
+			if insertErr := chromedp.Do(frameContext, chromedp.Func(func(actionContext context.Context, _ *chromedp.Target) error {
+				_, err := chromedp.Call(actionContext, cdpinput.InsertText, cdpinput.InsertTextParams{Text: value})
+				return err
 			})); insertErr != nil {
 				return false, insertErr
 			}
@@ -260,8 +253,9 @@ func waitURL(session *Session, contains string, attempts int, delay time.Duratio
 		if err == nil && strings.Contains(current, contains) {
 			return current, nil
 		}
-		var flash string
-		if evaluateErr := chromedp.Run(session.Context, chromedp.Evaluate(`document.querySelector('#flash-error')?.innerText || ''`, &flash)); evaluateErr == nil && strings.TrimSpace(flash) != "" {
+
+		flash, actionErr1 := chromedp.Run(session.Context, chromedp.Evaluate[string](`document.querySelector('#flash-error')?.innerText || ''`))
+		if actionErr1 == nil && strings.TrimSpace(flash) != "" {
 			return current, fmt.Errorf("checkout rejected: %s", strings.Join(strings.Fields(flash), " "))
 		}
 		time.Sleep(delay)
@@ -314,28 +308,24 @@ func PaddlePurchase(ctx context.Context, manager *Manager, config PaddleConfig) 
 	if err := session.Viewport(1440, 1024, 1, false); err != nil {
 		return err
 	}
-	chromedp.ListenTarget(session.Context, func(event any) {
-		paused, ok := event.(*fetch.EventRequestPaused)
-		if !ok {
-			return
+	requests := chromedp.Events(session.Context, fetch.RequestPaused)
+	go func() {
+		for paused, err := range requests {
+			if err != nil {
+				return
+			}
+			if strings.HasPrefix(paused.Request.URL, "https://localhost:4000/") {
+				location := strings.Replace(paused.Request.URL, "https://", "http://", 1)
+				_, _ = chromedp.Call(session.Context, fetch.FulfillRequest, fetch.FulfillRequestParams{RequestID: paused.RequestID, ResponseCode: 302, ResponseHeaders: []*fetch.HeaderEntry{{Name: "Location", Value: location}}})
+			} else {
+				_, _ = chromedp.Call(session.Context, fetch.ContinueRequest, fetch.ContinueRequestParams{RequestID: paused.RequestID})
+			}
 		}
-		go func() {
-			_ = chromedp.Run(session.Context, chromedp.ActionFunc(func(actionContext context.Context) error {
-				if strings.HasPrefix(paused.Request.URL, "https://localhost:4000/") {
-					location := strings.Replace(paused.Request.URL, "https://", "http://", 1)
-					return fetch.FulfillRequest(paused.RequestID, 302).
-						WithResponseHeaders([]*fetch.HeaderEntry{{Name: "Location", Value: location}}).
-						Do(actionContext)
-				}
-				return fetch.ContinueRequest(paused.RequestID).Do(actionContext)
-			}))
-		}()
-	})
-	if err := chromedp.Run(session.Context, chromedp.ActionFunc(func(actionContext context.Context) error {
-		return fetch.Enable().Do(actionContext)
-	})); err != nil {
+	}()
+	if _, err := chromedp.Call(session.Context, fetch.Enable, fetch.EnableParams{}); err != nil {
 		return err
 	}
+
 	if err := session.Login("demo", config.Email); err != nil {
 		return err
 	}
@@ -346,9 +336,10 @@ func PaddlePurchase(ctx context.Context, manager *Manager, config PaddleConfig) 
 	if err := session.ViewportScreenshot(filepath.Join(config.Out, "e2e-1-billing.png")); err != nil {
 		return err
 	}
-	var clicked bool
-	if err := chromedp.Run(session.Context, chromedp.Evaluate(`(()=>{const b=document.querySelector("button[phx-click='upgrade'][phx-value-plan='team']");if(b)b.click();return !!b})()`, &clicked)); err != nil {
-		return err
+
+	clicked, actionErr2 := chromedp.Run(session.Context, chromedp.Evaluate[bool](`(()=>{const b=document.querySelector("button[phx-click='upgrade'][phx-value-plan='team']");if(b)b.click();return !!b})()`))
+	if actionErr2 != nil {
+		return actionErr2
 	}
 	if !clicked {
 		return fmt.Errorf("no Upgrade-to-team button on billing page")

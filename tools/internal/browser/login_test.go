@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
 )
@@ -241,7 +242,7 @@ func freshTab(t *testing.T, browser *Session) (*Session, context.CancelFunc) {
 	t.Helper()
 	tab, cancel := chromedp.NewContext(browser.Context)
 	t.Cleanup(cancel)
-	if err := chromedp.Run(tab, network.ClearBrowserCookies()); err != nil {
+	if _, err := chromedp.Call(tab, network.ClearBrowserCookies, cdp.Empty{}); err != nil {
 		t.Fatal(err)
 	}
 	session := &Session{Context: tab, cancel: cancel, alloc: func() {}, BaseURL: browser.BaseURL}

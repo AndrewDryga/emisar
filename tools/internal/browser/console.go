@@ -85,9 +85,7 @@ func findHref(session *Session, pattern, excluded string) (string, error) {
 	patternJSON, _ := json.Marshal(pattern)
 	excludedJSON, _ := json.Marshal(excluded)
 	script := `(function(pattern,excluded){const re=new RegExp(pattern);const hit=[...document.querySelectorAll('a[href]')].find(a=>re.test(a.getAttribute('href'))&&(!excluded||!a.getAttribute('href').includes(excluded)));return hit?hit.getAttribute('href'):''})(` + string(patternJSON) + `,` + string(excludedJSON) + `)`
-	var href string
-	err := chromedp.Run(session.Context, chromedp.Evaluate(script, &href))
-	return href, err
+	return chromedp.Run(session.Context, chromedp.Evaluate[string](script))
 }
 
 func CaptureConsole(ctx context.Context, manager *Manager, config ConsoleConfig) error {

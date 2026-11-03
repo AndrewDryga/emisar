@@ -20,6 +20,7 @@ import (
 	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
+	"github.com/chromedp/chromedp/remote"
 
 	capturekit "github.com/andrewdryga/emisar/tools/internal/capture"
 )
@@ -100,7 +101,7 @@ func run(env map[string]string, outDir string, headless, cleanupOnly bool, fresh
 		chromedp.Flag("lang", "en-US"),
 		chromedp.WindowSize(1440, 1100),
 	)
-	allocator, cancelAllocator := chromedp.NewExecAllocator(context.Background(), opts...)
+	allocator, cancelAllocator := chromedp.NewExecAllocator(context.Background(), append(opts, remote.WebSocket)...)
 	defer cancelAllocator()
 
 	ctx, cancel := chromedp.NewContext(allocator)
@@ -111,9 +112,7 @@ func run(env map[string]string, outDir string, headless, cleanupOnly bool, fresh
 	// Pin the console to its light theme. It follows prefers-color-scheme, so a run
 	// started while the machine is in dark mode produces shots that match nothing
 	// else in the guide.
-	if err := chromedp.Run(ctx, emulation.SetEmulatedMedia().WithFeatures([]*emulation.MediaFeature{
-		{Name: "prefers-color-scheme", Value: "light"},
-	})); err != nil {
+	if _, err := chromedp.Call(ctx, emulation.SetEmulatedMedia, emulation.SetEmulatedMediaParams{Features: []*emulation.MediaFeature{{Name: "prefers-color-scheme", Value: "light"}}}); err != nil {
 		return err
 	}
 
@@ -125,7 +124,7 @@ func run(env map[string]string, outDir string, headless, cleanupOnly bool, fresh
 	if freshProject != "" {
 		entry = "https://console.cloud.google.com/projectcreate?hl=en"
 	}
-	if err := chromedp.Run(ctx, chromedp.Navigate(entry), chromedp.Sleep(3*time.Second)); err != nil {
+	if err := chromedp.Do(ctx, chromedp.Navigate(entry), chromedp.Sleep(3*time.Second)); err != nil {
 		return err
 	}
 	if err := signIn(ctx, env, acceptCloudTOS); err != nil {
@@ -207,16 +206,17 @@ func agreeToCloudTerms(ctx context.Context) error {
   }
   return ticked;
 })()`
-	var ticked int
-	if err := chromedp.Run(ctx, chromedp.Evaluate(tick, &ticked)); err != nil {
-		return err
+
+	ticked, actionErr := chromedp.Run(ctx, chromedp.Evaluate[int](tick))
+	if actionErr != nil {
+		return actionErr
 	}
 	fmt.Printf("  ticked %d terms checkbox(es)\n", ticked)
 	if err := clickFirstText(ctx, "Agree & continue", "Agree and continue", "AGREE & CONTINUE"); err != nil {
 		return err
 	}
 	fmt.Println("  agreed to the Google Cloud terms")
-	return chromedp.Run(ctx, chromedp.Sleep(10*time.Second))
+	return chromedp.Do(ctx, chromedp.Sleep(10*time.Second))
 }
 
 // shutDownProject retires a project this tool created. The wizard capture needs a
@@ -228,7 +228,7 @@ func agreeToCloudTerms(ctx context.Context) error {
 // happened to have open.
 func shutDownProject(ctx context.Context, id string) error {
 	settings := "https://console.cloud.google.com/iam-admin/settings?project=" + id + "&hl=en"
-	if err := chromedp.Run(ctx, chromedp.Navigate(settings), chromedp.Sleep(12*time.Second)); err != nil {
+	if err := chromedp.Do(ctx, chromedp.Navigate(settings), chromedp.Sleep(12*time.Second)); err != nil {
 		return err
 	}
 	if err := dismissOverlays(ctx); err != nil {
@@ -237,7 +237,7 @@ func shutDownProject(ctx context.Context, id string) error {
 	if err := clickFirstText(ctx, "Shut down", "SHUT DOWN"); err != nil {
 		return fmt.Errorf("no shut down control: %w", err)
 	}
-	if err := chromedp.Run(ctx, chromedp.Sleep(5*time.Second)); err != nil {
+	if err := chromedp.Do(ctx, chromedp.Sleep(5*time.Second)); err != nil {
 		return err
 	}
 	// Type the id into the confirmation field the dialog puts up.
@@ -250,9 +250,10 @@ func shutDownProject(ctx context.Context, id string) error {
   if (!input.id) input.id = 'emisar-confirm-shutdown';
   return '#' + input.id + '|' + wanted;
 })()`, id)
-	var handle string
-	if err := chromedp.Run(ctx, chromedp.Evaluate(confirm, &handle)); err != nil {
-		return err
+
+	handle, actionErr1 := chromedp.Run(ctx, chromedp.Evaluate[string](confirm))
+	if actionErr1 != nil {
+		return actionErr1
 	}
 	if handle == "" {
 		return errors.New("the shutdown dialog has no confirmation field")
@@ -261,14 +262,14 @@ func shutDownProject(ctx context.Context, id string) error {
 	if err := typeRealKeys(ctx, selector, id); err != nil {
 		return err
 	}
-	if err := chromedp.Run(ctx, chromedp.Sleep(2*time.Second)); err != nil {
+	if err := chromedp.Do(ctx, chromedp.Sleep(2*time.Second)); err != nil {
 		return err
 	}
 	if err := clickFirstText(ctx, "Shut down anyway", "SHUT DOWN ANYWAY", "Shut down"); err != nil {
 		return err
 	}
 	fmt.Printf("  shut down %s\n", id)
-	return chromedp.Run(ctx, chromedp.Sleep(8*time.Second))
+	return chromedp.Do(ctx, chromedp.Sleep(8*time.Second))
 }
 
 // createProject makes the throwaway project whose Get started wizard the capture
@@ -293,9 +294,10 @@ func createProject(ctx context.Context, name, outDir string) error {
   if (!input.id) input.id = 'emisar-project-name';
   return '#' + input.id;
 })()`
-	var selector string
-	if err := chromedp.Run(ctx, chromedp.Evaluate(nameSelector, &selector)); err != nil {
-		return err
+
+	selector, actionErr2 := chromedp.Run(ctx, chromedp.Evaluate[string](nameSelector))
+	if actionErr2 != nil {
+		return actionErr2
 	}
 	if selector == "" {
 		return errors.New("the project-create form has no name input")
@@ -309,9 +311,10 @@ func createProject(ctx context.Context, name, outDir string) error {
   const match = document.body.innerText.match(/Project ID:\s*([a-z0-9-]+)/);
   return match ? match[1] : '';
 })()`
-	var projectID string
-	if err := chromedp.Run(ctx, chromedp.Evaluate(idScript, &projectID)); err != nil {
-		return err
+
+	projectID, actionErr3 := chromedp.Run(ctx, chromedp.Evaluate[string](idScript))
+	if actionErr3 != nil {
+		return actionErr3
 	}
 	if projectID == "" {
 		return errors.New("the create form never showed the derived project id")
@@ -329,12 +332,13 @@ func createProject(ctx context.Context, name, outDir string) error {
 			_ = capturekit.Screenshot(ctx, outDir, "google-project-never-ready")
 			return fmt.Errorf("project %s never became usable", projectID)
 		}
-		if err := chromedp.Run(ctx, chromedp.Navigate(platform), chromedp.Sleep(8*time.Second)); err != nil {
+		if err := chromedp.Do(ctx, chromedp.Navigate(platform), chromedp.Sleep(8*time.Second)); err != nil {
 			return err
 		}
-		var body string
-		if err := chromedp.Run(ctx, chromedp.Evaluate(`document.body.innerText`, &body)); err != nil {
-			return err
+
+		body, actionErr4 := chromedp.Run(ctx, chromedp.Evaluate[string](`document.body.innerText`))
+		if actionErr4 != nil {
+			return actionErr4
 		}
 		if strings.Contains(body, "Google Auth Platform") && !strings.Contains(body, "do not have permission") {
 			fmt.Printf("  project %s is ready\n", projectID)
@@ -348,11 +352,12 @@ func signIn(ctx context.Context, env map[string]string, acceptCloudTOS bool) err
 	submittedUser, submittedPassword, submittedTOTP := false, false, false
 
 	for time.Now().Before(deadline) {
-		var location, body string
-		if err := chromedp.Run(ctx,
-			chromedp.Location(&location),
-			chromedp.Evaluate(`document.body ? document.body.innerText : ""`, &body),
-		); err != nil {
+		location, err := chromedp.Run(ctx, chromedp.Location())
+		if err != nil {
+			return err
+		}
+		body, err := chromedp.Run(ctx, chromedp.Evaluate[string](`document.body ? document.body.innerText : ""`))
+		if err != nil {
 			return err
 		}
 		// Probed once, up front, so a page we cannot read aborts the loop
@@ -375,8 +380,8 @@ func signIn(ctx context.Context, env map[string]string, acceptCloudTOS bool) err
 			if err := typeRealKeys(ctx, `#identifierId`, env["GOOGLE_TEST_USER"]); err != nil {
 				return fmt.Errorf("filling the Google account identifier: %w", err)
 			}
-			if err := chromedp.Run(ctx,
-				chromedp.Click(`#identifierNext button`, chromedp.ByQuery),
+			if err := chromedp.Do(ctx,
+				chromedp.Click(chromedp.CSS(`#identifierNext button`)),
 				chromedp.Sleep(4*time.Second),
 			); err != nil {
 				return err
@@ -388,8 +393,8 @@ func signIn(ctx context.Context, env map[string]string, acceptCloudTOS bool) err
 			if err := typeRealKeys(ctx, `input[name="Passwd"]`, env["GOOGLE_TEST_PASSWORD"]); err != nil {
 				return fmt.Errorf("filling the Google account password: %w", err)
 			}
-			if err := chromedp.Run(ctx,
-				chromedp.Click(`#passwordNext button`, chromedp.ByQuery),
+			if err := chromedp.Do(ctx,
+				chromedp.Click(chromedp.CSS(`#passwordNext button`)),
 				chromedp.Sleep(5*time.Second),
 			); err != nil {
 				return err
@@ -402,7 +407,7 @@ func signIn(ctx context.Context, env map[string]string, acceptCloudTOS bool) err
 				return errors.New("an authenticator code was requested but GOOGLE_TEST_TOTP_SECRET is empty")
 			}
 			if remaining := 30 - time.Now().Unix()%30; remaining < 8 {
-				if err := chromedp.Run(ctx, chromedp.Sleep(time.Duration(remaining+1)*time.Second)); err != nil {
+				if err := chromedp.Do(ctx, chromedp.Sleep(time.Duration(remaining+1)*time.Second)); err != nil {
 					return err
 				}
 			}
@@ -417,7 +422,7 @@ func signIn(ctx context.Context, env map[string]string, acceptCloudTOS bool) err
 				return err
 			}
 			submittedTOTP = true
-			if err := chromedp.Run(ctx, chromedp.Sleep(5*time.Second)); err != nil {
+			if err := chromedp.Do(ctx, chromedp.Sleep(5*time.Second)); err != nil {
 				return err
 			}
 			fmt.Println("  submitted Google authenticator code")
@@ -443,12 +448,12 @@ func signIn(ctx context.Context, env map[string]string, acceptCloudTOS bool) err
 				fmt.Println("  signed in to Google Cloud")
 				return nil
 			}
-			if err := chromedp.Run(ctx, chromedp.Sleep(time.Second)); err != nil {
+			if err := chromedp.Do(ctx, chromedp.Sleep(time.Second)); err != nil {
 				return err
 			}
 
 		default:
-			if err := chromedp.Run(ctx, chromedp.Sleep(time.Second)); err != nil {
+			if err := chromedp.Do(ctx, chromedp.Sleep(time.Second)); err != nil {
 				return err
 			}
 		}
@@ -646,11 +651,10 @@ func certifyLoginFlow(ctx context.Context, env map[string]string, outDir, beginU
 	}
 	emisarOrigin := begin.Scheme + "://" + begin.Host
 
-	if err := chromedp.Run(ctx, chromedp.Navigate(emisarOrigin+"/sign_in")); err != nil {
+	if err := chromedp.Do(ctx, chromedp.Navigate(emisarOrigin+"/sign_in")); err != nil {
 		return err
 	}
-	if err := chromedp.Run(ctx, network.SetCookie(sessionCookieName, session).
-		WithURL(emisarOrigin+"/").WithPath("/")); err != nil {
+	if _, err := chromedp.Call(ctx, network.SetCookie, network.SetCookieParams{Name: sessionCookieName, Value: session, URL: emisarOrigin + "/", Path: "/"}); err != nil {
 		return err
 	}
 
@@ -659,7 +663,7 @@ func certifyLoginFlow(ctx context.Context, env map[string]string, outDir, beginU
 	// PKCE challenge are emisar's own.
 	hinted := authorizeURL + "&login_hint=" + url.QueryEscape(env["GOOGLE_TEST_USER"]) + "&hl=en"
 
-	if err := chromedp.Run(ctx,
+	if err := chromedp.Do(ctx,
 		chromedp.Navigate(hinted),
 		chromedp.Sleep(12*time.Second)); err != nil {
 		return err
@@ -670,9 +674,9 @@ func certifyLoginFlow(ctx context.Context, env map[string]string, outDir, beginU
 	// ("Загрузка…"; this account's locale is not English), so every click landed on
 	// nothing and the loop spun through its attempts against a loading page.
 	for attempt := 0; attempt < 6; attempt++ {
-		var location string
-		if err := chromedp.Run(ctx, chromedp.Location(&location)); err != nil {
-			return err
+		location, actionErr5 := chromedp.Run(ctx, chromedp.Location())
+		if actionErr5 != nil {
+			return actionErr5
 		}
 		if !strings.Contains(location, "accounts.google.com") {
 			break
@@ -707,15 +711,17 @@ func certifyLoginFlow(ctx context.Context, env map[string]string, outDir, beginU
 		if !advanced {
 			_ = clickPrimaryButton(ctx)
 		}
-		if err := chromedp.Run(ctx, chromedp.Sleep(10*time.Second)); err != nil {
+		if err := chromedp.Do(ctx, chromedp.Sleep(10*time.Second)); err != nil {
 			return err
 		}
 	}
 
-	var location, body string
-	if err := chromedp.Run(ctx,
-		chromedp.Location(&location),
-		chromedp.Evaluate(deepTextScript, &body)); err != nil {
+	location, err := chromedp.Run(ctx, chromedp.Location())
+	if err != nil {
+		return err
+	}
+	body, err := chromedp.Run(ctx, chromedp.Evaluate[string](deepTextScript))
+	if err != nil {
 		return err
 	}
 	_ = capturekit.Screenshot(ctx, outDir, "google-certify-login")
@@ -792,14 +798,18 @@ func clickDeepAt(ctx context.Context, wanted string) (bool, error) {
 
 	// chromedp decodes the returned object straight into at, and a null result
 	// leaves the POINTER nil — which is the miss.
-	var at *struct{ X, Y float64 }
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &at)); err != nil {
-		return false, err
+
+	at, actionErr6 := chromedp.Run(ctx, chromedp.Evaluate[*struct {
+		X float64
+		Y float64
+	}](script))
+	if actionErr6 != nil {
+		return false, actionErr6
 	}
 	if at == nil {
 		return false, nil
 	}
-	return true, chromedp.Run(ctx, chromedp.MouseClickXY(at.X, at.Y))
+	return true, chromedp.Do(ctx, chromedp.MouseClickXY(at.X, at.Y))
 }
 
 const sessionCookieName = "_emisar_web_key"
@@ -836,16 +846,16 @@ func waitForPaint(ctx context.Context) (string, error) {
 	deadline := time.Now().Add(45 * time.Second)
 
 	for {
-		var body string
-		if err := chromedp.Run(ctx, chromedp.Evaluate(deepTextScript, &body)); err != nil {
-			return "", err
+		body, actionErr7 := chromedp.Run(ctx, chromedp.Evaluate[string](deepTextScript))
+		if actionErr7 != nil {
+			return "", actionErr7
 		}
 		trimmed := strings.TrimSpace(body)
 		loading := trimmed == "" || strings.HasPrefix(trimmed, "Загрузка") || strings.HasPrefix(trimmed, "Loading")
 		if !loading || time.Now().After(deadline) {
 			return body, nil
 		}
-		if err := chromedp.Run(ctx, chromedp.Sleep(2*time.Second)); err != nil {
+		if err := chromedp.Do(ctx, chromedp.Sleep(2*time.Second)); err != nil {
 			return "", err
 		}
 	}
@@ -863,9 +873,10 @@ func clickPrimaryButton(ctx context.Context) error {
   buttons[buttons.length - 1].click();
   return true;
 })()`
-	var clicked bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &clicked)); err != nil {
-		return err
+
+	clicked, actionErr8 := chromedp.Run(ctx, chromedp.Evaluate[bool](script))
+	if actionErr8 != nil {
+		return actionErr8
 	}
 	// The script's own answer was discarded, so "this page has no enabled
 	// button" was indistinguishable from a click.
@@ -940,9 +951,10 @@ func certifyClientFlow(ctx context.Context, env map[string]string, outDir, redir
     inputs.find(v => /^GOCSPX-/.test(v)) || '';
   return id + '\n' + secret;
 })()`, googleClientIDPattern.String(), googleClientSecretPattern.String())
-	var credentials string
-	if err := chromedp.Run(ctx, chromedp.Evaluate(readCredentials, &credentials)); err != nil {
-		return err
+
+	credentials, actionErr9 := chromedp.Run(ctx, chromedp.Evaluate[string](readCredentials))
+	if actionErr9 != nil {
+		return actionErr9
 	}
 	parts := strings.SplitN(strings.TrimSpace(credentials), "\n", 2)
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
@@ -965,9 +977,7 @@ func countCaptureClients(ctx context.Context) (int, error) {
   const ours = tr => [%q, %q].some(name => (tr.textContent || '').includes(name));
   return [...document.querySelectorAll('tr')].filter(tr => visible(tr) && ours(tr)).length;
 })()`, captureClientName, certifyClientName)
-	var count int
-	err := chromedp.Run(ctx, chromedp.Evaluate(script, &count))
-	return count, err
+	return chromedp.Run(ctx, chromedp.Evaluate[int](script))
 }
 
 // removeCaptureClients deletes every OAuth client this tool has ever created in
@@ -1005,9 +1015,10 @@ func removeCaptureClients(ctx context.Context, env map[string]string, outDir str
   box.click();
   return true;
 })()`, captureClientName, certifyClientName)
-		var selected bool
-		if err := chromedp.Run(ctx, chromedp.Evaluate(selectRow, &selected)); err != nil {
-			return err
+
+		selected, actionErr10 := chromedp.Run(ctx, chromedp.Evaluate[bool](selectRow))
+		if actionErr10 != nil {
+			return actionErr10
 		}
 		if !selected {
 			// countCaptureClients already said before > 0, so the rows are there
@@ -1019,7 +1030,7 @@ func removeCaptureClients(ctx context.Context, env map[string]string, outDir str
 			_ = capturekit.DescribePage(ctx, env)
 			return fmt.Errorf("%d client(s) match this rig's names but no row checkbox could be selected", before)
 		}
-		if err := chromedp.Run(ctx, chromedp.Sleep(time.Second)); err != nil {
+		if err := chromedp.Do(ctx, chromedp.Sleep(time.Second)); err != nil {
 			return err
 		}
 		const openDelete = `(() => {
@@ -1030,14 +1041,15 @@ func removeCaptureClients(ctx context.Context, env map[string]string, outDir str
   button.click();
   return true;
 })()`
-		var opened bool
-		if err := chromedp.Run(ctx, chromedp.Evaluate(openDelete, &opened)); err != nil {
-			return err
+
+		opened, actionErr11 := chromedp.Run(ctx, chromedp.Evaluate[bool](openDelete))
+		if actionErr11 != nil {
+			return actionErr11
 		}
 		if !opened {
 			return errors.New("the selected capture client did not enable the Delete action")
 		}
-		if err := chromedp.Run(ctx, chromedp.Sleep(2*time.Second)); err != nil {
+		if err := chromedp.Do(ctx, chromedp.Sleep(2*time.Second)); err != nil {
 			return err
 		}
 		// Type-to-confirm. The dialog asks for the word DELETE in a Confirmation
@@ -1062,15 +1074,16 @@ func removeCaptureClients(ctx context.Context, env map[string]string, outDir str
   field.dispatchEvent(new Event('change', {bubbles: true}));
   return true;
 })()`
-		var typed bool
-		if err := chromedp.Run(ctx, chromedp.Evaluate(confirm, &typed)); err != nil {
-			return err
+
+		typed, actionErr12 := chromedp.Run(ctx, chromedp.Evaluate[bool](confirm))
+		if actionErr12 != nil {
+			return actionErr12
 		}
 		// Two shapes of this dialog: a credential Google thinks is in use asks for
 		// the word DELETE typed in, and a fresh one just asks yes or no. Type when
 		// there is a field, and press Delete either way.
 		if typed {
-			if err := chromedp.Run(ctx, chromedp.Sleep(time.Second)); err != nil {
+			if err := chromedp.Do(ctx, chromedp.Sleep(time.Second)); err != nil {
 				return err
 			}
 		}
@@ -1091,21 +1104,22 @@ func removeCaptureClients(ctx context.Context, env map[string]string, outDir str
   button.click();
   return true;
 })()`
-		var pressed bool
-		if err := chromedp.Run(ctx, chromedp.Evaluate(press, &pressed)); err != nil {
-			return err
+
+		pressed, actionErr13 := chromedp.Run(ctx, chromedp.Evaluate[bool](press))
+		if actionErr13 != nil {
+			return actionErr13
 		}
 		if !pressed {
 			_ = capturekit.Screenshot(ctx, outDir, "google-cleanup-no-delete-button")
 			return errors.New("the delete dialog has no enabled Delete button")
 		}
-		if err := chromedp.Run(ctx, chromedp.Sleep(6*time.Second)); err != nil {
+		if err := chromedp.Do(ctx, chromedp.Sleep(6*time.Second)); err != nil {
 			return err
 		}
 		// Reload before counting. The list does not refresh itself after a delete —
 		// the row even keeps a spinner in its Actions cell — so counting the stale
 		// table said nothing had happened when it had.
-		if err := chromedp.Run(ctx, chromedp.Reload()); err != nil {
+		if err := chromedp.Do(ctx, chromedp.Reload()); err != nil {
 			return err
 		}
 		if err := capturekit.RequireText(ctx, "OAuth 2.0 Client IDs", 45*time.Second); err != nil {
@@ -1160,14 +1174,15 @@ func addURIUnder(ctx context.Context, section, value string) error {
   }
   return 'no-button';
 })()`, section)
-	var outcome string
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &outcome)); err != nil {
-		return err
+
+	outcome, actionErr14 := chromedp.Run(ctx, chromedp.Evaluate[string](script))
+	if actionErr14 != nil {
+		return actionErr14
 	}
 	if outcome != "added" {
 		return fmt.Errorf("adding a URI under %q: %s", section, outcome)
 	}
-	if err := chromedp.Run(ctx, chromedp.Sleep(3*time.Second)); err != nil {
+	if err := chromedp.Do(ctx, chromedp.Sleep(3*time.Second)); err != nil {
 		return err
 	}
 	fill := fmt.Sprintf(`(() => {
@@ -1191,15 +1206,16 @@ func addURIUnder(ctx context.Context, section, value string) error {
   field.blur();
   return true;
 })()`, section, value)
-	var filled bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(fill, &filled)); err != nil {
-		return err
+
+	filled, actionErr15 := chromedp.Run(ctx, chromedp.Evaluate[bool](fill))
+	if actionErr15 != nil {
+		return actionErr15
 	}
 	if !filled {
 		return fmt.Errorf("no empty URI field appeared under %q", section)
 	}
 	fmt.Printf("  added a URI under %q\n", section)
-	return chromedp.Run(ctx, chromedp.Sleep(1500*time.Millisecond))
+	return chromedp.Do(ctx, chromedp.Sleep(1500*time.Millisecond))
 }
 
 // dismissOverlays clears the console's own promotional tooltips. One of them
@@ -1227,16 +1243,17 @@ func expandNav(ctx context.Context) error {
   toggle.click();
   return 1;
 })()`
-	var result int
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &result)); err != nil {
-		return err
+
+	result, actionErr16 := chromedp.Run(ctx, chromedp.Evaluate[int](script))
+	if actionErr16 != nil {
+		return actionErr16
 	}
 	if result == -1 {
 		return errors.New("the left nav is collapsed and has no expand control")
 	}
 	if result == 1 {
 		fmt.Println("  expanded the left nav")
-		return chromedp.Run(ctx, chromedp.Sleep(1500*time.Millisecond))
+		return chromedp.Do(ctx, chromedp.Sleep(1500*time.Millisecond))
 	}
 	return nil
 }
@@ -1270,14 +1287,15 @@ func dismissOverlays(ctx context.Context) error {
   }
   return closed;
 })()`
-	var closed int
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &closed)); err != nil {
-		return err
+
+	closed, actionErr17 := chromedp.Run(ctx, chromedp.Evaluate[int](script))
+	if actionErr17 != nil {
+		return actionErr17
 	}
 	if closed > 0 {
 		fmt.Printf("  dismissed %d console overlay(s)\n", closed)
 	}
-	return chromedp.Run(ctx, chromedp.Sleep(2*time.Second))
+	return chromedp.Do(ctx, chromedp.Sleep(2*time.Second))
 }
 
 // acceptTerms clears the Google Cloud Platform / Starter Tier agreement wall
@@ -1293,9 +1311,10 @@ func acceptTerms(ctx context.Context) error {
   return [...document.querySelectorAll('button,[role=button]')]
     .some(el => visible(el) && (el.textContent || '').trim() === 'Agree and continue');
 })()`
-	var showing bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(present, &showing)); err != nil {
-		return err
+
+	showing, actionErr18 := chromedp.Run(ctx, chromedp.Evaluate[bool](present))
+	if actionErr18 != nil {
+		return actionErr18
 	}
 	if !showing {
 		return nil
@@ -1328,9 +1347,10 @@ func acceptTerms(ctx context.Context) error {
   }
   return agree.checked;
 })()`
-	var ticked bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(tick, &ticked)); err != nil {
-		return err
+
+	ticked, actionErr19 := chromedp.Run(ctx, chromedp.Evaluate[bool](tick))
+	if actionErr19 != nil {
+		return actionErr19
 	}
 	if !ticked {
 		// Say so and carry on: the pages behind this dialog still render, and only
@@ -1343,7 +1363,7 @@ func acceptTerms(ctx context.Context) error {
 		return err
 	}
 	fmt.Println("  accepted the Google Cloud terms")
-	if err := chromedp.Run(ctx, chromedp.Sleep(8*time.Second)); err != nil {
+	if err := chromedp.Do(ctx, chromedp.Sleep(8*time.Second)); err != nil {
 		return err
 	}
 	return dismissOverlays(ctx)
@@ -1500,15 +1520,16 @@ func capture(ctx context.Context, env map[string]string, outDir, name string, ma
 	if err := deidentify(ctx, env); err != nil {
 		return fmt.Errorf("%s de-identification: %w", name, err)
 	}
-	var marked int
-	if err := chromedp.Run(ctx, chromedp.Evaluate(marker.script, &marked)); err != nil {
-		return err
+
+	marked, actionErr20 := chromedp.Run(ctx, chromedp.Evaluate[int](marker.script))
+	if actionErr20 != nil {
+		return actionErr20
 	}
 	if marked != marker.expected {
 		return fmt.Errorf("%s: highlighted %d of %d required controls", name, marked, marker.expected)
 	}
 	fmt.Printf("  highlighted %d control(s)\n", marked)
-	if err := chromedp.Run(ctx, chromedp.Sleep(700*time.Millisecond)); err != nil {
+	if err := chromedp.Do(ctx, chromedp.Sleep(700*time.Millisecond)); err != nil {
 		return err
 	}
 	if err := capturekit.Screenshot(ctx, outDir, name); err != nil {
@@ -1553,9 +1574,10 @@ func markGoogleDocsPanel(ctx context.Context, width, height int) error {
   document.body.appendChild(crop);
   return true;
 })()`, width, height)
-	var marked bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
-		return err
+
+	marked, actionErr21 := chromedp.Run(ctx, chromedp.Evaluate[bool](script))
+	if actionErr21 != nil {
+		return actionErr21
 	}
 	if !marked {
 		return errors.New("could not isolate the Google Auth Platform from account chrome")
@@ -1573,9 +1595,10 @@ func markGoogleCredentialDialog(ctx context.Context) error {
   dialog.dataset.emisarDocsGoogleCredentials = 'true';
   return true;
 })()`
-	var marked bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
-		return err
+
+	marked, actionErr22 := chromedp.Run(ctx, chromedp.Evaluate[bool](script))
+	if actionErr22 != nil {
+		return actionErr22
 	}
 	if !marked {
 		return errors.New("could not isolate the Google OAuth credential dialog")
@@ -1635,9 +1658,10 @@ func deidentify(ctx context.Context, env map[string]string) error {
 	script = strings.Replace(script, "REPLACEMENTS", "["+strings.Join(pairs, ",")+"]", 1)
 	script = strings.Replace(script, "CLIENT_ID", fmt.Sprintf("%q", redactedClientID), 1)
 	script = strings.Replace(script, "CLIENT_SECRET", fmt.Sprintf("%q", redactedClientSecret), 1)
-	var ok bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &ok)); err != nil {
-		return err
+
+	ok, actionErr23 := chromedp.Run(ctx, chromedp.Evaluate[bool](script))
+	if actionErr23 != nil {
+		return actionErr23
 	}
 	if !ok {
 		return errors.New("rewriting the DOM failed")
@@ -1657,12 +1681,13 @@ func clickFirstText(ctx context.Context, labels ...string) error {
   matches[0].click();
   return true;
 })()`, label)
-		var clicked bool
-		if err := chromedp.Run(ctx, chromedp.Evaluate(script, &clicked)); err != nil {
-			return err
+
+		clicked, actionErr24 := chromedp.Run(ctx, chromedp.Evaluate[bool](script))
+		if actionErr24 != nil {
+			return actionErr24
 		}
 		if clicked {
-			return chromedp.Run(ctx, chromedp.Sleep(2*time.Second))
+			return chromedp.Do(ctx, chromedp.Sleep(2*time.Second))
 		}
 	}
 	return fmt.Errorf("nothing visible matching %q", strings.Join(labels, `" or "`))
@@ -1686,12 +1711,13 @@ func fillField(ctx context.Context, label, value string) error {
   field.dispatchEvent(new Event('change', {bubbles: true}));
   return field.value === %q;
 })()`, selector, value, value)
-	var ok bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(set, &ok)); err != nil {
-		return err
+
+	ok, actionErr25 := chromedp.Run(ctx, chromedp.Evaluate[bool](set))
+	if actionErr25 != nil {
+		return actionErr25
 	}
 	if ok {
-		return chromedp.Run(ctx, chromedp.Sleep(time.Second))
+		return chromedp.Do(ctx, chromedp.Sleep(time.Second))
 	}
 	return typeRealKeys(ctx, selector, value)
 }
@@ -1710,9 +1736,10 @@ func fieldSelector(ctx context.Context, label string) (string, error) {
   });
   return index;
 })()`, label)
-	var index int
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &index)); err != nil {
-		return "", err
+
+	index, actionErr26 := chromedp.Run(ctx, chromedp.Evaluate[int](script))
+	if actionErr26 != nil {
+		return "", actionErr26
 	}
 	if index < 0 {
 		return "", fmt.Errorf("no field matching %q", label)
@@ -1721,15 +1748,15 @@ func fieldSelector(ctx context.Context, label string) (string, error) {
 }
 
 func typeRealKeys(ctx context.Context, selector, value string) error {
-	opts := []chromedp.QueryOption{chromedp.ByQuery}
+	focus := chromedp.Focus(chromedp.CSS(selector))
 	if strings.HasPrefix(selector, "(") {
-		opts = []chromedp.QueryOption{chromedp.BySearch}
+		focus = chromedp.Focus(chromedp.Search(selector))
 	}
-	if err := chromedp.Run(ctx, chromedp.Focus(selector, opts...)); err != nil {
+	if err := chromedp.Do(ctx, focus); err != nil {
 		return err
 	}
 	for _, character := range value {
-		if err := chromedp.Run(ctx, chromedp.KeyEvent(string(character))); err != nil {
+		if err := chromedp.Do(ctx, chromedp.KeyEvent(string(character))); err != nil {
 			return err
 		}
 		time.Sleep(20 * time.Millisecond)
@@ -1747,14 +1774,15 @@ func selectRadio(ctx context.Context, label string) error {
   matches[0].click();
   return true;
 })()`, label)
-	var selected bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &selected)); err != nil {
-		return err
+
+	selected, actionErr27 := chromedp.Run(ctx, chromedp.Evaluate[bool](script))
+	if actionErr27 != nil {
+		return actionErr27
 	}
 	if !selected {
 		return fmt.Errorf("no radio matching %q", label)
 	}
-	return chromedp.Run(ctx, chromedp.Sleep(time.Second))
+	return chromedp.Do(ctx, chromedp.Sleep(time.Second))
 }
 
 func selectCheckbox(ctx context.Context) error {
@@ -1765,9 +1793,10 @@ func selectCheckbox(ctx context.Context) error {
   if (!(box.checked || box.getAttribute('aria-checked') === 'true')) box.click();
   return true;
 })()`
-	var selected bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &selected)); err != nil {
-		return err
+
+	selected, actionErr28 := chromedp.Run(ctx, chromedp.Evaluate[bool](script))
+	if actionErr28 != nil {
+		return actionErr28
 	}
 	if !selected {
 		return fmt.Errorf("no visible agreement checkbox")
@@ -1805,18 +1834,19 @@ func chooseOption(ctx context.Context, label, option string) error {
   triggers[0].click();
   return 'opened';
 })()`, label, option)
-	var outcome string
-	if err := chromedp.Run(ctx, chromedp.Evaluate(open, &outcome)); err != nil {
-		return err
+
+	outcome, actionErr29 := chromedp.Run(ctx, chromedp.Evaluate[string](open))
+	if actionErr29 != nil {
+		return actionErr29
 	}
 	switch outcome {
 	case "":
 		return fmt.Errorf("no field labelled %q to open", label)
 	case "set":
 		fmt.Printf("  chose %q for %q\n", option, label)
-		return chromedp.Run(ctx, chromedp.Sleep(2*time.Second))
+		return chromedp.Do(ctx, chromedp.Sleep(2*time.Second))
 	}
-	if err := chromedp.Run(ctx, chromedp.Sleep(1500*time.Millisecond)); err != nil {
+	if err := chromedp.Do(ctx, chromedp.Sleep(1500*time.Millisecond)); err != nil {
 		return err
 	}
 	pick := fmt.Sprintf(`(() => {
@@ -1828,15 +1858,16 @@ func chooseOption(ctx context.Context, label, option string) error {
   options[0].click();
   return true;
 })()`, option)
-	var picked bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(pick, &picked)); err != nil {
-		return err
+
+	picked, actionErr30 := chromedp.Run(ctx, chromedp.Evaluate[bool](pick))
+	if actionErr30 != nil {
+		return actionErr30
 	}
 	if !picked {
 		return fmt.Errorf("%q is open but has no option %q", label, option)
 	}
 	fmt.Printf("  chose %q for %q\n", option, label)
-	return chromedp.Run(ctx, chromedp.Sleep(2*time.Second))
+	return chromedp.Do(ctx, chromedp.Sleep(2*time.Second))
 }
 
 // visible separates "the element is not there" from "the page could not be
@@ -1849,9 +1880,10 @@ func visible(ctx context.Context, selector string) (bool, error) {
   const el = document.querySelector(%q);
   return !!el && (el.offsetWidth > 0 || el.offsetHeight > 0);
 })()`, selector)
-	var ok bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &ok)); err != nil {
-		return false, fmt.Errorf("checking whether %s is visible: %w", selector, err)
+
+	ok, actionErr31 := chromedp.Run(ctx, chromedp.Evaluate[bool](script))
+	if actionErr31 != nil {
+		return false, fmt.Errorf("checking whether %s is visible: %w", selector, actionErr31)
 	}
 	return ok, nil
 }

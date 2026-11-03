@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 )
 
 // A lifeline ties a launched Chromium tree's lifetime to its owning process in a way the KERNEL
@@ -16,18 +17,19 @@ import (
 //
 // The mechanism: the owner holds the write end of a pipe it never writes to; the browser runs
 // under a tiny wrapper that starts Chromium in the wrapper's own process group plus a watchdog
-// blocked reading the pipe's inherited read end (fd 3). When the owner dies — any way, including
+// blocked reading the pipe's inherited read end. When the owner dies — any way, including
 // SIGKILL — the kernel closes the write end, the watchdog sees EOF and SIGKILLs the wrapper's
 // group, taking Chromium and every forked helper with it. Closing the write end explicitly
 // (Session.Close, daemon shutdown) triggers the same reaping as a belt.
 //
 // When Chromium exits on its own, the wrapper reaps the watchdog and propagates the exit status,
 // so nothing lingers to hold a box open.
-const lifelineScript = `bin="$1"; shift
+const lifelineScript = `fd="$1"; shift
+bin="$1"; shift
 "$bin" "$@" &
 c=$!
 (
-  while IFS= read -r _ <&3; do :; done
+  while IFS= read -r _ <&"$fd"; do :; done
   kill -s KILL -- -$$ 2>/dev/null
 ) &
 g=$!
@@ -51,8 +53,9 @@ func newLifeline() (keep, child *os.File, err error) {
 // the wrapper must lead its own process group so the watchdog's one group kill covers Chromium and
 // all its forked helpers. Callers that record cmd.Process.Pid get the wrapper (= group leader).
 func wrapWithLifeline(cmd *exec.Cmd, child *os.File) {
-	cmd.Args = append([]string{"/bin/sh", "-c", lifelineScript, "chromium-lifeline"}, cmd.Args...)
+	fd := 3 + len(cmd.ExtraFiles)
+	cmd.Args = append([]string{"/bin/sh", "-c", lifelineScript, "chromium-lifeline", strconv.Itoa(fd)}, cmd.Args...)
 	cmd.Path = "/bin/sh"
-	cmd.ExtraFiles = append(cmd.ExtraFiles, child) // fd 3 in the wrapper
+	cmd.ExtraFiles = append(cmd.ExtraFiles, child)
 	cmd.SysProcAttr = browserSysProcAttr()
 }

@@ -29,6 +29,7 @@ import (
 
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
+	"github.com/chromedp/chromedp/remote"
 
 	"github.com/andrewdryga/emisar/tools/internal/capture"
 )
@@ -234,11 +235,12 @@ func auditTenant(ctx context.Context, env map[string]string, remove bool) error 
   }
   return out.join('\n');
 })()`
-		var said string
-		if err := chromedp.Run(ctx, chromedp.Evaluate(probe, &said, func(p *runtime.EvaluateParams) *runtime.EvaluateParams {
-			return p.WithAwaitPromise(true)
-		})); err != nil {
-			return err
+
+		said, actionErr := chromedp.Run(ctx, chromedp.Evaluate[string](probe, func(p *runtime.EvaluateParams) {
+			p.AwaitPromise = new(true)
+		}))
+		if actionErr != nil {
+			return actionErr
 		}
 		fmt.Println("--- what the session-only API call actually returns ---")
 		fmt.Println(said)
@@ -445,19 +447,20 @@ func oktaCalls(ctx context.Context, client *http.Client, orgURL, token string, c
 // clearMFA answers the admin console's step-up challenge when it appears. A run
 // that already holds a live console session skips straight through.
 func clearMFA(ctx context.Context, env map[string]string) error {
-	var location string
-	if err := chromedp.Run(ctx, chromedp.Location(&location)); err != nil {
-		return err
+	location, actionErr1 := chromedp.Run(ctx, chromedp.Location())
+	if actionErr1 != nil {
+		return actionErr1
 	}
 	if strings.Contains(location, "-admin.okta.com/admin/") {
 		return nil
 	}
-	var picked bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(pickGoogleAuthenticator, &picked)); err != nil {
-		return err
+
+	picked, actionErr2 := chromedp.Run(ctx, chromedp.Evaluate[bool](pickGoogleAuthenticator))
+	if actionErr2 != nil {
+		return actionErr2
 	}
 	if picked {
-		if err := chromedp.Run(ctx, chromedp.Sleep(3*time.Second)); err != nil {
+		if err := chromedp.Do(ctx, chromedp.Sleep(3*time.Second)); err != nil {
 			return err
 		}
 	}
@@ -468,16 +471,19 @@ func clearMFA(ctx context.Context, env map[string]string) error {
 		if err != nil {
 			return err
 		}
-		var submitted bool
-		if err := chromedp.Run(ctx, chromedp.Evaluate(submitPasscode(code), &submitted)); err != nil {
-			return err
+
+		submitted, actionErr3 := chromedp.Run(ctx, chromedp.Evaluate[bool](submitPasscode(code)))
+		if actionErr3 != nil {
+			return actionErr3
 		}
 		fmt.Printf("  mfa: submitted passcode (attempt %d, accepted=%t)\n", attempt+1, submitted)
-		if err := chromedp.Run(ctx, chromedp.Sleep(6*time.Second)); err != nil {
+		if err := chromedp.Do(ctx, chromedp.Sleep(6*time.Second)); err != nil {
 			return err
 		}
-		if err := chromedp.Run(ctx, chromedp.Location(&location)); err != nil {
-			return err
+		var actionErr4 error
+		location, actionErr4 = chromedp.Run(ctx, chromedp.Location())
+		if actionErr4 != nil {
+			return actionErr4
 		}
 		if strings.Contains(location, "-admin.okta.com/admin/") {
 			return nil
@@ -499,7 +505,7 @@ func run(env map[string]string, outDir, only string, headless, inventory, cleanu
 		chromedp.Flag("headless", headless),
 		chromedp.WindowSize(1680, 1200),
 	)
-	allocator, cancelAllocator := chromedp.NewExecAllocator(context.Background(), options...)
+	allocator, cancelAllocator := chromedp.NewExecAllocator(context.Background(), append(options, remote.WebSocket)...)
 	defer cancelAllocator()
 	ctx, cancel := chromedp.NewContext(allocator)
 	defer cancel()
@@ -513,11 +519,11 @@ func run(env map[string]string, outDir, only string, headless, inventory, cleanu
 	landing := env["OKTA_ADMIN_URL"] + "/admin/apps/active"
 	entry := fmt.Sprintf("%s/login/sessionCookieRedirect?token=%s&redirectUrl=%s",
 		env["OKTA_ORG_URL"], token, landing)
-	if err := chromedp.Run(ctx, chromedp.Navigate(entry)); err != nil {
+	if err := chromedp.Do(ctx, chromedp.Navigate(entry)); err != nil {
 		return err
 	}
 	// Okta's console is a SPA; wait for it to paint rather than for load.
-	if err := chromedp.Run(ctx, chromedp.Sleep(8*time.Second)); err != nil {
+	if err := chromedp.Do(ctx, chromedp.Sleep(8*time.Second)); err != nil {
 		return err
 	}
 
@@ -529,10 +535,12 @@ func run(env map[string]string, outDir, only string, headless, inventory, cleanu
 		return err
 	}
 
-	var current, title string
-	if err := chromedp.Run(ctx,
-		chromedp.Location(&current),
-		chromedp.Title(&title)); err != nil {
+	current, err := chromedp.Run(ctx, chromedp.Location())
+	if err != nil {
+		return err
+	}
+	title, err := chromedp.Run(ctx, chromedp.Title())
+	if err != nil {
 		return err
 	}
 	fmt.Printf("landed on: %s\n  title: %s\n", current, title)
@@ -570,9 +578,7 @@ func typeInto(ctx context.Context, hint, value string) (bool, error) {
   match.dispatchEvent(new Event('change', {bubbles: true}));
   return true;
 })()`, hint, value)
-	var typed bool
-	err := chromedp.Run(ctx, chromedp.Evaluate(script, &typed))
-	return typed, err
+	return chromedp.Run(ctx, chromedp.Evaluate[bool](script))
 }
 
 // captureFlow walks the SCIM setup path an emisar customer follows, pausing at
@@ -645,7 +651,7 @@ func captureFlow(ctx context.Context, env map[string]string, outDir, only string
 		}
 	}
 	settle := func(seconds int) error {
-		return chromedp.Run(ctx, chromedp.Sleep(time.Duration(seconds)*time.Second))
+		return chromedp.Do(ctx, chromedp.Sleep(time.Duration(seconds)*time.Second))
 	}
 	// Okta re-challenges MFA on privileged navigation, not just at sign-in, so
 	// every step re-checks before acting. clearMFA is a cheap no-op once we're
@@ -689,7 +695,7 @@ func captureFlow(ctx context.Context, env map[string]string, outDir, only string
 	if err := focusField(ctx, "search"); err != nil {
 		return err
 	}
-	if err := chromedp.Run(ctx, chromedp.KeyEvent("SCIM 2.0 Test App")); err != nil {
+	if err := chromedp.Do(ctx, chromedp.KeyEvent("SCIM 2.0 Test App")); err != nil {
 		return err
 	}
 	if err := settle(5); err != nil {
@@ -742,9 +748,9 @@ func captureFlow(ctx context.Context, env map[string]string, outDir, only string
 		return err
 	}
 	if configureSCIM {
-		var location string
-		if err := chromedp.Run(ctx, chromedp.Location(&location)); err != nil {
-			return err
+		location, actionErr5 := chromedp.Run(ctx, chromedp.Location())
+		if actionErr5 != nil {
+			return actionErr5
 		}
 		parsed, err := url.Parse(location)
 		if err != nil {
@@ -796,9 +802,10 @@ func markOIDCSettingsPanel(ctx context.Context) error {
   document.body.appendChild(crop);
   return true;
 })()`
-	var marked bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
-		return err
+
+	marked, actionErr6 := chromedp.Run(ctx, chromedp.Evaluate[bool](script))
+	if actionErr6 != nil {
+		return actionErr6
 	}
 	if !marked {
 		return errors.New("could not isolate the Okta OIDC settings from account chrome")
@@ -816,9 +823,10 @@ func markOIDCCreateDialog(ctx context.Context) error {
   dialog.dataset.emisarDocsOidcCreate = 'true';
   return true;
 })()`
-	var marked bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
-		return err
+
+	marked, actionErr7 := chromedp.Run(ctx, chromedp.Evaluate[bool](script))
+	if actionErr7 != nil {
+		return actionErr7
 	}
 	if !marked {
 		return errors.New("could not isolate the Okta OIDC create dialog")
@@ -845,9 +853,10 @@ func markCatalogPanel(ctx context.Context) error {
   document.body.appendChild(crop);
   return true;
 })()`
-	var marked bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
-		return err
+
+	marked, actionErr8 := chromedp.Run(ctx, chromedp.Evaluate[bool](script))
+	if actionErr8 != nil {
+		return actionErr8
 	}
 	if !marked {
 		return errors.New("could not isolate the Okta catalog from account chrome")
@@ -884,9 +893,10 @@ func markOIDCCredentialsPanel(ctx context.Context) error {
   return JSON.stringify({left, top, right, bottom, width: right - left,
     height: bottom - top});
 })()`
-	var marked string
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
-		return err
+
+	marked, actionErr9 := chromedp.Run(ctx, chromedp.Evaluate[string](script))
+	if actionErr9 != nil {
+		return actionErr9
 	}
 	if marked == "" {
 		return errors.New("could not isolate the complete Okta OIDC credential controls")
@@ -924,9 +934,10 @@ func markLifecyclePanel(ctx context.Context) error {
   document.body.appendChild(crop);
   return true;
 })()`
-	var marked bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
-		return err
+
+	marked, actionErr10 := chromedp.Run(ctx, chromedp.Evaluate[bool](script))
+	if actionErr10 != nil {
+		return actionErr10
 	}
 	if !marked {
 		return errors.New("could not isolate the complete Okta provisioning-to-app controls")
@@ -973,9 +984,10 @@ func markCredentialPanel(ctx context.Context) error {
   document.body.appendChild(crop);
   return true;
 })()`
-	var marked bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
-		return err
+
+	marked, actionErr11 := chromedp.Run(ctx, chromedp.Evaluate[bool](script))
+	if actionErr11 != nil {
+		return actionErr11
 	}
 	if !marked {
 		return errors.New("could not isolate the verified Okta SCIM credential panel")
@@ -1008,9 +1020,10 @@ func markDocsPanel(
   }
   return '';
 })()`, anchor, mustInclude, minWidth, minHeight, maxHeight, attribute)
-	var marked string
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
-		return err
+
+	marked, actionErr12 := chromedp.Run(ctx, chromedp.Evaluate[string](script))
+	if actionErr12 != nil {
+		return actionErr12
 	}
 	if marked == "" {
 		return fmt.Errorf("could not isolate the Okta panel spanning %q..%q", anchor, mustInclude)
@@ -1126,10 +1139,9 @@ func deidentifySCIMBaseURL(ctx context.Context, env map[string]string) error {
 	return true;
 })()`, strings.TrimSuffix(env["EMISAR_DOCS_HOST"], "/"))
 
-	var rewritten bool
-
-	if err := chromedp.Run(ctx, chromedp.Evaluate(rewrite, &rewritten)); err != nil {
-		return err
+	rewritten, actionErr13 := chromedp.Run(ctx, chromedp.Evaluate[bool](rewrite))
+	if actionErr13 != nil {
+		return actionErr13
 	}
 
 	if !rewritten {
@@ -1150,7 +1162,7 @@ func provisioningFlow(
 ) error {
 	instance := fmt.Sprintf("%s/admin/app/%s/instance/%s/#tab-provisioning",
 		env["OKTA_ADMIN_URL"], env["OKTA_SCIM_APP_NAME"], env["OKTA_SCIM_APP_ID"])
-	if err := chromedp.Run(ctx, chromedp.Navigate(instance)); err != nil {
+	if err := chromedp.Do(ctx, chromedp.Navigate(instance)); err != nil {
 		return err
 	}
 	if err := settle(8); err != nil {
@@ -1297,7 +1309,7 @@ func lifecycleFlow(
 	// precondition belongs here rather than in each caller. Re-enter Provisioning,
 	// then WAIT for the Settings list instead of guessing at a settle: the re-run
 	// path guessed, and failed with a bare "could not find To App".
-	if err := chromedp.Run(ctx, chromedp.Navigate(instance)); err != nil {
+	if err := chromedp.Do(ctx, chromedp.Navigate(instance)); err != nil {
 		return err
 	}
 	if err := settle(8); err != nil {
@@ -1311,9 +1323,10 @@ func lifecycleFlow(
 	// reachable. Without a tunnel the pane reads "Provisioning is not enabled" and
 	// the missing tab looks like a selector bug; it is not. Say so here, because
 	// three rounds were spent adding waits and retries to a downstream symptom.
-	var body string
-	if err := chromedp.Run(ctx, chromedp.Evaluate(`document.body.innerText`, &body)); err != nil {
-		return err
+
+	body, actionErr14 := chromedp.Run(ctx, chromedp.Evaluate[string](`document.body.innerText`))
+	if actionErr14 != nil {
+		return actionErr14
 	}
 	if strings.Contains(body, "Provisioning is not enabled") {
 		_ = shoot("12-provisioning-not-enabled")
@@ -1423,9 +1436,10 @@ func pushGroupByName(ctx context.Context, group string, settle func(int) error) 
 		button.click();
 		return true;
 	})()`
-	var opened bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(openMenu, &opened)); err != nil {
-		return err
+
+	opened, actionErr15 := chromedp.Run(ctx, chromedp.Evaluate[bool](openMenu))
+	if actionErr15 != nil {
+		return actionErr15
 	}
 	if !opened {
 		return errors.New("the Push Groups menu button was not found")
@@ -1451,14 +1465,15 @@ func pushGroupByName(ctx context.Context, group string, settle func(int) error) 
 		input.select && input.select();
 		return true;
 	})()`
-	var focused bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(search, &focused)); err != nil {
-		return err
+
+	focused, actionErr16 := chromedp.Run(ctx, chromedp.Evaluate[bool](search))
+	if actionErr16 != nil {
+		return actionErr16
 	}
 	if !focused {
 		return errors.New("the group search input was not found")
 	}
-	if err := chromedp.Run(ctx, chromedp.KeyEvent(group)); err != nil {
+	if err := chromedp.Do(ctx, chromedp.KeyEvent(group)); err != nil {
 		return err
 	}
 	if err := settle(3); err != nil {
@@ -1474,9 +1489,10 @@ func pushGroupByName(ctx context.Context, group string, settle func(int) error) 
 		(label.closest('a,button,li,[role=option]') || label).click();
 		return true;
 	})()`, group)
-	var selected bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(selectGroup, &selected)); err != nil {
-		return err
+
+	selected, actionErr17 := chromedp.Run(ctx, chromedp.Evaluate[bool](selectGroup))
+	if actionErr17 != nil {
+		return actionErr17
 	}
 	if !selected {
 		return fmt.Errorf("assigned Okta group %q was not offered for push", group)
@@ -1530,9 +1546,7 @@ func sectionBoxScript(section, action string) string {
 // tickInSection checks the box belonging to a named setting.
 func tickInSection(ctx context.Context, section string) (bool, error) {
 	script := sectionBoxScript(section, `if (!box.checked) { box.scrollIntoView({block: 'center'}); box.click(); } return true;`)
-	var ticked bool
-	err := chromedp.Run(ctx, chromedp.Evaluate(script, &ticked))
-	return ticked, err
+	return chromedp.Run(ctx, chromedp.Evaluate[bool](script))
 }
 
 // sectionChecked reports whether a setting's own checkbox is REALLY checked —
@@ -1540,9 +1554,7 @@ func tickInSection(ctx context.Context, section string) (bool, error) {
 // control took the value.
 func sectionChecked(ctx context.Context, section string) (bool, error) {
 	script := sectionBoxScript(section, `return box.checked;`)
-	var checked bool
-	err := chromedp.Run(ctx, chromedp.Evaluate(script, &checked))
-	return checked, err
+	return chromedp.Run(ctx, chromedp.Evaluate[bool](script))
 }
 
 // highlightGroup frames the container holding both anchor and companion text.
@@ -1611,9 +1623,10 @@ func highlightGroup(ctx context.Context, anchor, mustInclude string) error {
   return node.tagName + ' display=' + getComputedStyle(node).display +
     ' ' + Math.round(box.width) + 'x' + Math.round(box.height);
 })()`, anchor, mustInclude, mustInclude, anchor)
-	var marked string
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
-		return err
+
+	marked, actionErr18 := chromedp.Run(ctx, chromedp.Evaluate[string](script))
+	if actionErr18 != nil {
+		return actionErr18
 	}
 	// FAIL, don't warn. A missing outline is a broken instruction, not a cosmetic
 	// miss.
@@ -1621,7 +1634,7 @@ func highlightGroup(ctx context.Context, anchor, mustInclude string) error {
 		return fmt.Errorf("nothing spanning %q..%q to highlight", anchor, mustInclude)
 	}
 	fmt.Printf("  highlighted group %q..%q on %s\n", anchor, mustInclude, marked)
-	return chromedp.Run(ctx, chromedp.Sleep(600*time.Millisecond))
+	return chromedp.Do(ctx, chromedp.Sleep(600*time.Millisecond))
 }
 
 // typeRealKeys focuses a field and types with genuine key events, clearing what
@@ -1631,7 +1644,7 @@ func typeRealKeys(ctx context.Context, hint, value string) error {
 		return err
 	}
 	// select() above highlights existing text; typing replaces it.
-	if err := chromedp.Run(ctx, chromedp.KeyEvent(value)); err != nil {
+	if err := chromedp.Do(ctx, chromedp.KeyEvent(value)); err != nil {
 		return err
 	}
 	fmt.Printf("  typed into %s\n", hint)
@@ -1654,9 +1667,10 @@ func clearOtherURIFields(ctx context.Context, keepPrefix string) error {
   }
   return cleared;
 })()`, keepPrefix)
-	var cleared int
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &cleared)); err != nil {
-		return err
+
+	cleared, actionErr19 := chromedp.Run(ctx, chromedp.Evaluate[int](script))
+	if actionErr19 != nil {
+		return actionErr19
 	}
 	fmt.Printf("  cleared %d prefilled URI field(s)\n", cleared)
 	return nil
@@ -1679,15 +1693,16 @@ func highlightLowest(ctx context.Context, label string) error {
   target.scrollIntoView({block: 'nearest'});
   return true;
 })()`, label)
-	var marked bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
-		return err
+
+	marked, actionErr20 := chromedp.Run(ctx, chromedp.Evaluate[bool](script))
+	if actionErr20 != nil {
+		return actionErr20
 	}
 	if !marked {
 		return fmt.Errorf("no interactive %q control to highlight", label)
 	}
 	fmt.Printf("  highlighted lowest %q control\n", label)
-	return chromedp.Run(ctx, chromedp.Sleep(1200*time.Millisecond))
+	return chromedp.Do(ctx, chromedp.Sleep(1200*time.Millisecond))
 }
 
 // scrollToText centres the block containing the given label. A full-page shot
@@ -1703,14 +1718,15 @@ func scrollToText(ctx context.Context, label string) error {
   matches[0].scrollIntoView({block: 'center'});
   return true;
 })()`, label)
-	var scrolled bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &scrolled)); err != nil {
-		return err
+
+	scrolled, actionErr21 := chromedp.Run(ctx, chromedp.Evaluate[bool](script))
+	if actionErr21 != nil {
+		return actionErr21
 	}
 	if !scrolled {
 		return fmt.Errorf("nothing labelled %q to scroll to", label)
 	}
-	return chromedp.Run(ctx, chromedp.Sleep(1500*time.Millisecond))
+	return chromedp.Do(ctx, chromedp.Sleep(1500*time.Millisecond))
 }
 
 // clickSelector clicks an exact CSS selector, for controls whose visible label
@@ -1723,9 +1739,10 @@ func clickSelector(ctx context.Context, selector string) error {
   el.click();
   return true;
 })()`, selector)
-	var clicked bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &clicked)); err != nil {
-		return err
+
+	clicked, actionErr22 := chromedp.Run(ctx, chromedp.Evaluate[bool](script))
+	if actionErr22 != nil {
+		return actionErr22
 	}
 	if !clicked {
 		return fmt.Errorf("selector %s not found", selector)
@@ -1745,9 +1762,10 @@ func tickEnableAPIIntegration(ctx context.Context) error {
   if (!target.checked) { target.scrollIntoView({block: 'center'}); target.click(); }
   return true;
 })()`
-	var ticked bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &ticked)); err != nil {
-		return err
+
+	ticked, actionErr23 := chromedp.Run(ctx, chromedp.Evaluate[bool](script))
+	if actionErr23 != nil {
+		return actionErr23
 	}
 	if !ticked {
 		return fmt.Errorf("enable API Integration checkbox not found")
@@ -1766,7 +1784,7 @@ func oidcCredentialsShot(
 	shoot func(string) error,
 	settle func(int) error,
 ) error {
-	if err := chromedp.Run(ctx, chromedp.Navigate(env["OKTA_ADMIN_URL"]+"/admin/apps/active")); err != nil {
+	if err := chromedp.Do(ctx, chromedp.Navigate(env["OKTA_ADMIN_URL"]+"/admin/apps/active")); err != nil {
 		return err
 	}
 	if err := settle(8); err != nil {
@@ -1801,9 +1819,10 @@ func oidcCredentialsShot(
   (target || row || label).click();
   return true;
 })()`, appMarker)
-	var opened bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(openApp, &opened)); err != nil {
-		return err
+
+	opened, actionErr24 := chromedp.Run(ctx, chromedp.Evaluate[bool](openApp))
+	if actionErr24 != nil {
+		return actionErr24
 	}
 	if !opened {
 		_ = capture.DescribePage(ctx, nil)
@@ -1827,8 +1846,8 @@ func oidcCredentialsShot(
 	}
 	// A client id is public, but it is still tenant-specific evidence. The guide
 	// teaches where to copy it, not the burner org's actual identifier.
-	var maskedClientID bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
+
+	maskedClientID, actionErr25 := chromedp.Run(ctx, chromedp.Evaluate[bool](`(() => {
   const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
   const field = [...document.querySelectorAll('input')]
     .find(el => visible(el) && /^0oa/i.test(el.value || ''));
@@ -1836,8 +1855,9 @@ func oidcCredentialsShot(
   const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
   setter.call(field, '••••••••••••••••••••');
   return true;
-})()`, &maskedClientID)); err != nil {
-		return err
+})()`))
+	if actionErr25 != nil {
+		return actionErr25
 	}
 	if !maskedClientID {
 		return errors.New("could not mask the Okta OIDC client id")
@@ -1977,14 +1997,15 @@ func typeRealKeysSelector(ctx context.Context, selector, value string) error {
   el.select && el.select();
   return true;
 })()`, selector)
-	var focused bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &focused)); err != nil {
-		return err
+
+	focused, actionErr26 := chromedp.Run(ctx, chromedp.Evaluate[bool](script))
+	if actionErr26 != nil {
+		return actionErr26
 	}
 	if !focused {
 		return fmt.Errorf("selector %s not found", selector)
 	}
-	if err := chromedp.Run(ctx, chromedp.KeyEvent(value)); err != nil {
+	if err := chromedp.Do(ctx, chromedp.KeyEvent(value)); err != nil {
 		return err
 	}
 	fmt.Printf("  typed into %s\n", selector)
@@ -2010,9 +2031,10 @@ func focusField(ctx context.Context, hint string) error {
   match.select && match.select();
   return true;
 })()`, hint)
-	var focused bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &focused)); err != nil {
-		return err
+
+	focused, actionErr27 := chromedp.Run(ctx, chromedp.Evaluate[bool](script))
+	if actionErr27 != nil {
+		return actionErr27
 	}
 	if !focused {
 		return fmt.Errorf("no field matching %q to focus", hint)

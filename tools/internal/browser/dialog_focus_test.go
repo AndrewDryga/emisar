@@ -63,7 +63,7 @@ window.checkDialog = serverRendered => {
 	if err := session.Navigate("/"); err != nil {
 		t.Fatal(err)
 	}
-	if err := chromedp.Run(session.Context, chromedp.Poll("typeof window.checkDialog === 'function'", nil)); err != nil {
+	if err := chromedp.Do(session.Context, chromedp.Poll[chromedp.Void]("typeof window.checkDialog === 'function'")); err != nil {
 		t.Fatal(err)
 	}
 	for _, test := range []struct{ name, script string }{
@@ -71,7 +71,7 @@ window.checkDialog = serverRendered => {
 		{"client hide", "window.checkDialog(false)"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			if err := chromedp.Run(session.Context, chromedp.Evaluate(test.script, nil)); err != nil {
+			if err := chromedp.Do(session.Context, chromedp.Evaluate[chromedp.Void](test.script)); err != nil {
 				t.Fatal(err)
 			}
 		})

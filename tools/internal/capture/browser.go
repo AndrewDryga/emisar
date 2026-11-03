@@ -34,9 +34,10 @@ func ClickText(ctx context.Context, label string) (bool, error) {
   target.click();
   return true;
 })()`, label)
-	var clicked bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &clicked)); err != nil {
-		return false, err
+
+	clicked, actionErr := chromedp.Run(ctx, chromedp.Evaluate[bool](script))
+	if actionErr != nil {
+		return false, actionErr
 	}
 	return clicked, nil
 }
@@ -57,9 +58,10 @@ func ClickContaining(ctx context.Context, label string) (bool, error) {
   target.click();
   return true;
 })()`, label)
-	var clicked bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &clicked)); err != nil {
-		return false, err
+
+	clicked, actionErr1 := chromedp.Run(ctx, chromedp.Evaluate[bool](script))
+	if actionErr1 != nil {
+		return false, actionErr1
 	}
 	return clicked, nil
 }
@@ -74,14 +76,14 @@ func ClickContaining(ctx context.Context, label string) (bool, error) {
 func WaitForText(ctx context.Context, needle string, timeout time.Duration) (bool, error) {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		var body string
-		if err := chromedp.Run(ctx, chromedp.Evaluate(`document.body ? document.body.innerText : ""`, &body)); err != nil {
-			return false, err
+		body, actionErr2 := chromedp.Run(ctx, chromedp.Evaluate[string](`document.body ? document.body.innerText : ""`))
+		if actionErr2 != nil {
+			return false, actionErr2
 		}
 		if strings.Contains(body, needle) {
 			return true, nil
 		}
-		if err := chromedp.Run(ctx, chromedp.Sleep(time.Second)); err != nil {
+		if err := chromedp.Do(ctx, chromedp.Sleep(time.Second)); err != nil {
 			return false, err
 		}
 	}
@@ -120,9 +122,10 @@ func DescribePage(ctx context.Context, secrets map[string]string) error {
       .filter(visible).map(el => (el.textContent || el.value || '').trim()).filter(Boolean))].slice(0, 60)
   }, null, 1);
 })()`
-	var described string
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &described)); err != nil {
-		return err
+
+	described, actionErr3 := chromedp.Run(ctx, chromedp.Evaluate[string](script))
+	if actionErr3 != nil {
+		return actionErr3
 	}
 	for _, value := range secrets {
 		if len(value) >= 4 {
@@ -165,13 +168,14 @@ func Highlight(ctx context.Context, label string, settle time.Duration) error {
   target.scrollIntoView({block: 'center'});
   return true;
 })()`, label)
-	var marked bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
-		return err
+
+	marked, actionErr4 := chromedp.Run(ctx, chromedp.Evaluate[bool](script))
+	if actionErr4 != nil {
+		return actionErr4
 	}
 	if !marked {
 		return fmt.Errorf("nothing matching %q to highlight", label)
 	}
 	fmt.Printf("  highlighted %q\n", label)
-	return chromedp.Run(ctx, chromedp.Sleep(settle))
+	return chromedp.Do(ctx, chromedp.Sleep(settle))
 }

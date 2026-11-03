@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 
@@ -98,7 +99,7 @@ func outline(ctx context.Context, frames *frameContexts, label string, style out
 		return fmt.Errorf("nothing labelled %q to outline; visible controls: %q", label, frames.visibleControls(ctx))
 	}
 	fmt.Printf("  outlined %q\n", label)
-	return chromedp.Run(ctx, chromedp.Sleep(600*time.Millisecond))
+	return chromedp.Do(ctx, chromedp.Sleep(600*time.Millisecond))
 }
 
 var (
@@ -167,20 +168,20 @@ func clickIfPresent(ctx context.Context, label string, settle time.Duration) err
 		err := clickTextAtCentre(ctx, label)
 		if err == nil {
 			fmt.Printf("  clicked %q\n", label)
-			return chromedp.Run(ctx, chromedp.Sleep(settle))
+			return chromedp.Do(ctx, chromedp.Sleep(settle))
 		}
 		if time.Now().After(deadline) {
 			fmt.Printf("  no %q to click\n", label)
 			return nil
 		}
-		if err := chromedp.Run(ctx, chromedp.Sleep(time.Second)); err != nil {
+		if err := chromedp.Do(ctx, chromedp.Sleep(time.Second)); err != nil {
 			return err
 		}
 	}
 }
 
 func sleep(ctx context.Context, d time.Duration) error {
-	return chromedp.Run(ctx, chromedp.Sleep(d))
+	return chromedp.Do(ctx, chromedp.Sleep(d))
 }
 
 // appFlow captures the saved app's Overview (client id) and Certificates &
@@ -190,11 +191,11 @@ func appFlow(ctx context.Context, frames *frameContexts, env map[string]string, 
 	if appID == "" {
 		return errors.New("ENTRA_CLIENT_ID is empty — register the app first")
 	}
-	if err := chromedp.Run(ctx, chromedp.EmulateViewport(1440, 1000)); err != nil {
+	if err := chromedp.Do(ctx, chromedp.EmulateViewport(1440, 1000)); err != nil {
 		return err
 	}
 	blade := "https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps/ApplicationMenuBlade/"
-	if err := chromedp.Run(ctx, chromedp.Navigate(blade+"Overview/appId/"+appID), chromedp.Sleep(20*time.Second)); err != nil {
+	if err := chromedp.Do(ctx, chromedp.Navigate(blade+"Overview/appId/"+appID), chromedp.Sleep(20*time.Second)); err != nil {
 		return err
 	}
 	if err := capture.RequireText(ctx, "Application (client) ID", 90*time.Second); err != nil {
@@ -209,7 +210,7 @@ func appFlow(ctx context.Context, frames *frameContexts, env map[string]string, 
 		return err
 	}
 
-	if err := chromedp.Run(ctx, chromedp.Navigate(blade+"Credentials/appId/"+appID), chromedp.Sleep(20*time.Second)); err != nil {
+	if err := chromedp.Do(ctx, chromedp.Navigate(blade+"Credentials/appId/"+appID), chromedp.Sleep(20*time.Second)); err != nil {
 		return err
 	}
 	dismissOverlays(ctx)
@@ -224,13 +225,13 @@ func appFlow(ctx context.Context, frames *frameContexts, env map[string]string, 
 // App registrations, and neither needs a provisioning configuration.
 func enterpriseAppFlow(ctx context.Context, frames *frameContexts, env map[string]string, outDir string, galleryOnly bool) error {
 	appName := scimAppName(env)
-	if err := chromedp.Run(ctx, chromedp.EmulateViewport(1520, 950)); err != nil {
+	if err := chromedp.Do(ctx, chromedp.EmulateViewport(1520, 950)); err != nil {
 		return err
 	}
 	// 1. Creating the enterprise application. "Create your own application" is
 	// the path for a SCIM app: the gallery entries are for products Microsoft
 	// already knows, and emisar is not one of them.
-	if err := chromedp.Run(ctx,
+	if err := chromedp.Do(ctx,
 		chromedp.Navigate("https://portal.azure.com/#view/Microsoft_AAD_IAM/StartboardApplicationsMenuBlade/~/AppAppsPreview"),
 		chromedp.Sleep(20*time.Second),
 	); err != nil {
@@ -269,9 +270,11 @@ func enterpriseAppFlow(ctx context.Context, frames *frameContexts, env map[strin
 	// A tab opened behind the first one is a hidden document, and the portal
 	// defers a hidden blade's work: its menu rendered but its list sat on a
 	// spinner for three minutes. Bring the tab forward before navigating.
-	if err := chromedp.Run(tab,
+	if _, err := chromedp.Call(tab, page.BringToFront, cdp.Empty{}); err != nil {
+		return err
+	}
+	if err := chromedp.Do(tab,
 		chromedp.EmulateViewport(1520, 950),
-		page.BringToFront(),
 		chromedp.Navigate("https://portal.azure.com/#blade/Microsoft_AAD_IAM/StartboardApplicationsMenuBlade/AllApps"),
 		chromedp.Sleep(20*time.Second),
 	); err != nil {
@@ -304,15 +307,16 @@ func enterpriseAppFlow(ctx context.Context, frames *frameContexts, env map[strin
 
 	// The blade's menu item is present but HIDDEN — the app menu renders
 	// collapsed, so a wait on visibility never resolves. Click the node itself.
-	var opened bool
-	if err := chromedp.Run(tab, chromedp.Evaluate(`(() => {
+
+	opened, actionErr := chromedp.Run(tab, chromedp.Evaluate[bool](`(() => {
   const item = [...document.querySelectorAll('.fxc-menu-listView-item, [data-telemetryname]')]
     .find(el => (el.textContent || '').trim() === 'Users and groups');
   if (!item) return false;
   item.click();
   return true;
-})()`, &opened)); err != nil {
-		return err
+})()`))
+	if actionErr != nil {
+		return actionErr
 	}
 	if !opened {
 		return errors.New("the app blade has no Users and groups item")
@@ -365,7 +369,7 @@ func provisioningFlow(ctx context.Context, frames *frameContexts, env map[string
 		}
 	}
 	principal, appID := env["ENTRA_SCIM_SERVICE_PRINCIPAL_ID"], env["ENTRA_SCIM_APP_ID"]
-	if err := chromedp.Run(ctx,
+	if err := chromedp.Do(ctx,
 		chromedp.EmulateViewport(1440, 1000),
 		chromedp.Navigate("https://portal.azure.com/#view/Microsoft_AAD_IAM/ManagedAppMenuBlade/~/Provisioning/objectId/"+principal+"/appId/"+appID),
 		chromedp.Sleep(28*time.Second),
@@ -469,7 +473,7 @@ func mappingsScreens(ctx context.Context, frames *frameContexts, outDir string) 
 	}
 	// The mapping editor's source/target row sits at a fixed spot in this
 	// viewport; ring it in the top document over the blade.
-	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
+	if err := chromedp.Do(ctx, chromedp.Evaluate[chromedp.Void](`(() => {
   const ring = document.createElement('div');
   Object.assign(ring.style, {
     position: 'fixed', left: '38px', top: '314px', width: '765px', height: '55px',
@@ -478,7 +482,7 @@ func mappingsScreens(ctx context.Context, frames *frameContexts, outDir string) 
   });
   document.body.appendChild(ring);
   return true;
-})()`, nil)); err != nil {
+})()`)); err != nil {
 		return err
 	}
 	return maskedShot(ctx, frames, outDir, "pw-18-externalid-objectid", 1440, true)
@@ -557,7 +561,7 @@ func connectionForm(ctx context.Context, frames *frameContexts, outDir string) e
 		return nil
 	}
 	var connected bool
-	if err := chromedp.Run(ctx, chromedp.ActionFunc(func(ctx context.Context) error {
+	if err := chromedp.Do(ctx, chromedp.Func(func(ctx context.Context, _ *chromedp.Target) error {
 		return target.frame.evaluate(ctx, `(() => {
   const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
   const button = [...document.querySelectorAll('button, [role=button], a')]
@@ -599,7 +603,7 @@ func connectionForm(ctx context.Context, frames *frameContexts, outDir string) e
 	// Tenant URL is the first non-password field on this form: focus it in its
 	// frame and type through real key events, which the React form accepts.
 	var focused bool
-	if err := chromedp.Run(ctx, chromedp.ActionFunc(func(ctx context.Context) error {
+	if err := chromedp.Do(ctx, chromedp.Func(func(ctx context.Context, _ *chromedp.Target) error {
 		return form.frame.evaluate(ctx, `(() => {
   const inputs = [...document.querySelectorAll('input')];
   console.log('inputs in form frame:', inputs.length);
@@ -614,11 +618,11 @@ func connectionForm(ctx context.Context, frames *frameContexts, outDir string) e
 		return err
 	}
 	if focused {
-		if err := chromedp.Run(ctx, chromedp.KeyEvent("https://emisar.dev/scim/v2"), chromedp.Sleep(time.Second)); err != nil {
+		if err := chromedp.Do(ctx, chromedp.KeyEvent("https://emisar.dev/scim/v2"), chromedp.Sleep(time.Second)); err != nil {
 			return err
 		}
 	}
-	if err := chromedp.Run(ctx, chromedp.ActionFunc(func(ctx context.Context) error {
+	if err := chromedp.Do(ctx, chromedp.Func(func(ctx context.Context, _ *chromedp.Target) error {
 		return form.frame.evaluate(ctx, `(() => {
   for (const input of document.querySelectorAll('input')) {
     if ((input.getAttribute('type') || '') === 'password') input.value = '••••••••••••••••••••';

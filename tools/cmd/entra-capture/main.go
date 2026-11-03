@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/chromedp/chromedp"
+	"github.com/chromedp/chromedp/remote"
 
 	"github.com/andrewdryga/emisar/tools/internal/capture"
 )
@@ -101,7 +102,7 @@ func run(env map[string]string, outDir string, headless bool, opts options) erro
 		chromedp.Flag("headless", headless),
 		chromedp.WindowSize(1440, 1000),
 	)
-	allocator, cancelAllocator := chromedp.NewExecAllocator(context.Background(), execOpts...)
+	allocator, cancelAllocator := chromedp.NewExecAllocator(context.Background(), append(execOpts, remote.WebSocket)...)
 	defer cancelAllocator()
 
 	ctx, cancel := chromedp.NewContext(allocator)
@@ -139,11 +140,11 @@ func run(env map[string]string, outDir string, headless bool, opts options) erro
 // round. Click Microsoft's stable `#idSIButton9` and gate each step on the text
 // of the screen that should now be showing, not on a field's mere presence.
 func signIn(ctx context.Context, env map[string]string, outDir string) error {
-	if err := chromedp.Run(ctx,
+	if err := chromedp.Do(ctx,
 		chromedp.Navigate("https://portal.azure.com/"),
-		chromedp.WaitVisible(`input[name="loginfmt"]`, chromedp.ByQuery),
-		chromedp.SendKeys(`input[name="loginfmt"]`, env["ENTRA_ADMIN_USER"], chromedp.ByQuery),
-		chromedp.Click(`#idSIButton9`, chromedp.ByQuery),
+		chromedp.WaitVisible(chromedp.CSS(`input[name="loginfmt"]`)),
+		chromedp.SendKeys(chromedp.CSS(`input[name="loginfmt"]`), env["ENTRA_ADMIN_USER"]),
+		chromedp.Click(chromedp.CSS(`#idSIButton9`)),
 	); err != nil {
 		return fmt.Errorf("username step: %w", err)
 	}
@@ -152,9 +153,9 @@ func signIn(ctx context.Context, env map[string]string, outDir string) error {
 	}
 	fmt.Println("  username accepted")
 
-	if err := chromedp.Run(ctx,
-		chromedp.SendKeys(`input[name="passwd"]`, env["ENTRA_ADMIN_PASSWORD"], chromedp.ByQuery),
-		chromedp.Click(`#idSIButton9`, chromedp.ByQuery),
+	if err := chromedp.Do(ctx,
+		chromedp.SendKeys(chromedp.CSS(`input[name="passwd"]`), env["ENTRA_ADMIN_PASSWORD"]),
+		chromedp.Click(chromedp.CSS(`#idSIButton9`)),
 		chromedp.Sleep(5*time.Second),
 	); err != nil {
 		return fmt.Errorf("password step: %w", err)
@@ -172,9 +173,9 @@ func signIn(ctx context.Context, env map[string]string, outDir string) error {
 func settle(ctx context.Context, env map[string]string) error {
 	deadline := time.Now().Add(3 * time.Minute)
 	for time.Now().Before(deadline) {
-		var body string
-		if err := chromedp.Run(ctx, chromedp.Evaluate(`document.body.innerText`, &body)); err != nil {
-			return err
+		body, actionErr := chromedp.Run(ctx, chromedp.Evaluate[string](`document.body.innerText`))
+		if actionErr != nil {
+			return actionErr
 		}
 
 		switch {
@@ -185,8 +186,8 @@ func settle(ctx context.Context, env map[string]string) error {
 
 		case strings.Contains(body, "Stay signed in?"):
 			fmt.Println("  dismissing \"Stay signed in?\"")
-			_ = chromedp.Run(ctx, chromedp.Click(`#idBtn_Back`, chromedp.ByQuery))
-			_ = chromedp.Run(ctx, chromedp.Sleep(4*time.Second))
+			_ = chromedp.Do(ctx, chromedp.Click(chromedp.CSS(`#idBtn_Back`)))
+			_ = chromedp.Do(ctx, chromedp.Sleep(4*time.Second))
 
 		// The password step's click occasionally lands before its button is
 		// live, and the form then sits filled but unsubmitted for the whole
@@ -194,8 +195,8 @@ func settle(ctx context.Context, env map[string]string) error {
 		// submit it again.
 		case strings.Contains(body, "Enter password"):
 			fmt.Println("  password screen still showing — submitting again")
-			_ = chromedp.Run(ctx, chromedp.Click(`#idSIButton9`, chromedp.ByQuery))
-			_ = chromedp.Run(ctx, chromedp.Sleep(5*time.Second))
+			_ = chromedp.Do(ctx, chromedp.Click(chromedp.CSS(`#idSIButton9`)))
+			_ = chromedp.Do(ctx, chromedp.Sleep(5*time.Second))
 
 		// Some sign-ins put a method chooser before the code prompt. Pick the
 		// authenticator code, which the tenant's TOTP secret answers.
@@ -204,7 +205,7 @@ func settle(ctx context.Context, env map[string]string) error {
 			if _, err := capture.ClickText(ctx, "Use a verification code"); err != nil {
 				return err
 			}
-			_ = chromedp.Run(ctx, chromedp.Sleep(4*time.Second))
+			_ = chromedp.Do(ctx, chromedp.Sleep(4*time.Second))
 
 		// Microsoft's nudge to enrol a second verification method sits between
 		// the passcode and the portal on this tenant. "Not now" keeps the
@@ -214,7 +215,7 @@ func settle(ctx context.Context, env map[string]string) error {
 			if _, err := capture.ClickText(ctx, "Not now"); err != nil {
 				return err
 			}
-			_ = chromedp.Run(ctx, chromedp.Sleep(4*time.Second))
+			_ = chromedp.Do(ctx, chromedp.Sleep(4*time.Second))
 
 		case strings.Contains(body, "Create a resource"),
 			strings.Contains(body, "Microsoft Entra admin center"),
@@ -223,7 +224,7 @@ func settle(ctx context.Context, env map[string]string) error {
 			return nil
 
 		default:
-			_ = chromedp.Run(ctx, chromedp.Sleep(3*time.Second))
+			_ = chromedp.Do(ctx, chromedp.Sleep(3*time.Second))
 		}
 	}
 	return fmt.Errorf("never reached the admin center")
@@ -240,7 +241,7 @@ func submitTOTP(ctx context.Context, env map[string]string) error {
 
 	if remaining := 30 - time.Now().Unix()%30; remaining < 8 {
 		fmt.Printf("  waiting %ds for a fresh TOTP window\n", remaining)
-		if err := chromedp.Run(ctx, chromedp.Sleep(time.Duration(remaining+1)*time.Second)); err != nil {
+		if err := chromedp.Do(ctx, chromedp.Sleep(time.Duration(remaining+1)*time.Second)); err != nil {
 			return err
 		}
 	}
@@ -250,9 +251,9 @@ func submitTOTP(ctx context.Context, env map[string]string) error {
 		return err
 	}
 	fmt.Println("  submitting TOTP passcode")
-	return chromedp.Run(ctx,
-		chromedp.SendKeys(`input[name="otc"]`, code, chromedp.ByQuery),
-		chromedp.Click(`input[type="submit"]`, chromedp.ByQuery),
+	return chromedp.Do(ctx,
+		chromedp.SendKeys(chromedp.CSS(`input[name="otc"]`), code),
+		chromedp.Click(chromedp.CSS(`input[type="submit"]`)),
 		chromedp.Sleep(6*time.Second),
 	)
 }
@@ -278,7 +279,7 @@ func appRegistrationFlow(ctx context.Context, env map[string]string, outDir stri
 			"Run -flow inventory to confirm no emisar app already exists, then pass -create — or set " +
 			"ENTRA_CLIENT_ID to resume the existing one")
 	}
-	if err := chromedp.Run(ctx,
+	if err := chromedp.Do(ctx,
 		chromedp.Navigate("https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/CreateApplicationBlade"),
 		chromedp.Sleep(18*time.Second),
 	); err != nil {
@@ -321,7 +322,7 @@ func appRegistrationFlow(ctx context.Context, env map[string]string, outDir stri
 	if err := clickTextAtCentre(ctx, "Register"); err != nil {
 		return fmt.Errorf("click Register: %w", err)
 	}
-	if err := chromedp.Run(ctx, chromedp.Sleep(20*time.Second)); err != nil {
+	if err := chromedp.Do(ctx, chromedp.Sleep(20*time.Second)); err != nil {
 		return err
 	}
 	return captureNewAppOverview(ctx, env, outDir, credentialsOut)
@@ -373,9 +374,10 @@ func readClientID(ctx context.Context) (string, error) {
   }
   return '';
 })()`
-	var value string
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &value)); err != nil {
-		return "", err
+
+	value, actionErr1 := chromedp.Run(ctx, chromedp.Evaluate[string](script))
+	if actionErr1 != nil {
+		return "", actionErr1
 	}
 	if value == "" {
 		return "", errors.New("could not read the Application (client) ID off the overview blade")
@@ -402,9 +404,10 @@ func markRegistrationDocsViewport(ctx context.Context) error {
   document.body.appendChild(crop);
   return true;
 })()`
-	var marked bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
-		return err
+
+	marked, actionErr2 := chromedp.Run(ctx, chromedp.Evaluate[bool](script))
+	if actionErr2 != nil {
+		return actionErr2
 	}
 	if !marked {
 		return fmt.Errorf("could not isolate the Entra registration blade")
@@ -461,14 +464,15 @@ func highlightRegistrationGroup(ctx context.Context) error {
   }
   return false;
 })()`
-	var marked bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
-		return err
+
+	marked, actionErr3 := chromedp.Run(ctx, chromedp.Evaluate[bool](script))
+	if actionErr3 != nil {
+		return actionErr3
 	}
 	if !marked {
 		return errors.New("could not outline the complete Entra redirect URI group")
 	}
-	return chromedp.Run(ctx, chromedp.Sleep(700*time.Millisecond))
+	return chromedp.Do(ctx, chromedp.Sleep(700*time.Millisecond))
 }
 
 // openRegisteredApp captures the saved app's overview.
@@ -489,7 +493,7 @@ func openRegisteredApp(ctx context.Context, env map[string]string, outDir string
 		_ = capture.Screenshot(ctx, outDir, "en-05-app-not-listed")
 		return fmt.Errorf("open the emisar app: %w", err)
 	}
-	if err := chromedp.Run(ctx, chromedp.Sleep(15*time.Second)); err != nil {
+	if err := chromedp.Do(ctx, chromedp.Sleep(15*time.Second)); err != nil {
 		return err
 	}
 	dismissOverlays(ctx)
@@ -506,7 +510,7 @@ func openRegisteredApp(ctx context.Context, env map[string]string, outDir string
 // location.hash afterwards does not route because the portal owns its router —
 // but the home tiles are plain clickable elements that do.
 func openService(ctx context.Context, tile, expect string) error {
-	if err := chromedp.Run(ctx,
+	if err := chromedp.Do(ctx,
 		chromedp.Navigate("https://portal.azure.com/"),
 		chromedp.Sleep(18*time.Second),
 	); err != nil {
@@ -524,7 +528,7 @@ func openService(ctx context.Context, tile, expect string) error {
 		return err
 	}
 	fmt.Printf("  %s -> %s\n", tile, href)
-	if err := chromedp.Run(ctx,
+	if err := chromedp.Do(ctx,
 		chromedp.Navigate(href),
 		chromedp.Sleep(25*time.Second),
 	); err != nil {
@@ -552,10 +556,11 @@ func dismissOverlays(ctx context.Context) {
   }
   return closed;
 })()`
-	var closed int
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &closed)); err == nil && closed > 0 {
+
+	closed, actionErr4 := chromedp.Run(ctx, chromedp.Evaluate[int](script))
+	if actionErr4 == nil && closed > 0 {
 		fmt.Printf("  dismissed %d overlay(s)\n", closed)
-		_ = chromedp.Run(ctx, chromedp.Sleep(2*time.Second))
+		_ = chromedp.Do(ctx, chromedp.Sleep(2*time.Second))
 	}
 }
 
@@ -570,7 +575,7 @@ func selectPlatform(ctx context.Context, option string) error {
 	if err := clickTextAtCentre(ctx, "Select a platform"); err != nil {
 		return fmt.Errorf("open platform dropdown: %w", err)
 	}
-	if err := chromedp.Run(ctx, chromedp.Sleep(3*time.Second)); err != nil {
+	if err := chromedp.Do(ctx, chromedp.Sleep(3*time.Second)); err != nil {
 		return err
 	}
 
@@ -584,12 +589,13 @@ func selectPlatform(ctx context.Context, option string) error {
 	// mean the combo took the value. It reported success while the form still read
 	// "Platform is required", which silently broke every later step. Verify against
 	// the rendered form, and fail loudly when the value did not stick.
-	if err := chromedp.Run(ctx, chromedp.Sleep(2*time.Second)); err != nil {
+	if err := chromedp.Do(ctx, chromedp.Sleep(2*time.Second)); err != nil {
 		return err
 	}
-	var body string
-	if err := chromedp.Run(ctx, chromedp.Evaluate(`document.body.innerText`, &body)); err != nil {
-		return err
+
+	body, actionErr5 := chromedp.Run(ctx, chromedp.Evaluate[string](`document.body.innerText`))
+	if actionErr5 != nil {
+		return actionErr5
 	}
 	if strings.Contains(body, "Platform is required") || strings.Contains(body, "Select a platform") {
 		return fmt.Errorf("platform %q did not stick — the form still demands one", option)
@@ -616,14 +622,18 @@ func clickTextAtCentre(ctx context.Context, label string) error {
 
 	// chromedp decodes the returned object straight into point, and a null result
 	// leaves the POINTER nil — which is the miss.
-	var point *struct{ X, Y float64 }
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &point)); err != nil {
-		return err
+
+	point, actionErr6 := chromedp.Run(ctx, chromedp.Evaluate[*struct {
+		X float64
+		Y float64
+	}](script))
+	if actionErr6 != nil {
+		return actionErr6
 	}
 	if point == nil {
 		return fmt.Errorf("nothing visible matching %q", label)
 	}
-	return chromedp.Run(ctx, chromedp.MouseClickXY(point.X, point.Y))
+	return chromedp.Do(ctx, chromedp.MouseClickXY(point.X, point.Y))
 }
 
 // fillField types into the input whose label, placeholder or aria-label matches.
@@ -642,14 +652,15 @@ func fillField(ctx context.Context, hint, value string) error {
   field.focus();
   return true;
 })()`, hint)
-	var focused bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &focused)); err != nil {
-		return err
+
+	focused, actionErr7 := chromedp.Run(ctx, chromedp.Evaluate[bool](script))
+	if actionErr7 != nil {
+		return actionErr7
 	}
 	if !focused {
 		return fmt.Errorf("no field matching %q", hint)
 	}
-	return chromedp.Run(ctx, chromedp.KeyEvent(value), chromedp.Sleep(time.Second))
+	return chromedp.Do(ctx, chromedp.KeyEvent(value), chromedp.Sleep(time.Second))
 }
 
 // dumpOptions lists the short visible labels on screen, so a missed dropdown
@@ -666,9 +677,10 @@ func dumpOptions(ctx context.Context) error {
   }
   return [...seen].join(' | ');
 })()`
-	var listing string
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &listing)); err != nil {
-		return err
+
+	listing, actionErr8 := chromedp.Run(ctx, chromedp.Evaluate[string](script))
+	if actionErr8 != nil {
+		return actionErr8
 	}
 	fmt.Println("--- visible labels ---")
 	fmt.Println(listing)
@@ -684,9 +696,10 @@ func hrefOfTile(ctx context.Context, label string) (string, error) {
     .find(el => norm(el.textContent) === %q);
   return a ? a.href : '';
 })()`, label)
-	var href string
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &href)); err != nil {
-		return "", err
+
+	href, actionErr9 := chromedp.Run(ctx, chromedp.Evaluate[string](script))
+	if actionErr9 != nil {
+		return "", actionErr9
 	}
 	if href == "" {
 		return "", fmt.Errorf("no anchor for tile %q", label)

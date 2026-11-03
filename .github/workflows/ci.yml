@@ -101,7 +101,7 @@ jobs:
       postgres:
         # Track prod's Cloud SQL major (POSTGRES_18, infra/database.tf) so the
         # suite runs against what production runs.
-        image: &postgres-image postgres:18.6-alpine@sha256:83148c0bc09eac4d598b70a61e1404d0212b76c95c504bfd6c81a4c59ec91792
+        image: &postgres-image postgres:18.6-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -173,7 +173,7 @@ jobs:
 
       - name: Install Hex and Rebar
         env:
-          HEX_VERSION: "2.5.4"
+          HEX_VERSION: "2.6.0"
           REBAR3_VERSION: "3.28.0"
           REBAR3_SHA512: 33bbd38c624f179a507ea0db611217aa3e9d99b6e65a96cdaebd933224e73af271c4d348171698f69c907dcf4f246757c8ea925a4153048bfdb6c7c5ca0835cf
         # The tooling gate's release-toolchain phase holds portal/Dockerfile's ARG
@@ -881,8 +881,8 @@ jobs:
     env:
       TERRAFORM_VERSION: 1.17.1
       TERRAFORM_SHA256: 4638628058e71a55212b1c563712eac03b902128f40740f3dc8174df12135061
-      TFLINT_VERSION: v0.64.0
-      TFLINT_SHA256: cca9d13e2e1d7a2c627af60ff899a3c9b74212899416aeb96ec764d2ef954537
+      TFLINT_VERSION: v0.65.0
+      TFLINT_SHA256: d4c545ed2e29d6338604b586f34f544f380f70f243aa72f7b484713835eaec61
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

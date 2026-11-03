@@ -61,9 +61,16 @@ func TestDocsRecipesWaitForResolvedContent(t *testing.T) {
 				t.Fatal(err)
 			}
 			var got bool
-			if err := chromedp.Run(session.Context,
-				chromedp.Evaluate("document.body.innerHTML="+string(html), nil),
-				chromedp.Evaluate(test.script, &got)); err != nil {
+			if err := chromedp.Do(session.Context,
+				chromedp.Evaluate[chromedp.Void]("document.body.innerHTML="+string(html)), chromedp.Func(func(ctx context.Context, target *chromedp.Target) error {
+					result, err := chromedp.Evaluate[bool](test.script)(ctx, target)
+					if err != nil {
+						return err
+					}
+					got = result
+					return nil
+				}),
+			); err != nil {
 				t.Fatal(err)
 			}
 			if got != test.want {
@@ -138,8 +145,8 @@ func TestDocsCropKeepsBothEdgesAfterViewportChange(t *testing.T) {
 	if err := session.Viewport(1680, 2800, 2, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := chromedp.Run(session.Context, chromedp.Evaluate(`document.documentElement.innerHTML=
-	'<head><style>*{box-sizing:border-box}body{margin:0;background:#00ff00}.shell{display:flex}.sidebar{width:256px;flex:none;position:sticky;top:0}.canvas{flex:1;min-width:0}.content{overflow-x:clip;padding:32px}.editor{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:48px;padding-top:432.5px}#nested-crop{height:467px;border:4px solid #ffff00;background:#ff0000}footer{height:2000px}</style></head><body><div class="shell"><aside class="sidebar"></aside><div class="canvas"><main class="content"><div class="editor"><main><div id="nested-crop"></div><footer></footer></main><aside></aside></div></main></div></div></body>'`, nil)); err != nil {
+	if err := chromedp.Do(session.Context, chromedp.Evaluate[chromedp.Void](`document.documentElement.innerHTML=
+	'<head><style>*{box-sizing:border-box}body{margin:0;background:#00ff00}.shell{display:flex}.sidebar{width:256px;flex:none;position:sticky;top:0}.canvas{flex:1;min-width:0}.content{overflow-x:clip;padding:32px}.editor{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:48px;padding-top:432.5px}#nested-crop{height:467px;border:4px solid #ffff00;background:#ff0000}footer{height:2000px}</style></head><body><div class="shell"><aside class="sidebar"></aside><div class="canvas"><main class="content"><div class="editor"><main><div id="nested-crop"></div><footer></footer></main><aside></aside></div></main></div></div></body>'`)); err != nil {
 		t.Fatal(err)
 	}
 	if err := session.Viewport(1440, 2800, 2, false); err != nil {
@@ -176,9 +183,16 @@ func TestDocsCropKeepsBothEdgesAfterViewportChange(t *testing.T) {
 	// A real run with arguments reaches farther down than the old loop crop.
 	// The overlay coordinates must use the same height as the exported frames.
 	var targetsJSON string
-	if err := chromedp.Run(session.Context,
-		chromedp.Evaluate(`document.body.innerHTML='<div id="shell-canvas" style="width:1280px"><div style="height:1180px"></div><div data-shot="run-output" style="height:120px"></div></div>'`, nil),
-		chromedp.Evaluate(loopTargets, &targetsJSON)); err != nil {
+	if err := chromedp.Do(session.Context,
+		chromedp.Evaluate[chromedp.Void](`document.body.innerHTML='<div id="shell-canvas" style="width:1280px"><div style="height:1180px"></div><div data-shot="run-output" style="height:120px"></div></div>'`), chromedp.Func(func(ctx context.Context, target *chromedp.Target) error {
+			result, err := chromedp.Evaluate[string](loopTargets)(ctx, target)
+			if err != nil {
+				return err
+			}
+			targetsJSON = result
+			return nil
+		}),
+	); err != nil {
 		t.Fatal(err)
 	}
 	var targets struct {

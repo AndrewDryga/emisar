@@ -382,8 +382,8 @@ func captureLoopTake(ctx context.Context, manager *Manager, config DocsConfig) (
 	}
 	printTargets(session, manager.Out, "approval")
 
-	if err := chromedp.Run(session.Context,
-		chromedp.SendKeys(`#approval-decision-form textarea[name="reason"]`, loopDecisionNote, chromedp.ByQuery)); err != nil {
+	if err := chromedp.Do(session.Context,
+		chromedp.SendKeys(chromedp.CSS(`#approval-decision-form textarea[name="reason"]`), loopDecisionNote)); err != nil {
 		return nil, err
 	}
 	if err := frame("loop-approval-note"); err != nil {
@@ -392,8 +392,8 @@ func captureLoopTake(ctx context.Context, manager *Manager, config DocsConfig) (
 
 	// Approve for real. The decide form disappears once the request is
 	// decided, so its absence is the precise "the approve committed" signal.
-	if err := chromedp.Run(session.Context,
-		chromedp.Click(`#approval-decision-form button[value="approve"]`, chromedp.ByQuery)); err != nil {
+	if err := chromedp.Do(session.Context,
+		chromedp.Click(chromedp.CSS(`#approval-decision-form button[value="approve"]`))); err != nil {
 		return nil, err
 	}
 	if err := waitGone(session, `#approval-decision-form`, 15*time.Second); err != nil {
@@ -471,8 +471,8 @@ func loopFrameByName(name string) (shot, bool) {
 }
 
 func printTargets(session *Session, out io.Writer, page string) {
-	var targets string
-	if err := chromedp.Run(session.Context, chromedp.Evaluate(loopTargets, &targets)); err == nil {
+	targets, actionErr := chromedp.Run(session.Context, chromedp.Evaluate[string](loopTargets))
+	if actionErr == nil {
 		fmt.Fprintf(out, "  loop targets (%s page): %s\n", page, targets)
 	}
 }
@@ -483,9 +483,9 @@ func waitGone(session *Session, selector string, timeout time.Duration) error {
 	script := `(()=>!document.querySelector(` + string(quoted) + `))()`
 	deadline := time.Now().Add(timeout)
 	for {
-		var gone bool
-		if err := chromedp.Run(session.Context, chromedp.Evaluate(script, &gone)); err != nil {
-			return err
+		gone, actionErr1 := chromedp.Run(session.Context, chromedp.Evaluate[bool](script))
+		if actionErr1 != nil {
+			return actionErr1
 		}
 		if gone {
 			return nil
@@ -503,9 +503,9 @@ func waitText(session *Session, text string, timeout time.Duration) error {
 	script := `(()=>{const el=document.querySelector('#shell-canvas');return !!el && el.textContent.includes(` + string(quoted) + `)})()`
 	deadline := time.Now().Add(timeout)
 	for {
-		var found bool
-		if err := chromedp.Run(session.Context, chromedp.Evaluate(script, &found)); err != nil {
-			return err
+		found, actionErr2 := chromedp.Run(session.Context, chromedp.Evaluate[bool](script))
+		if actionErr2 != nil {
+			return actionErr2
 		}
 		if found {
 			return nil
@@ -707,9 +707,10 @@ func highlightControls(session *Session, labels []string) error {
   }
   return paint(control);
 })()`, direct, wanted, wanted, row)
-		var marked bool
-		if err := chromedp.Run(session.Context, chromedp.Evaluate(script, &marked)); err != nil {
-			return err
+
+		marked, actionErr3 := chromedp.Run(session.Context, chromedp.Evaluate[bool](script))
+		if actionErr3 != nil {
+			return actionErr3
 		}
 		if !marked {
 			return fmt.Errorf("nothing labelled %q to highlight", label)
@@ -734,7 +735,7 @@ func captureDocElement(session *Session, config DocsConfig, s shot) (string, err
 		// it settles and is shot; the tail simply doesn't render.
 		if s.Rows > 0 && s.RowSelector != "" {
 			hide := fmt.Sprintf(`(function(){const rows=document.querySelectorAll(%q);for(let i=%d;i<rows.length;i++)rows[i].style.display='none';return true})()`, s.RowSelector, s.Rows)
-			if err := chromedp.Run(session.Context, chromedp.Evaluate(hide, nil)); err != nil {
+			if err := chromedp.Do(session.Context, chromedp.Evaluate[chromedp.Void](hide)); err != nil {
 				return "", err
 			}
 		}
@@ -765,13 +766,13 @@ func captureDocElement(session *Session, config DocsConfig, s shot) (string, err
   el.appendChild(pad());
   return true;
 })()`
-			if err := chromedp.Run(session.Context, chromedp.Evaluate(spacer, nil)); err != nil {
+			if err := chromedp.Do(session.Context, chromedp.Evaluate[chromedp.Void](spacer)); err != nil {
 				return "", fmt.Errorf("%s: %w", s.Name, err)
 			}
 		}
 		// Full-page captures start at the document origin. Reset scroll before
 		// measuring so sticky/scroll-linked layout uses that same position.
-		if err := chromedp.Run(session.Context, chromedp.Evaluate(`window.scrollTo({top:0,left:0,behavior:'instant'})`, nil)); err != nil {
+		if err := chromedp.Do(session.Context, chromedp.Evaluate[chromedp.Void](`window.scrollTo({top:0,left:0,behavior:'instant'})`)); err != nil {
 			return "", err
 		}
 		switch err := session.Ready(10*time.Second, selector); {
@@ -785,9 +786,12 @@ func captureDocElement(session *Session, config DocsConfig, s shot) (string, err
 	if err := captureDocCrop(session, selector, path, s.CropPadding); err != nil {
 		return "", err
 	}
-	var color string
 	script := `(function(){let el=document.querySelector('[data-shot="1"]');while(el){const c=getComputedStyle(el).backgroundColor;if(c&&c!=='rgba(0, 0, 0, 0)'&&c!=='transparent')return c;el=el.parentElement;}return 'rgb(9, 9, 11)'})()`
-	if err := chromedp.Run(session.Context, chromedp.Evaluate(script, &color), chromedp.Evaluate(`document.querySelector('[data-shot="1"]')?.removeAttribute('data-shot')`, nil)); err != nil {
+	color, err := chromedp.Run(session.Context, chromedp.Evaluate[string](script))
+	if err != nil {
+		return "", err
+	}
+	if err := chromedp.Do(session.Context, chromedp.Evaluate[chromedp.Void](`document.querySelector('[data-shot="1"]')?.removeAttribute('data-shot')`)); err != nil {
 		return "", err
 	}
 	return rgbHex(color), nil
@@ -809,25 +813,26 @@ return {X:x,Y:y,Width:right-x,Height:bottom-y}})()`
 	defer cancel()
 	// Capturing can force layout of deferred content. Retry if it moves the crop.
 	for attempt := 0; ; attempt++ {
-		if err := chromedp.Run(ctx, chromedp.Evaluate(script, &box)); err != nil {
-			return err
+		var actionErr4 error
+		box, actionErr4 = chromedp.Run(ctx, chromedp.Evaluate[bounds](script))
+		if actionErr4 != nil {
+			return actionErr4
 		}
 		if box.Width <= 0 || box.Height <= 0 {
 			return fmt.Errorf("docs crop has empty bounds")
 		}
-		var shotBytes []byte
-		if err := chromedp.Run(ctx, chromedp.ActionFunc(func(ctx context.Context) error {
-			var err error
-			shotBytes, err = page.CaptureScreenshot().
-				WithClip(&page.Viewport{X: box.X, Y: box.Y, Width: box.Width, Height: box.Height, Scale: 1}).
-				WithCaptureBeyondViewport(true).Do(ctx)
-			return err
-		})); err != nil {
+		shot, err := chromedp.Call(ctx, page.CaptureScreenshot, page.CaptureScreenshotParams{
+			Clip:                  &page.Viewport{X: box.X, Y: box.Y, Width: box.Width, Height: box.Height, Scale: 1},
+			CaptureBeyondViewport: new(true),
+		})
+		if err != nil {
 			return err
 		}
-		var after bounds
-		if err := chromedp.Run(ctx, chromedp.Evaluate(script, &after)); err != nil {
-			return err
+		shotBytes := shot.Data
+
+		after, actionErr5 := chromedp.Run(ctx, chromedp.Evaluate[bounds](script))
+		if actionErr5 != nil {
+			return actionErr5
 		}
 		if box == after {
 			return writeImage(path, shotBytes)
@@ -854,9 +859,9 @@ func imageCommand(tool string, args ...string) ([]byte, error) {
 func clickByScript(session *Session, script, label string) error {
 	deadline := time.Now().Add(10 * time.Second)
 	for {
-		var clicked bool
-		if err := chromedp.Run(session.Context, chromedp.Evaluate(script, &clicked)); err != nil {
-			return err
+		clicked, actionErr6 := chromedp.Run(session.Context, chromedp.Evaluate[bool](script))
+		if actionErr6 != nil {
+			return actionErr6
 		}
 		if clicked {
 			return nil
@@ -915,11 +920,11 @@ func captureKeycloakGuide(ctx context.Context, manager *Manager, config DocsConf
 	if err := session.Navigate("/admin/master/console/"); err != nil {
 		return nil, err
 	}
-	if err := chromedp.Run(session.Context,
-		chromedp.WaitVisible(`#username`, chromedp.ByQuery),
-		chromedp.SendKeys(`#username`, "admin", chromedp.ByQuery),
-		chromedp.SendKeys(`#password`, "admin", chromedp.ByQuery),
-		chromedp.Click(`#kc-login`, chromedp.ByQuery)); err != nil {
+	if err := chromedp.Do(session.Context,
+		chromedp.WaitVisible(chromedp.CSS(`#username`)),
+		chromedp.SendKeys(chromedp.CSS(`#username`), "admin"),
+		chromedp.SendKeys(chromedp.CSS(`#password`), "admin"),
+		chromedp.Click(chromedp.CSS(`#kc-login`))); err != nil {
 		return nil, fmt.Errorf("signing in to the Keycloak dev admin console: %w", err)
 	}
 	if err := session.Ready(15*time.Second, `#nav-item-realms`); err != nil {
@@ -940,17 +945,17 @@ func captureKeycloakGuide(ctx context.Context, manager *Manager, config DocsConf
 	if err := session.Ready(10*time.Second, `[data-testid="createClient"]`); err != nil {
 		return nil, err
 	}
-	if err := chromedp.Run(session.Context,
-		chromedp.Click(`[data-testid="createClient"]`, chromedp.ByQuery)); err != nil {
+	if err := chromedp.Do(session.Context,
+		chromedp.Click(chromedp.CSS(`[data-testid="createClient"]`))); err != nil {
 		return nil, err
 	}
 	if err := session.Ready(10*time.Second, `#clientId`); err != nil {
 		return nil, err
 	}
-	if err := chromedp.Run(session.Context,
-		chromedp.SendKeys(`#clientId`, "emisar-portal", chromedp.ByQuery),
-		chromedp.SendKeys(`#name`, "emisar", chromedp.ByQuery),
-		chromedp.Evaluate(`document.activeElement?.blur()`, nil)); err != nil {
+	if err := chromedp.Do(session.Context,
+		chromedp.SendKeys(chromedp.CSS(`#clientId`), "emisar-portal"),
+		chromedp.SendKeys(chromedp.CSS(`#name`), "emisar"),
+		chromedp.Evaluate[chromedp.Void](`document.activeElement?.blur()`)); err != nil {
 		return nil, err
 	}
 
@@ -971,16 +976,16 @@ func captureKeycloakGuide(ctx context.Context, manager *Manager, config DocsConf
 	if err := capture("keycloak-client-general"); err != nil {
 		return nil, err
 	}
-	if err := chromedp.Run(session.Context,
-		chromedp.Click(`#kc-main-content-page-container button[type="submit"]`, chromedp.ByQuery)); err != nil {
+	if err := chromedp.Do(session.Context,
+		chromedp.Click(chromedp.CSS(`#kc-main-content-page-container button[type="submit"]`))); err != nil {
 		return nil, err
 	}
 	if err := session.Ready(10*time.Second, `[data-testid="capability-config-form"]`); err != nil {
 		return nil, err
 	}
-	if err := chromedp.Run(session.Context,
-		chromedp.Click(`#kc-authentication`, chromedp.ByQuery),
-		chromedp.Click(`#kc-pkce-required-switch`, chromedp.ByQuery)); err != nil {
+	if err := chromedp.Do(session.Context,
+		chromedp.Click(chromedp.CSS(`#kc-authentication`)),
+		chromedp.Click(chromedp.CSS(`#kc-pkce-required-switch`))); err != nil {
 		return nil, err
 	}
 	if err := waitChecked(session, `#kc-authentication`, 10*time.Second); err != nil {
@@ -1002,9 +1007,9 @@ func captureKeycloakGuide(ctx context.Context, manager *Manager, config DocsConf
 	if err := session.Ready(10*time.Second, `[data-testid="redirectUris0"]`); err != nil {
 		return nil, err
 	}
-	if err := chromedp.Run(session.Context,
-		chromedp.SendKeys(`[data-testid="redirectUris0"]`, "https://emisar.dev/sign_in/sso/callback", chromedp.ByQuery),
-		chromedp.Evaluate(`document.activeElement?.blur()`, nil)); err != nil {
+	if err := chromedp.Do(session.Context,
+		chromedp.SendKeys(chromedp.CSS(`[data-testid="redirectUris0"]`), "https://emisar.dev/sign_in/sso/callback"),
+		chromedp.Evaluate[chromedp.Void](`document.activeElement?.blur()`)); err != nil {
 		return nil, err
 	}
 	if err := capture("keycloak-client-redirect"); err != nil {
@@ -1028,10 +1033,11 @@ func captureKeycloakGuide(ctx context.Context, manager *Manager, config DocsConf
 	if err := session.Ready(10*time.Second, `#kc-client-secret`); err != nil {
 		return nil, err
 	}
-	var secretMasked bool
-	if err := chromedp.Run(session.Context,
-		chromedp.Evaluate(`document.querySelector('#kc-client-secret')?.type === 'password'`, &secretMasked)); err != nil {
-		return nil, err
+
+	secretMasked, actionErr7 := chromedp.Run(session.Context,
+		chromedp.Evaluate[bool](`document.querySelector('#kc-client-secret')?.type === 'password'`))
+	if actionErr7 != nil {
+		return nil, actionErr7
 	}
 	if !secretMasked {
 		return nil, fmt.Errorf("the Keycloak client secret is not password-masked; refusing to capture")
@@ -1039,8 +1045,8 @@ func captureKeycloakGuide(ctx context.Context, manager *Manager, config DocsConf
 	if err := capture("keycloak-client-secret"); err != nil {
 		return nil, err
 	}
-	if err := chromedp.Run(session.Context,
-		chromedp.Click(`[data-testid="clientScopesTab"]`, chromedp.ByQuery)); err != nil {
+	if err := chromedp.Do(session.Context,
+		chromedp.Click(chromedp.CSS(`[data-testid="clientScopesTab"]`))); err != nil {
 		return nil, err
 	}
 	if err := session.Ready(10*time.Second, `table[aria-label="Client scopes"]`); err != nil {
@@ -1071,9 +1077,9 @@ func waitChecked(session *Session, selector string, timeout time.Duration) error
 func waitScript(session *Session, script, label string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for {
-		var ready bool
-		if err := chromedp.Run(session.Context, chromedp.Evaluate(script, &ready)); err != nil {
-			return err
+		ready, actionErr8 := chromedp.Run(session.Context, chromedp.Evaluate[bool](script))
+		if actionErr8 != nil {
+			return actionErr8
 		}
 		if ready {
 			return nil

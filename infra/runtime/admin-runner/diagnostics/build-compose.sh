@@ -8,7 +8,7 @@ set -eu
 source_commit=5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de
 source_url=https://codeload.github.com/docker/compose/tar.gz/$source_commit
 source_sha256=c72877db37172d8ee55f565e4fed20067af89015e986b190768fd4ee621025f2
-compiler_image=golang:1.27.3-alpine3.24@sha256:d530cf60723abf1ffae0cd16bb546b379ec0550d2f3815e5b16ed69dbc00fba4
+compiler_image=golang:1.27.3-alpine3.24@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb
 test "$(go env GOVERSION)" = go1.27.3
 mkdir /compose /compose-src
 wget -O /compose-source.tar.gz "$source_url"

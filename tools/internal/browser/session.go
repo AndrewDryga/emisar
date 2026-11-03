@@ -17,6 +17,7 @@ import (
 
 	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/chromedp"
+	"github.com/chromedp/chromedp/remote"
 )
 
 type Session struct {
@@ -40,9 +41,9 @@ func (m *Manager) Session(ctx context.Context, baseURL string, isolated bool) (*
 	if err != nil {
 		return nil, err
 	}
-	allocator, cancelAllocator := chromedp.NewRemoteAllocator(ctx, state.WSEndpoint)
+	allocator, cancelAllocator := remote.NewAllocator(ctx, state.WSEndpoint)
 	tab, cancelTab := chromedp.NewContext(allocator)
-	if err := chromedp.Run(tab); err != nil {
+	if err := chromedp.Do(tab); err != nil {
 		cancelTab()
 		cancelAllocator()
 		return nil, err
@@ -66,6 +67,7 @@ func (m *Manager) isolatedSessionWithOptions(ctx context.Context, baseURL string
 	cleanup := func() { _ = os.RemoveAll(profile) }
 	options := []chromedp.ExecAllocatorOption{
 		chromedp.ExecPath(chrome), chromedp.UserDataDir(profile),
+		remote.WebSocket,
 		chromedp.NoFirstRun, chromedp.NoDefaultBrowserCheck,
 		chromedp.Flag("headless", "new"),
 		chromedp.Flag("force-prefers-reduced-motion", true),
@@ -101,7 +103,7 @@ func (m *Manager) isolatedSessionWithOptions(ctx context.Context, baseURL string
 	options = append(options, chromedp.ModifyCmdFunc(func(cmd *exec.Cmd) { wrapWithLifeline(cmd, child) }))
 	allocator, cancelAllocator := chromedp.NewExecAllocator(ctx, options...)
 	tab, cancelTab := chromedp.NewContext(allocator)
-	if err := chromedp.Run(tab); err != nil {
+	if err := chromedp.Do(tab); err != nil {
 		cancelTab()
 		cancelAllocator()
 		_ = child.Close()
@@ -129,7 +131,8 @@ func (s *Session) Close() {
 }
 
 func (s *Session) Viewport(width, height int64, scale float64, mobile bool) error {
-	return chromedp.Run(s.Context, emulation.SetDeviceMetricsOverride(width, height, scale, mobile))
+	_, err := chromedp.Call(s.Context, emulation.SetDeviceMetricsOverride, emulation.SetDeviceMetricsOverrideParams{Width: width, Height: height, DeviceScaleFactor: scale, Mobile: mobile})
+	return err
 }
 
 func (s *Session) Navigate(target string) error {
@@ -139,14 +142,14 @@ func (s *Session) Navigate(target string) error {
 	navigationContext, cancel := context.WithTimeout(s.Context, 15*time.Second)
 	defer cancel()
 	if strings.Contains(target, "[") {
-		if err := chromedp.Run(navigationContext, chromedp.Navigate(s.BaseURL)); err != nil {
+		if err := chromedp.Do(navigationContext, chromedp.Navigate(s.BaseURL)); err != nil {
 			return err
 		}
 		encoded, _ := json.Marshal(target)
-		if err := chromedp.Run(navigationContext, chromedp.Evaluate(`location.href=`+string(encoded), nil)); err != nil {
+		if err := chromedp.Do(navigationContext, chromedp.Evaluate[chromedp.Void](`location.href=`+string(encoded))); err != nil {
 			return err
 		}
-	} else if err := chromedp.Run(navigationContext, chromedp.Navigate(target)); err != nil {
+	} else if err := chromedp.Do(navigationContext, chromedp.Navigate(target)); err != nil {
 		return err
 	}
 	return s.Ready(10*time.Second, "")
@@ -168,11 +171,11 @@ func (s *Session) Ready(timeout time.Duration, target string) error {
 	var lastEvaluationError error
 	assetDeadline := time.Now().Add(2 * time.Second)
 	for {
-		var status int
-		if err := chromedp.Run(ctx, chromedp.Evaluate(readyScript, &status)); err == nil && (status == 1 || status == 2 && time.Now().After(assetDeadline)) {
+		status, actionErr := chromedp.Run(ctx, chromedp.Evaluate[int](readyScript))
+		if actionErr == nil && (status == 1 || status == 2 && time.Now().After(assetDeadline)) {
 			break
-		} else if err != nil {
-			lastEvaluationError = err
+		} else if actionErr != nil {
+			lastEvaluationError = actionErr
 		}
 		select {
 		case <-ctx.Done():
@@ -180,7 +183,7 @@ func (s *Session) Ready(timeout time.Duration, target string) error {
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
-	if err := chromedp.Run(ctx, chromedp.Sleep(34*time.Millisecond)); err != nil {
+	if err := chromedp.Do(ctx, chromedp.Sleep(34*time.Millisecond)); err != nil {
 		return err
 	}
 	if target == "" {
@@ -189,9 +192,9 @@ func (s *Session) Ready(timeout time.Duration, target string) error {
 	quoted, _ := json.Marshal(target)
 	stableScript := `(function(){const el=document.querySelector(` + string(quoted) + `);if(!el)return false;const b=el.getBoundingClientRect();const k=[b.x,b.y,b.width,b.height].join(':');if(el.dataset.shotGeometry===k)return true;el.dataset.shotGeometry=k;return false})()`
 	for {
-		var stable bool
-		if err := chromedp.Run(ctx, chromedp.Evaluate(stableScript, &stable)); err == nil && stable {
-			return chromedp.Run(ctx, chromedp.Sleep(34*time.Millisecond))
+		stable, actionErr1 := chromedp.Run(ctx, chromedp.Evaluate[bool](stableScript))
+		if actionErr1 == nil && stable {
+			return chromedp.Do(ctx, chromedp.Sleep(34*time.Millisecond))
 		}
 		select {
 		case <-ctx.Done():
@@ -208,8 +211,10 @@ func (s *Session) readinessDiagnostic() string {
 	defer cancel()
 	var diagnostic string
 	script := `(function(){const root=document.querySelector('[data-phx-main]');const pending=[...document.images].filter(img=>{const b=img.getBoundingClientRect();return b.width>0&&b.height>0&&!img.complete}).length;return 'url='+location.href+' readyState='+document.readyState+' liveRoot='+(!!root)+' connected='+(root?.classList.contains('phx-connected')||false)+' fonts='+(document.fonts?.status||'unknown')+' pendingImages='+pending})()`
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &diagnostic)); err != nil {
-		return "diagnostic unavailable: " + err.Error()
+	var actionErr2 error
+	diagnostic, actionErr2 = chromedp.Run(ctx, chromedp.Evaluate[string](script))
+	if actionErr2 != nil {
+		return "diagnostic unavailable: " + actionErr2.Error()
 	}
 	return diagnostic
 }
@@ -319,9 +324,9 @@ func (s *Session) Login(slug, email string) error {
 	if err := s.awaitEmailForm(signInPage); err != nil {
 		return err
 	}
-	if err := chromedp.Run(s.Context,
-		chromedp.Evaluate(`document.documentElement.dataset.`+loginStamp+` = '1'`, nil),
-		chromedp.SendKeys(`input[type="email"]`, email, chromedp.ByQuery),
+	if err := chromedp.Do(s.Context,
+		chromedp.Evaluate[chromedp.Void](`document.documentElement.dataset.`+loginStamp+` = '1'`),
+		chromedp.SendKeys(chromedp.CSS(`input[type="email"]`), email),
 		chromedp.KeyEvent("\r"),
 	); err != nil {
 		return err
@@ -383,7 +388,7 @@ func (s *Session) inWorkspace(slug string) (bool, error) {
 func (s *Session) awaitEmailForm(signInPage string) error {
 	ctx, cancel := context.WithTimeout(s.Context, emailFormWait)
 	defer cancel()
-	if err := chromedp.Run(ctx, chromedp.WaitVisible(`input[type="email"]`, chromedp.ByQuery)); err != nil {
+	if err := chromedp.Do(ctx, chromedp.WaitVisible(chromedp.CSS(`input[type="email"]`))); err != nil {
 		if ctxErr := s.Context.Err(); ctxErr != nil {
 			return fmt.Errorf("opening %s: %w", signInPage, ctxErr)
 		}
@@ -412,8 +417,8 @@ func appSlug(raw string) (slug, rest string) {
 func (s *Session) signInOutcome() (signInOutcome, error) {
 	deadline := time.Now().Add(15 * time.Second)
 	for {
-		var outcome signInOutcome
-		if err := chromedp.Run(s.Context, chromedp.Evaluate(signInOutcomeScript, &outcome)); err == nil && !outcome.Stamped {
+		outcome, actionErr3 := chromedp.Run(s.Context, chromedp.Evaluate[signInOutcome](signInOutcomeScript))
+		if actionErr3 == nil && !outcome.Stamped {
 			return outcome, nil
 		}
 		if time.Now().After(deadline) {

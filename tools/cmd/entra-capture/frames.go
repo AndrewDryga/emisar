@@ -30,56 +30,16 @@ import (
 // blades by attached target, scoped to this page through each target's parent
 // frame.
 
-// frameContexts remembers the default execution context of every in-process
-// frame and the contexts attached to this page's iframe targets.
+// frameContexts keeps one attached context per out-of-process iframe target.
+// In-process frames are discovered from the current frame tree on each scan.
 type frameContexts struct {
-	page      context.Context
-	mu        sync.Mutex
-	byFrame   map[cdp.FrameID]runtime.ExecutionContextID
-	byContext map[runtime.ExecutionContextID]cdp.FrameID
-	// One attached context per iframe target for the whole run: cancelling one
-	// would close the frame's target, and the browser's own shutdown ends them.
+	page     context.Context
+	mu       sync.Mutex
 	children map[target.ID]context.Context
 }
 
-// trackFrames starts recording contexts for ctx's target. Call it before the
-// first navigation so no frame's context is missed.
 func trackFrames(ctx context.Context) *frameContexts {
-	contexts := &frameContexts{
-		page:      ctx,
-		byFrame:   map[cdp.FrameID]runtime.ExecutionContextID{},
-		byContext: map[runtime.ExecutionContextID]cdp.FrameID{},
-		children:  map[target.ID]context.Context{},
-	}
-	chromedp.ListenTarget(ctx, func(ev any) {
-		switch ev := ev.(type) {
-		case *runtime.EventExecutionContextCreated:
-			var aux struct {
-				FrameID   cdp.FrameID `json:"frameId"`
-				IsDefault bool        `json:"isDefault"`
-			}
-			if err := json.Unmarshal(ev.Context.AuxData, &aux); err != nil || !aux.IsDefault {
-				return
-			}
-			contexts.mu.Lock()
-			contexts.byFrame[aux.FrameID] = ev.Context.ID
-			contexts.byContext[ev.Context.ID] = aux.FrameID
-			contexts.mu.Unlock()
-		case *runtime.EventExecutionContextDestroyed:
-			contexts.mu.Lock()
-			if frame, ok := contexts.byContext[ev.ExecutionContextID]; ok && contexts.byFrame[frame] == ev.ExecutionContextID {
-				delete(contexts.byFrame, frame)
-			}
-			delete(contexts.byContext, ev.ExecutionContextID)
-			contexts.mu.Unlock()
-		case *runtime.EventExecutionContextsCleared:
-			contexts.mu.Lock()
-			contexts.byFrame = map[cdp.FrameID]runtime.ExecutionContextID{}
-			contexts.byContext = map[runtime.ExecutionContextID]cdp.FrameID{}
-			contexts.mu.Unlock()
-		}
-	})
-	return contexts
+	return &frameContexts{page: ctx, children: map[target.ID]context.Context{}}
 }
 
 // A frame is one place a script can run: an in-process frame addressed by its
@@ -92,28 +52,29 @@ type frame struct {
 
 // frames lists the page's frames: the top document and its in-process children
 // in tree order, then every isolated iframe whose parent frame belongs to this
-// page, nested ones included. A frame whose context has not been announced yet
-// is skipped; the callers retry on their own schedule.
+// page, nested ones included. Frames that disappear during the scan are skipped;
+// callers retry on their own schedule.
 func (c *frameContexts) frames(ctx context.Context) ([]frame, error) {
-	tree, err := page.GetFrameTree().Do(ctx)
+	tree, err := chromedp.Call(ctx, page.GetFrameTree, cdp.Empty{})
 	if err != nil {
 		return nil, err
 	}
 	known := map[cdp.FrameID]bool{}
 	var frames []frame
-	c.mu.Lock()
 	var walk func(node *page.FrameTree)
 	walk = func(node *page.FrameTree) {
 		known[node.Frame.ID] = true
-		if id, ok := c.byFrame[node.Frame.ID]; ok {
-			frames = append(frames, frame{context: id, url: node.Frame.URL})
+		// These helpers read and interact with DOM, so a named isolated world
+		// provides an authoritative context without racing context lifecycle events.
+		world, err := chromedp.Call(ctx, page.CreateIsolatedWorld, page.CreateIsolatedWorldParams{FrameID: node.Frame.ID, WorldName: "emisar-entra-capture"})
+		if err == nil {
+			frames = append(frames, frame{context: world.ExecutionContextID, url: node.Frame.URL})
 		}
 		for _, child := range node.ChildFrames {
 			walk(child)
 		}
 	}
-	walk(tree)
-	c.mu.Unlock()
+	walk(tree.FrameTree)
 
 	targets, err := chromedp.Targets(c.page)
 	if err != nil {
@@ -149,22 +110,26 @@ func (c *frameContexts) attach(id target.ID) context.Context {
 // evaluate runs script in one frame and decodes its value.
 func (f frame) evaluate(ctx context.Context, script string, res any) error {
 	if f.child != nil {
-		return chromedp.Run(f.child, chromedp.Evaluate(script, res))
+		value, err := chromedp.Run(f.child, chromedp.Evaluate[[]byte](script))
+		if err != nil {
+			return err
+		}
+		if res == nil {
+			return nil
+		}
+		return json.Unmarshal(value, res)
 	}
-	remote, exception, err := runtime.Evaluate(script).
-		WithContextID(f.context).
-		WithReturnByValue(true).
-		Do(ctx)
+	result, err := chromedp.Call(ctx, runtime.Evaluate, runtime.EvaluateParams{Expression: script, ContextID: f.context, ReturnByValue: new(true)})
 	if err != nil {
 		return err
 	}
-	if exception != nil {
-		return exception
+	if result.ExceptionDetails != nil {
+		return fmt.Errorf("evaluating frame: %s", result.ExceptionDetails.Text)
 	}
-	if res == nil || remote == nil || remote.Value == nil {
+	if res == nil || result.Result == nil || result.Result.Value == nil {
 		return nil
 	}
-	return json.Unmarshal(remote.Value, res)
+	return json.Unmarshal(result.Result.Value, res)
 }
 
 // firstFrame runs script in every frame until one returns true, reporting
@@ -172,7 +137,7 @@ func (f frame) evaluate(ctx context.Context, script string, res any) error {
 // without a body is exactly the frame that does not hold what is being sought.
 func (c *frameContexts) firstFrame(ctx context.Context, script string) (bool, error) {
 	var found bool
-	err := chromedp.Run(ctx, chromedp.ActionFunc(func(ctx context.Context) error {
+	err := chromedp.Do(ctx, chromedp.Func(func(ctx context.Context, _ *chromedp.Target) error {
 		frames, err := c.frames(ctx)
 		if err != nil {
 			return err
@@ -191,7 +156,7 @@ func (c *frameContexts) firstFrame(ctx context.Context, script string) (bool, er
 
 // everyFrame runs script in every frame, ignoring per-frame failures.
 func (c *frameContexts) everyFrame(ctx context.Context, script string) error {
-	return chromedp.Run(ctx, chromedp.ActionFunc(func(ctx context.Context) error {
+	return chromedp.Do(ctx, chromedp.Func(func(ctx context.Context, _ *chromedp.Target) error {
 		frames, err := c.frames(ctx)
 		if err != nil {
 			return err
@@ -206,7 +171,7 @@ func (c *frameContexts) everyFrame(ctx context.Context, script string) error {
 // frameTexts returns each frame's body text, top document first.
 func (c *frameContexts) frameTexts(ctx context.Context) ([]frameText, error) {
 	var texts []frameText
-	err := chromedp.Run(ctx, chromedp.ActionFunc(func(ctx context.Context) error {
+	err := chromedp.Do(ctx, chromedp.Func(func(ctx context.Context, _ *chromedp.Target) error {
 		frames, err := c.frames(ctx)
 		if err != nil {
 			return err
@@ -258,7 +223,7 @@ func (c *frameContexts) visibleControls(ctx context.Context) []string {
       .filter(text => text && text.length < 40)
       .slice(0, 40)`
 	var labels []string
-	_ = chromedp.Run(ctx, chromedp.ActionFunc(func(ctx context.Context) error {
+	_ = chromedp.Do(ctx, chromedp.Func(func(ctx context.Context, _ *chromedp.Target) error {
 		frames, err := c.frames(ctx)
 		if err != nil || len(frames) == 0 {
 			return nil
@@ -273,18 +238,11 @@ func (c *frameContexts) visibleControls(ctx context.Context) []string {
 // shot writes a viewport PNG, optionally clipped — a clip trims the portal's
 // title bar, which no guide image includes.
 func shot(ctx context.Context, outDir, name string, clip *page.Viewport) error {
-	var buffer []byte
-	if err := chromedp.Run(ctx, chromedp.ActionFunc(func(ctx context.Context) error {
-		params := page.CaptureScreenshot().WithFormat(page.CaptureScreenshotFormatPng)
-		if clip != nil {
-			params = params.WithClip(clip)
-		}
-		var err error
-		buffer, err = params.Do(ctx)
-		return err
-	})); err != nil {
+	result, err := chromedp.Call(ctx, page.CaptureScreenshot, page.CaptureScreenshotParams{Format: page.CaptureScreenshotFormatPng, Clip: clip})
+	if err != nil {
 		return err
 	}
+	buffer := result.Data
 	// 0600: these are captures of a live IdP console, so they stay owner-only
 	// like the credential files the same run reads.
 	if err := os.WriteFile(filepath.Join(outDir, name+".png"), buffer, 0o600); err != nil {
