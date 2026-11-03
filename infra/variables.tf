@@ -524,3 +524,31 @@ variable "monthly_budget_amount" {
     error_message = "Set monthly_budget_amount above 0 whenever billing_account_id is set; a 0 budget pages on the first cent of spend."
   }
 }
+
+variable "coop_pages_verification_token" {
+  type        = string
+  description = "Public TXT challenge from ProtectorateHQ Settings > Pages for coop.emisar.dev only. Empty leaves the record absent. Keep the token after verification. This is separate from organization badge verification."
+  default     = ""
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9-]*$", var.coop_pages_verification_token))
+    error_message = "Use the GitHub Pages TXT token without quotes or whitespace."
+  }
+}
+
+variable "coop_org_verification_token" {
+  type        = string
+  description = "Public TXT challenge for ProtectorateHQ organization ownership of coop.emisar.dev. Separate from the Pages challenge. Empty leaves the record absent."
+  default     = ""
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9-]*$", var.coop_org_verification_token))
+    error_message = "Use the organization verification TXT token without quotes or whitespace."
+  }
+}
+
+variable "coop_pages_enabled" {
+  type        = bool
+  description = "Publish the Coop CNAME only after ProtectorateHQ/coop has claimed coop.emisar.dev in Pages settings and the old hostname has independent HTTPS hosting."
+  default     = false
+}

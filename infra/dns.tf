@@ -326,3 +326,35 @@ moved {
   from = google_dns_record_set.cert_auth_livebook[0]
   to   = google_dns_record_set.cert_auth["livebook"]
 }
+
+# Verify only this hostname: verifying the apex in ProtectorateHQ could unlink
+# other Pages sites that still belong to a different GitHub account.
+resource "google_dns_record_set" "coop_pages_verification" {
+  count        = var.coop_pages_verification_token != "" ? 1 : 0
+  name         = "_github-pages-challenge-ProtectorateHQ.coop.${var.domain}."
+  managed_zone = google_dns_managed_zone.emisar.name
+  type         = "TXT"
+  ttl          = 300
+  rrdatas      = ["\"${var.coop_pages_verification_token}\""]
+}
+
+# Organization ownership verification is separate from Pages hostname protection.
+resource "google_dns_record_set" "coop_org_verification" {
+  count        = var.coop_org_verification_token != "" ? 1 : 0
+  name         = "_gh-ProtectorateHQ-o.coop.${var.domain}."
+  managed_zone = google_dns_managed_zone.emisar.name
+  type         = "TXT"
+  ttl          = 300
+  rrdatas      = ["\"${var.coop_org_verification_token}\""]
+}
+
+# Enable only after the transferred repo has claimed this custom domain in
+# GitHub Pages. The old host must already have independent HTTPS hosting.
+resource "google_dns_record_set" "coop_pages" {
+  count        = var.coop_pages_enabled ? 1 : 0
+  name         = "coop.${var.domain}."
+  managed_zone = google_dns_managed_zone.emisar.name
+  type         = "CNAME"
+  ttl          = 300
+  rrdatas      = ["ProtectorateHQ.github.io."]
+}
