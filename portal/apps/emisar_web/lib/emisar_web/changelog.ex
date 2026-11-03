@@ -17,6 +17,36 @@ defmodule EmisarWeb.Changelog do
 
   @entries [
     %{
+      date: ~D[2026-11-03],
+      slug: "operational-guides-and-nomad-diagnostics",
+      title: "Operational guides and Nomad diagnostics",
+      tag: "v0.56.0",
+      summary:
+        "Four new guides follow real infrastructure work with emisar: Cassandra backup savings, Nomad resource sizing, an application migration, and a website cache repair. Each names the actions used to inspect the system and check the result. Nomad also gains fixed Node.js DNS and HTTPS probes that run inside a selected task.",
+      details: [
+        {"Security",
+         [
+           "Phoenix.HTML 4.4.0 validates HTML attribute names, fixing CVE-2026-117645. Elixir 1.20.5 includes fixes for URI port parsing, JSON integer limits, and shared Mix dependency directories."
+         ]},
+        {"Packs",
+         [
+           "Nomad pack 0.4.17 adds nomad.alloc_exec_node_dns and nomad.alloc_exec_node_https. The probes run fixed Node.js checks with bounded output and normal TLS verification."
+         ]},
+        {"Runner",
+         [
+           "Runner source now checks relative file paths from the action's working directory, matching how execution resolves them. Regression tests cover protected reads, writes, and symlink traversal. Published component versions remain Runner 0.31.1 and MCP Bridge 0.17.1."
+         ]},
+        {"Platform",
+         [
+           "Updated eligible Go and Hex packages, container pins, GitHub Actions, build tools, and the Google Terraform provider. Browser tooling uses the current chromedp API, with checks for iframe navigation, startup timeouts, and process cleanup."
+         ]},
+        {"Website",
+         [
+           "Public docs, integration guides, and pack descriptions use simpler language and explain the work emisar supports."
+         ]}
+      ]
+    },
+    %{
       date: ~D[2026-10-29],
       slug: "compromised-certificate-authorities-distrusted",
       title: "Compromised certificate authorities distrusted",

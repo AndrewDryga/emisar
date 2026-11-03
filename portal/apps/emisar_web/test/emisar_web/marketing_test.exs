@@ -1643,6 +1643,8 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "v0.53.0"
       assert html =~ "v0.55.0"
       assert html =~ "Compromised certificate authorities distrusted"
+      assert html =~ "v0.56.0"
+      assert html =~ "Operational guides and Nomad diagnostics"
       assert html =~ "v0.15.0"
 
       # The first-party RSS feed, the repo, and the "see all" out-link.
