@@ -44,7 +44,10 @@ is not a transition.
    Portal uses `./run gate portal --changed`; its complete gate remains required
    before a push or release and in CI.
 3. Stage only task-owned files/hunks. Make one focused commit ending with
-   `Coop-Task: <id>`. `git log` is the changelog; do not create a changelog file.
+   `Coop-Task: <id>`. Keep it and any `Co-Authored-By:` line in one final block
+   with no blank line inside; `git interpret-trailers --parse` must list it, or
+   the commit-msg hook rejects the commit. `git log` is the changelog; do not
+   create a changelog file.
 4. Append what changed and why to log.md. Overwrite state.md with the completed
    outcome and validation. Cite the task id in notes, not a commit SHA: Coop may
    re-sign box commits, changing their SHAs.
