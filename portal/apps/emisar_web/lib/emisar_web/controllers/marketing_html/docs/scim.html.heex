@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="scim"
-      updated="October 4, 2026"
+      updated="November 2, 2026"
       toc={[
         {"enable", "Enabling directory sync"},
         {"protocol", "SCIM protocol reference"},
@@ -446,7 +446,7 @@
               navigate={~p"/docs/integrations/keycloak#scim"}
               class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
             >Keycloak</.link>
-            has no outbound SCIM. The guide explains the remaining manual work.
+            setup covers first-sign-in provisioning, role management, offboarding, and SCIM plugin options.
           </span>
         </li>
         <li id="google-workspace" class="flex gap-3">
@@ -456,8 +456,7 @@
               navigate={~p"/docs/integrations/google-workspace#scim"}
               class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
             >Google Workspace</.link>
-            has no outbound SCIM. Route it through an IdP to close the
-            offboarding gap.
+            setup covers first-sign-in provisioning and offboarding, with an IdP option for automatic deprovisioning.
           </span>
         </li>
       </ul>

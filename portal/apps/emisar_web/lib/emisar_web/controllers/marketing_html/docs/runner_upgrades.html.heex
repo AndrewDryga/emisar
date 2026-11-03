@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="runner-upgrades"
-      updated="September 3, 2026"
+      updated="November 2, 2026"
       toc={[
         {"what-moves", "Who upgrades what"},
         {"versions", "Find the versions you run"},
@@ -149,8 +149,8 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <.chip tone={:rose} icon="state.warning">unsupported</.chip>
-            is below the minimum. The runner is flagged on the Runners page. It still connects
-            today, but that is not a promise. Upgrade it.
+            is below the minimum. The runner is flagged on the Runners page. It currently remains connected; upgrade
+            to a supported release before your next rollout.
           </span>
         </li>
       </ul>
@@ -173,8 +173,7 @@
           for the releases between your current version and the target.
         </li>
         <li>
-          Write down the version you run today. That tag is your way back. Nothing in the product
-          remembers it for you.
+          Record the current release tag so you can reinstall that exact version if you need to roll back.
         </li>
         <li>
           Check
@@ -212,7 +211,7 @@
         here with the runner's own error. The installer exits nonzero with nothing touched, and the
         service keeps serving on the version it already had.
       </p>
-      <.docs_callout kind={:warn} title="The service does stop">
+      <.docs_callout kind={:warn} title="Finish active actions before upgrading">
         <p>
           The installer stops the service, swaps the binary, and
           starts it again. A runner kills its children when it exits, so an action in flight on

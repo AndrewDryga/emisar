@@ -4,11 +4,11 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="agents-and-keys"
-      updated="October 4, 2026"
+      updated="November 2, 2026"
       toc={[
         {"the-list", "Your connected agents"},
         {"what-is-a-key", "What an agent key is"},
-        {"no-scope", "A key has no scope of its own"},
+        {"no-scope", "How agent access is scoped"},
         {"minting", "Minting a key"},
         {"rotating", "Rotating a key"},
         {"revoking", "Revoking a key"}
@@ -118,20 +118,19 @@
         </li>
       </ul>
 
-      <.docs_h2 id="no-scope">A key has no scope of its own</.docs_h2>
+      <.docs_h2 id="no-scope">How agent access is scoped</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        An agent key carries no scope of its own. There is no per-key runner list or permission dial
-        to set, and none to forget. A key acts as a member: the person it belongs to, or a service
-        account. Two things set on that member decide what the connected agent can do:
+        An agent key acts as a member: the person it belongs to, or a service account. It inherits
+        that member's current runner and pack access. The following controls determine what the
+        connected agent can do:
       </p>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <strong class="text-zinc-200">Runner access.</strong>
-            The key can reach exactly the runners available to the member it acts as. A member is scoped to runner
-            groups on the Team page. The key inherits that scope, and emisar looks it up from that
-            member on <em>every call</em>, not once at mint time.
+            <strong class="text-zinc-200">Runner and pack access.</strong>
+            Manage the member's runner and pack access on the Team page. The key inherits that
+            scope, and emisar checks the member's current access on <em>every call</em>.
           </span>
         </li>
         <li class="flex items-start gap-2.5">

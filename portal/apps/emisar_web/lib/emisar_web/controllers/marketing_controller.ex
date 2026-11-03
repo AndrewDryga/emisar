@@ -77,7 +77,7 @@ defmodule EmisarWeb.MarketingController do
      "A real incident: every app behind one anycast edge threw intermittent 502 Connection refused, yet every backend was healthy. An agent on emisar traced it across five layers (FRR, Traefik, Nomad, Consul) to a Traefik OOM loop and a stuck node still advertising a dead ingress. The agent stopped the bleed behind gated approvals and named the durable fix: health-gate the anycast so a node withdraws itself instead of black-holing traffic."},
     {"/use-cases/cassandra-migration", :cassandra_migration, :cassandra_migration,
      "Moving Cassandra from GCP to bare metal: an AI operator's field report",
-     "An AI operator explains how it authored and stress-tested a bare-metal Cassandra platform, then used emisar's bounded actions to help move 12 application jobs across 14 live keyspaces. Human decisions and corrections are clearly separated."},
+     "How an AI operator built a bare-metal Cassandra platform and used emisar to move 12 application jobs across 14 live keyspaces."},
     {"/use-cases/website-cache-stampede", :website_cache_stampede, :website_cache_stampede,
      "How ChatGPT Sol and Terra used emisar to trace and fix a website outage",
      "How ChatGPT Sol and Terra used emisar to investigate a website outage across Nomad, Consul, metrics, and logs, then fixed a missing server cache."},
@@ -132,10 +132,10 @@ defmodule EmisarWeb.MarketingController do
     {"/docs/integrations/jumpcloud", :jumpcloud, :jumpcloud, "JumpCloud SSO & SCIM setup",
      "Configure one JumpCloud application for OIDC sign-in and SCIM directory provisioning."},
     {"/docs/integrations/keycloak", :keycloak, :keycloak, "Keycloak SSO setup",
-     "Configure a confidential Keycloak OIDC client with PKCE and plan for its directory-sync limit."},
+     "Configure Keycloak single sign-on with a confidential OIDC client and PKCE."},
     {"/docs/integrations/google-workspace", :google_workspace, :google_workspace,
      "Google Workspace SSO setup",
-     "Configure Google Workspace OIDC sign-in and plan for its directory-sync limit."},
+     "Configure Google Workspace single sign-on for your emisar team."},
     {"/docs/scim", :scim, :scim, "Directory sync (SCIM)",
      "Provision and suspend people over SCIM, then map directory groups to roles and runner access."},
     {"/docs/runner-fleet", :runner_fleet, :runner_fleet, "Manage the runner fleet",
@@ -194,9 +194,9 @@ defmodule EmisarWeb.MarketingController do
   # below. Keeping them in one list is what lets Google's rich result
   # match visible content without the two drifting apart.
   @home_faqs [
-    {"What can the agent run through emisar?",
-     "Only actions from trusted packs that pass your access rules and policy. The runner checks each request again on the host. Any other tools you give your agent need their own access controls."},
-    {"What can it actually do?",
+    {"How do I control what the agent can run?",
+     "Your agent runs actions from trusted packs under your access rules and policy. The runner checks every request again on the host."},
+    {"Which infrastructure tasks can my agent handle?",
      "Your agent can read service logs, query metrics, inspect databases and containers, and carry out operations such as restarting a service. Install published packs for the software you run, or write an action for your own procedure. Your policy decides which requests are allowed."},
     {"Where do approvals happen?",
      "In the web UI and your email inbox. The approver sees who requested the action, its arguments, the target host, and the policy rule requiring approval. They can approve or deny the request."},
@@ -260,7 +260,7 @@ defmodule EmisarWeb.MarketingController do
     render(conn, :home,
       page_title: "Infrastructure access for AI agents through MCP",
       meta_description:
-        "Let your MCP agent investigate infrastructure through declared actions. Choose what runs, what needs approval, and what stays off limits.",
+        "Let your AI agent inspect and operate infrastructure through declared actions. Set the policy for routine work, approvals, and access.",
       canonical_url: @base <> "/",
       faqs: @home_faqs,
       pack_count: Catalog.published_pack_count(),
@@ -602,9 +602,9 @@ defmodule EmisarWeb.MarketingController do
       )
 
     render(conn, :use_cases,
-      page_title: "Use cases — real incidents emisar contained",
+      page_title: "Use cases — production work with emisar",
       meta_description:
-        "Real production work through emisar's declared, gated, and audited actions: a live Cassandra migration, a 33-hour CSI data wipe, and a fleet-wide 502.",
+        "See how AI agents used emisar to migrate applications, reduce infrastructure costs, and resolve production incidents.",
       canonical_url: @base <> "/use-cases",
       json_ld: json_ld
     )
@@ -615,18 +615,18 @@ defmodule EmisarWeb.MarketingController do
   # and the sitemap. {slug, action/template, title, dek, date, read_time, meta}.
   @guides [
     {"how-emisar-works", :how_emisar_works, "How emisar works: the technical guide",
-     "How do you give an AI agent access to production without worrying that it might hallucinate its way into dropping a database or taking the site down? We follow one service restart from the MCP request, through policy, to the runner on your host.",
-     "Updated October 21, 2026", "6 min read",
-     "See what an AI agent can do through emisar and what stops it, following one service restart from MCP request through policy to runner execution and audit."},
+     "Follow a service restart from the agent's MCP request through policy, runner checks, execution, and audit.",
+     "Updated November 2, 2026", "6 min read",
+     "See how emisar checks and runs an infrastructure action, from the MCP request to the result and audit record."},
     {"give-ai-agents-safe-production-access", :give_ai_agents_safe_production_access,
      "How to give an AI agent safe access to production",
-     "Agents do their best work when nobody is watching over their shoulder. Coding agents get that freedom from a sandbox, but production has no sandbox. Here is what teams try instead, where each one cracks, and the division of labor that holds up.",
-     "Updated October 21, 2026", "7 min read",
-     "Copy-paste, raw SSH, and one MCP server per tool all break down for AI agents in production. The pattern that holds up: read production, write code."},
+     "Compare ways to give agents production access, and see how bounded operational actions and source-controlled changes fit together.",
+     "Updated November 2, 2026", "7 min read",
+     "Compare copy-paste, SSH, and MCP workflows for production access. Use bounded actions for operations and source control for lasting changes."},
     {"prompt-injection-for-ops-teams", :prompt_injection_for_ops_teams,
      "Prompt injection for ops teams: your logs are prompts now",
      "The moment an AI agent starts reading your production logs, everyone who can write to them can talk to it. Here is how the trick works, and why the defense that holds is a shorter list of things the agent can do, not a smarter prompt.",
-     "Updated October 21, 2026", "8 min read",
+     "Updated November 2, 2026", "8 min read",
      "How prompt injection in logs steers AI agents, why prompt rules and read-only access fall short for ops teams, and how bounded actions limit the damage."}
   ]
   @guide_summaries Enum.map(@guides, fn {slug, _action, title, dek, date, read_time, _desc} ->

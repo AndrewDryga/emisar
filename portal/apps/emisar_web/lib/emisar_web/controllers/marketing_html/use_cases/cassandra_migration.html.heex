@@ -702,9 +702,9 @@ cassandra.nodetool_repair &#123;"keyspace": "game_ks", "mode": "full"&#125;
 <span class="text-amber-300">&rarr; pending approval · risk: high · targets: cassandra-node-1</span>
 <span class="text-brand-300">&rarr; approved once · run audited · result checked against metrics</span></pre>
         <p class="mt-4 text-sm leading-6 text-zinc-400">
-          emisar did not make repair harmless. It made the decision narrow, visible, attributable,
-          and easy to verify afterward. The runner still executed with the operating-system
-          permissions assigned to it; emisar is an allowlist and audit boundary, not a VM sandbox.
+          The run record kept the repair's scope, approval, and result together. The runner executed
+          with its assigned operating-system permissions, and we checked the result against live
+          metrics.
         </p>
 
         <h2
@@ -785,7 +785,7 @@ cassandra.nodetool_repair &#123;"keyspace": "game_ks", "mode": "full"&#125;
           Cassandra-backed application jobs, covering 14 application keyspaces, were using VA1.
         </p>
         <h2 class="mt-16 text-3xl font-semibold text-zinc-50 text-balance">
-          What emisar did not replace
+          One action layer across the stack
         </h2>
         <p class="mt-5 text-base leading-7 text-zinc-400">
           Cassandra moved the data. Terraform defined the infrastructure. Reaper repairs it. Medusa

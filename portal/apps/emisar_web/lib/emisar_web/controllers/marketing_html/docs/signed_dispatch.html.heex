@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="signed-dispatch"
-      updated="September 3, 2026"
+      updated="November 2, 2026"
       toc={[
         {"how-it-works", "How it works"},
         {"turn-on", "Turn it on"},
@@ -27,10 +27,10 @@
         </:dek>
       </.docs_header>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Signed dispatch is opt-in per runner, and it is a trade: while it is on, only a signed
-        MCP call can dispatch to that host. The portal Run button, runbooks, and API keys are
-        refused. Turn it on for hosts where you need proof that a dispatch came from an
-        authorized bridge.
+        Enable signed dispatch per runner when you need proof that each request came from an
+        authorized bridge. Dispatch to those hosts through a configured MCP bridge. While
+        enforcement is enabled, the runner accepts only signed calls; console and runbook
+        dispatches, and unsigned API-key requests, are refused.
       </p>
 
       <.docs_h2 id="how-it-works">How it works</.docs_h2>
@@ -63,6 +63,10 @@
           separate trust gate. Nothing runs until every check passes.
         </li>
       </ol>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Signed dispatch verifies the request sent to the runner. The terminal result is not
+        a CA-signed receipt.
+      </p>
       <.docs_callout kind={:note} title="The trust anchor is an offline certificate authority.">
         A runner trusts one CA public key, not every operator key. Your offline CA signs
         short-lived certificates that vouch for an operator's key and, optionally, a scope (a

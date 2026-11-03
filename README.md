@@ -99,16 +99,17 @@ changes.
 Read the exact guarantees, limitations, and threat model in
 [`.agent/kb/specs/security-model.md`](.agent/kb/specs/security-model.md).
 
-## What emisar is not
+## How emisar fits into your stack
 
-- It is not a sandbox or process isolator. We recommend using one, such as
-  [coop](https://github.com/AndrewDryga/coop).
-- It is not a generic `execute(command)` tool or a replacement for SSH.
-- It does not replace OS least privilege, change management, or configuration
-  management.
-- It does not make a permitted destructive action harmless. The safety boundary
-  is only as strong as the actions, pack trust, policy, runner configuration,
-  and host permissions in use.
+Use declared actions for agent access and SSH for interactive administration.
+Run the agent in a sandbox such as [co:op](https://github.com/AndrewDryga/coop),
+grant the runner the OS permissions its actions need, and ship lasting
+configuration changes through your deployment workflow.
+
+The runner executes permitted actions with its service user's OS permissions;
+it does not isolate those processes. Permitted destructive actions still have
+real effects. Review action definitions, pack trust, policy, runner settings,
+and host permissions together when deciding what the agent may do.
 
 The staging-only `shell` pack is the explicit break-glass (emergency-only)
 exception to the declared-action model. It is critical-risk, default-denied,

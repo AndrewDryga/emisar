@@ -2,13 +2,14 @@ schema_version: 1
 
 id: terraform-readonly
 name: Terraform / OpenTofu read-only ops
-version: 0.7.10
+version: 0.7.11
 description: >
-  Read-only Terraform or OpenTofu CLI actions for inspecting a workspace.
-  NO apply, NO destroy, NO state mutation — those should happen in CI, not
-  via a runner. Operates in the directory given by TF_DIR env var, running
-  whichever CLI TF_BIN names — `terraform` by default, `tofu` on an
-  OpenTofu host, so one of those two must be on PATH.
+  Read-only Terraform or OpenTofu CLI actions for inspecting a workspace's
+  configuration, plans, and state. Keep applies, destroys, and state changes in
+  your deployment workflow. For HCP Terraform run approvals and applies, use
+  the `hcp-terraform` pack. This pack operates in the directory given by TF_DIR,
+  using the CLI named by TF_BIN: `terraform` by default, or `tofu` for OpenTofu.
+  Install that CLI on the runner host and make it available on PATH.
 vendor: emisar
 homepage: https://emisar.dev/packs/terraform-readonly
 

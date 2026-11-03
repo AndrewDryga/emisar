@@ -175,26 +175,24 @@
     <div class="mx-auto max-w-6xl px-6 lg:px-8">
       <div class="max-w-3xl">
         <h2 class="text-3xl font-semibold text-zinc-50 text-balance">
-          What emisar costs you
+          Deployment, configuration, and pricing
         </h2>
       </div>
 
       <div class="mt-10 max-w-5xl divide-y divide-zinc-900 border-y border-zinc-900">
         <div class="py-5 sm:grid sm:grid-cols-[14rem_1fr] sm:gap-8">
-          <h3 class="text-sm font-semibold text-zinc-100">It's a vendor in your path.</h3>
+          <h3 class="text-sm font-semibold text-zinc-100">Hosted control plane</h3>
           <p class="mt-2 text-base leading-7 text-zinc-400 text-pretty sm:mt-0">
-            We host the control plane.
-            Your runner connects from your host and keeps its own journal. You can block
-            actions on the runner even if the cloud allows them, but each request still
-            goes through our service.
+            Each request goes through the hosted control plane. Your runner connects from
+            your host and keeps its own journal. You can also block actions on the runner,
+            even when the cloud policy allows them.
           </p>
         </div>
         <div class="py-5 sm:grid sm:grid-cols-[14rem_1fr] sm:gap-8">
-          <h3 class="text-sm font-semibold text-zinc-100">It's opinionated.</h3>
+          <h3 class="text-sm font-semibold text-zinc-100">A shared action model</h3>
           <p class="mt-2 text-base leading-7 text-zinc-400 text-pretty sm:mt-0">
-            Actions are YAML packs, the policy model is risk tiers plus overrides, and the transport
-            is MCP. If your workflow doesn't fit that shape, you are better off with a server you
-            control than bending the workflow to fit ours.
+            Actions are defined in YAML packs. Policy uses risk tiers and overrides,
+            and agents connect over MCP.
           </p>
         </div>
         <div class="py-5 sm:grid sm:grid-cols-[14rem_1fr] sm:gap-8">
@@ -208,7 +206,7 @@
           </p>
         </div>
         <div class="py-5 sm:grid sm:grid-cols-[14rem_1fr] sm:gap-8">
-          <h3 class="text-sm font-semibold text-zinc-100">It's another bill.</h3>
+          <h3 class="text-sm font-semibold text-zinc-100">Pricing per runner</h3>
           <p class="mt-2 text-base leading-7 text-zinc-400 text-pretty sm:mt-0">
             Team is $20 per runner per month.
           </p>

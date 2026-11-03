@@ -506,8 +506,7 @@ defmodule EmisarWeb.DocsComponents do
               system user, puts the binary at <code class="font-mono">/usr/local/bin/emisar</code>, and installs a hardened
               <code class="font-mono">emisar.service</code>
               unit (<code class="font-mono">Restart=on-failure</code>). Without systemd it stops
-              and points you at <code class="font-mono">--no-service</code>. On macOS it installs
-              a LaunchDaemon instead, which is fine for a laptop; production runs on Linux;
+              and points you at <code class="font-mono">--no-service</code>. On macOS it installs a LaunchDaemon for development and evaluation. Use Linux for production;
             </span>
           </li>
           <li class="flex items-start gap-2.5">

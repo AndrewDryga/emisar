@@ -2,7 +2,7 @@ schema_version: 1
 
 id: symbolicator
 name: Symbolicator native symbolication
-version: 0.2.6
+version: 0.2.7
 # Older descriptors classify the vendor's metadata-writing dry run as low,
 # admitting cache mutations through a low-only policy or admission ceiling.
 retired_below: 0.2.6
@@ -12,7 +12,6 @@ description: >
   debug files the operator's configured sources hold, follow a request that
   runs long, and manage what that costs: liveness, build version, the cache
   footprint filling the disk, and the cleanup — previewed before it runs.
-  Nothing here can publish or alter a symbol; Symbolicator has no ingest path.
   For the Sentry API itself, see the sentry pack.
 vendor: emisar
 homepage: https://emisar.dev/packs/symbolicator

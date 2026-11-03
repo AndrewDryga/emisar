@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="audit-and-siem"
-      updated="September 22, 2026"
+      updated="November 2, 2026"
       toc={[
         {"recorded", "What gets recorded"},
         {"reading", "Reading it in the console"},
@@ -94,11 +94,10 @@
         <.docs_inline_code>GET /api/audit</.docs_inline_code>
         serves NDJSON: one event per line, in forward keyset order by <.docs_inline_code>occurred_at</.docs_inline_code>, then ID.
       </p>
-      <.docs_callout kind={:note} title="emisar does not push events.">
-        There is no managed log sink, webhook, or streaming transport. Something on your side
-        polls this endpoint and forwards what it reads: your SIEM's cursor-aware HTTP input,
-        a log agent you already run, or the small script below. The delay between an action
-        and its appearance in your SIEM is your poll interval, not real time.
+      <.docs_callout kind={:note} title="Pull audit events into your SIEM">
+        Configure your SIEM's cursor-aware HTTP input, a log agent, or the script below to poll
+        this endpoint and forward each page. Your polling interval controls how quickly new
+        events reach your SIEM.
       </.docs_callout>
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># first pull — everything since a timestamp</span>
 <span class="text-zinc-500">$</span> curl -s <span class="text-brand-300">"https://emisar.dev/api/audit?since=2026-06-01T00:00:00Z&amp;limit=500"</span> \
@@ -245,9 +244,9 @@ done</.docs_code>
         events. So alert on the poller itself as well as on what it delivers. Watch the age of
         the newest
         <.docs_inline_code>occurred_at</.docs_inline_code>
-        event, the time since the cursor moved, and consecutive failed polls. The console
-        reads the same events without a cursor, so rows you can see there that never reached
-        your SIEM mean the collector is behind, not emisar.
+        event, the time since the cursor moved, and consecutive failed polls. If an event appears
+        in the console but has not reached your SIEM, check the collector's cursor, polling
+        interval, and delivery logs.
       </p>
       <.docs_callout kind={:warn} title="Your collector shows up in its own feed.">
         <p>

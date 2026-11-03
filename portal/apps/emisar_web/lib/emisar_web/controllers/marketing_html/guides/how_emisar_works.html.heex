@@ -61,9 +61,8 @@
     changes and the new pack needs its own trust decision.
   </p>
   <p>
-    Anything not described by an installed and trusted action cannot be requested through emisar. But if
-    an operator deliberately installs an action that can drop a database, the agent
-    can request that action. emisar does not make an allowed destructive operation harmless.
+    The installed, trusted catalog defines the actions an agent can request. You choose the
+    catalog and set the policy for its actions.
   </p>
 
   <h2 id="request">Following one request</h2>
@@ -230,13 +229,14 @@
     still appear in output.
   </p>
   <p>
-    The runner's OS privileges limit what an allowed action can affect. An allowed destructive
-    action remains destructive when it runs. emisar is not a VM, container, or kernel sandbox.
+    The agent runs its own loop and chooses what to request; emisar checks whether each request
+    is available and allowed. The runner executes actions with its service user's OS permissions.
+    An allowed destructive action can change or delete data, so set its scope through policy
+    and host permissions.
   </p>
   <p>
-    An attacker who has compromised a host already controls it. emisar also does not run the agent loop: the
-    agent decides what to request, while emisar decides whether that request is available and
-    allowed.
+    Use a separate VM, container, or kernel sandbox when you need process isolation.
+    Emisar's request checks cannot secure a host already controlled by an attacker.
   </p>
   <p>
     Local admission rules can make a runner stricter than the control plane, using allow and deny
@@ -272,7 +272,6 @@
     Preserve that state when moving or resetting a host, or follow the <.link navigate={
       ~p"/docs/signed-dispatch"
     }>identity and trust rotation instructions</.link>.
-    The terminal result is not a CA-signed receipt.
   </p>
 
   <h2 id="private-packs">Private packs</h2>

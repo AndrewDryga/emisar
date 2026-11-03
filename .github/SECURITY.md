@@ -38,11 +38,9 @@ protect against, and what operators are expected to provide.
 
 In short, emisar puts policy and audit around a curated allowlist of
 declared actions. It is not a sandbox, container runtime, or kernel
-isolation layer. Reports that only say
-"`linux.systemctl_restart` actually restarts the service" describe
-intended behavior; we won't accept those as vulnerabilities. Reports
-that the runner executed something it should have refused are
-vulnerabilities.
+isolation layer. A declared action performing its documented operation is
+expected behavior. Report cases where the runner accepts an action or argument
+that its contract should reject.
 
 ## Credential incidents
 

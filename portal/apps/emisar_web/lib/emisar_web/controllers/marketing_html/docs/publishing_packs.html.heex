@@ -9,7 +9,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="publishing-packs"
-      updated="September 22, 2026"
+      updated="November 2, 2026"
       toc={[
         {"layout", "1. Lay out the pack directory"},
         {"manifest", "2. Write pack.yaml"},
@@ -248,24 +248,23 @@ sudo emisar pack install ./my-pack</.docs_code>
       <%!-- The curated registry --%>
       <.docs_h2 id="registry">Keep it private, or propose it</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        We deliberately curate the public registry behind the <.link
+        The public registry on the
+        <.link
           navigate={~p"/packs"}
           class="text-brand-400 hover:text-brand-300"
-        >
-          Packs page
-        </.link>. We accept only generic packs that many teams can use unchanged, such as Postgres,
-        Cassandra, Docker, Linux core, and AWS packs. We reject one-off, environment-specific packs:
-        they are hard to trust and maintain, and they bury the packs everyone can use.
+        >Packs page</.link>
+        focuses on reusable packs for common tools, such as Postgres, Cassandra, Docker,
+        Linux core, and AWS. Each pack can be used unchanged by many teams.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        <strong class="text-zinc-200">Most packs must stay yours.</strong>
-        A pack that hardcodes your service names, your hostnames, or your internal CLIs is more
-        useful as a private pack. You also keep control of its lifecycle. Self-maintained is the default.
+        <strong class="text-zinc-200">Private packs fit your own workflows.</strong>
+        Keep your service names, hostnames, and internal CLIs in packs you maintain, with
+        a release cycle you control.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        A private pack can still serve a whole fleet:
+        A private pack can serve your whole fleet:
         <code class="rounded-sm bg-zinc-900 px-1 py-0.5">packctl</code>
-        builds a registry you host yourself, and your packs never enter ours.
+        builds a registry you host yourself.
         <.link navigate={~p"/docs/pack-registry"} class="text-brand-400 hover:text-brand-300">
           Host your own registry
         </.link>

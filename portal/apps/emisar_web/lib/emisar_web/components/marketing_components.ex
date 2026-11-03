@@ -723,7 +723,7 @@ defmodule EmisarWeb.MarketingComponents do
               </.marketing_button>
             </div>
             <p class="mt-2 text-xs text-zinc-400">
-              No spam, just product news. See our <.link
+              See our <.link
                 navigate={~p"/privacy"}
                 class="text-zinc-400 underline decoration-zinc-700 underline-offset-2 hover:text-zinc-300"
               >privacy policy</.link>.
@@ -805,12 +805,12 @@ defmodule EmisarWeb.MarketingComponents do
                     href={~p"/use-cases/csi-data-loss"}
                     class="text-zinc-400 hover:text-zinc-100"
                   >
-                    The 33-hour wipe
+                    Containing CSI data loss
                   </.link>
                 </li>
                 <li>
                   <.link href={~p"/use-cases/ingress-502"} class="text-zinc-400 hover:text-zinc-100">
-                    The fleet-wide 502
+                    Tracing ingress 502s
                   </.link>
                 </li>
                 <li>

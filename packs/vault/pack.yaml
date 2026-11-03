@@ -2,15 +2,14 @@ schema_version: 1
 
 id: vault
 name: HashiCorp Vault operations
-version: 0.1.14
+version: 0.1.15
 retired_below: 0.1.7
 description: >
   Vault status, seal state, auth/audit/secret backends, mount listing,
   token & lease introspection, plus operator surface for incident
   response: revoke lease, revoke leases by prefix, operator step-down,
   emergency seal. Auth via VAULT_ADDR + VAULT_TOKEN on the runner host.
-  Does NOT include unseal — that requires quorum and shouldn't be
-  automated through a runner.
+  Use your Vault recovery procedure for unsealing.
 vendor: emisar
 homepage: https://emisar.dev/packs/vault
 

@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="integrations-jumpcloud"
-      updated="September 7, 2026"
+      updated="November 2, 2026"
       evidence="Live-tested against a JumpCloud tenant on August 25, 2026."
       toc={[
         {"sso", "Single sign-on"},
@@ -24,7 +24,7 @@
 
       <.docs_h2 id="sso">Single sign-on</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Connecting an identity provider is a paid feature. <.plan_note tier={:team} />
+        <.plan_note tier={:team} />
       </p>
       <ol class="mt-8 space-y-10">
         <.docs_step n={1}>
@@ -60,7 +60,7 @@
           <.docs_step_venue>JumpCloud</.docs_step_venue>
           <p class="font-semibold text-zinc-100">Choose Custom Application.</p>
           <p class="mt-1.5">
-            emisar is not in JumpCloud's catalog, so scroll past the featured tiles to <strong class="text-zinc-200">Custom Application</strong>, press its <strong class="text-zinc-200">Select</strong>, then <strong class="text-zinc-200">Next</strong>.
+            Scroll to <strong class="text-zinc-200">Custom Application</strong>, press its <strong class="text-zinc-200">Select</strong>, then <strong class="text-zinc-200">Next</strong>.
           </p>
 
           <.docs_screenshot
@@ -310,8 +310,8 @@
           href={~p"/app/sso"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Team → Single sign-on</a>
-        shows the directory record. Confirm both show the same person. If they differ, do not
-        approve the request. The connector is set up wrong.
+        shows the directory record. Confirm both identify the same person before approving. If they differ,
+        review the sign-in and provisioning mappings first.
       </p>
 
       <p class="mt-8 text-base leading-7 text-zinc-400">

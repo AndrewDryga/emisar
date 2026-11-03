@@ -49,7 +49,7 @@ defmodule EmisarWeb.DocsNavTest do
       assert subgrouped == [
                {"Runners", ["Deploy on", "The fleet"]},
                {"AI agents", ["Connect", "The fleet"]},
-               {"Operate", ["Day to day", "When it breaks"]},
+               {"Operate", ["Day to day", "Troubleshooting & recovery"]},
                {"Team & account", ["Access", "Identity concepts", "Provider guides", "Account"]}
              ]
     end

@@ -393,7 +393,7 @@ defmodule EmisarWeb.Changelog do
     %{
       date: ~D[2026-09-04],
       slug: "v1-failure-path-pass",
-      title: "The v1 failure-path pass",
+      title: "Recovery, revocation, and release validation",
       tag: "v0.45.0",
       summary:
         "This release takes the v1 audit through recovery, revocation, and publication paths. A runner with corrupt replay state now refuses to start instead of risking a duplicate infrastructure change, while membership removal and credential revocation commit together and an unaccepted invitation grants no account access. Sentry reports strip active MFA setup material. Installers authenticate signed checksum metadata before trusting release archives, runner updates validate the staged binary against fielded configuration before stopping the service, and registry publication refuses stale catalogs or changed immutable schema objects. MCP paging and output now match the published tool contract, and the 99-pack catalog received another pass over risk, redaction, bounded output, shell wrappers, and false all-clear results.",
@@ -438,7 +438,7 @@ defmodule EmisarWeb.Changelog do
     %{
       date: ~D[2026-09-02],
       slug: "the-v1-hardening-pass",
-      title: "The v1 hardening pass",
+      title: "Stronger runner and pack boundaries",
       tag: "v0.44.0",
       summary:
         "This release closes a full pre-1.0 security audit. Runners now reject a malformed or wrong-version dispatch at the wire, before it can reach a host, keep each pack's execution inside its own tree, and refuse credential state they do not own. Most of the pack catalog was republished: three actions were corrected to describe the change they actually make, more secret-bearing reads are redacted at the source, and versions that could print credentials were retired across the fleet. Signed dispatch, the MCP bridge, and both installers each close edge cases the audit found, and every runner and bridge binary now ships from a trusted publisher with signed checksums and provenance you can verify before you install.",
@@ -653,10 +653,10 @@ defmodule EmisarWeb.Changelog do
     %{
       date: ~D[2026-08-08],
       slug: "a-vanished-runbook-a-deny-that-matched-nothing",
-      title: "A vanished runbook, a deny that matched nothing, and a session that would not end",
+      title: "Reliable runbook discovery, policy matching, and session revocation",
       tag: "v0.38.0",
       summary:
-        "A runbook too large to project answered as if it did not exist. That answer is reserved for an untrusted pack or a runner outside your scope, which have to stay indistinguishable from absence — but size is not that kind of fact, and folding it in meant list_runbooks quietly dropped the runbook while get_runbook denied one sitting in the operator's own console. It was reachable rather than theoretical. The budget is counted in bytes while the title and description limits counted characters, and a description at the documented 4,096-character limit encodes to 12,288 bytes in Japanese: writing your description in your own language was enough to make your runbook vanish. A size failure now reports its size, and those character limits carry byte bounds derived from the budget instead of assumed against it.",
+        "Runbook discovery now reports a size error when a definition exceeds the response budget, and titles and descriptions have byte limits derived from that budget. Previously, list_runbooks omitted an oversized runbook and get_runbook treated it as absent even when the operator could see it in the console. A 4,096-character Japanese description could encode to 12,288 bytes and trigger the mismatch. Untrusted packs and runners outside the caller's scope remain indistinguishable from absence.",
       details: [
         {"Security",
          [

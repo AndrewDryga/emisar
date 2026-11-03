@@ -270,12 +270,12 @@ defmodule EmisarWeb.MarketingHTML do
     ~H"""
     <.docs_prerequisites>
       <:item>
-        An account with at least one runner online. Otherwise the agent signs in fine and finds
-        an empty catalog with nothing to call. New here? Run the
+        Connect at least one runner before testing actions. If you are starting a new account,
+        follow the
         <.link navigate={~p"/docs/quickstart"} class="text-brand-400 hover:text-brand-300">
           quickstart
         </.link>
-        first, then come back to connect your LLM.
+        first.
       </:item>
       <:item>
         A publicly reachable HTTPS server URL. The URL connection in these guides cannot reach

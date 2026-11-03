@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="integrations-entra"
-      updated="October 21, 2026"
+      updated="November 2, 2026"
       evidence="Live-tested against a Microsoft Entra tenant on August 25, 2026."
       toc={[
         {"sso", "Single sign-on"},
@@ -27,7 +27,7 @@
 
       <.docs_h2 id="sso">Single sign-on</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Connecting an identity provider is a paid feature. <.plan_note tier={:team} />
+        <.plan_note tier={:team} />
       </p>
       <ol class="mt-8 space-y-10">
         <.docs_step n={1}>
@@ -197,7 +197,7 @@
           <.docs_screenshot
             src="/images/docs/sso/entra-create-enterprise-app.webp"
             title="Microsoft Entra · Browse App Gallery"
-            caption="The gallery is for apps Microsoft already ships an integration for. emisar is not one, so you create it by hand."
+            caption="Create a custom enterprise application for emisar’s provisioning connection."
             alt="Entra's Browse Microsoft Entra App Gallery blade with the Create your own application button outlined in green, above gallery tiles for Amazon Web Services, Google Cloud Platform, Oracle and SAP."
           />
         </.docs_step>

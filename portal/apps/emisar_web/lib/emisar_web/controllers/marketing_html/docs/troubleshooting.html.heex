@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="troubleshooting"
-      updated="September 8, 2026"
+      updated="November 2, 2026"
       toc={[
         {"where", "Where the fixes live"},
         {"dispatch", "An action will not dispatch"},
@@ -122,7 +122,8 @@
         <.docs_inline_code>signature_required</.docs_inline_code>
         lists the runners that require client signing, and
         <.docs_inline_code>not_allowed</.docs_inline_code>
-        means the current scope does not allow the request. It is not permission to probe.
+        means the current scope does not allow the request. Ask an administrator to review the
+        request’s runner and pack access.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         On Team or Enterprise, <strong class="text-zinc-200">contact support</strong>
@@ -132,8 +133,7 @@
 
       <.docs_h2 id="evidence">Collect this before you contact support</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Reports with this evidence usually need one response. Reports without it can cost a day of
-        questions.
+        Include the details below so we can start investigating with your first report.
       </p>
       <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
@@ -176,7 +176,7 @@
               <.docs_inline_code>sudo emisar doctor</.docs_inline_code>
               output
             </strong>
-            from the affected host, whole rather than the one line you think matters.
+            from the affected host. Include the complete output.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -189,7 +189,7 @@
             </.docs_inline_code>
             and <.docs_inline_code>
               sudo emisar events tail --lines 100
-            </.docs_inline_code>. A whole journal is harder to read, not more complete.
+            </.docs_inline_code>. Include the entries around the affected time window.
           </span>
         </li>
         <li class="flex items-start gap-2.5">

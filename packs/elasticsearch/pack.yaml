@@ -2,13 +2,12 @@ schema_version: 1
 
 id: elasticsearch
 name: Elasticsearch / OpenSearch ops
-version: 0.1.22
+version: 0.1.23
 retired_below: 0.1.22
 description: >
   Cluster + index introspection plus narrow mutators (cache_clear,
   force_merge, flush, close_index). Auth via ELASTIC_USER +
-  ELASTIC_PASSWORD env vars on the runner host. Does NOT include
-  delete_index — too easy to misuse.
+  ELASTIC_PASSWORD env vars on the runner host.
 vendor: emisar
 homepage: https://emisar.dev/packs/elasticsearch
 

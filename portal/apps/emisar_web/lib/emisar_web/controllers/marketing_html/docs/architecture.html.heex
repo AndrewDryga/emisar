@@ -4,14 +4,14 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="architecture"
-      updated="September 8, 2026"
+      updated="November 2, 2026"
       toc={[
         {"components", "The four pieces"},
         {"flow", "One action, end to end"},
         {"ownership", "Who owns which decision"},
         {"state", "What each component stores"},
         {"failure", "When something drops out"},
-        {"delivery", "Delivery, and what it does not promise"},
+        {"delivery", "Delivery and recovery"},
         {"approvals", "What a wait revalidates"},
         {"boundary", "The hosted boundary"}
       ]}
@@ -293,7 +293,7 @@
         >Troubleshooting</.link>.
       </p>
 
-      <.docs_h2 id="delivery">Delivery, and what it does not promise</.docs_h2>
+      <.docs_h2 id="delivery">Delivery and recovery</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Messages between a runner and the control plane are delivered at least once. A result is
         replayed until acknowledged, so a lost acknowledgement can produce a duplicate. The
@@ -370,8 +370,8 @@
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The hosts and their privileges remain yours: raw action output never leaves them, and
-        only the dispatch and the redacted result cross the boundary. The threat model behind
-        it, including what it deliberately does not defend against, is in <.link
+        only the dispatch and the redacted result cross the boundary. The controls and trust
+        boundaries are explained in <.link
           navigate={~p"/docs/security-model"}
           class="text-brand-400 hover:text-brand-300"
         >Security model</.link>.

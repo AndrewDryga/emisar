@@ -59,7 +59,7 @@ defmodule EmisarWeb.CoopConnectionTest do
              "official installation guide"
            )
 
-    assert has_element?(lv, "#coop-limits", "Recommendations")
+    assert has_element?(lv, "#coop-limits", "Setup recommendations")
     refute has_element?(lv, "#coop-tool-prompts")
     assert has_element?(lv, "#coop-start", "coop codex")
     refute has_element?(lv, "#install-mcp-cmd")

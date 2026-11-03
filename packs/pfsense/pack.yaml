@@ -2,7 +2,7 @@ schema_version: 1
 
 id: pfsense
 name: pfSense firewall
-version: 0.6.8
+version: 0.6.9
 retired_below: 0.6.8
 description: >
   Operate a pfSense firewall over its REST API: read firewall rules, NAT,
@@ -55,7 +55,7 @@ setup:
     - "Requires the community REST API package (pfSense-pkg-RESTAPI, /api/v2) installed on the firewall — not Netgate's Nexus controller API. The package's read_only switch (System → REST API) forces the whole API GET-only; pair it with a read-only key for a diagnostics deployment."
     - "TLS is verified by default. pfSense ships a self-signed GUI cert, so set `PFSENSE_INSECURE`=true, or set CURL_CA_BUNDLE to a CA file (curl reads it natively) to verify properly."
     - "Reads that would expose secrets (user passwords, IPsec phase pre-shared keys) are intentionally omitted, and the API's arbitrary-command endpoint (/diagnostics/command_prompt — a remote shell) is deliberately not wired: that belongs in the default-denied `shell` break-glass pack, not here. The certificate-store reads (certificates / certificate_authorities / crls) select only non-secret fields with jq, so the certificate private key (`prv` PEM) is never returned — by design, not just redaction. The mutators are risk-gated; reboot is critical."
-    - "Dynamic routing (FRR — BGP / OSPF / BFD) is NOT exposed by this REST API, so this pack cannot read it. FRR state lives behind vtysh on the firewall; reach it out-of-band (the `frr` pack runs vtysh locally on an FRR host, or use SNMP)."
+    - "For BGP and OSPF state exposed over SNMP, use the `snmp` pack against the firewall. Use the `frr` pack on an FRR host with local `vtysh` access for routing diagnostics, including BFD."
   verify: pfsense.version
 
 actions:

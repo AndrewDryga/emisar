@@ -2,15 +2,15 @@ schema_version: 1
 
 id: docker
 name: Docker operations pack
-version: 0.2.31
+version: 0.2.32
 # Versions below this returned full docker exec and health-check command lines,
 # which can carry passwords, from the low-risk events_tail. They fail closed.
 retired_below: 0.2.30
 description: >
   Operator pack for Docker hosts: read-only inventory and per-container
   introspection, plus narrow mutators (restart, stop, kill, prune).
-  Includes docker-compose support. The runner uid must be in the
-  docker group; this pack does NOT escalate.
+  Includes docker-compose support. Add the runner service user to the docker
+  group for access to the Docker socket. Actions use that user's existing access.
 vendor: emisar
 homepage: https://emisar.dev/packs/docker
 

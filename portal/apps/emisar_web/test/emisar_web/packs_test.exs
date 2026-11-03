@@ -134,8 +134,8 @@ defmodule EmisarWeb.PacksTest do
       html = conn |> get(~p"/packs/fail2ban") |> html_response(200)
 
       assert html =~ "Host access"
-      assert html =~ "Emisar shows and copies setup"
-      assert html =~ "it never runs them."
+      assert html =~ "Copy these setup commands"
+      assert html =~ "run them yourself on the runner host."
       assert html =~ "Connect to the Fail2ban control socket."
       assert html =~ "f2b.status"
       assert html =~ "f2b.reload"

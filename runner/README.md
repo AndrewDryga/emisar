@@ -297,8 +297,8 @@ read that state instead. Every other process stays as inspectable as before, so
 this setting does not break `/proc` diagnostics; `ProtectProc=` is the directive
 that does.
 
-The installed systemd unit is deliberately modest because every service
-sandbox directive also constrains the actions it launches. For example:
+Choose systemd sandbox settings to match the access your installed actions
+require. Each directive also applies to the actions the service launches:
 
 | Directive | Common consequence |
 | --- | --- |

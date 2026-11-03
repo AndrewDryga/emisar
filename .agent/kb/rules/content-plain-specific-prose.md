@@ -28,6 +28,12 @@ writer first.
 ## Good
 
 - Lead with the reader's actual job, question, or decision.
+- Describe the supported workflow in navigation cards, search summaries, and
+  introductions. Put a limitation beside the setup or buying decision it affects,
+  state it once, and explain the available path. Keep material security, support,
+  and contractual boundaries explicit; do not make missing features the headline.
+- Ask for diagnostics and explain recovery steps without scolding the reader or
+  assigning blame. State what support needs and how it helps the investigation.
 - Put the product mechanism or evidence next to the benefit it supports.
 - Explain a fact once, in the order the reader needs it. Do not follow an
   abstract summary with a paraphrase of the same behavior.

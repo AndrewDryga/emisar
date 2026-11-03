@@ -73,8 +73,7 @@ defmodule EmisarWeb.DocsNav do
               path: "/docs/kubernetes",
               icon: "infrastructure.kubernetes",
               keywords: "k8s daemonset pod manifest",
-              desc:
-                "One runner per node as a DaemonSet, with the pod spec as your blast-radius dial."
+              desc: "One runner per node as a DaemonSet, with access defined by the pod spec."
             },
             %{
               slug: "nomad",
@@ -185,8 +184,7 @@ defmodule EmisarWeb.DocsNav do
               icon: "infrastructure.container",
               keywords:
                 "agent sandbox coop co:op docker sandboxes nono dev containers codex claude gemini grok mcp",
-              desc:
-                "Choose a local sandbox, connect your coding agent to emisar, and understand what remains accessible."
+              desc: "Choose a local sandbox and connect your coding agent to emisar."
             }
           ]
         },
@@ -312,7 +310,7 @@ defmodule EmisarWeb.DocsNav do
           ]
         },
         %{
-          label: "When it breaks",
+          label: "Troubleshooting & recovery",
           pages: [
             %{
               slug: "troubleshooting",
@@ -463,8 +461,7 @@ defmodule EmisarWeb.DocsNav do
               path: "/docs/integrations/keycloak",
               logo: "keycloak.svg",
               keywords: "oidc pkce realm client",
-              desc:
-                "Keycloak sign-in with PKCE, and what its missing outbound SCIM leaves you to do."
+              desc: "Connect Keycloak to emisar with OIDC and PKCE."
             },
             %{
               slug: "integrations-google-workspace",
@@ -472,7 +469,7 @@ defmodule EmisarWeb.DocsNav do
               path: "/docs/integrations/google-workspace",
               logo: "google-workspace.svg",
               keywords: "oidc google directory",
-              desc: "Google Workspace sign-in with the locked issuer, and its directory-sync gap."
+              desc: "Sign in to emisar with Google Workspace."
             }
           ]
         },
@@ -485,8 +482,7 @@ defmodule EmisarWeb.DocsNav do
               path: "/docs/billing",
               icon: "product.billing",
               keywords: "plans invoices subscription payment upgrade downgrade",
-              desc:
-                "Plan limits, feature entitlements, upgrades and downgrades, invoices, and payment failures."
+              desc: "Plans, usage, subscriptions, invoices, and payment methods."
             }
           ]
         }

@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="integrations-keycloak"
-      updated="September 23, 2026"
+      updated="November 2, 2026"
       evidence="Live-tested against Keycloak on August 25, 2026."
       toc={[
         {"sso", "Single sign-on"},
@@ -13,8 +13,7 @@
     >
       <.docs_header current="integrations-keycloak">
         <:dek>
-          Connect Keycloak to emisar: a confidential OIDC client with PKCE for sign-in. Keycloak has
-          no outbound SCIM, and the directory-sync section shows what that leaves you to do.
+          Connect Keycloak to emisar with a confidential OIDC client and PKCE for sign-in.
         </:dek>
       </.docs_header>
       <.docs_prerequisites>
@@ -27,7 +26,7 @@
 
       <.docs_h2 id="sso">Single sign-on</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Connecting an identity provider is a paid feature. <.plan_note tier={:team} />
+        <.plan_note tier={:team} />
       </p>
       <ol class="mt-8 space-y-10">
         <.docs_step n={1}>
@@ -204,13 +203,13 @@
 
       <.docs_h2 id="scim">Directory sync</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Keycloak cannot push users to emisar because it has no outbound SCIM (its own SCIM Realm
-        API only receives users into Keycloak). Sign-in still works: members are created on their
-        first sign-in, automatically or held for approval. But roles are not mapped and nobody
-        is removed automatically.
+        Create members on their first sign-in, either automatically or after administrator
+        approval. Manage their roles and offboarding in Team. Keycloak has no built-in outbound
+        SCIM; its SCIM Realm API receives users into Keycloak. The plugin option below can
+        provide a separate provisioning connection.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        So offboarding is two steps. Disable the user in Keycloak to block new
+        To offboard a member, disable the user in Keycloak to block new
         sign-ins, then suspend or remove the member in
         <a
           href={~p"/app/team"}
@@ -221,8 +220,9 @@
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         A third-party Keycloak provisioning plugin can call emisar's SCIM endpoint with the
-        base URL and bearer token. emisar does not ship or certify one. You choose,
-        configure, and support it. <.plan_note tier={:enterprise} />
+        base URL and bearer token. Follow the plugin provider's setup and support guidance;
+        your team manages the plugin. emisar does not ship or certify these plugins.
+        <.plan_note tier={:enterprise} />
       </p>
     </.docs_layout>
   </section>

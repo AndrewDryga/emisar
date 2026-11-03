@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="sso"
-      updated="October 21, 2026"
+      updated="November 2, 2026"
       toc={[
         {"sso-login", "Setting up SSO login"},
         {"signing-in", "How members sign in"},
@@ -382,7 +382,7 @@
               navigate={~p"/docs/integrations/keycloak"}
               class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
             >Keycloak</.link>
-            uses a confidential client with PKCE and has no outbound SCIM.
+            uses a confidential OIDC client with PKCE.
           </span>
         </li>
         <li id="google-workspace" class="flex gap-3">
@@ -392,8 +392,7 @@
               navigate={~p"/docs/integrations/google-workspace"}
               class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
             >Google Workspace</.link>
-            uses an Internal OAuth client with a locked, prefilled issuer
-            and no outbound SCIM.
+            uses an Internal OAuth client with a prefilled Google issuer.
           </span>
         </li>
       </ul>

@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="security-incidents"
-      updated="October 21, 2026"
+      updated="November 2, 2026"
       toc={[
         {"sequence", "The sequence, every time"},
         {"evidence", "Preserve this before you clean up"},
@@ -373,12 +373,12 @@
         approvals still apply. The runner signature check cannot stop a holder with valid signing
         authority.
       </p>
-      <.docs_callout kind={:warn} title="There is no per-certificate revocation list.">
+      <.docs_callout kind={:warn} title="Contain a leaked signing key">
         <p>
-          A leaked key works until its certificate expires, and short lifetimes limit routine
-          exposure. To contain it sooner, rotate the trust root: add the new CA beside the
-          old, reissue certificates, then remove the old CA and reload every runner. The
-          control plane cannot do that reload for you.
+          Individual signing certificates cannot be revoked. A leaked key works until its
+          certificate expires or its trusted CA is removed. To contain it before expiry,
+          add the new CA beside the old, reissue certificates, then remove the old CA and
+          reload every runner through your normal host deployment process.
         </p>
       </.docs_callout>
       <ol class="mt-5 space-y-3 text-base leading-7 text-zinc-300 list-decimal pl-6">

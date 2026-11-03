@@ -16,15 +16,13 @@ Sentry's native symbolication service, and keeping the host it runs on healthy.
 | `symbolicator.cleanup`                | cache_state | medium |
 | `symbolicator.config_show`            | none        | high |
 
-## Reading symbols, never writing them
+## Symbolicate crashes from configured sources
 
-Symbolicator has no ingest endpoint: symbols reach it only from the sources an
-operator configured (S3, GCS, HTTP, filesystem). Nothing in this pack — and
-nothing a caller can send through it — publishes, alters, or deletes a symbol.
-The three symbolicate actions are the read side: they hand the service a crash
-and get back resolved frames.
+The three symbolicate actions send a crash to Symbolicator and return resolved
+frames using the operator's configured sources (S3, GCS, HTTP, or filesystem).
+The pack leaves the symbols in those sources unchanged.
 
-That guarantee needs one deliberate defense. Symbolicator lets a request carry
+The pack also fixes which symbol sources a request may use. Symbolicator lets a request carry
 its own `sources` block, and a source is a URL the host would then fetch — so
 `symbolicate` rebuilds the request body from exactly `options`, `modules`, and
 `stacktraces`. A `sources` key in the payload is dropped, which means the

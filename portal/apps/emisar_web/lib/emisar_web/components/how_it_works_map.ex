@@ -48,7 +48,7 @@ defmodule EmisarWeb.HowItWorksMap do
                 </p>
                 <p class="hiw-cap-size" data-hiw-cap-n="1" aria-hidden="true">
                   <strong class="hiw-cap-t">Before emisar: you let an agent use your SSH key.</strong>
-                  <span class="hiw-cap-s">The agent runs commands itself. It reads a config file, and the database password flows straight back to your AI provider training data.</span>
+                  <span class="hiw-cap-s">The agent runs commands itself. It reads a config file, and the database password appears in the agent conversation.</span>
                 </p>
                 <p class="hiw-cap-size" data-hiw-cap-n="2" aria-hidden="true">
                   <strong class="hiw-cap-t">Before emisar: a confused agent creates a problem.</strong>
@@ -231,7 +231,7 @@ defmodule EmisarWeb.HowItWorksMap do
                   <.icon name="state.warning" class="h-4 w-4" />Meant old dumps, deleted the database
                 </li>
                 <li class="hiw-fx is-off" data-k="dza2">
-                  <.icon name="state.warning" class="h-4 w-4" />Nothing asks first, and there is no undo
+                  <.icon name="state.warning" class="h-4 w-4" />This delete runs without review and cannot be undone
                 </li>
               </ul>
               <div class="hiw-chat hiw-fx is-off" data-k="chat-b">
@@ -248,7 +248,7 @@ defmodule EmisarWeb.HowItWorksMap do
                   <.icon name="state.warning" class="h-4 w-4" />It can run whatever the account can
                 </li>
                 <li class="hiw-fx is-off" data-k="dzb2">
-                  <.icon name="state.warning" class="h-4 w-4" />Nothing approves a command before it runs
+                  <.icon name="state.warning" class="h-4 w-4" />In this setup, commands run without review
                 </li>
                 <li class="hiw-fx is-off" data-k="dzb3">
                   <.icon name="state.warning" class="h-4 w-4" />Secrets in output go straight to the AI

@@ -2,17 +2,15 @@ schema_version: 1
 
 id: snmp
 name: SNMP (net-snmp)
-version: 0.2.5
+version: 0.2.6
 # Older versions could send runner-held credentials to a caller-chosen target.
 retired_below: 0.2.4
 description: >
   Read a network device over SNMP with the net-snmp CLI — system group,
   interface table, BGP peers (BGP4-MIB) and OSPF neighbors / general group
-  (OSPF-MIB), plus a generic single-OID get and a bounded subtree walk. The
-  routing reads exist to give operators visibility into BGP / OSPF state on
-  devices this control plane can't reach by a native API — e.g. a pfSense +
-  FRR edge firewall, where the REST API exposes no routing-protocol state.
-  All read-only.
+  (OSPF-MIB), plus a generic single-OID get and a bounded subtree walk.
+  Inspect BGP and OSPF through SNMP on devices such as a pfSense firewall
+  running FRR. All actions are read-only.
 vendor: emisar
 homepage: https://emisar.dev/packs/snmp
 

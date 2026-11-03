@@ -134,8 +134,8 @@ vm.query_instant &#123;"query":
         <code>left</code>
         from the gossip, and Traefik needs a Consul token to start. A wedged Consul never issues one,
         so <code>hvn05</code>
-        ran no proxy at all. Nobody caught it, because the only thing checked after the reboot was
-        Nomad's server quorum.
+        ran no proxy at all. The post-reboot check covered Nomad's server quorum; the ingress
+        service needed its own health check.
       </p>
       <p class="mt-4 text-base leading-7 text-zinc-400">
         The anycast VIP was the amplifier. Every node advertises the VIP whether or not its
@@ -227,22 +227,21 @@ done
       </p>
 
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
-        What emisar didn't do
+        From investigation to recovery
       </h2>
       <p class="mt-4 text-base leading-7 text-zinc-400">
-        emisar didn't prevent this outage. Three design flaws caused it: a boot that lost a race with
-        udev, a Consul server that left when it should have stopped, and a VIP that advertises
-        without checking. You fix design flaws in the repo, not with a tool call.
+        During the investigation, emisar gave the agent one place to inspect the fleet and
+        request the two recovery actions. Each read was recorded, and both changes waited for
+        approval.
       </p>
       <p class="mt-4 text-base leading-7 text-zinc-400">
-        What it changed is the hour in the middle: the part where someone is staring at a fleet-wide
-        502 with no failing service, hunting for the thread. Every read was one call away and on the
-        record. Every change that touched production waited for a yes. Nobody held a shell on the
-        edge, and nothing happened that you can't go read back later. The night a storage driver
-        <.link navigate={~p"/use-cases/csi-data-loss"} class="text-brand-400 hover:text-brand-300">
-          reformatted a live LUN and erased 33 hours of metrics
-        </.link>
-        was a different failure on the same fleet, and it ran through the same loop.
+        The same fleet's
+        <.link
+          navigate={~p"/use-cases/csi-data-loss"}
+          class="text-brand-400 hover:text-brand-300"
+        >storage incident</.link>
+        used the same workflow: inspect through declared actions, approve the recovery step,
+        and prepare the infrastructure fix for review.
       </p>
 
       <div class="mt-12 flex flex-wrap gap-x-6 gap-y-3 border-t border-zinc-900 pt-8 text-sm">

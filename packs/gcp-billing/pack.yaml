@@ -2,13 +2,12 @@ schema_version: 1
 
 id: gcp-billing
 name: Google Cloud billing and cost analytics
-version: 0.2.5
+version: 0.2.6
 description: >
   Read-only Google Cloud spend analytics — cost by service, project, and SKU,
   a daily trend, and export freshness — read from the Cloud Billing export in
   BigQuery, alongside billing account, linked project, and budget reads from
-  the Cloud Billing API. Google Cloud publishes no cost-report API, so the cost
-  actions read the billing export rather than a reporting endpoint.
+  the Cloud Billing API.
 vendor: emisar
 homepage: https://emisar.dev/packs/gcp-billing
 

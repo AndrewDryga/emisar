@@ -19,7 +19,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="containers"
-      updated="September 23, 2026"
+      updated="November 2, 2026"
       toc={[
         {"what-it-sees", "What a containerized runner sees"},
         {"official-image", "The official image"},
@@ -129,9 +129,8 @@
         It runs as the non-root user <code class="font-mono">65532</code>, connects to
         <code class="font-mono">emisar.dev</code>
         (set <code class="font-mono">EMISAR_URL</code>
-        for a self-hosted control plane), reads <code class="font-mono">EMISAR_ENROLLMENT_KEY</code>, and keeps state under <code class="font-mono">/var/lib/emisar</code>. The baked config admits only low-risk
-        actions, so the default image can observe but not fix. Mount your own config to allow
-        the debugging pack's fix actions.
+        for a self-hosted control plane), reads <code class="font-mono">EMISAR_ENROLLMENT_KEY</code>, and keeps state under <code class="font-mono">/var/lib/emisar</code>. The default configuration enables low-risk
+        observation actions. Mount your own configuration to enable the debugging pack's repair actions.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Each release notes its image digest, and the image carries signed build provenance and an

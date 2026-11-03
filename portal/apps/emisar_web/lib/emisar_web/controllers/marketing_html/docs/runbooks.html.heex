@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="runbooks"
-      updated="October 21, 2026"
+      updated="November 2, 2026"
       toc={[
         {"shortest-path", "The shortest path"},
         {"create", "1. Create or import a draft"},
@@ -499,7 +499,7 @@
         Cancelling an execution also cancels pending stages, waits, and active attempts without
         erasing their history.
       </p>
-      <.docs_callout kind={:warn} title="Signature-enforcing runners are not supported yet.">
+      <.docs_callout kind={:warn} title="Use signed actions for signature-enforcing runners">
         Customer-CA signing currently covers exact direct <code>run_action</code>
         dispatches. A runbook that targets a signature-enforcing runner fails closed with <code>signed_runbook_unsupported</code>; use individually signed actions for that runner.
       </.docs_callout>

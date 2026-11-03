@@ -5,11 +5,10 @@ action catalog, without giving the agent an SSH key or an open-ended shell.
 Policy decides what runs, what waits for a person, and what is denied; the
 runner checks the exact pack and arguments again on the host.
 
-This package registers the hosted emisar MCP endpoint with Cursor. It contains
-no credential, code hook, rule, subagent, executable, or second backend. It also
-bundles three portable customer workflows: install and certify a runner, author
-a custom action pack, and respond to a production incident. Tools, runner scope,
-policy, approval, and audit remain in the operator's emisar account.
+This package connects Cursor to the hosted emisar MCP endpoint and bundles
+three workflows: install and certify a runner, author an action pack, and
+respond to a production incident. Tools, runner scope, policy, approval, and
+audit remain in the operator's emisar account.
 
 Local installation is available now; the Cursor Marketplace listing is
 pending. The direct MCP configuration below registers the same endpoint
@@ -64,8 +63,8 @@ does not require another Cursor integration.
 - **Respond to production incidents** investigates first, tests hypotheses with
   read-only actions, contains only within explicit authority, turns the root
   cause into a source-controlled fix, and verifies recovery.
-- **Install Emisar** discovers a host, installs and certifies its runner, checks
-  capability coverage, and recommends a custom pack when the catalog has a gap.
+- **Install Emisar** discovers a host, installs and certifies its runner, selects
+  suitable packs, and recommends custom actions for your team's procedures.
 - **Author a pack** guides restrictive action design, validation, local proof,
   controlled rollout, trust review, and fleet certification.
 

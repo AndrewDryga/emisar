@@ -1,6 +1,6 @@
 defmodule EmisarWeb.SandboxRisks do
   @moduledoc """
-  The "Limits & risks" copy for each agent sandbox, once. The Console's sandbox
+  The setup recommendations for each agent sandbox, once. The Console's sandbox
   setup and the public sandboxes guide both render it, each with its own
   components, so a corrected warning cannot leave the other surface stating the
   old risk. Fifteen of these sentences used to be hand-copied between the two.
@@ -13,7 +13,7 @@ defmodule EmisarWeb.SandboxRisks do
 
   @sandboxes %{
     "coop" => %{
-      title: "Recommendations",
+      title: "Setup recommendations",
       risks: [
         [
           "Only add the files, secrets, and host tools the agent needs. Use ",
@@ -49,7 +49,7 @@ defmodule EmisarWeb.SandboxRisks do
       rotation: nil
     },
     "docker_sandboxes" => %{
-      title: "Limits & risks",
+      title: "Setup recommendations",
       risks: [
         [
           "Docker shares the project directory with the VM, so the agent can see and potentially leak anything stored there, including secrets in ",
@@ -68,7 +68,7 @@ defmodule EmisarWeb.SandboxRisks do
       rotation: nil
     },
     "nono" => %{
-      title: "Limits & risks",
+      title: "Setup recommendations",
       risks: [
         [
           "The agent can see any file, secret, tool, or network destination allowed by the profile, including everything in its working directory."
@@ -87,7 +87,7 @@ defmodule EmisarWeb.SandboxRisks do
       ]
     },
     "dev_containers" => %{
-      title: "Limits & risks",
+      title: "Setup recommendations",
       risks: [
         [
           "The agent can see and potentially leak anything mounted into the container, including secrets in ",

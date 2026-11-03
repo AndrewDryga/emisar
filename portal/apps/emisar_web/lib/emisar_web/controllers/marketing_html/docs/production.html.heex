@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="production"
-      updated="September 23, 2026"
+      updated="November 2, 2026"
       toc={[
         {"fleet-shape", "The shape of a production fleet"},
         {"phased-rollout", "Roll out in phases"},
@@ -18,8 +18,8 @@
           <.link navigate={~p"/docs/quickstart"} class="text-brand-400 hover:text-brand-300">
             quickstart
           </.link>
-          installed one runner on one host. Production adds many hosts, real consequences, and a
-          security review that asks exactly how emisar stops an unsafe call.
+          connected one host. Roll emisar out across production with scoped access, reviewed
+          policies, and monitored actions.
         </:dek>
       </.docs_header>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -128,7 +128,7 @@
           Install, watch it connect, run a read, then open the row from <a
             href={~p"/app/audit"}
             class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-          >Audit</a>. Prove the whole path before it touches anything that matters.
+          >Audit</a>. Verify dispatch, output, and the audit record before expanding the rollout.
         </li>
         <li>
           <strong class="text-zinc-200">Configure the policy.</strong>

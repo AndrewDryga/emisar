@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="connect-cli-agent"
-      updated="September 6, 2026"
+      updated="November 2, 2026"
       toc={[
         {"stdio-bridge", "Set up a stdio client"},
         {"connect-later", "Connect a client you install later"},
@@ -46,12 +46,11 @@
           Your AI app installed on the computer where you will run the bridge.
         </:item>
         <:item>
-          An account with at least one runner online. Otherwise the agent signs in fine and finds
-          an empty catalog with nothing to call. New here? Run the
+          An account with at least one runner online. Complete the
           <.link navigate={~p"/docs/quickstart"} class="text-brand-400 hover:text-brand-300">
             quickstart
           </.link>
-          first, then come back to wire in your client.
+          first so your agent has a connected runner and actions to use.
         </:item>
       </.docs_prerequisites>
 
@@ -299,10 +298,9 @@ Restart any client you just connected so it starts using the new server.</.docs_
           user-level configuration. Do not commit it in a project configuration file.
         </p>
 
-        <.docs_callout kind={:note} title="What direct HTTP leaves out">
+        <.docs_callout kind={:note} title="Signing and key rotation">
           <p>
-            A direct HTTP client cannot sign dispatches and does not rotate its agent key
-            automatically. Use the stdio bridge when a runner requires <.link
+            Use the stdio bridge for automatic key rotation and whenever a runner requires <.link
               navigate={~p"/docs/signed-dispatch"}
               class="text-brand-400 hover:text-brand-300"
             >signed dispatch</.link>. Rotate or revoke a direct client's key from <a

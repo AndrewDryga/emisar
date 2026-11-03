@@ -353,10 +353,10 @@ defmodule EmisarWeb.MarketingTest do
     assert html =~ ~s(href="/app/agents")
   end
 
-  test "docs states the supported deployment boundary", %{conn: conn} do
+  test "docs links to the hosted plans", %{conn: conn} do
     html = conn |> get(~p"/docs") |> html_response(200)
 
-    assert html =~ "supported product is the hosted emisar control plane today"
+    assert html =~ "Compare hosted plans, runner allowances, and audit retention."
     refute html =~ "Run the control plane in your own VPC"
   end
 
@@ -1272,7 +1272,10 @@ defmodule EmisarWeb.MarketingTest do
                "The runner opens an outbound TLS WebSocket and exposes no inbound listener. Commands come back through that same connection."
 
       assert html =~ "Private packs"
-      assert html =~ "not a VM, container, or kernel sandbox"
+
+      assert html =~
+               "Use a separate VM, container, or kernel sandbox when you need process isolation."
+
       assert html =~ ~s(href="/docs/publishing-packs")
       assert html =~ "The runner uses saved state to reject repeated requests."
       assert html =~ "Preserve that state when moving or resetting a host"
@@ -1566,14 +1569,14 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Self-rotating runner credentials and a harder execution boundary"
 
       assert html =~
-               "A vanished runbook, a deny that matched nothing, and a session that would not end"
+               "Reliable runbook discovery, policy matching, and session revocation"
 
       assert html =~ "One runbook, one unpublished change, and a diff before you publish"
       assert html =~ "Large runbooks finish, and every result stays readable"
       assert html =~ "Pack CI runs only what changed"
       assert html =~ "Signed dispatch uses your own PKI"
       assert html =~ "Identity and session flows now carry current authority"
-      assert html =~ "The v1 failure-path pass"
+      assert html =~ "Recovery, revocation, and release validation"
       assert html =~ "Reliable recovery and leaner internals"
       assert html =~ "Runbook cancellation now survives a control-plane restart"
       assert html =~ "Shared visibility and clearer reviews"
@@ -1593,7 +1596,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~
                "This release takes the v1 audit through recovery, revocation, and publication paths"
 
-      assert html =~ "The v1 hardening pass"
+      assert html =~ "Stronger runner and pack boundaries"
       assert html =~ "This release closes a full pre-1.0 security audit"
       assert html =~ "SSO and directory access, end to end"
       assert html =~ "Directory groups now grant access through the exact group resource"
@@ -1712,8 +1715,8 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "https://emisar.dev/api/mcp/rpc"
       assert html =~ "Authorization: Bearer"
       assert html =~ "Do not commit it in a project configuration file"
-      assert html =~ "cannot sign dispatches"
-      assert html =~ "does not rotate its agent key automatically"
+      assert html =~ "Use the stdio bridge for automatic key rotation"
+      assert html =~ "Rotate or revoke a direct client"
       assert html =~ ~s(href="/docs/signed-dispatch")
       refute html =~ "claude mcp add --transport http"
     end
@@ -1800,8 +1803,8 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "/var/log/emisar/events.jsonl"
       assert html =~ "emisar audit verify"
 
-      # The honest "what emisar is not" boundary section.
-      assert html =~ "What emisar is not"
+      # The security-stack section retains the trust boundaries.
+      assert html =~ "How emisar fits your security stack"
       assert html =~ "customer-authorized MCP bridge"
       assert html =~ "Ed25519 or ECDSA P-256 leaf key"
       refute html =~ "user-signed action"
@@ -2276,8 +2279,8 @@ defmodule EmisarWeb.MarketingTest do
       review_dates = [
         {"/docs/authentication", "October 4, 2026"},
         {"/docs/teams-and-access", "October 4, 2026"},
-        {"/docs/sso", "October 21, 2026"},
-        {"/docs/scim", "October 4, 2026"}
+        {"/docs/sso", "November 2, 2026"},
+        {"/docs/scim", "November 2, 2026"}
       ]
 
       for {route, date} <- review_dates do
@@ -2386,7 +2389,7 @@ defmodule EmisarWeb.MarketingTest do
 
       keys = conn |> get(~p"/docs/agents-and-keys") |> html_response(200) |> squish()
       assert keys =~ "emk-"
-      assert keys =~ "no scope of its own"
+      assert keys =~ "current runner and pack access"
       assert keys =~ "audit-export"
       assert keys =~ "MCP bridge keys are short-lived and rotate themselves"
       assert keys =~ "writable and persistent"
@@ -2502,7 +2505,7 @@ defmodule EmisarWeb.MarketingTest do
       refute html =~ "14.28 TiB"
       refute html =~ "755 GiB"
       refute html =~ "15 TiB"
-      assert html =~ "What emisar did not replace"
+      assert html =~ "One action layer across the stack"
       assert html =~ ~s(href="/sign_up")
       assert html =~ ~s(href="/packs/cassandra")
       assert html =~ ~s(href="/docs/security-model")
@@ -2515,8 +2518,8 @@ defmodule EmisarWeb.MarketingTest do
 
       assert html =~ "Case study · Ingress"
       assert html =~ "Stopping the bleed"
-      # The honest beat: emisar didn't PREVENT the outage (no out-of-band step).
-      assert html =~ "What emisar didn't do"
+      # The result keeps the investigation and two approved recovery actions explicit.
+      assert html =~ "From investigation to recovery"
       # Two gated mutations actually executed (restart Consul, then resize Traefik) —
       # pending → approved, the product's whole thesis. The anycast drain wasn't needed
       # once Consul rejoined, but frr.bgp_neighbor_shutdown is still cited as the lever.
@@ -2568,7 +2571,7 @@ defmodule EmisarWeb.MarketingTest do
       refute LazyHTML.text(with_emisar) =~ "DB_PASSWORD"
 
       assert LazyHTML.text(document) =~
-               "Without one place, AI access over SSH becomes a risky mess"
+               "Bring agent access under one team policy"
     end
 
     test "the custom-MCP comparison renders both the desktop table and the mobile cards",
@@ -2587,7 +2590,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "The copy-paste loop"
       assert html =~ "Nothing runs unless you run it"
       assert html =~ "Review can turn into a reflex"
-      assert squish(html) =~ "generated code reaches your shell without a careful review"
+      assert squish(html) =~ "Generated code then reaches your shell without a careful review"
       assert html =~ "Nothing on its own. You run every command."
       assert html =~ "Copy-paste fits one-off work"
       assert html =~ "Give the agent the checks you keep repeating."
@@ -2716,7 +2719,7 @@ defmodule EmisarWeb.MarketingTest do
 
       # A binary upgrade stops the service, so the page must not read as
       # zero-downtime — and rollback restores the runner, not the filesystem.
-      assert html =~ "The service does stop"
+      assert squish(html) =~ "that host is interrupted. Let running work finish first."
       assert html =~ "restores the previous binary"
       refute html =~ "no interruption"
     end
@@ -2833,7 +2836,7 @@ defmodule EmisarWeb.MarketingTest do
     test "credentials keeps the no-leaf-revocation limit visible", %{conn: conn} do
       html = conn |> get(~p"/docs/credentials") |> html_response(200)
 
-      assert html =~ "no per-certificate revocation list"
+      assert html =~ "Individual signing certificates cannot be revoked."
       assert html =~ "reload every runner"
     end
 
@@ -2856,7 +2859,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "emisar pack verify redis"
       assert html =~ "! risk escalated"
       assert html =~ "emisar pack install redis=0.2.3 --hash"
-      assert html =~ "There is no rollback command"
+      assert html =~ "To roll back, install the exact earlier version again"
       assert html =~ "a power loss mid-swap, the next install or update recovers it"
       assert html =~ "Several packs update independently"
     end
@@ -3124,7 +3127,7 @@ defmodule EmisarWeb.MarketingTest do
       html = conn |> get(~p"/docs/security-incidents") |> html_response(200) |> squish()
 
       # No per-leaf CRL: short TTLs bound it, CA rotation is the only lever.
-      assert html =~ "no per-certificate revocation list"
+      assert html =~ "Individual signing certificates cannot be revoked."
       assert html =~ "Remove the old CA and reload every runner"
       assert html =~ "still accepts certificates signed by it"
 
@@ -3221,16 +3224,15 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "mailto:support@emisar.dev"
     end
 
-    test "audit & SIEM says plainly that emisar does not push", %{conn: conn} do
+    test "audit & SIEM explains the polling integration and delivery interval", %{conn: conn} do
       html = conn |> get(~p"/docs/audit-and-siem") |> html_response(200) |> squish()
 
-      assert html =~ "emisar does not push events."
-      assert html =~ "There is no managed log sink, webhook, or streaming transport."
+      assert html =~ "Pull audit events into your SIEM"
 
-      # Direct-polling SIEM vs. a collector in front of one — the distinction
-      # that decides whether an operator has anything to run at all.
-      assert html =~ "polls this endpoint and forwards what it reads"
-      assert html =~ "a log agent you already run, or the small script below"
+      # The reader can use a direct SIEM input or run a separate collector.
+      assert html =~ "cursor-aware HTTP input, a log agent, or the script below"
+      assert html =~ "poll this endpoint and forward each page"
+      assert html =~ "Your polling interval controls how quickly new events reach your SIEM."
     end
 
     test "audit & SIEM ships a poller that checkpoints after handoff", %{conn: conn} do
@@ -3608,8 +3610,8 @@ defmodule EmisarWeb.MarketingTest do
       # Each legal surface declares the date of its current published text.
       for {route, date} <- [
             {"/privacy", "September 25, 2026"},
-            {"/terms", "August 26, 2026"},
-            {"/refund-policy", "August 26, 2026"},
+            {"/terms", "November 2, 2026"},
+            {"/refund-policy", "November 2, 2026"},
             {"/dpa", "September 25, 2026"}
           ] do
         html = conn |> get(route) |> html_response(200)

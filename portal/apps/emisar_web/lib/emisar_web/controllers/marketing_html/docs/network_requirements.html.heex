@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="network-requirements"
-      updated="September 3, 2026"
+      updated="November 2, 2026"
       toc={[
         {"table", "What has to be reachable"},
         {"control-plane", "The runner's control connection"},
@@ -258,11 +258,10 @@
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <strong class="text-zinc-200">Requests can take a while on purpose.</strong>
+            <strong class="text-zinc-200">Allow the bridge's full request timeout.</strong>
             A wait can hold a request for up to a minute on the control plane, and the bridge
-            allows 90 seconds before it gives up. A proxy or appliance that cuts idle HTTP requests
-            shorter than that will break waits while ordinary calls keep working. That failure is
-            confusing and worth ruling out early.
+            has a 90-second request deadline. Configure proxies and appliances to keep those
+            requests open for the full deadline.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -316,10 +315,10 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Every intermediary must pass the Upgrade header and keep the connection open.</strong>
-            The runner uses a long-lived WebSocket. An appliance that strips the
+            The runner uses a long-lived WebSocket. Configure intermediaries to pass the
             <.docs_inline_code>Upgrade</.docs_inline_code>
-            header, buffers frames, or closes idle connections makes the runner reconnect over
-            and over, often with no clear error to find.
+            header, forward frames as they arrive, and keep idle connections open. These settings
+            let the runner maintain its control connection.
           </span>
         </li>
         <li class="flex items-start gap-2.5">

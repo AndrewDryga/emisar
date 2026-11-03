@@ -2,13 +2,13 @@ schema_version: 1
 
 id: nginx
 name: Nginx operations pack
-version: 0.2.29
+version: 0.2.30
 retired_below: 0.2.27
 description: >
   Operator pack for nginx — read-only status + access-log analysis,
   TLS cert probes, and narrow operator actions (test_config, reload,
-  graceful quit, stop). Full restart is intentionally not included;
-  use systemd for that.
+  graceful quit, stop). For a full service restart, use the systemd
+  actions in linux-core.
 vendor: emisar
 homepage: https://emisar.dev/packs/nginx
 

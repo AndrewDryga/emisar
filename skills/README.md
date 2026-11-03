@@ -19,17 +19,16 @@ prompts before handing agent registration and authenticated MCP dispatch to
 `connect-llm`.
 
 `respond-to-production-incidents` starts with an authenticated Emisar connection
-and at least one relevant runner. It can point out a missing declared capability
-and, with the operator's agreement, hand that gap to `author-pack`; it does not
-replace runner onboarding or pack trust.
+and at least one relevant runner. With the operator's agreement, it can hand
+custom procedures to `author-pack` to extend the action catalog. Install and
+trust the required packs before using their actions.
 
 ## Cursor plugin bundle
 
 The Cursor Marketplace package under `dist/cursor-plugin/` bundles
 `install-emisar`, `author-pack`, and `respond-to-production-incidents` beside
-the hosted Emisar MCP server. Together they cover an empty account with no
-runners, environment-specific capability gaps, and the normal incident
-workflow. `install-emisar` reuses the plugin's authenticated MCP connection for
+the hosted Emisar MCP server. Together they cover runner onboarding, custom
+actions, and incident response. `install-emisar` reuses the plugin's authenticated MCP connection for
 end-to-end proof after the runner comes online. The bundled copies are mirrors
 of the files here, and `./run check agent-setup` fails when they differ.
 

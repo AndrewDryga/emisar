@@ -48,7 +48,7 @@
         </.link>
       </div>
       <div class="mt-3 flex flex-wrap gap-2">
-        <%= for chip <- ["No inbound port on hosts", "Pattern redaction before egress", "No shell unless you install one"] do %>
+        <%= for chip <- ["No inbound port on hosts", "Pattern redaction before egress", "Declared actions, checked on the host"] do %>
           <span class="inline-flex items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-950/60 px-3 py-1 text-xs font-medium text-zinc-300">
             <.icon name="state.included" class="h-3.5 w-3.5 text-brand-400" />{chip}
           </span>
