@@ -1,7 +1,7 @@
 ---
 name: agent-tasks
 sources: [.agent/tasks/README.md, .githooks/commit-msg, tools/internal/devtool/screenshots.go, tools/internal/devtool/browser.go]
-updated: 2026-09-15
+updated: 2026-11-03
 ---
 
 # Agent tasks and batch execution
@@ -17,9 +17,13 @@ Read state, log, then the specification before resuming the current task.
 The directory is the status: `00_todo`, `10_in_progress`, `50_blocked`, `99_done`.
 Task state, backlog, decisions, and screenshots are local and gitignored.
 
-The host CLI owns transitions. A Coop loop box uses its supplied `coop-tasks` MCP
-tools; never move task folders by hand or bypass a lease. A box without that channel
-leaves transitions to host orchestration. A status checkbox is not a transition.
+The host CLI owns transitions on the host. A Coop box with the `coop-tasks` MCP
+tools, a loop box or an editor session, changes task state through them:
+`tasks_claim`, `tasks_update_state`, `tasks_append_log`, `tasks_set_subtasks`,
+`tasks_complete`, `tasks_block` and `tasks_release`. Never move task folders by hand
+or bypass a lease. A box without those tools leaves transitions to the host. A
+blocked task still needs a person's `coop tasks unblock` first. A status checkbox
+is not a transition.
 
 ## Implement one task
 
@@ -32,7 +36,9 @@ leaves transitions to host orchestration. A status checkbox is not a transition.
    --preflight` releases it once that process is gone. Pass `--pid <n>` only
    when coop would otherwise bind the wrong process, such as a wrapper that
    exits while the work continues. `--force` takes over a live claim and needs
-   the human to say so.
+   the human to say so. In a box with the `coop-tasks` tools, use `tasks_list`,
+   `tasks_get` and `tasks_claim` instead of `coop tasks ls` and `claim`, and
+   `tasks_propose` to file new work.
 2. Implement the requested behavior, preserving unrelated WIP. Run focused checks
    while working and the touched project's local final gate before committing.
    Portal uses `./run gate portal --changed`; its complete gate remains required
@@ -42,8 +48,9 @@ leaves transitions to host orchestration. A status checkbox is not a transition.
 4. Append what changed and why to log.md. Overwrite state.md with the completed
    outcome and validation. Cite the task id in notes, not a commit SHA: Coop may
    re-sign box commits, changing their SHAs.
-5. Use `coop tasks done <id>` only when the gates are green, the commit exists,
-   and the notes are complete. Source completion does not imply deployment.
+5. Use `coop tasks done <id>` (in a box, `tasks_complete`) only when the gates are
+   green, the commit exists, and the notes are complete. Source completion does
+   not imply deployment.
 
 Use the repository's Go browser rig for rendered checks: `./run browser status`
 reports its state and `./run browser start` starts it. `./run shot` drives a page
