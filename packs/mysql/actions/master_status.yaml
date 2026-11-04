@@ -17,14 +17,18 @@ execution:
       # new name. Only a syntax error moves on to the other one: any other failure,
       # such as a missing privilege, is the answer.
       - |
-        run() { mysql -e "SET SESSION lock_wait_timeout=5 /*!50708 , max_execution_time=8000 */ /*M!100108 , max_statement_time=8 */; $1"; }
-        if ! out=$(run 'SHOW BINARY LOG STATUS' 2>/dev/null); then
-          err=$(run 'SHOW BINARY LOG STATUS' 2>&1 >/dev/null) || true
-          case "$err" in
-            *'ERROR 1064'*) out=$(run 'SHOW MASTER STATUS') || exit $? ;;
-            *) printf '%s\n' "$err" >&2; exit 1 ;;
-          esac
+        err=$(mktemp) || exit 1
+        trap 'rm -f "$err"' EXIT
+        trap 'exit 143' INT TERM
+        run() { mysql -e "SET SESSION lock_wait_timeout=5 /*!50708 , max_execution_time=8000 */ /*M!100108 , max_statement_time=8 */; $1" 2>"$err"; }
+        status=0
+        out=$(run 'SHOW BINARY LOG STATUS') || status=$?
+        if [ "$status" -ne 0 ] && grep -q 'ERROR 1064' "$err"; then
+          status=0
+          out=$(run 'SHOW MASTER STATUS') || status=$?
         fi
+        cat "$err" >&2
+        if [ "$status" -ne 0 ]; then exit "$status"; fi
         printf '%s\n' "$out"
   timeout: 10s
 output:

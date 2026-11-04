@@ -20,14 +20,18 @@ execution:
       # old statement. -E, not \G: the MySQL 9 client refuses local commands in batch
       # mode.
       - |
-        run() { mysql -E -e "SET SESSION lock_wait_timeout=5 /*!50708 , max_execution_time=13000 */ /*M!100108 , max_statement_time=13 */; $1"; }
-        if ! out=$(run 'SHOW REPLICA STATUS' 2>/dev/null); then
-          err=$(run 'SHOW REPLICA STATUS' 2>&1 >/dev/null) || true
-          case "$err" in
-            *'ERROR 1064'*) out=$(run 'SHOW SLAVE STATUS') || exit $? ;;
-            *) printf '%s\n' "$err" >&2; exit 1 ;;
-          esac
+        err=$(mktemp) || exit 1
+        trap 'rm -f "$err"' EXIT
+        trap 'exit 143' INT TERM
+        run() { mysql -E -e "SET SESSION lock_wait_timeout=5 /*!50708 , max_execution_time=13000 */ /*M!100108 , max_statement_time=13 */; $1" 2>"$err"; }
+        status=0
+        out=$(run 'SHOW REPLICA STATUS') || status=$?
+        if [ "$status" -ne 0 ] && grep -q 'ERROR 1064' "$err"; then
+          status=0
+          out=$(run 'SHOW SLAVE STATUS') || status=$?
         fi
+        cat "$err" >&2
+        if [ "$status" -ne 0 ]; then exit "$status"; fi
         if [ -z "$out" ]; then echo 'not a replica'; else printf '%s\n' "$out"; fi
   timeout: 15s
 output:
