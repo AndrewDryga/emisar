@@ -10,7 +10,12 @@ services:
     user: "65532:65532"
     environment:
       ELIXIR_ERL_OPTIONS: "+S 2:2"
+      FIXTURE_ARGUMENT_SECRET: packtest-canary-beam-argument-a7133c
       FIXTURE_ARGV_SECRET: packtest-canary-beam-argv-7c41e2
+      FIXTURE_CHILD_ID_SECRET: packtest-canary-beam-child-id-61fb08
+      FIXTURE_ETS_SECRET: packtest-canary-beam-ets-3e8fd1
+      FIXTURE_MAILBOX_SECRET: packtest-canary-beam-mailbox-92c6f7
+      FIXTURE_STATE_SECRET: packtest-canary-beam-state-b04de9
     healthcheck:
       # A file the application writes after its tree started. No BEAM client:
       # spawning one for every poll is what starves a four-case runner.

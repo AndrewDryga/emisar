@@ -3,20 +3,663 @@ versions:
   - version: "1.20.5-otp-29"
     digest: "@sha256:23642332ffac151b68f7ba0029e93fba2ba6083c0944efc06087957e2109e21c"
     default: true
+  # The oldest release with isolated trace sessions.
+  - version: "1.18.4-otp-27"
+    digest: "@sha256:a89eddfaaca9abc52bbc9025fc5220e23b082e7e2cacc8baaf5f39afb9b36941"
+  # Before single-key dictionary reads and trace sessions.
   - version: "1.14.5-otp-25"
     digest: "@sha256:2b3e8ce85402789aeb837d32f5bcbd5a75e0df29709ef7861a79ffac517712db"
-secret_env: [FIXTURE_ARGV_SECRET]
+# Each planted secret is a canary: the harness fails any case whose result or
+# event log contains one. The cookie is written into the release by the Dockerfile.
+secret_env:
+  - FIXTURE_ARGUMENT_SECRET
+  - FIXTURE_ARGV_SECRET
+  - FIXTURE_CHILD_ID_SECRET
+  - FIXTURE_COOKIE
+  - FIXTURE_ETS_SECRET
+  - FIXTURE_MAILBOX_SECRET
+  - FIXTURE_STATE_SECRET
 env:
+  FIXTURE_ARGUMENT_SECRET: packtest-canary-beam-argument-a7133c
   FIXTURE_ARGV_SECRET: packtest-canary-beam-argv-7c41e2
+  FIXTURE_CHILD_ID_SECRET: packtest-canary-beam-child-id-61fb08
+  FIXTURE_COOKIE: packtest-canary-beam-cookie-5d90ab
+  FIXTURE_ETS_SECRET: packtest-canary-beam-ets-3e8fd1
+  FIXTURE_MAILBOX_SECRET: packtest-canary-beam-mailbox-92c6f7
+  FIXTURE_STATE_SECRET: packtest-canary-beam-state-b04de9
 cases:
+  - action: beam.elixir_version
+    expect:
+      stdout_contains: ["Elixir ", "Erlang/OTP"]
+  - action: beam.erl_system_version
+    expect:
+      stdout_contains: ["Erlang/OTP"]
+  - action: beam.epmd_names
+    expect:
+      stdout_contains: ["name fixture_app at port"]
+  - action: beam.processes
+    expect:
+      stdout_contains: ["beam.smp", "COMMAND"]
+  - action: beam.process_status
+    resolve_args:
+      pid:
+        argv: [/opt/fixture_app/bin/fixture_app, pid]
+    expect:
+      stdout_contains: ["Name:", "beam.smp", "VmRSS:", "Threads:"]
+  - action: beam.process_limits
+    resolve_args:
+      pid:
+        argv: [/opt/fixture_app/bin/fixture_app, pid]
+    expect:
+      stdout_contains: ["Max open files", "Max processes"]
+  - action: beam.process_memory
+    resolve_args:
+      pid:
+        argv: [/opt/fixture_app/bin/fixture_app, pid]
+    expect:
+      stdout_contains: ["Rss:", "beam.smp"]
+  - action: beam.process_tree
+    resolve_args:
+      pid:
+        argv: [/opt/fixture_app/bin/fixture_app, pid]
+    expect:
+      stdout_contains: ["beam.smp", "erl_child_setup"]
   - action: beam.release_targets
     expect:
       stdout_contains: ["release=fixture_app", "ctl=/opt/fixture_app/bin/fixture_app"]
+  - action: beam.release_pid
+    expect:
+      stdout_not_empty: true
+    probes:
+      - argv: [/bin/sh, -c, 'test "$(cat "/proc/$(/opt/fixture_app/bin/fixture_app pid)/comm")" = beam.smp && echo release-pid-is-the-beam']
+        expect:
+          stdout_contains: [release-pid-is-the-beam]
+  - action: beam.release_runtime
+    expect:
+      stdout_contains: ["otp_release:", "process_count:", "run_queue:", "atom_limit:"]
+  - name: beam.release_runtime-picks-a-release-by-name
+    action: beam.release_runtime
+    args: {release: fixture_app}
+    expect:
+      stdout_contains: ["otp_release:"]
+  - name: beam.release_runtime-unknown-release
+    action: beam.release_runtime
+    args: {release: nosuch}
+    expect:
+      status: failure
+      exit: [3]
+      stderr_contains: ["no running release named nosuch"]
+  - action: beam.release_memory
+    expect:
+      stdout_contains: ["total:", "ets_table_count:", "port_count:"]
+  - action: beam.release_applications
+    expect:
+      stdout_contains: ["app: :fixture_app", "app: :kernel"]
+  - action: beam.release_debug_tools
+    expect:
+      stdout_contains: ["module: :recon_trace", "loaded: true", "module: :observer_cli", "loaded: false"]
 
-  # The canary rides in the argv of every spawned port. The harness fails the
-  # case if it appears anywhere in the result.
+  - name: beam.release_registered-says-what-the-limit-cut
+    action: beam.release_registered
+    args: {limit: 3}
+    expect:
+      stdout_contains: ["registered_total:", "shown: 3"]
+  - name: beam.release_registered-lists-the-application
+    action: beam.release_registered
+    args: {limit: 500}
+    expect:
+      stdout_contains: ["name: FixtureApp.Cart", "application: :fixture_app"]
+
+  # An idle process with a far larger lifetime total must not outrank the unnamed
+  # process that is busy now.
+  - name: beam.release_top_processes-ranks-what-is-busy-now
+    action: beam.release_top_processes
+    args: {sort_by: reductions, limit: 1}
+    arrange:
+      - argv:
+          - /opt/fixture_app/bin/fixture_app
+          - rpc
+          - |
+            {_, archive} = Process.info(Process.whereis(FixtureApp.Archive), :reductions)
+            hog = Enum.find(Process.list(), fn pid -> :proc_lib.translate_initial_call(pid) == {FixtureApp.Hog, :init, 1} end)
+            {_, busy} = Process.info(hog, :reductions)
+            if archive > 10 * busy, do: IO.puts("archive-has-done-far-more")
+        expect:
+          stdout_contains: [archive-has-done-far-more]
+    expect:
+      stdout_contains: ["ranked_by: :reductions_delta", "window_ms: 1000", "reductions_delta:", "registered_name: []"]
+      stdout_not_contains: [FixtureApp.Archive]
+  - name: beam.release_top_processes-names-what-an-unnamed-busy-process-runs
+    action: beam.release_top_processes
+    versions: ["1.20.5-otp-29", "1.18.4-otp-27"]
+    args: {sort_by: reductions, limit: 1}
+    arrange:
+      - argv: [/opt/fixture_app/bin/fixture_app, rpc, 'if Enum.find(Process.list(), fn pid -> :proc_lib.translate_initial_call(pid) == {FixtureApp.Hog, :init, 1} end), do: IO.puts("hog-is-up")']
+        expect:
+          stdout_contains: [hog-is-up]
+    expect:
+      stdout_contains: ["initial_call: {FixtureApp.Hog, :init, 1}", "ancestors: [FixtureApp.Supervisor", "application: :fixture_app"]
+  # The parked mailbox is far larger and has stopped growing. A plain read ranks it
+  # first, and a window ranks the unnamed process whose mailbox is growing now.
+  - name: beam.release_top_processes-mailbox-now-ranks-the-largest
+    action: beam.release_top_processes
+    args: {sort_by: message_queue_len, limit: 1}
+    arrange:
+      - argv: [/opt/fixture_app/bin/fixture_app, rpc, '{_, queued} = Process.info(Process.whereis(FixtureApp.Parked), :message_queue_len); if queued == 50_000, do: IO.puts("parked-mailbox-is-full")']
+        expect:
+          stdout_contains: [parked-mailbox-is-full]
+    expect:
+      stdout_contains: ["registered_name: FixtureApp.Parked", "ranked_by: :message_queue_len"]
+  - name: beam.release_top_processes-mailbox-over-a-window-ranks-the-fastest
+    action: beam.release_top_processes
+    versions: ["1.20.5-otp-29", "1.18.4-otp-27"]
+    args: {sort_by: message_queue_len, window_ms: 1000, limit: 1}
+    arrange:
+      - argv: [/opt/fixture_app/bin/fixture_app, rpc, '{_, queued} = Process.info(:persistent_term.get(:fixture_inbox), :message_queue_len); if queued > 0, do: IO.puts("inbox-has-a-backlog")']
+        expect:
+          stdout_contains: [inbox-has-a-backlog]
+    expect:
+      stdout_contains: ["initial_call: {FixtureApp.Inbox, :init, 1}", "ancestors: [FixtureApp.Supervisor", "application: :fixture_app", "registered_name: []", "message_queue_len_delta:"]
+      stdout_not_contains: [FixtureApp.Parked]
+  # OTP 25 cannot read one dictionary key, so it keeps the raw call and copies no
+  # dictionary.
+  - name: beam.release_top_processes-mailbox-on-otp-without-key-reads
+    action: beam.release_top_processes
+    versions: ["1.14.5-otp-25"]
+    args: {sort_by: message_queue_len, window_ms: 1000, limit: 1}
+    arrange:
+      - argv: [/opt/fixture_app/bin/fixture_app, rpc, '{_, queued} = Process.info(:persistent_term.get(:fixture_inbox), :message_queue_len); if queued > 0, do: IO.puts("inbox-has-a-backlog")']
+        expect:
+          stdout_contains: [inbox-has-a-backlog]
+    expect:
+      stdout_contains: ["initial_call: {:proc_lib, :init_p, 5}", "ancestors: []", "application: :fixture_app", "registered_name: []"]
+      stdout_not_contains: [FixtureApp.Parked]
+  - name: beam.release_top_processes-memory-over-a-window-reports-deltas
+    action: beam.release_top_processes
+    args: {sort_by: memory, window_ms: 500, limit: 5}
+    arrange:
+      - argv: [/opt/fixture_app/bin/fixture_app, rpc, 'if Process.whereis(FixtureApp.Hoarder), do: IO.puts("hoarder-is-up")']
+        expect:
+          stdout_contains: [hoarder-is-up]
+    expect:
+      stdout_contains: ["ranked_by: :memory_delta", "window_ms: 500", "memory_delta:", "sampled_ms:"]
+  - name: beam.release_top_processes-binary-memory-without-a-collection
+    action: beam.release_top_processes
+    args: {sort_by: binary_memory, limit: 1}
+    arrange:
+      - argv: [/opt/fixture_app/bin/fixture_app, rpc, 'if Process.whereis(FixtureApp.Hoarder), do: IO.puts("hoarder-is-up")']
+        expect:
+          stdout_contains: [hoarder-is-up]
+    expect:
+      stdout_contains: ["registered_name: FixtureApp.Hoarder", "binary_memory: 8000000", "ranked_by: :binary_memory"]
+  - name: beam.release_top_processes-leaves-itself-out
+    action: beam.release_top_processes
+    args: {sort_by: memory, limit: 100}
+    arrange:
+      - argv: [/opt/fixture_app/bin/fixture_app, rpc, 'if Process.whereis(FixtureApp.Hoarder), do: IO.puts("hoarder-is-up")']
+        expect:
+          stdout_contains: [hoarder-is-up]
+    expect:
+      stdout_contains: ["registered_name: FixtureApp.Hoarder"]
+      stdout_not_contains: ["erl_eval", "elixir, :eval_external_handler"]
+  - name: beam.release_top_processes-unknown-sort
+    action: beam.release_top_processes
+    args: {sort_by: bogus}
+    expect:
+      status: failure
+      reason: argument_invalid
+  - name: beam.release_top_processes-window-past-the-limit
+    action: beam.release_top_processes
+    args: {sort_by: memory, window_ms: 10001}
+    expect:
+      status: failure
+      reason: argument_invalid
+
+  - name: beam.release_process_info-as-printed-with-its-stack
+    action: beam.release_process_info
+    resolve_args:
+      erlang_pid:
+        argv: [/opt/fixture_app/bin/fixture_app, rpc, "IO.write(inspect(Process.whereis(FixtureApp.Pricing)))"]
+    expect:
+      stdout_contains: ["registered_name: FixtureApp.Pricing", "FixtureApp.Pricing.slow_quote/1", "binary_memory:", "application: :fixture_app"]
+  - name: beam.release_process_info-gone
+    action: beam.release_process_info
+    args: {erlang_pid: "<0.32000.0>"}
+    expect:
+      stdout_contains: [process_not_found]
+  - name: beam.release_process_info-malformed-pid
+    action: beam.release_process_info
+    args: {erlang_pid: "not-a-pid"}
+    expect:
+      status: failure
+      reason: argument_invalid
+      error_contains: ["must match pattern"]
+
+  # One stuck child supervisor must not take the whole read with it, and a timed-out
+  # call must leave nothing waiting on the node.
+  - name: beam.release_supervisor_tree-shows-a-stuck-supervisor-as-unreachable
+    action: beam.release_supervisor_tree
+    args: {registered_name: FixtureApp.Supervisor, depth: 1}
+    expect:
+      stdout_contains: ["id: FixtureApp.Archive", "id: FixtureApp.Stuck.Supervisor", "error: :unreachable", "reason: :timeout", "children_total:", "id: {:tenant, :\"(term)\"}", "stopped_at_row_limit: false"]
+      stdout_not_contains: [count_children, which_children]
+    probes:
+      - argv:
+          - /opt/fixture_app/bin/fixture_app
+          - rpc
+          - |
+            {_, waiters} = Process.info(Process.whereis(FixtureApp.Stuck.Supervisor), :monitored_by)
+            if length(waiters) == 1, do: IO.puts("only-the-planted-waiter-remains")
+        expect:
+          stdout_contains: [only-the-planted-waiter-remains]
+  # An ordinary GenServer crashes on a call it does not expect, and this is a low-risk read.
+  - name: beam.release_supervisor_tree-never-calls-an-ordinary-process
+    action: beam.release_supervisor_tree
+    args: {registered_name: FixtureApp.Plain}
+    expect:
+      stdout_contains: ["error: :not_a_supervisor"]
+    probes:
+      - argv:
+          - /opt/fixture_app/bin/fixture_app
+          - rpc
+          - 'if :persistent_term.get(:fixture_plain_starts) == 1, do: IO.puts("plain-was-never-restarted")'
+        expect:
+          stdout_contains: [plain-was-never-restarted]
+  # OTP accepts type: :supervisor on any child, so that word alone must not earn a call.
+  - name: beam.release_supervisor_tree-never-calls-a-disguised-child
+    action: beam.release_supervisor_tree
+    args: {registered_name: FixtureApp.Supervisor, depth: 1}
+    expect:
+      stdout_contains: ["id: FixtureApp.Disguised", "error: :not_a_supervisor"]
+    probes:
+      - argv:
+          - /opt/fixture_app/bin/fixture_app
+          - rpc
+          - 'if :persistent_term.get(:fixture_disguised_starts) == 1, do: IO.puts("disguised-was-never-restarted")'
+        expect:
+          stdout_contains: [disguised-was-never-restarted]
+  - name: beam.release_supervisor_tree-counts-a-supervisor-past-the-limit
+    action: beam.release_supervisor_tree
+    args: {registered_name: FixtureApp.Workers, limit: 50}
+    expect:
+      stdout_contains: ["children_total: 300", "children_shown: 0"]
+      stdout_not_contains: ["id: :undefined"]
+  - name: beam.release_supervisor_tree-lists-a-supervisor-inside-the-limit
+    action: beam.release_supervisor_tree
+    args: {registered_name: FixtureApp.Workers, limit: 1000}
+    expect:
+      stdout_contains: ["children_total: 300", "children_shown: 300", "id: :undefined", "rows: 300"]
+  # The action's contract: a child pid that changes between two reads is restarting.
+  - name: beam.release_supervisor_tree-shows-a-crash-looping-child
+    action: beam.release_supervisor_tree
+    args: {registered_name: FixtureApp.Payments.Supervisor}
+    expect:
+      stdout_contains: ["id: FixtureApp.Payments.Gateway", "children_shown: 1"]
+    probes:
+      - argv:
+          - /bin/sh
+          - -c
+          - |
+            read_child() { /bin/bash /packs/elixir-beam/scripts/release_ctl.sh --mode supervisor_tree --registered-name FixtureApp.Payments.Supervisor | grep 'child:'; }
+            first=$(read_child); sleep 1; second=$(read_child)
+            test -n "$first" && test "$first" != "$second" && echo child-pid-changed
+        expect:
+          stdout_contains: [child-pid-changed]
+  - name: beam.release_supervisor_tree-creates-no-atom-for-an-unknown-name
+    action: beam.release_supervisor_tree
+    args: {registered_name: NoSuch.Supervisor.Name}
+    expect:
+      stdout_contains: [unknown_existing_atom]
+
+  - name: beam.release_ets_tables-names-the-owner-and-reads-no-rows
+    action: beam.release_ets_tables
+    args: {sort_by: size, limit: 1}
+    expect:
+      stdout_contains: ["name: :fixture_search_index", "owner_name: FixtureApp.Indexer", "table_count:"]
+
+  - action: beam.release_allocators
+    expect:
+      stdout_contains: ["usage_ratio:", "allocated_bytes:"]
+  - name: beam.release_allocators-without-recon
+    action: beam.release_allocators
+    arrange:
+      - argv: [/opt/fixture_app/bin/fixture_app, rpc, ":code.purge(:recon_alloc); :code.delete(:recon_alloc); :code.purge(:recon_alloc)"]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["recon_alloc is not available in this release"]
+  # A read that never returns is killed on the node at its deadline, with a failure
+  # the caller can read and nothing left behind.
+  - name: beam.release_allocators-stops-on-the-node-at-its-deadline
+    action: beam.release_allocators
+    arrange:
+      - argv:
+          - /opt/fixture_app/bin/fixture_app
+          - rpc
+          - |
+            Code.compile_string("""
+            defmodule :recon_alloc do
+              def memory(_type) do
+                Process.register(self(), :fixture_stuck_read)
+                Process.sleep(:infinity)
+              end
+            end
+            """)
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["did not finish within 12000 ms, so it was stopped on the node"]
+    probes:
+      - argv: [/opt/fixture_app/bin/fixture_app, rpc, 'if Process.whereis(:fixture_stuck_read) == nil, do: IO.puts("the-read-is-gone")']
+        expect:
+          stdout_contains: [the-read-is-gone]
+  - name: beam.release_allocators-stops-on-the-node-at-its-heap-limit
+    action: beam.release_allocators
+    arrange:
+      - argv:
+          - /opt/fixture_app/bin/fixture_app
+          - rpc
+          - |
+            Code.compile_string("""
+            defmodule :recon_alloc do
+              def memory(_type), do: length(Enum.to_list(1..200_000_000))
+            end
+            """)
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["256 MiB heap limit"]
+
+  - action: beam.release_binary_leak
+    args: {limit: 3}
+    expect:
+      stdout_contains: ["binaries_freed_by_gc:"]
+    probes:
+      - argv:
+          - /opt/fixture_app/bin/fixture_app
+          - rpc
+          - 'if Process.info(Process.whereis(FixtureApp.Leaky), :binary) == {:binary, []}, do: IO.puts("the-collection-freed-them")'
+        expect:
+          stdout_contains: [the-collection-freed-them]
+  - action: beam.release_scheduler_usage
+    args: {sample_ms: 200}
+    expect:
+      stdout_contains: ["sample_ms: 200", "scheduler: 1", "usage:"]
+
+  # The canary rides in the argv of every spawned port.
   - name: beam.release_ports-names-a-spawned-program-without-its-argv
     action: beam.release_ports
     expect:
-      stdout_contains: ['{"udp_inet", 20}', '{"sh", 2}', '{"sleep", 1}']
+      stdout_contains: ['{"udp_inet", 20}', '{"sh", 3}', '{"sleep", 1}']
       stdout_not_contains: ["--password", "/bin/sh"]
+  - name: beam.release_ports-names-who-owns-the-sockets
+    action: beam.release_ports
+    expect:
+      stdout_contains: ["registered_name: FixtureApp.Reporter", "ports: 23", '"udp_inet" => 20']
+  - name: beam.release_ports-shows-bytes-that-cannot-be-written
+    action: beam.release_ports
+    expect:
+      stdout_contains: ["owner_name: FixtureApp.Backlog", 'local: "127.0.0.1:', 'peer: "127.0.0.1:', "queued_shown: 1"]
+
+  - name: beam.release_wait_graph-finds-the-deadlock-and-the-bottleneck
+    action: beam.release_wait_graph
+    args: {limit: 50}
+    expect:
+      stdout_contains: ["cycles: 2", '"FixtureApp.Cart"', '"FixtureApp.Promotions"', 'target: "FixtureApp.Pricing"', "waiters: 5", 'target: "FixtureApp.Stuck.Supervisor"']
+  # A process that is not waiting is not deadlocked: a member suspended by hand can
+  # no longer be proved stuck on its target, so the cycle through it is not reported.
+  - name: beam.release_wait_graph-says-what-the-limit-cut
+    action: beam.release_wait_graph
+    args: {limit: 2}
+    expect:
+      stdout_contains: ["targets_shown: 2", 'target: "FixtureApp.Pricing"']
+      stdout_not_contains: ["targets: 2,"]
+  - name: beam.release_wait_graph-drops-a-cycle-through-a-suspended-process
+    action: beam.release_wait_graph
+    versions: ["1.20.5-otp-29", "1.18.4-otp-27"]
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - |
+            nohup /opt/fixture_app/bin/fixture_app rpc 'spawn(fn -> :erlang.suspend_process(Process.whereis(FixtureApp.Cart)); Process.sleep(:infinity) end); Process.sleep(60_000)' >/dev/null 2>&1 &
+      - argv:
+          - /opt/fixture_app/bin/fixture_app
+          - rpc
+          - 'if Process.info(Process.whereis(FixtureApp.Cart), :status) == {:status, :suspended}, do: IO.puts("cart-is-suspended")'
+        expect:
+          stdout_contains: [cart-is-suspended]
+        retry_for: 10s
+        retry_every: 250ms
+    expect:
+      stdout_contains: ["cycles: 1", "{FixtureApp.Ring.Member"]
+      stdout_not_contains: ['"FixtureApp.Cart", "FixtureApp.Promotions"', '"FixtureApp.Promotions", "FixtureApp.Cart"']
+  # One waiter also monitors another process, and one is in Task.await. The output
+  # must not guess what they wait for, so neither counts toward a target: the
+  # bottleneck stays at five.
+  - name: beam.release_wait_graph-does-not-guess-between-monitors
+    action: beam.release_wait_graph
+    expect:
+      stdout_contains: ["uncertain_waiters: 2", 'waiter: "FixtureApp.Watcher"', "candidate_count: 2", 'waiter: "FixtureApp.Awaiter"']
+      stdout_not_contains: ["waiters: 6"]
+
+  - action: beam.release_orphans
+    expect:
+      stdout_contains: ["candidates: 1", "registered_name: :fixture_import_watcher", "application: :fixture_app"]
+
+  # The stack passes through a function whose argument is a canary.
+  - name: beam.release_process_stacks-shows-the-blocking-call-without-its-arguments
+    action: beam.release_process_stacks
+    args: {samples: 5, interval_ms: 1}
+    resolve_args:
+      erlang_pid:
+        argv: [/opt/fixture_app/bin/fixture_app, rpc, "IO.write(inspect(Process.whereis(FixtureApp.Pricing)))"]
+    expect:
+      stdout_contains: ["FixtureApp.Pricing.slow_quote/1", "samples_taken: 5", "samples: 5", "status_counts: %{waiting: 5}"]
+  - name: beam.release_process_stacks-gone
+    action: beam.release_process_stacks
+    args: {erlang_pid: "<0.32000.0>", samples: 2}
+    expect:
+      stdout_contains: ["samples_taken: 0"]
+
+  # Every flooding message carries a canary. Only the sender may come back, and the
+  # session must be gone afterward.
+  - name: beam.release_mailbox_senders-names-who-floods-without-the-messages
+    action: beam.release_mailbox_senders
+    versions: ["1.20.5-otp-29", "1.18.4-otp-27"]
+    args: {duration_ms: 500}
+    resolve_args:
+      erlang_pid:
+        argv: [/opt/fixture_app/bin/fixture_app, rpc, "IO.write(inspect(:persistent_term.get(:fixture_inbox)))"]
+    expect:
+      stdout_contains: ["registered_name: FixtureApp.Sender", "stopped: :window_ended", "message_contents: :not_recorded", "senders: 1"]
+    probes:
+      - argv:
+          - /opt/fixture_app/bin/fixture_app
+          - rpc
+          - |
+            flags = :erlang.trace_info(Process.whereis(FixtureApp.Sender), :flags)
+            if flags == {:flags, []} and length(:trace.session_info(:all)) == 1, do: IO.puts("tracing-is-off")
+        expect:
+          stdout_contains: [tracing-is-off]
+  - name: beam.release_mailbox_senders-stops-at-max-events
+    action: beam.release_mailbox_senders
+    versions: ["1.20.5-otp-29", "1.18.4-otp-27"]
+    args: {duration_ms: 5000, max_events: 3}
+    resolve_args:
+      erlang_pid:
+        argv: [/opt/fixture_app/bin/fixture_app, rpc, "IO.write(inspect(:persistent_term.get(:fixture_inbox)))"]
+    expect:
+      stdout_contains: ["stopped: :event_limit"]
+    probes:
+      - argv:
+          - /opt/fixture_app/bin/fixture_app
+          - rpc
+          - |
+            flags = :erlang.trace_info(Process.whereis(FixtureApp.Sender), :flags)
+            if flags == {:flags, []} and length(:trace.session_info(:all)) == 1, do: IO.puts("tracing-is-off")
+        expect:
+          stdout_contains: [tracing-is-off]
+  - name: beam.release_mailbox_senders-sees-a-sender-that-uses-the-registered-name
+    action: beam.release_mailbox_senders
+    versions: ["1.20.5-otp-29", "1.18.4-otp-27"]
+    args: {duration_ms: 500}
+    resolve_args:
+      erlang_pid:
+        argv: [/opt/fixture_app/bin/fixture_app, rpc, "IO.write(inspect(Process.whereis(FixtureApp.Mailroom)))"]
+    expect:
+      stdout_contains: ["registered_name: FixtureApp.Courier", "FixtureApp.Mailroom"]
+    probes:
+      - argv:
+          - /opt/fixture_app/bin/fixture_app
+          - rpc
+          - |
+            flags = :erlang.trace_info(Process.whereis(FixtureApp.Sender), :flags)
+            if flags == {:flags, []} and length(:trace.session_info(:all)) == 1, do: IO.puts("tracing-is-off")
+        expect:
+          stdout_contains: [tracing-is-off]
+  - name: beam.release_mailbox_senders-sees-a-port-as-a-sender
+    action: beam.release_mailbox_senders
+    versions: ["1.20.5-otp-29", "1.18.4-otp-27"]
+    args: {duration_ms: 1000}
+    resolve_args:
+      erlang_pid:
+        argv: [/opt/fixture_app/bin/fixture_app, rpc, "IO.write(inspect(Process.whereis(FixtureApp.Tail)))"]
+    expect:
+      stdout_contains: ['sender: "#Port<', 'driver: "sh"']
+    probes:
+      - argv:
+          - /opt/fixture_app/bin/fixture_app
+          - rpc
+          - |
+            flags = :erlang.trace_info(Process.whereis(FixtureApp.Sender), :flags)
+            if flags == {:flags, []} and length(:trace.session_info(:all)) == 1, do: IO.puts("tracing-is-off")
+        expect:
+          stdout_contains: [tracing-is-off]
+  # A trace session is isolated, so it neither stops nor is stopped by a call trace.
+  - name: beam.release_mailbox_senders-leaves-a-running-call-trace-alone
+    action: beam.release_mailbox_senders
+    versions: ["1.20.5-otp-29", "1.18.4-otp-27"]
+    args: {duration_ms: 300}
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - nohup /bin/bash /packs/elixir-beam/scripts/release_ctl.sh --mode recon_trace_calls --module FixtureApp.Cart --function handle_call --arity 3 --duration-ms 10000 >/tmp/call-trace.log 2>&1 &
+      - argv: [/opt/fixture_app/bin/fixture_app, rpc, 'if Process.whereis(:recon_trace_tracer), do: IO.puts("call-trace-running")']
+        expect:
+          stdout_contains: [call-trace-running]
+        retry_for: 10s
+        retry_every: 250ms
+    resolve_args:
+      erlang_pid:
+        argv: [/opt/fixture_app/bin/fixture_app, rpc, "IO.write(inspect(:persistent_term.get(:fixture_inbox)))"]
+    expect:
+      stdout_contains: ["registered_name: FixtureApp.Sender"]
+    probes:
+      - argv:
+          - /opt/fixture_app/bin/fixture_app
+          - rpc
+          - |
+            {:flags, flags} = :erlang.trace_info(Process.whereis(FixtureApp.Sender), :flags)
+            if Process.whereis(:recon_trace_tracer) && :call in flags, do: IO.puts("call-trace-still-running")
+        expect:
+          stdout_contains: [call-trace-still-running]
+  - name: beam.release_mailbox_senders-refuses-before-otp-27
+    action: beam.release_mailbox_senders
+    versions: ["1.14.5-otp-25"]
+    resolve_args:
+      erlang_pid:
+        argv: [/opt/fixture_app/bin/fixture_app, rpc, "IO.write(inspect(:persistent_term.get(:fixture_inbox)))"]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["needs OTP 27 or newer"]
+
+  # The traced function's arguments carry a canary, and by default only its arity prints.
+  - name: beam.recon_trace_calls-prints-arity-only-by-default
+    action: beam.recon_trace_calls
+    args: {module: FixtureApp.Sender, function: deliver, arity: 3, max_traces: 3, duration_ms: 1000}
+    expect:
+      stdout_contains: ["trace_patterns_started: 1", "deliver/3"]
+    probes:
+      - argv:
+          - /opt/fixture_app/bin/fixture_app
+          - rpc
+          - 'if :erlang.trace_info(Process.whereis(FixtureApp.Sender), :flags) == {:flags, []}, do: IO.puts("tracing-is-off")'
+        expect:
+          stdout_contains: [tracing-is-off]
+  - name: beam.recon_trace_calls-prints-arguments-when-asked
+    action: beam.recon_trace_calls
+    args: {module: FixtureApp.Sender, function: stamp, arity: 1, max_traces: 2, duration_ms: 1000, include_args: true}
+    expect:
+      stdout_contains: ["include_args: true", "stamp("]
+    probes:
+      - argv:
+          - /opt/fixture_app/bin/fixture_app
+          - rpc
+          - 'if :erlang.trace_info(Process.whereis(FixtureApp.Sender), :flags) == {:flags, []}, do: IO.puts("tracing-is-off")'
+        expect:
+          stdout_contains: [tracing-is-off]
+  - name: beam.recon_trace_calls-unknown-function
+    action: beam.recon_trace_calls
+    args: {module: FixtureApp.Sender, function: no_such_function_here, arity: 1}
+    expect:
+      stdout_contains: [unknown_existing_function]
+    probes:
+      - argv:
+          - /opt/fixture_app/bin/fixture_app
+          - rpc
+          - 'if :erlang.trace_info(Process.whereis(FixtureApp.Sender), :flags) == {:flags, []}, do: IO.puts("tracing-is-off")'
+        expect:
+          stdout_contains: [tracing-is-off]
+  # The trace is on a function nothing calls, so only the deadline can end it. The
+  # client is killed while the trace runs, and the node must clear it on its own.
+  - name: beam.recon_trace_calls-clears-itself-after-the-client-dies
+    action: beam.release_runtime
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - |
+            setsid /bin/bash /packs/elixir-beam/scripts/release_ctl.sh --mode recon_trace_calls --module FixtureApp.Cart --function handle_call --arity 3 --duration-ms 6000 >/dev/null 2>&1 &
+            client=$!
+            up() { /opt/fixture_app/bin/fixture_app rpc 'if Process.whereis(:recon_trace_tracer), do: IO.puts("up")' | grep -q up; }
+            tries=0
+            until up; do tries=$((tries + 1)); test "$tries" -lt 25 || exit 1; sleep 0.2; done
+            kill -s KILL -- "-$client"
+            status=0
+            wait "$client" || status=$?
+            test "$status" = 137 && up && echo the-trace-outlived-its-client
+        expect:
+          stdout_contains: [the-trace-outlived-its-client]
+    expect:
+      stdout_contains: ["otp_release:"]
+    probes:
+      - argv:
+          - /opt/fixture_app/bin/fixture_app
+          - rpc
+          - |
+            flags = :erlang.trace_info(Process.whereis(FixtureApp.Sender), :flags)
+            if flags == {:flags, []} and Process.whereis(:recon_trace_tracer) == nil, do: IO.puts("the-trace-cleared-itself")
+        expect:
+          stdout_contains: [the-trace-cleared-itself]
+        retry_for: 12s
+        retry_every: 500ms
+  - action: beam.recon_trace_clear
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - nohup /bin/bash /packs/elixir-beam/scripts/release_ctl.sh --mode recon_trace_calls --module FixtureApp.Cart --function handle_call --arity 3 --duration-ms 10000 >/tmp/call-trace.log 2>&1 &
+      - argv: [/opt/fixture_app/bin/fixture_app, rpc, 'if Process.whereis(:recon_trace_tracer), do: IO.puts("call-trace-running")']
+        expect:
+          stdout_contains: [call-trace-running]
+        retry_for: 10s
+        retry_every: 250ms
+    expect:
+      stdout_contains: ["cleared: :ok"]
+    probes:
+      - argv: [/opt/fixture_app/bin/fixture_app, rpc, 'if Process.whereis(:recon_trace_tracer) == nil, do: IO.puts("call-trace-stopped")']
+        expect:
+          stdout_contains: [call-trace-stopped]

@@ -22,8 +22,9 @@ import (
 // rather than left to the pack's own gate: pack validation proves a redaction
 // rule COMPILES, never that it MATCHES.
 //
-// The pack has no SUT (its tracer needs a live node under traffic), so this
-// loads the REAL pack and drives the REAL redactor instead of a behavior case.
+// This needs every inspected shape of a secret, more than one planted fixture can
+// hold, so it loads the REAL pack and drives the REAL redactor. The pack's behavior
+// cases prove the trace itself against a live node.
 func TestBeamTraceRedactsInspectedByteListBinaries(t *testing.T) {
 	root, err := filepath.Abs(filepath.Join("..", "..", "..", "packs", "elixir-beam"))
 	if err != nil {

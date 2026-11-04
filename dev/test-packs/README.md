@@ -159,7 +159,7 @@ the packs whose actions the harness genuinely cannot run, and why:
 
 Anything else without a plan is a gap, not an exemption. The ordinary
 containerizable ones left today are `podman`, `php-fpm`,
-`python-app`, `nodejs-pm2`, `elixir-beam`, `dnf-rpm`, `rke2`, `nfs`,
+`python-app`, `nodejs-pm2`, `dnf-rpm`, `rke2`, `nfs`,
 `time-sync`, `wireguard`, and `zfs`. Rank them by mutator risk, not by
 action count.
 

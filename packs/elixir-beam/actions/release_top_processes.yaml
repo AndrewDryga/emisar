@@ -3,16 +3,27 @@ id: beam.release_top_processes
 title: Elixir release top BEAM processes
 kind: script
 risk: low
-description: List top BEAM processes in the running release by memory, mailbox length, reductions, or heap size.
+description: >
+  List top BEAM processes in the running release by memory, mailbox length,
+  binary memory, heap size, or the work done over a sampling window, and show
+  what each unnamed process runs. A single read shows how much, not how fast, so
+  reductions are always sampled, and window_ms ranks any other metric by how much
+  it changed. Sorting by memory or binary_memory costs the most on a node with
+  many processes; reductions and message_queue_len are the cheap scans.
 side_effects:
   - Resolves the target release from running BEAM processes (reads /proc; docker exec when container is set).
-  - One release rpc call with a fixed expression.
-  - Does not read process dictionaries or mailbox contents.
+  - One release rpc call with a fixed expression, at low priority, stopped on the node at its deadline or heap limit.
+  - Scans every process once, or twice with a window, and reads details only for the rows it returns.
+  - Reads only the $initial_call and $ancestors entries of a process dictionary, and never mailbox contents or process state.
+  - binary_memory counts a shared binary for every process holding it, and forces no garbage collection.
   - Read-only.
 search_terms:
   - message queue backlog
   - mailbox growing
   - busiest processes
+  - which process is burning cpu
+  - process memory growing
+  - who holds binaries
 args:
   - name: limit
     type: integer
@@ -33,6 +44,15 @@ args:
         - message_queue_len
         - reductions
         - total_heap_size
+        - binary_memory
+  - name: window_ms
+    type: integer
+    required: false
+    default: 0
+    description: Sample twice this many milliseconds apart and rank by the difference. 0 ranks by the current value, except reductions, which is a lifetime counter and samples for 1000 ms. The maximum leaves room in the action's 20s timeout for both scans.
+    validation:
+      min: 0
+      max: 10000
   - name: container
     type: string
     required: false
@@ -60,6 +80,8 @@ execution:
     - "{{ args.limit }}"
     - "--sort-by"
     - "{{ args.sort_by }}"
+    - "--window-ms"
+    - "{{ args.window_ms }}"
     - "--container"
     - "{{ args.container }}"
     - "--release"
@@ -70,6 +92,15 @@ output:
   max_stdout_bytes: 262144
   max_stderr_bytes: 8192
 examples:
+  - title: What is burning CPU now
+    args:
+      limit: 10
+      sort_by: reductions
+  - title: What is growing, over 5 seconds
+    args:
+      limit: 10
+      sort_by: memory
+      window_ms: 5000
   - title: Top processes by memory
     args:
       limit: 25

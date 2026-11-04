@@ -2,16 +2,19 @@ schema_version: 1
 
 id: elixir-beam
 name: Elixir / BEAM runtime
-version: 0.1.13
+version: 0.1.14
 # Versions below this printed the full command line of a spawned port from
-# beam.release_ports, a low-risk read. They fail closed.
-retired_below: 0.1.13
+# beam.release_ports, and crashed an ordinary GenServer named to
+# beam.release_supervisor_tree. Both are low-risk reads. They fail closed.
+retired_below: 0.1.14
 description: >
   Diagnostics for Elixir and Erlang/BEAM applications on the runner host or
   inside Docker containers: toolchain versions, EPMD registrations, BEAM OS
   process state, Linux /proc memory and process-tree detail, release RPC
   snapshots, supervisor/process/ETS/allocator/scheduler/port introspection,
-  binary-leak checks, and bounded recon_trace call tracing. Releases are
+  rates over a sampling window, the wait graph and deadlocks, orphan candidates,
+  stack samples, binary-leak checks, and bounded tracing of calls and of who floods
+  a mailbox. Releases are
   discovered from running BEAM processes; target one by release name, or by
   container for a release inside Docker.
 vendor: emisar
@@ -46,9 +49,12 @@ setup:
     - "When several releases run on one target, pass the release argument (names come from beam.release_targets). For a release inside Docker, pass the container argument."
     - "For a host release, or a runner that diagnoses both host and rootful-Docker releases, apply only the root host-release recipe. For a container-only runner, apply only the Docker-socket recipe; it removes this pack's root override and restores the service's configured emisar user."
     - "Release RPC actions execute fixed, pack-authored expressions only; callers cannot supply arbitrary Elixir code."
+    - "Each release read runs on the node in a low-priority worker with a deadline and a 256 MiB heap limit, because stopping the rpc client does not stop work on the node. A read that passes either limit fails and says so."
+    - "Each release action starts a short-lived client node, and the target keeps one atom per client name for the life of the node. The default atom limit is about a million, so avoid polling these actions in a tight loop."
     - "If the release control script evaluates runtime config during rpc, the runner service must inherit the same runtime env the release script needs, or those actions will fail before connecting. With the container argument this usually just works: docker exec runs with the container's configured environment."
     - "beam.release_pid reports the PID inside the container's namespace when container is set, not the host PID (find the host PID with beam.processes)."
     - "The recon-powered actions (allocators, binary_leak, scheduler_usage, recon_trace) need recon compiled into the release and fail with a clear message otherwise; check with beam.release_debug_tools. The recon_trace action is high-risk because tracing adds runtime overhead and can expose function arguments or return values when explicitly enabled."
+    - "beam.release_mailbox_senders needs OTP 27 or newer and no recon. It is high-risk because send tracing adds work to every message sent on the node while it runs."
     - "There is deliberately no action launching the interactive observer_cli TUI; its dashboards are covered by the release_* snapshot actions (top_processes, ets_tables, allocators, scheduler_usage, ports, memory)."
   host_access:
     - actions:
@@ -88,6 +94,10 @@ setup:
         - beam.release_binary_leak
         - beam.release_scheduler_usage
         - beam.release_ports
+        - beam.release_wait_graph
+        - beam.release_orphans
+        - beam.release_process_stacks
+        - beam.release_mailbox_senders
         - beam.recon_trace_calls
         - beam.recon_trace_clear
       requirement: Reach another user's host release control files or the Docker daemon for a containerized release.
@@ -145,5 +155,9 @@ actions:
   - actions/release_binary_leak.yaml
   - actions/release_scheduler_usage.yaml
   - actions/release_ports.yaml
+  - actions/release_wait_graph.yaml
+  - actions/release_orphans.yaml
+  - actions/release_process_stacks.yaml
+  - actions/release_mailbox_senders.yaml
   - actions/recon_trace_calls.yaml
   - actions/recon_trace_clear.yaml

@@ -3,10 +3,10 @@ id: beam.release_ets_tables
 title: Elixir release ETS tables
 kind: script
 risk: low
-description: List ETS tables in the running Elixir release sorted by memory or row count, with owner, type, and a total-usage summary.
+description: List ETS tables in the running Elixir release sorted by memory or row count, with the name of each owner, type, and a total-usage summary.
 side_effects:
   - Resolves the target release from running BEAM processes (reads /proc; docker exec when container is set).
-  - One release rpc call with a fixed expression.
+  - One release rpc call with a fixed expression, at low priority, stopped on the node at its deadline or heap limit.
   - Reads table metadata only, never table contents.
   - Read-only.
 search_terms:

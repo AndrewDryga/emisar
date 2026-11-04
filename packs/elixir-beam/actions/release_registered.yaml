@@ -3,11 +3,11 @@ id: beam.release_registered
 title: Elixir release registered processes
 kind: script
 risk: low
-description: List registered processes in the running Elixir release with lightweight process info.
+description: List registered processes in the running Elixir release with lightweight process info, in name order, and say how many exist beyond the limit.
 side_effects:
   - Resolves the target release from running BEAM processes (reads /proc; docker exec when container is set).
-  - One release rpc call with a fixed expression.
-  - Does not read process dictionaries or mailbox contents.
+  - One release rpc call with a fixed expression, at low priority, stopped on the node at its deadline or heap limit.
+  - Reads only the $initial_call and $ancestors entries of a process dictionary, and never mailbox contents or process state.
   - Read-only.
 args:
   - name: limit

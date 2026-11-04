@@ -6,7 +6,7 @@ risk: low
 description: Show BEAM memory categories and core counts from the running Elixir release.
 side_effects:
   - Resolves the target release from running BEAM processes (reads /proc; docker exec when container is set).
-  - One release rpc call with a fixed expression.
+  - One release rpc call with a fixed expression, at low priority, stopped on the node at its deadline or heap limit.
   - Read-only.
 search_terms:
   - memory leak

@@ -6,6 +6,7 @@ defmodule FixtureApp.MixProject do
       app: :fixture_app,
       version: "0.1.0",
       elixir: "~> 1.14",
+      erlc_paths: ["vendor/recon/src"],
       deps: [],
       releases: [fixture_app: [include_erts: true]]
     ]

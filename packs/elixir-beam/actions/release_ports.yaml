@@ -3,13 +3,33 @@ id: beam.release_ports
 title: Elixir release BEAM ports
 kind: script
 risk: low
-description: Count open BEAM ports in the running Elixir release by driver, with the port limit — spot socket or port leaks at a glance. A spawned program is counted under its executable's base name.
+description: >
+  Count open BEAM ports in the running Elixir release by driver and by owning
+  process, with bytes read, written, and queued, and list the sockets with bytes
+  waiting to be written with their local and peer addresses. Spot socket or port
+  leaks and writes that cannot keep up. A spawned program is counted under its
+  executable's base name. Sockets from the NIF-based :socket module are not ports
+  and do not appear.
 side_effects:
   - Resolves the target release from running BEAM processes (reads /proc; docker exec when container is set).
-  - One release rpc call with a fixed expression.
+  - One release rpc call with a fixed expression, at low priority, stopped on the node at its deadline or heap limit.
   - Never prints a spawned program's arguments, which can carry secrets.
+  - Asks only the TCP, UDP, and SCTP socket drivers for addresses.
   - Read-only.
+search_terms:
+  - socket leak
+  - too many open ports
+  - who owns the sockets
+  - slow client send queue
 args:
+  - name: limit
+    type: integer
+    required: false
+    default: 25
+    description: Maximum owners and maximum queued sockets to list.
+    validation:
+      min: 1
+      max: 100
   - name: container
     type: string
     required: false
@@ -33,6 +53,8 @@ execution:
   argv:
     - "--mode"
     - "ports"
+    - "--limit"
+    - "{{ args.limit }}"
     - "--container"
     - "{{ args.container }}"
     - "--release"
@@ -40,8 +62,8 @@ execution:
   timeout: 15s
 output:
   parser: text
-  max_stdout_bytes: 32768
+  max_stdout_bytes: 131072
   max_stderr_bytes: 8192
 examples:
-  - title: Port counts by driver
+  - title: Ports by driver and owner
     args: {}

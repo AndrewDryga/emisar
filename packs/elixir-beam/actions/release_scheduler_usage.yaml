@@ -6,7 +6,7 @@ risk: low
 description: Show per-scheduler utilization of the running Elixir release sampled over a bounded window with recon scheduler_usage — the accurate BEAM CPU picture, unlike OS-level CPU of busy-waiting schedulers. Requires recon in the release (check with beam.release_debug_tools).
 side_effects:
   - Resolves the target release from running BEAM processes (reads /proc; docker exec when container is set).
-  - One release rpc call with a fixed expression that samples scheduler wall time for sample_ms.
+  - One release rpc call with a fixed expression that samples scheduler wall time for sample_ms, at low priority, stopped on the node at its deadline or heap limit.
   - Read-only.
 search_terms:
   - high cpu

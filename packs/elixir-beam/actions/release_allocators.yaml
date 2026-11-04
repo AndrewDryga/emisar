@@ -6,7 +6,7 @@ risk: low
 description: Show BEAM memory allocator utilization for the running Elixir release with recon_alloc — allocated vs used bytes, the usage ratio, and a per-allocator breakdown for fragmentation analysis. Requires recon in the release (check with beam.release_debug_tools).
 side_effects:
   - Resolves the target release from running BEAM processes (reads /proc; docker exec when container is set).
-  - One release rpc call with a fixed expression.
+  - One release rpc call with a fixed expression, at low priority, stopped on the node at its deadline or heap limit.
   - Read-only.
 args:
   - name: container

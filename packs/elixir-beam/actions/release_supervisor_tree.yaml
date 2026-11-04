@@ -3,12 +3,23 @@ id: beam.release_supervisor_tree
 title: Elixir release supervisor tree
 kind: script
 risk: low
-description: Show a bounded supervisor subtree from the running Elixir release.
+description: >
+  Show a bounded supervisor subtree from the running Elixir release: each child's
+  id, type, and pid, with a count of how many children each supervisor has. A
+  supervisor that does not answer within a second shows as unreachable, with the
+  kind of failure, and one with more children than limit shows only its count. A
+  child pid that changes between two reads is a child that is restarting.
 side_effects:
   - Resolves the target release from running BEAM processes (reads /proc; docker exec when container is set).
-  - One release rpc call with a fixed expression.
+  - One release rpc call with a fixed expression, at low priority, stopped on the node at its deadline or heap limit.
   - Uses existing atoms only; unknown names do not create atoms.
+  - Asks a process for its children only if OTP marked it a supervisor, so an ordinary process cannot be crashed by naming it or by a child spec that calls it a supervisor.
+  - Prints only the atoms, numbers, and shape of a child id, because an id can hold any term.
   - Read-only.
+search_terms:
+  - supervisor keeps restarting
+  - crash loop
+  - child keeps dying
 args:
   - name: registered_name
     type: string
@@ -25,6 +36,14 @@ args:
     validation:
       min: 0
       max: 5
+  - name: limit
+    type: integer
+    required: false
+    default: 100
+    description: List a supervisor's children only when it has at most this many. The whole tree stops at 1000 rows, about what fits the output cap, and says so first.
+    validation:
+      min: 1
+      max: 1000
   - name: container
     type: string
     required: false
@@ -52,6 +71,8 @@ execution:
     - "{{ args.registered_name }}"
     - "--depth"
     - "{{ args.depth }}"
+    - "--limit"
+    - "{{ args.limit }}"
     - "--container"
     - "{{ args.container }}"
     - "--release"

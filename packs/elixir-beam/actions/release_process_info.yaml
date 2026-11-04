@@ -3,19 +3,20 @@ id: beam.release_process_info
 title: Elixir release process info
 kind: script
 risk: low
-description: Show selected process_info fields for one BEAM PID in the running release.
+description: Show selected process_info fields for one BEAM PID in the running release, with what it runs, what started it, its current stack as function names, and the binary memory it holds.
 side_effects:
   - Resolves the target release from running BEAM processes (reads /proc; docker exec when container is set).
-  - One release rpc call with a fixed expression.
-  - Does not read process dictionaries or mailbox contents.
+  - One release rpc call with a fixed expression, at low priority, stopped on the node at its deadline or heap limit.
+  - Reads only the $initial_call and $ancestors entries of a process dictionary, and never mailbox contents or process state.
+  - A stack shows function names and arities, never arguments.
   - Read-only.
 args:
   - name: erlang_pid
     type: string
     required: true
-    description: BEAM PID in <A.B.C> form.
+    description: BEAM PID as the other reads print it, for example "#PID<0.123.0>" or "<0.123.0>".
     validation:
-      pattern: "^<[0-9]+\\.[0-9]+\\.[0-9]+>$"
+      pattern: "^(#PID)?<[0-9]+\\.[0-9]+\\.[0-9]+>$"
       max_length: 32
   - name: container
     type: string
