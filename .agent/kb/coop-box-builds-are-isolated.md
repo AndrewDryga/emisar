@@ -3,7 +3,7 @@ name: coop-box-builds-are-isolated
 description: host and box use workspace-local service URLs; box BEAM/Go builds live under the coop-cache volume; the portal output guard warms dependencies unscanned
 subsystem: agent-stack
 sources: [.agent/Dockerfile, .agent/project.yaml, dev/compose.yml, run, tools/internal/devtool, portal/config/dev.exs, portal/config/test.exs]
-updated: 2026-09-15
+updated: 2026-11-03
 ---
 
 Eight constraints make every gate run green inside a coop box; break any one and you get
@@ -84,18 +84,23 @@ confusing, hard-to-attribute failures:
    stay outside the box: pack behavior and host-access tests, end-to-end Compose
    scenarios, and the packaged-stack smoke test.
 
-Coop's shared base owns asdf, login-shell PATH repair, agent CLIs,
-and the localhost sidecar forwarders. Devtool consumes Coop's `COOP_FORWARD` contract
+Coop's shared base owns asdf, agent CLIs, and the localhost sidecar forwarders.
+Devtool consumes Coop's `COOP_FORWARD` contract
 to restore only an absent listener for the lifetime of a repository command, so a broken
 or older base cannot strand first-day setup and the fallback is inert when Coop is healthy.
-`.agent/Dockerfile` extends the base only for Emisar's
+`.agent/Dockerfile` extends the base only for Emisar's toolchain,
 gate/UI dependencies (`shellcheck`, Chromium, ImageMagick) and platform-specific
-cache locations. Copying the base image setup into this repo would duplicate
-Coop-owned behavior and cache layers.
+cache locations. It also puts asdf's shims on PATH, through `ENV` for ordinary shells
+and an `/etc/profile.d` drop-in for login shells, because `coop build --egress filtered`
+builds on Coop's client image, which keeps them off PATH. On the open base, which already
+has them, the repeated entries are harmless. Copying the rest of the base image setup into
+this repo would duplicate Coop-owned behavior and cache layers.
 
 Related rules: [keep Docker out of Coop boxes](rules/shared-coop-box-gates-stay-docker-free.md), [human development tooling is not agent state](rules/shared-human-dev-tooling-is-not-agent-state.md), and [Docker inputs enter at their narrowest layer](rules/shared-docker-inputs-enter-at-narrowest-layer.md).
 
 ## Changelog
+- 2026-11-03 — restored asdf's shims on both PATHs in `.agent/Dockerfile` after
+  `coop build --egress filtered` stopped with `mix: not found` on Coop's client image.
 - 2026-09-15 — documented unpublished local listeners and separated ordinary
   previews from optional Keycloak setup and browser trust.
 - 2026-09-10 — documented the Docker-free box boundary and separated ordinary

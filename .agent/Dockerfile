@@ -5,6 +5,10 @@ USER node
 ENV MIX_BUILD_ROOT=/home/node/.cache/mix-build/emisar \
     GOMODCACHE=/home/node/.cache/go-mod
 
+# Coop's filtered client image keeps asdf's shims off PATH, so put them back,
+# after the client launchers, which nothing may shadow.
+ENV PATH="/opt/coop/bin:/home/node/.asdf/shims:${PATH}"
+
 # New boxes and forks should not compile Erlang before doing useful work. This
 # layer changes only when the repo's canonical toolchain pins change.
 COPY --chown=node:node .tool-versions /home/node/.tool-versions
@@ -23,6 +27,10 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends chromium-headless-shell imagemagick shellcheck \
  && apt-get clean \
  && rm -rf /var/lib/apt/lists/*
+
+# Login shells reset PATH, so restore the same order after /etc/profile runs.
+# This drop-in sorts after Coop's own, which leaves the shims out in a filtered box.
+RUN printf 'export PATH="/opt/coop/bin:/home/node/.asdf/shims:$PATH"\n' > /etc/profile.d/zz-asdf.sh
 
 USER node
 # Portal deps join the build output in the box cache: Phoenix's compile alias
