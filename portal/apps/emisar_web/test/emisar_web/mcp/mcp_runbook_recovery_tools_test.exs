@@ -1582,32 +1582,29 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
         "title" => "Invalid draft",
         "slug" => nil,
         "description" => nil,
-        "definition" => definition_with_21_binding_issues()
+        "definition" => definition_with_7_binding_issues()
       })
 
     refute result["ok"]
     assert result["error"]["code"] == "invalid_runbook"
-    assert result["error"]["message"] == "The draft has 21 definition issues."
+    assert result["error"]["message"] == "The draft has 7 definition issues."
 
     assert %{
-             "issue_count" => 21,
+             "issue_count" => 7,
              "issues_truncated" => false,
              "issues" => issues
            } = result["error"]["details"]
 
-    assert length(issues) == 21
+    assert length(issues) == 7
 
+    # Each binding names an unknown source, and that is all it gets blamed for.
     for step_index <- 0..5 do
-      base = "/stages/3/steps/#{step_index}/args/project"
-      assert Enum.any?(issues, &(&1["path"] == "#{base}/ref"))
-      assert Enum.any?(issues, &(&1["path"] == "#{base}/source"))
-      assert Enum.any?(issues, &(&1["path"] == "#{base}/value"))
+      path = "/stages/3/steps/#{step_index}/args/project/source"
+      assert Enum.any?(issues, &(&1["path"] == path))
     end
 
-    base = "/stages/5/steps/1/args/organization"
-    assert Enum.any?(issues, &(&1["path"] == "#{base}/ref"))
-    assert Enum.any?(issues, &(&1["path"] == "#{base}/source"))
-    assert Enum.any?(issues, &(&1["path"] == "#{base}/value"))
+    path = "/stages/5/steps/1/args/organization/source"
+    assert Enum.any?(issues, &(&1["path"] == path))
 
     assert Enum.all?(issues, &(&1["code"] == "invalid_definition"))
     assert Enum.all?(issues, &(is_binary(&1["message"]) and &1["message"] != ""))
@@ -4551,7 +4548,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     }
   end
 
-  defp definition_with_21_binding_issues do
+  defp definition_with_7_binding_issues do
     stages =
       Enum.map(0..5, fn stage_index ->
         steps =
@@ -4597,7 +4594,9 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
       Enum.map(
         0..21,
         &definition_step("project_#{&1}", %{
-          "project" => %{"source" => "project"}
+          "project" => %{"source" => "project"},
+          "region" => %{"source" => "region"},
+          "zone" => %{"source" => "zone"}
         })
       )
 

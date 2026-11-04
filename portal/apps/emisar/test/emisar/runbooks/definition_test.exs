@@ -341,10 +341,96 @@ defmodule Emisar.Runbooks.DefinitionTest do
     end
   end
 
+  describe "validate/1 schema refusals" do
+    # JSON Schema reports every failed alternative of a union together, so a union here
+    # blames fields that are fine for the alternative the author chose.
+    test "the schema has no unions" do
+      refute contains_union?(Definition.schema())
+    end
+
+    test "blame only the mistake" do
+      step = "/stages/0/steps/0"
+      wait = %{"interval_seconds" => 5, "timeout_seconds" => 60, "max_attempts" => 3}
+      missing = "A required definition field is missing."
+      unsupported = "This definition field is not supported."
+      format = "Definition value has an invalid format."
+      choices = "Definition value is not one of the supported choices."
+
+      cases = [
+        {%{"args" => %{"x" => %{"source" => "literal"}}}, [{"#{step}/args/x/value", missing}]},
+        {%{"args" => %{"x" => %{"source" => "input"}}}, [{"#{step}/args/x/ref", missing}]},
+        {%{"args" => %{"x" => %{"source" => "input", "ref" => "BAD REF"}}},
+         [{"#{step}/args/x/ref", format}]},
+        {%{"args" => %{"x" => %{"source" => "output", "ref" => "nodot"}}},
+         [{"#{step}/args/x/ref", format}]},
+        {%{"args" => %{"x" => %{"source" => "nope"}}}, [{"#{step}/args/x/source", choices}]},
+        {%{"args" => %{"x" => %{"source" => "literal", "value" => 1, "ref" => "a"}}},
+         [{"#{step}/args/x/ref", unsupported}]},
+        {%{"args" => %{"x" => %{"source" => "input", "ref" => "host", "value" => 1}}},
+         [{"#{step}/args/x/value", unsupported}]},
+        {%{"outputs" => [output("o", %{"type" => "regex", "expression" => "a"})]},
+         [{"#{step}/outputs/0/extract/capture", missing}]},
+        {%{"outputs" => [output("o", %{"type" => "json_pointer"})]},
+         [{"#{step}/outputs/0/extract/expression", missing}]},
+        {%{
+           "outputs" => [
+             output("o", %{"type" => "contains", "expression" => "a", "capture" => "0"})
+           ]
+         }, [{"#{step}/outputs/0/extract/capture", unsupported}]},
+        {%{"outputs" => [output("o", %{"type" => "nope", "expression" => "a"})]},
+         [{"#{step}/outputs/0/extract/type", choices}]},
+        {%{"wait" => %{wait | "interval_seconds" => 1}},
+         [{"#{step}/wait/interval_seconds", "Definition number is below the allowed minimum."}]},
+        {%{"wait" => "soon"}, [{"#{step}/wait", "Definition value has the wrong type."}]},
+        {%{"wait" => Map.delete(wait, "max_attempts")}, [{"#{step}/wait/max_attempts", missing}]}
+      ]
+
+      for {changes, expected} <- cases do
+        assert {:error, issues} = changes |> with_step() |> Definition.validate()
+        assert Enum.map(issues, &{&1.path, &1.message}) == expected, inspect(changes)
+      end
+    end
+
+    test "names the field that does not fit a stage or an input" do
+      stage = hd(valid_definition()["stages"])
+
+      assert {:error, [%{path: "/stages/0/max_parallel", message: "A required" <> _}]} =
+               valid_definition()
+               |> Map.put("stages", [%{stage | "mode" => "parallel"}])
+               |> Definition.validate()
+
+      assert {:error, [%{path: "/stages/0/max_parallel", message: "This definition field" <> _}]} =
+               valid_definition()
+               |> Map.put("stages", [Map.put(stage, "max_parallel", 2)])
+               |> Definition.validate()
+
+      assert {:error, [%{path: "/inputs/0/enum", message: "This definition field" <> _}]} =
+               valid_definition()
+               |> Map.put("inputs", [input("host", %{"enum" => ["a"]})])
+               |> Definition.validate()
+    end
+  end
+
   test "schema and runtime limits have one machine-readable owner" do
     assert Definition.schema()["$schema"] == "https://json-schema.org/draft/2020-12/schema"
     refute Map.has_key?(Definition.limits(), "max_steps")
     assert Definition.limit!(:default_stage_parallelism) == 5
+  end
+
+  defp contains_union?(%{} = schema) do
+    Map.has_key?(schema, "oneOf") or Map.has_key?(schema, "anyOf") or
+      Enum.any?(Map.values(schema), &contains_union?/1)
+  end
+
+  defp contains_union?(items) when is_list(items), do: Enum.any?(items, &contains_union?/1)
+  defp contains_union?(_value), do: false
+
+  defp with_step(changes) do
+    update_in(
+      valid_definition(),
+      ["stages", Access.at(0), "steps", Access.at(0)],
+      &Map.merge(&1, changes)
+    )
   end
 
   defp valid_definition do

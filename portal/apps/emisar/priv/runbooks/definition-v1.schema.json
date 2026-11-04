@@ -77,9 +77,12 @@
       },
       "allOf": [
         {
-          "if": {"properties": {"type": {"const": "enum"}}},
-          "then": {"required": ["enum"]},
-          "else": {"not": {"required": ["enum"]}}
+          "if": {"required": ["type"], "properties": {"type": {"const": "enum"}}},
+          "then": {"required": ["enum"]}
+        },
+        {
+          "if": {"required": ["type"], "properties": {"type": {"enum": ["string", "integer", "number", "boolean"]}}},
+          "then": {"properties": {"enum": {"not": {}}}}
         }
       ]
     },
@@ -109,9 +112,12 @@
       },
       "allOf": [
         {
-          "if": {"properties": {"mode": {"const": "parallel"}}},
-          "then": {"required": ["max_parallel"]},
-          "else": {"not": {"required": ["max_parallel"]}}
+          "if": {"required": ["mode"], "properties": {"mode": {"const": "parallel"}}},
+          "then": {"required": ["max_parallel"]}
+        },
+        {
+          "if": {"required": ["mode"], "properties": {"mode": {"const": "sequential"}}},
+          "then": {"properties": {"max_parallel": {"not": {}}}}
         }
       ]
     },
@@ -160,10 +166,7 @@
         },
         "wait": {
           "description": "Re-runs the whole step every interval_seconds until its success conditions pass, within max_attempts and timeout_seconds. It is not a delay: with no success conditions the step succeeds on its first attempt. Use null for one attempt.",
-          "oneOf": [
-            {"type": "null"},
-            {"$ref": "#/$defs/wait"}
-          ]
+          "$ref": "#/$defs/wait"
         }
       }
     },
@@ -206,34 +209,37 @@
       }
     },
     "binding": {
-      "oneOf": [
+      "description": "source literal takes value. source input or output takes ref.",
+      "type": "object",
+      "required": ["source"],
+      "additionalProperties": false,
+      "properties": {
+        "source": {"enum": ["literal", "input", "output"]},
+        "value": {},
+        "ref": {}
+      },
+      "allOf": [
         {
-          "type": "object",
-          "required": ["source", "value"],
-          "additionalProperties": false,
-          "properties": {
-            "source": {"const": "literal"},
-            "value": {}
+          "if": {"required": ["source"], "properties": {"source": {"const": "literal"}}},
+          "then": {"required": ["value"], "properties": {"ref": {"not": {}}}}
+        },
+        {
+          "if": {"required": ["source"], "properties": {"source": {"const": "input"}}},
+          "then": {
+            "required": ["ref"],
+            "properties": {"value": {"not": {}}, "ref": {"$ref": "#/$defs/stable_id"}}
           }
         },
         {
-          "type": "object",
-          "required": ["source", "ref"],
-          "additionalProperties": false,
-          "properties": {
-            "source": {"const": "input"},
-            "ref": {"$ref": "#/$defs/stable_id"}
-          }
-        },
-        {
-          "type": "object",
-          "required": ["source", "ref"],
-          "additionalProperties": false,
-          "properties": {
-            "source": {"const": "output"},
-            "ref": {
-              "type": "string",
-              "pattern": "^[a-z][a-z0-9_-]{0,79}\\.[a-z][a-z0-9_-]{0,79}$"
+          "if": {"required": ["source"], "properties": {"source": {"const": "output"}}},
+          "then": {
+            "required": ["ref"],
+            "properties": {
+              "value": {"not": {}},
+              "ref": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,79}\\.[a-z][a-z0-9_-]{0,79}$"
+              }
             }
           }
         }
@@ -268,38 +274,31 @@
     },
     "extractor": {
       "description": "JSON Pointer selects a field such as /status; stdout/stderr must contain one complete valid JSON document. Contains, literal grep, and bounded regex read text only. Missing source data or a missing JSON Pointer path fails extraction.",
-      "oneOf": [
+      "type": "object",
+      "required": ["type", "expression"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {"enum": ["json_pointer", "contains", "grep", "regex"]},
+        "expression": {
+          "type": "string",
+          "maxLength": 512,
+          "x-maxUtf8Bytes": 512
+        },
+        "capture": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^(0|[1-9][0-9]*|[A-Za-z][A-Za-z0-9_]*)$"
+        }
+      },
+      "allOf": [
         {
-          "type": "object",
-          "required": ["type", "expression"],
-          "additionalProperties": false,
-          "properties": {
-            "type": {"enum": ["json_pointer", "contains", "grep"]},
-            "expression": {
-              "type": "string",
-              "maxLength": 512,
-              "x-maxUtf8Bytes": 512
-            }
-          }
+          "if": {"required": ["type"], "properties": {"type": {"const": "regex"}}},
+          "then": {"required": ["capture"]}
         },
         {
-          "type": "object",
-          "required": ["type", "expression", "capture"],
-          "additionalProperties": false,
-          "properties": {
-            "type": {"const": "regex"},
-            "expression": {
-              "type": "string",
-              "maxLength": 512,
-              "x-maxUtf8Bytes": 512
-            },
-            "capture": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 80,
-              "pattern": "^(0|[1-9][0-9]*|[A-Za-z][A-Za-z0-9_]*)$"
-            }
-          }
+          "if": {"required": ["type"], "properties": {"type": {"enum": ["json_pointer", "contains", "grep"]}}},
+          "then": {"properties": {"capture": {"not": {}}}}
         }
       ]
     },
@@ -326,7 +325,7 @@
       }
     },
     "wait": {
-      "type": "object",
+      "type": ["object", "null"],
       "required": ["interval_seconds", "timeout_seconds", "max_attempts"],
       "additionalProperties": false,
       "properties": {

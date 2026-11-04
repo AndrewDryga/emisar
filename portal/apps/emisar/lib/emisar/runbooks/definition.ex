@@ -254,7 +254,7 @@ defmodule Emisar.Runbooks.Definition do
   end
 
   defp prefer_concrete_schema_errors(errors) do
-    concrete = Enum.reject(errors, &(&1.rule in [:allOf, :anyOf, :oneOf, :not]))
+    concrete = Enum.reject(errors, &(&1.rule in [:allOf, :anyOf, :oneOf]))
     if concrete == [], do: errors, else: concrete
   end
 
@@ -318,6 +318,8 @@ defmodule Emisar.Runbooks.Definition do
 
   defp schema_path(path), do: Enum.reverse(path)
 
+  # The schema's only `not` rules say a field does not apply to this kind of entry.
+  defp schema_error_message(:not), do: "This definition field is not supported."
   defp schema_error_message(:type), do: "Definition value has the wrong type."
   defp schema_error_message(:const), do: "Definition value is not supported."
   defp schema_error_message(:enum), do: "Definition value is not one of the supported choices."
