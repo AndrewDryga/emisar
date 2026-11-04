@@ -35,6 +35,14 @@ box:
     # migrations against the one the host is using. test.exs appends this.
     MIX_TEST_PARTITION: box
 
+  egress_rules:
+    - to: {service: "db"}
+      protocol: tcp
+      ports: [5432]
+    - to: {service: "keycloak"}
+      protocol: tcp
+      ports: [8443]
+
 # Coop hides secret-looking files from everything it starts, sidecars included, so Keycloak was
 # handed an empty stand-in for its generated dev TLS key and died on startup. This declares the
 # files the stack must read for real. It is a request, not a grant: an agent in the box can edit
