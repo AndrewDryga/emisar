@@ -1,4 +1,12 @@
 services:
+  runner-tools:
+    build:
+      context: ${EMISAR_ROOT}/packs/mysql/test
+      dockerfile: Dockerfile
+      args:
+        PACKTEST_IMAGE: ${PACKTEST_IMAGE:-mysql:${PACKTEST_VERSION:-9.7.2}${PACKTEST_DIGEST-}}
+    image: emisar-packtest-mysql-tools:${PACKTEST_VERSION:-9.7.2}
+
   mysql:
     image: mysql:${PACKTEST_VERSION:-9.7.2}${PACKTEST_DIGEST-}
     environment:

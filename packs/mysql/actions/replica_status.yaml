@@ -4,9 +4,9 @@ title: SHOW REPLICA STATUS
 kind: exec
 risk: low
 description: >
-  Read SHOW REPLICA STATUS (or SHOW SLAVE STATUS on old versions). Surfaces lag, last error, IO and SQL thread state, and binlog position. Returns 'not a replica' cleanly when this is a primary.
+  Read SHOW REPLICA STATUS (or SHOW SLAVE STATUS on servers without it). Surfaces lag, last error, IO and SQL thread state, and binlog position. Returns 'not a replica' cleanly when this is a primary.
 side_effects:
-  - One SHOW REPLICA STATUS.
+  - One SHOW REPLICA STATUS, or SHOW SLAVE STATUS on servers without it.
   - Read-only.
 args: []
 execution:
@@ -14,11 +14,21 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      # The first suppression is a deliberate syntax probe — SHOW REPLICA STATUS
-      # is 8.0.22+, older servers need SHOW SLAVE STATUS — so its error is noise.
-      # The second is not: when both fail, that stderr is the only account of
-      # why (auth refused, server down), and discarding it left a bare non-zero.
-      - "mysql -e 'SET SESSION lock_wait_timeout=5 /*!50708 , max_execution_time=13000 */ /*M!100108 , max_statement_time=13 */; SHOW REPLICA STATUS\\G' 2>/dev/null || mysql -e 'SET SESSION lock_wait_timeout=5 /*!50708 , max_execution_time=13000 */ /*M!100108 , max_statement_time=13 */; SHOW SLAVE STATUS\\G'"
+      # Each statement exists only on some servers, so only a syntax error moves on to
+      # the other one. Any other failure, such as a missing privilege, is the answer:
+      # falling back would replace it with a syntax error on servers that removed the
+      # old statement. -E, not \G: the MySQL 9 client refuses local commands in batch
+      # mode.
+      - |
+        run() { mysql -E -e "SET SESSION lock_wait_timeout=5 /*!50708 , max_execution_time=13000 */ /*M!100108 , max_statement_time=13 */; $1"; }
+        if ! out=$(run 'SHOW REPLICA STATUS' 2>/dev/null); then
+          err=$(run 'SHOW REPLICA STATUS' 2>&1 >/dev/null) || true
+          case "$err" in
+            *'ERROR 1064'*) out=$(run 'SHOW SLAVE STATUS') || exit $? ;;
+            *) printf '%s\n' "$err" >&2; exit 1 ;;
+          esac
+        fi
+        if [ -z "$out" ]; then echo 'not a replica'; else printf '%s\n' "$out"; fi
   timeout: 15s
 output:
   parser: text

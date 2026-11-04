@@ -5,11 +5,13 @@ versions:
     default: true
   - version: "8.4.11"
     digest: "@sha256:6ea90827b1100f8f2ae306a539f86d2c264a26ed435a2a9f75551dd5c3aeb242"
-secret_env: [MYSQL_PWD]
+secret_env: [MYSQL_PWD, MYSQL_LIMITED_PWD, MYSQL_SOURCE_PWD]
 inherit_env: [MYSQL_HOST, MYSQL_PWD]
 env:
   MYSQL_HOST: mysql
   MYSQL_PWD: packtest-canary-mysql-root-b813
+  MYSQL_LIMITED_PWD: packtest-canary-mysql-limited-31d9
+  MYSQL_SOURCE_PWD: packtest-canary-mysql-src-7fa2
 cases:
   - action: mysql.analyze_table
     args: {database: testdb, table: packtest_analyze}
@@ -40,7 +42,7 @@ cases:
       stdout_contains: [testdb, orders]
   - action: mysql.innodb_status
     expect:
-      stdout_contains: [INNODB MONITOR OUTPUT]
+      stdout_contains: [INNODB MONITOR OUTPUT, "Type: InnoDB"]
   - action: mysql.kill_connection
     arrange:
       - argv: [/bin/sh, -c, 'nohup mysql -e "SELECT SLEEP(120) AS packtest_kill_connection" >/tmp/packtest-kill-connection.log 2>&1 &']
@@ -140,6 +142,58 @@ cases:
           - test "$(mysql -NBe "SELECT COUNT(*) FROM performance_schema.processlist WHERE state = 'Waiting for table metadata lock'")" = 0 && echo nothing-left-waiting
         expect:
           stdout_contains: [nothing-left-waiting]
+  # A missing privilege must read as one. A fallback to the older statement would
+  # replace it with a syntax error on servers that removed that statement.
+  - action: mysql.master_status
+    expect:
+      stdout_contains: [File, Position, binlog.]
+  - name: mysql.master_status-keeps-the-real-error
+    action: mysql.master_status
+    env:
+      HOME: /tmp/limited
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - |
+            mysql -e "CREATE USER 'packtest_limited'@'%' IDENTIFIED BY '$MYSQL_LIMITED_PWD'" &&
+            mkdir -p /tmp/limited && umask 077 &&
+            printf '[client]\nuser=packtest_limited\npassword=%s\n' "$MYSQL_LIMITED_PWD" > /tmp/limited/.my.cnf
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [Access denied, REPLICATION CLIENT]
+      stderr_not_contains: [syntax]
+  - name: mysql.replica_status-on-a-primary-says-so
+    action: mysql.replica_status
+    expect:
+      stdout_contains: [not a replica]
+  - name: mysql.replica_status-shows-the-configured-source
+    action: mysql.replica_status
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - mysql -e "CHANGE REPLICATION SOURCE TO SOURCE_HOST='source.invalid', SOURCE_USER='packtest_repl', SOURCE_PASSWORD='$MYSQL_SOURCE_PWD'"
+    expect:
+      stdout_contains: ["Source_Host: source.invalid", "Source_User: packtest_repl", "Replica_IO_Running: No"]
+  - name: mysql.replica_status-keeps-the-real-error
+    action: mysql.replica_status
+    env:
+      HOME: /tmp/limited
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - |
+            mysql -e "CREATE USER 'packtest_limited'@'%' IDENTIFIED BY '$MYSQL_LIMITED_PWD'" &&
+            mkdir -p /tmp/limited && umask 077 &&
+            printf '[client]\nuser=packtest_limited\npassword=%s\n' "$MYSQL_LIMITED_PWD" > /tmp/limited/.my.cnf
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [Access denied, REPLICATION CLIENT]
+      stderr_not_contains: [syntax]
   - action: mysql.variables
     expect:
       stdout_contains: [innodb_buffer_pool_size]

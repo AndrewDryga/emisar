@@ -13,8 +13,10 @@ execution:
   command:
     binary: mysql
     argv:
+      # -E, not \G: the MySQL 9 client refuses local commands in batch mode.
+      - "-E"
       - "-e"
-      - "SET SESSION lock_wait_timeout=5 /*!50708 , max_execution_time=13000 */ /*M!100108 , max_statement_time=13 */; SHOW ENGINE INNODB STATUS\\G"
+      - "SET SESSION lock_wait_timeout=5 /*!50708 , max_execution_time=13000 */ /*M!100108 , max_statement_time=13 */; SHOW ENGINE INNODB STATUS"
   timeout: 15s
 output:
   parser: text

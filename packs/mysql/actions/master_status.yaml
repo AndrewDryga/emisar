@@ -1,19 +1,31 @@
 schema_version: 1
 id: mysql.master_status
-title: SHOW MASTER STATUS
+title: Primary binary log status
 kind: exec
 risk: low
-description: Show current binary log file, position, and GTID set on the primary. Read-only.
+description: Show current binary log file, position, and GTID set on the primary, with SHOW BINARY LOG STATUS, or SHOW MASTER STATUS on servers without it. Read-only.
 side_effects:
-  - One SHOW MASTER STATUS.
+  - One SHOW BINARY LOG STATUS, or SHOW MASTER STATUS on servers without it.
   - Read-only.
 args: []
 execution:
   command:
-    binary: mysql
+    binary: /bin/sh
     argv:
-      - "-e"
-      - "SET SESSION lock_wait_timeout=5 /*!50708 , max_execution_time=8000 */ /*M!100108 , max_statement_time=8 */; SHOW MASTER STATUS"
+      - "-c"
+      # MySQL 8.4 removed SHOW MASTER STATUS, and servers before 8.2 do not have the
+      # new name. Only a syntax error moves on to the other one: any other failure,
+      # such as a missing privilege, is the answer.
+      - |
+        run() { mysql -e "SET SESSION lock_wait_timeout=5 /*!50708 , max_execution_time=8000 */ /*M!100108 , max_statement_time=8 */; $1"; }
+        if ! out=$(run 'SHOW BINARY LOG STATUS' 2>/dev/null); then
+          err=$(run 'SHOW BINARY LOG STATUS' 2>&1 >/dev/null) || true
+          case "$err" in
+            *'ERROR 1064'*) out=$(run 'SHOW MASTER STATUS') || exit $? ;;
+            *) printf '%s\n' "$err" >&2; exit 1 ;;
+          esac
+        fi
+        printf '%s\n' "$out"
   timeout: 10s
 output:
   parser: text
