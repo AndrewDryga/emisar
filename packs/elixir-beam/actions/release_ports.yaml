@@ -3,10 +3,11 @@ id: beam.release_ports
 title: Elixir release BEAM ports
 kind: script
 risk: low
-description: Count open BEAM ports in the running Elixir release by driver, with the port limit — spot socket or port leaks at a glance.
+description: Count open BEAM ports in the running Elixir release by driver, with the port limit — spot socket or port leaks at a glance. A spawned program is counted under its executable's base name.
 side_effects:
   - Resolves the target release from running BEAM processes (reads /proc; docker exec when container is set).
   - One release rpc call with a fixed expression.
+  - Never prints a spawned program's arguments, which can carry secrets.
   - Read-only.
 args:
   - name: container

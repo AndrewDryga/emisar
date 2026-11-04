@@ -2,8 +2,10 @@ schema_version: 1
 
 id: elixir-beam
 name: Elixir / BEAM runtime
-version: 0.1.12
-retired_below: 0.1.9
+version: 0.1.13
+# Versions below this printed the full command line of a spawned port from
+# beam.release_ports, a low-risk read. They fail closed.
+retired_below: 0.1.13
 description: >
   Diagnostics for Elixir and Erlang/BEAM applications on the runner host or
   inside Docker containers: toolchain versions, EPMD registrations, BEAM OS

@@ -1,0 +1,22 @@
+services: [elixir-beam]
+versions:
+  - version: "1.20.5-otp-29"
+    digest: "@sha256:23642332ffac151b68f7ba0029e93fba2ba6083c0944efc06087957e2109e21c"
+    default: true
+  - version: "1.14.5-otp-25"
+    digest: "@sha256:2b3e8ce85402789aeb837d32f5bcbd5a75e0df29709ef7861a79ffac517712db"
+secret_env: [FIXTURE_ARGV_SECRET]
+env:
+  FIXTURE_ARGV_SECRET: packtest-canary-beam-argv-7c41e2
+cases:
+  - action: beam.release_targets
+    expect:
+      stdout_contains: ["release=fixture_app", "ctl=/opt/fixture_app/bin/fixture_app"]
+
+  # The canary rides in the argv of every spawned port. The harness fails the
+  # case if it appears anywhere in the result.
+  - name: beam.release_ports-names-a-spawned-program-without-its-argv
+    action: beam.release_ports
+    expect:
+      stdout_contains: ['{"udp_inet", 20}', '{"sh", 2}', '{"sleep", 1}']
+      stdout_not_contains: ["--password", "/bin/sh"]

@@ -1,0 +1,34 @@
+services:
+  elixir-beam:
+    build:
+      context: ${EMISAR_ROOT}/packs/elixir-beam/test
+      dockerfile: Dockerfile
+      args:
+        PACKTEST_IMAGE: ${PACKTEST_IMAGE:-elixir:${PACKTEST_VERSION:-1.20.5-otp-29}${PACKTEST_DIGEST-}}
+    image: emisar-packtest-elixir-beam:${PACKTEST_VERSION:-1.20.5-otp-29}
+    init: true
+    user: "65532:65532"
+    environment:
+      ELIXIR_ERL_OPTIONS: "+S 2:2"
+      FIXTURE_ARGV_SECRET: packtest-canary-beam-argv-7c41e2
+    healthcheck:
+      # A file the application writes after its tree started. No BEAM client:
+      # spawning one for every poll is what starves a four-case runner.
+      test: ["CMD", "test", "-f", "/tmp/fixture_app.ready"]
+      interval: 2s
+      start_period: 60s
+      start_interval: 1s
+      retries: 30
+
+  # The same image, in the SUT's PID and network namespaces: bin/fixture_app rpc
+  # reaches the node over loopback as it does for a runner on the release's host,
+  # and the shared namespace also gives both containers one hostname.
+  runner-tools:
+    build:
+      context: ${EMISAR_ROOT}/packs/elixir-beam/test
+      dockerfile: Dockerfile
+      args:
+        PACKTEST_IMAGE: ${PACKTEST_IMAGE:-elixir:${PACKTEST_VERSION:-1.20.5-otp-29}${PACKTEST_DIGEST-}}
+    image: emisar-packtest-elixir-beam:${PACKTEST_VERSION:-1.20.5-otp-29}
+    pid: service:elixir-beam
+    network_mode: service:elixir-beam

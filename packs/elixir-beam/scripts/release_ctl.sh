@@ -689,12 +689,24 @@ ELIXIR
     rpc "$(cat <<'ELIXIR'
 ports = :erlang.ports()
 
+# A port opened with {:spawn, command} is named by its whole command line, and
+# that can carry a secret. So a program is reported by the base name of its
+# executable, and a driver by its first word. Nothing else of a name is printed.
 by_driver =
   ports
   |> Enum.map(fn p ->
-    case :erlang.port_info(p, :name) do
-      {:name, name} -> List.to_string(name)
-      :undefined -> "(dead)"
+    case {:erlang.port_info(p, :name), :erlang.port_info(p, :os_pid)} do
+      {{:name, name}, {:os_pid, os_pid}} ->
+        first = name |> List.to_string() |> String.split() |> Enum.at(0, "")
+
+        cond do
+          not is_integer(os_pid) -> first
+          (base = Path.basename(first)) =~ ~r/\A[A-Za-z0-9._+-]{1,64}\z/ -> base
+          true -> "(program)"
+        end
+
+      _closed ->
+        "(dead)"
     end
   end)
   |> Enum.frequencies()
