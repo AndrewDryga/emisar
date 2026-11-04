@@ -746,9 +746,10 @@ defmodule EmisarWeb.AuditLiveTest do
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?actor_id=#{actor_a}")
 
-      assert html =~ "alice"
+      text = page_text(html)
+      assert text =~ "alice"
       # bob's event is filtered out entirely.
-      refute html =~ "bob"
+      refute text =~ "bob"
     end
 
     test "filtering by sign-in method narrows to that method's events", %{conn: conn} do
@@ -902,7 +903,7 @@ defmodule EmisarWeb.AuditLiveTest do
       # A well-formed but unknown id → account-scoped to nothing, no crash.
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?actor_id=#{Ecto.UUID.generate()}")
       assert html =~ "No events match these filters."
-      refute html =~ "real"
+      refute page_text(html) =~ "real"
 
       # A blank actor_id → blank_to_nil drops it, so no actor chip renders and
       # the unfiltered feed comes back.
@@ -922,7 +923,7 @@ defmodule EmisarWeb.AuditLiveTest do
         live(conn, ~p"/app/#{account}/audit?target_kind=user&target_id=#{Ecto.UUID.generate()}")
 
       assert html =~ "No events match these filters."
-      refute html =~ "real"
+      refute page_text(html) =~ "real"
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?target_id=")
       assert html =~ "real"
@@ -1087,7 +1088,7 @@ defmodule EmisarWeb.AuditLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?actor_id=#{stale}")
 
       assert html =~ "No events match these filters."
-      refute html =~ "real"
+      refute page_text(html) =~ "real"
     end
 
     test "an active preset segment highlights and a second click clears the range", %{
@@ -1510,6 +1511,10 @@ defmodule EmisarWeb.AuditLiveTest do
       acc <> html
     end
   end
+
+  # What the page shows. Searching the raw page also searches random tokens in its
+  # attributes, and those can spell a short word by chance.
+  defp page_text(html), do: html |> LazyHTML.from_document() |> LazyHTML.text()
 
   defp drain_audit_queries(pids, queries \\ []) do
     receive do
