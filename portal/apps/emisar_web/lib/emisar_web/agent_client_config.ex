@@ -6,6 +6,7 @@ defmodule EmisarWeb.AgentClientConfig do
 
   @standard_clients ~w(claude_desktop cursor gemini windsurf pi)
   @max_path_bytes 4096
+  @coop_token_env "EMISAR_MCP_TOKEN"
 
   def default_paths do
     %{linux: "/usr/local/bin/emisar-mcp", windows: "", macos: "/usr/local/bin/emisar-mcp"}
@@ -64,6 +65,19 @@ defmodule EmisarWeb.AgentClientConfig do
   end
 
   def download_links(_os, _version), do: []
+
+  @doc "The project rule that lets a filtered co:op box reach the portal directly, for the bridge."
+  def coop_egress_rule(url) do
+    %URI{host: host, port: port} = URI.parse(url)
+
+    """
+    box:
+      egress_rules:
+        - to: {domain: #{Jason.encode!(host)}}
+          protocol: tls
+          ports: [#{port}]
+    """
+  end
 
   def coop_dockerfile do
     ~S"""
@@ -186,6 +200,20 @@ defmodule EmisarWeb.AgentClientConfig do
     %{
       kind: :coop,
       body:
+        Jason.encode!(
+          %{
+            "mcpServers" => %{
+              "emisar" => %{
+                "type" => "http",
+                "url" => "#{url}/api/mcp/rpc",
+                "bearer_token_env_var" => @coop_token_env
+              }
+            }
+          },
+          pretty: true
+        ),
+      env: "#{@coop_token_env}=#{key}",
+      bridge_body:
         Jason.encode!(
           %{
             "mcpServers" => %{

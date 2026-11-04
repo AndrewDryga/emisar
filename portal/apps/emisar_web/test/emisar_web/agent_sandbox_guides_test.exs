@@ -63,7 +63,7 @@ defmodule EmisarWeb.AgentSandboxGuidesTest do
     assert text =~ ".coopignore"
     assert text =~ ".gitignore"
     assert text =~ "Anything you mount or pass into the sandbox"
-    assert text =~ "box.egress: filtered"
+    assert text =~ "box.egress_rules"
     assert text =~ "coop approve"
     assert text =~ "coop net blocked <host>"
     assert text =~ "coop doctor"

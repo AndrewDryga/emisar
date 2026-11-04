@@ -4,9 +4,30 @@ defmodule EmisarWeb.CoopConnectionTest do
   alias Emisar.ApiKeys.ApiKey
   alias EmisarWeb.AgentClientConfig
 
-  test "co:op gets one container bridge configuration with durable credential storage" do
+  test "co:op defaults to an HTTP entry that keeps the key out of the box" do
     config = AgentClientConfig.render("coop", "https://example.test", "emk-example", :macos, "")
-    server = Jason.decode!(config.body)["mcpServers"]["emisar"]
+
+    assert Jason.decode!(config.body)["mcpServers"]["emisar"] == %{
+             "type" => "http",
+             "url" => "https://example.test/api/mcp/rpc",
+             "bearer_token_env_var" => "EMISAR_MCP_TOKEN"
+           }
+
+    refute config.body =~ "emk-example"
+    assert config.env == "EMISAR_MCP_TOKEN=emk-example"
+  end
+
+  test "the co:op bridge alternative gets its rule and durable credential storage" do
+    config = AgentClientConfig.render("coop", "https://example.test", "emk-example", :macos, "")
+    server = Jason.decode!(config.bridge_body)["mcpServers"]["emisar"]
+
+    assert AgentClientConfig.coop_egress_rule("https://example.test") == """
+           box:
+             egress_rules:
+               - to: {domain: "example.test"}
+                 protocol: tls
+                 ports: [443]
+           """
 
     assert server == %{
              "command" => "/usr/local/bin/emisar-mcp",
@@ -32,6 +53,11 @@ defmodule EmisarWeb.CoopConnectionTest do
     assert html =~ ~s(href="/app/agents/connect")
     assert html =~ ~s(href="/app/audit")
     assert html =~ ".coopignore"
+    assert html =~ "box.egress_rules"
+    assert html =~ "lasts 30 days"
+    assert html =~ "signed dispatch"
+    refute html =~ "whole internet"
+    refute html =~ "box.egress: filtered"
     refute html =~ "EMISAR_API_KEY"
     refute html =~ "COOP_RUNTIME="
     refute html =~ "install-mcp.sh"
@@ -64,26 +90,25 @@ defmodule EmisarWeb.CoopConnectionTest do
     assert has_element?(lv, "#coop-start", "coop codex")
     refute has_element?(lv, "#install-mcp-cmd")
     assert has_element?(lv, "#coop-config")
-    refute has_element?(lv, "#coop-config-step details")
+    refute has_element?(lv, "#coop-config-step details #coop-config")
+    refute has_element?(lv, "#coop-config-step details #coop-env")
     refute has_element?(lv, "#coop-config-step button[phx-click]")
     [key] = Repo.all(ApiKey)
     assert key.name == "co:op"
     assert key.account_id == account.id
     assert key.created_by_membership_id == Fixtures.Subjects.subject_for(owner).membership_id
 
-    config =
-      lv
-      |> element("#coop-config")
-      |> render()
-      |> LazyHTML.from_fragment()
-      |> LazyHTML.query("pre")
-      |> LazyHTML.text()
-      |> Jason.decode!()
+    entry = lv |> panel_text("#coop-config") |> Jason.decode!()
+    assert entry["mcpServers"]["emisar"]["url"] =~ "/api/mcp/rpc"
+    assert entry["mcpServers"]["emisar"]["bearer_token_env_var"] == "EMISAR_MCP_TOKEN"
 
-    raw = config["mcpServers"]["emisar"]["env"]["EMISAR_API_KEY"]
+    assert "EMISAR_MCP_TOKEN=" <> raw = panel_text(lv, "#coop-env")
     assert raw =~ "emk-"
-    assert config["mcpServers"]["emisar"]["command"] == "/usr/local/bin/emisar-mcp"
-    assert config["mcpServers"]["emisar"]["env"]["XDG_CONFIG_HOME"] == "/config"
+
+    bridge = lv |> panel_text("#coop-bridge-config") |> Jason.decode!()
+    assert bridge["mcpServers"]["emisar"]["command"] == "/usr/local/bin/emisar-mcp"
+    assert bridge["mcpServers"]["emisar"]["env"]["EMISAR_API_KEY"] == raw
+    assert bridge["mcpServers"]["emisar"]["env"]["XDG_CONFIG_HOME"] == "/config"
 
     assert render_click(lv, "select_client", %{"client" => "coop"}) =~ raw
     assert Repo.all(ApiKey) == [key]
@@ -114,9 +139,26 @@ defmodule EmisarWeb.CoopConnectionTest do
       |> String.trim()
 
     assert init_commands == "coop init\ncoop login codex"
-    assert has_element?(lv, "#coop-container-step", "Install the emisar bridge in co:op")
-    assert has_element?(lv, "#coop-container-step", "2")
-    assert has_element?(lv, "#coop-container-step", "~/.config/coop/coop.conf")
+    assert has_element?(lv, "#coop-config-step", "Add emisar to co:op")
+    assert has_element?(lv, "#coop-config-step", "~/.config/coop/agents/mcp.json")
+    assert has_element?(lv, "#coop-config-step", "~/.config/coop/agents/env")
+    assert has_element?(lv, "#coop-key-renewal", "lasts 30 days")
+
+    # The default path changes neither the image nor the network rules, so all of
+    # that stays inside the bridge alternative.
+    assert has_element?(lv, "#coop-bridge", "signed dispatch")
+    refute has_element?(lv, "#coop-bridge[open]")
+    assert has_element?(lv, "#coop-bridge #coop-dockerfile")
+    assert has_element?(lv, "#coop-bridge #coop-storage")
+
+    assert has_element?(
+             lv,
+             "#coop-bridge #coop-build",
+             "coop approve && coop build && coop doctor"
+           )
+
+    assert panel_text(lv, "#coop-egress-rule") =~ ~s(- to: {domain: "www.example.com"})
+    assert has_element?(lv, "#coop-bridge", "~/.config/coop/coop.conf")
 
     storage_settings =
       lv
@@ -129,9 +171,7 @@ defmodule EmisarWeb.CoopConnectionTest do
     assert storage_settings == "COOP_RUN_ARGS=-v coop-emisar-config:/config"
     refute render(lv) =~ "COOP_RUNTIME="
 
-    assert has_element?(lv, "#coop-build", "coop build && coop doctor")
-    assert has_element?(lv, "#coop-config-step", "Copy the MCP configuration")
-    assert has_element?(lv, "#agent-connect-step", "4")
+    assert has_element?(lv, "#agent-connect-step", "3")
     assert has_element?(lv, "#agent-example-prompt", "linux.uptime")
     assert has_element?(lv, "#agent-connect-step a[href='/app/#{account.slug}/audit']", "Audit")
     assert has_element?(lv, "#coop-config")
@@ -202,5 +242,15 @@ defmodule EmisarWeb.CoopConnectionTest do
     assert has_element?(lv, "#coop-config")
     refute has_element?(lv, "#coop-config-error")
     assert [%ApiKey{}] = Repo.all(ApiKey)
+  end
+
+  defp panel_text(lv, selector) do
+    lv
+    |> element(selector)
+    |> render()
+    |> LazyHTML.from_fragment()
+    |> LazyHTML.query("pre")
+    |> LazyHTML.text()
+    |> String.trim()
   end
 end

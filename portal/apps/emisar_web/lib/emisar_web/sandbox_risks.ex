@@ -26,11 +26,11 @@ defmodule EmisarWeb.SandboxRisks do
           "Anything you mount or pass into the sandbox remains available to the agent. Keep production credentials and privileged host sockets out."
         ],
         [
-          "New runs can reach the whole internet until you filter it. Set ",
-          {:code, "box.egress: filtered"},
+          "New runs reach only your agent's provider and the destinations you approve. To allow another, list its domain, protocol, and ports under ",
+          {:code, "box.egress_rules"},
           " in ",
           {:code, ".agent/project.yaml"},
-          " with the domains, protocols, and ports the agent needs, then approve the change with ",
+          ", then approve the change with ",
           {:code, "coop approve"},
           ". ",
           {:code, "coop net"},

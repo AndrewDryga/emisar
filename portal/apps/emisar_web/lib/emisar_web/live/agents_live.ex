@@ -1783,7 +1783,7 @@ defmodule EmisarWeb.AgentsLive do
         :connection_step,
         cond do
           assigns.selected_sandbox in ["docker_sandboxes", "nono", "dev_containers"] -> 5
-          assigns.selected_client == "coop" -> 4
+          assigns.selected_client == "coop" -> 3
           true -> 2
         end
       )
@@ -1922,7 +1922,12 @@ defmodule EmisarWeb.AgentsLive do
               <% end %>
             </div>
           <% @config && @config.kind == :coop -> %>
-            <.coop_setup config={@config} quick_secret={@quick_secret} />
+            <.coop_setup
+              config={@config}
+              quick_secret={@quick_secret}
+              base_url={@base_url}
+              current_account={@current_account}
+            />
           <% @config && @config.kind == :remote -> %>
             <div class="mt-6 space-y-8 border-t border-zinc-800/70 pt-6">
               <.remote_mcp_panel
@@ -2091,8 +2096,8 @@ defmodule EmisarWeb.AgentsLive do
                     Confirm the bridge path and save the configuration shown in manual setup.
                   </:step>
                   <:step :if={@selected_client == "coop"}>
-                    Check co:op's shared mcp.json, rebuild its image if the bridge is missing,
-                    and start a new session.
+                    Check the emisar entry in co:op's shared mcp.json and the key in its env file,
+                    then start a new session.
                   </:step>
                   <:step>
                     Make sure the environment running your agent can reach <code class="break-all font-mono text-zinc-300">{@connection_url}</code>.
@@ -2159,6 +2164,8 @@ defmodule EmisarWeb.AgentsLive do
   # calls.
   attr :config, :any, required: true
   attr :quick_secret, :any, default: nil
+  attr :base_url, :string, required: true
+  attr :current_account, :any, required: true
 
   defp coop_setup(assigns) do
     ~H"""
@@ -2191,47 +2198,8 @@ defmodule EmisarWeb.AgentsLive do
           />
         </div>
       </section>
-      <section id="coop-container-step" class="space-y-4">
-        <.step_header step={2} title="Install the emisar bridge in co:op" />
-        <div class="ml-6 space-y-4 text-sm text-zinc-400">
-          <p>
-            Create
-            <.inline_code>.agent/Dockerfile</.inline_code>
-            with this content.
-            If you already have one, add the installation steps and keep your existing
-            toolchain and final user; give that user ownership of <.inline_code>/config</.inline_code>.
-          </p>
-          <.code_panel
-            id="coop-dockerfile"
-            label=".agent/Dockerfile"
-            code={AgentClientConfig.coop_dockerfile()}
-            max_h="max-h-64"
-            copy
-          />
-          <p>
-            In
-            <.inline_code>~/.config/coop/coop.conf</.inline_code>
-            on your computer,
-            add this setting. Append the mount if
-            <.inline_code>COOP_RUN_ARGS</.inline_code>
-            already exists.
-            Keep this volume so replacement keys survive new containers.
-          </p>
-          <.code_panel
-            id="coop-storage"
-            label="coop.conf"
-            code="COOP_RUN_ARGS=-v coop-emisar-config:/config"
-            copy
-          />
-          <.code_line
-            id="coop-build"
-            label="From your repository"
-            value="coop build && coop doctor"
-          />
-        </div>
-      </section>
       <section id="coop-config-step" class="space-y-4">
-        <.step_header step={3} title="Copy the MCP configuration" />
+        <.step_header step={2} title="Add emisar to co:op" />
         <div class="ml-6">
           <%= if @quick_secret do %>
             <div class="space-y-5 text-sm text-zinc-400">
@@ -2239,8 +2207,7 @@ defmodule EmisarWeb.AgentsLive do
                 Merge this emisar entry into
                 <.inline_code>~/.config/coop/agents/mcp.json</.inline_code>
                 on your computer, preserving other servers. Create the file and parent
-                directories if needed. Keep it outside your repository and readable only by
-                your user; this key is shown only during setup.
+                directories if needed.
               </p>
               <.code_panel
                 id="coop-config"
@@ -2249,10 +2216,94 @@ defmodule EmisarWeb.AgentsLive do
                 copy
               />
               <p>
-                If your runners require signed dispatch, add the signing credentials from <.doc_link href={
-                  ~p"/docs/signed-dispatch"
-                }>Set up signed dispatch</.doc_link>.
+                Add this line to
+                <.inline_code>~/.config/coop/agents/env</.inline_code>
+                and keep the file readable only by your user. co:op keeps the key outside the box
+                and adds it to each request, so you don't need to change your image or add a
+                network rule. This key is shown only during setup.
               </p>
+              <.code_panel
+                id="coop-env"
+                label="env"
+                code={@config.env}
+                copy
+              />
+              <p id="coop-key-renewal">
+                The key lasts 30 days and doesn't rotate by itself. Before it expires, rotate it from <.link
+                  navigate={~p"/app/#{@current_account}/agents"}
+                  class="text-brand-400 hover:text-brand-300"
+                >AI agents</.link>,
+                replace this line, and start a new session.
+              </p>
+              <.disclosure id="coop-bridge" size={:md}>
+                <:summary>
+                  <span class="font-medium">
+                    Use the emisar bridge instead
+                  </span>
+                </:summary>
+                <div class="space-y-5 text-sm text-zinc-400">
+                  <p>
+                    You need the bridge if your runners enforce signed dispatch, or if you want keys
+                    to rotate automatically. The key is then readable inside the box.
+                  </p>
+                  <p>
+                    Create
+                    <.inline_code>.agent/Dockerfile</.inline_code>
+                    with this content. If you already have one, add the installation steps and keep
+                    your existing toolchain and final user; give that user ownership of <.inline_code>/config</.inline_code>.
+                  </p>
+                  <.code_panel
+                    id="coop-dockerfile"
+                    label=".agent/Dockerfile"
+                    code={AgentClientConfig.coop_dockerfile()}
+                    max_h="max-h-64"
+                    copy
+                  />
+                  <p>
+                    Let the box reach emisar. Add this rule to <.inline_code>.agent/project.yaml</.inline_code>:
+                  </p>
+                  <.code_panel
+                    id="coop-egress-rule"
+                    label=".agent/project.yaml"
+                    code={AgentClientConfig.coop_egress_rule(@base_url)}
+                    copy
+                  />
+                  <p>
+                    In
+                    <.inline_code>~/.config/coop/coop.conf</.inline_code>
+                    on your computer, add this setting. Append the mount if
+                    <.inline_code>COOP_RUN_ARGS</.inline_code>
+                    already exists. Keep this volume so replacement keys survive new containers.
+                  </p>
+                  <.code_panel
+                    id="coop-storage"
+                    label="coop.conf"
+                    code="COOP_RUN_ARGS=-v coop-emisar-config:/config"
+                    copy
+                  />
+                  <.code_line
+                    id="coop-build"
+                    label="From your repository"
+                    value="coop approve && coop build && coop doctor"
+                  />
+                  <p>
+                    Then use this entry in
+                    <.inline_code>mcp.json</.inline_code>
+                    in place of the one above. You don't need the line in the env file.
+                  </p>
+                  <.code_panel
+                    id="coop-bridge-config"
+                    label="mcp.json"
+                    code={@config.bridge_body}
+                    copy
+                  />
+                  <p>
+                    To enforce signed dispatch, add the signing credentials from <.doc_link href={
+                      ~p"/docs/signed-dispatch"
+                    }>Set up signed dispatch</.doc_link>.
+                  </p>
+                </div>
+              </.disclosure>
             </div>
           <% else %>
             <div id="coop-config-error" role="alert" class="space-y-3">

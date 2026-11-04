@@ -127,9 +127,14 @@
       <.docs_h2 id="coop">co:op</.docs_h2>
       <.docs_h3 id="coop-requirements">What you need</.docs_h3>
       <p class="mt-4 text-base leading-7 text-zinc-400">
-        co:op runs the agent in a container on macOS or Linux. Use Apple container, Docker, or
-        Podman as the runtime. The console shows how to install the bridge in the image and keep
-        its rotated credentials in a named volume.
+        co:op runs the agent in a container on macOS or Linux. Its default filtered network needs
+        Docker. The console gives you an entry for co:op's shared MCP file and a key that co:op
+        keeps outside the container, so you don't change the image or add a network rule.
+      </p>
+      <p class="mt-4 text-base leading-7 text-zinc-400">
+        That key lasts 30 days, and you renew it by hand from AI agents. Use the emisar bridge
+        instead if your runners enforce signed dispatch or you want keys to rotate automatically.
+        The console shows the image change, network rule, and storage the bridge needs.
       </p>
 
       <.docs_sandbox_risks id="coop-limits-and-risks" sandbox="coop" />
