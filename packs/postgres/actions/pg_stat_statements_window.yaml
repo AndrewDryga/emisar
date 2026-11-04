@@ -1,0 +1,49 @@
+schema_version: 1
+id: postgres.pg_stat_statements_window
+title: Top statements over a sampling window
+kind: exec
+risk: low
+description: >
+  Show the top 30 normalized queries by execution time during a sampling window: it
+  reads pg_stat_statements, waits window_seconds, reads it again, and ranks by the
+  difference. Finds what is slow now, including a query that has only just become
+  slow and cannot reach a lifetime top 30, and it resets nothing. Columns are calls,
+  total_ms, mean_ms, rows, cache_hit_pct, and query. Requires pg_stat_statements
+  extension to be loaded. Stays low — normalized queries replace literals with
+  `$1`/`$2`, so the output is the query shape, not real request data.
+side_effects:
+  - One SELECT against pg_stat_statements, holding one connection for the window.
+  - Resets no counters, and counts only statements that finish during the window.
+  - Read-only.
+search_terms:
+  - db is slow right now
+  - what is slow right now
+  - query got slow
+  - which query is busy now
+args:
+  - name: window_seconds
+    type: integer
+    required: false
+    default: 10
+    description: Seconds between the two reads. The maximum leaves room in the action's 45s timeout.
+    validation:
+      min: 1
+      max: 30
+execution:
+  command:
+    binary: psql
+    argv:
+      - "-XAtq"
+      - "-c"
+      # pause reads from before, and after reads from pause through a lateral join,
+      # so the two reads cannot run in the other order or at the same moment.
+      - "SET LOCAL statement_timeout = '43s'; SET LOCAL lock_timeout = '5s'; WITH before AS MATERIALIZED (SELECT userid, dbid, toplevel, queryid, calls, total_exec_time, rows, shared_blks_hit, shared_blks_read FROM pg_stat_statements), pause AS MATERIALIZED (SELECT pg_sleep({{ args.window_seconds }}) FROM (SELECT count(*) FROM before) AS taken), after AS MATERIALIZED (SELECT s.* FROM pause CROSS JOIN LATERAL (SELECT * FROM pg_stat_statements) AS s), changed AS (SELECT a.calls - COALESCE(b.calls, 0) AS calls, a.total_exec_time - COALESCE(b.total_exec_time, 0) AS total_ms, a.rows - COALESCE(b.rows, 0) AS rows, a.shared_blks_hit - COALESCE(b.shared_blks_hit, 0) AS hit, a.shared_blks_read - COALESCE(b.shared_blks_read, 0) AS read, a.query FROM after a LEFT JOIN before b USING (userid, dbid, toplevel, queryid) WHERE a.calls > COALESCE(b.calls, 0)) SELECT calls, ROUND(total_ms::numeric, 1) AS total_ms, ROUND((total_ms / calls)::numeric, 2) AS mean_ms, rows, ROUND(100.0 * hit / NULLIF(hit + read, 0), 1) AS cache_hit_pct, substring(query, 1, 300) AS query FROM changed ORDER BY changed.total_ms DESC LIMIT 30;"
+  timeout: 45s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: What is slow over the next 10 seconds
+    args:
+      window_seconds: 10

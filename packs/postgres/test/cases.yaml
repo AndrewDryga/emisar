@@ -51,6 +51,37 @@ cases:
       stdout_contains: [buffers_clean, buffers_alloc, checkpoints_timed, checkpoints_req, buffers_checkpoint, stats_reset]
   # A read behind a held lock must fail fast with the server's own error, and leave
   # no backend waiting: killing psql at the action timeout would not stop one.
+  # A read that ran once and took two seconds leads the lifetime list. The window
+  # must leave it out and show the cheap query that is running now.
+  - name: postgres.pg_stat_statements_top-ranks-lifetime-totals
+    action: postgres.pg_stat_statements_top
+    arrange:
+      - argv: [psql, -XAtq, -c, "SELECT pg_sleep(2), 'lifetime_heavy_marker'"]
+    expect:
+      stdout_contains: ["pg_sleep($1), $2"]
+  - name: postgres.pg_stat_statements_window-ranks-what-ran-in-the-window
+    action: postgres.pg_stat_statements_window
+    args: {window_seconds: 3}
+    arrange:
+      - argv: [psql, -XAtq, -c, "SELECT pg_sleep(2), 'lifetime_heavy_marker'"]
+      - argv:
+          - /bin/sh
+          - -c
+          - nohup sh -c 'for i in 1 2 3 4 5 6 7 8 9 10 11 12; do psql -XAtq -c "SELECT count(*) AS window_hot_marker FROM orders"; sleep 0.25; done' >/dev/null 2>&1 &
+    expect:
+      stdout_contains: [window_hot_marker]
+      stdout_not_contains: ["pg_sleep($1), $2"]
+    probes:
+      # The heavy query keeps its lifetime count: the window reset nothing.
+      - argv: [psql, -XAt, -c, "SELECT 'counters-kept' FROM pg_stat_statements WHERE query = 'SELECT pg_sleep($1), $2' AND calls = 1"]
+        expect:
+          stdout_contains: [counters-kept]
+  - name: postgres.pg_stat_statements_window-past-the-limit
+    action: postgres.pg_stat_statements_window
+    args: {window_seconds: 31}
+    expect:
+      status: failure
+      reason: argument_invalid
   - name: postgres.largest_tables_full-fails-fast-behind-a-held-lock
     action: postgres.largest_tables_full
     arrange:

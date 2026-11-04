@@ -3,7 +3,7 @@ id: postgres.pg_stat_statements_top
 title: Top statements by total time
 kind: exec
 risk: low
-description: Show the top 30 normalized queries by total_exec_time. Requires pg_stat_statements extension to be loaded. Stays low — normalized queries replace literals with `$1`/`$2`, so the output is the query shape, not real request data.
+description: Show the top 30 normalized queries by total_exec_time since the counters were last reset, which can hide a query that has only just become slow (postgres.pg_stat_statements_window shows what is slow now). Requires pg_stat_statements extension to be loaded. Stays low — normalized queries replace literals with `$1`/`$2`, so the output is the query shape, not real request data.
 side_effects: ["One SELECT against pg_stat_statements.", "Read-only."]
 search_terms:
   - db is slow

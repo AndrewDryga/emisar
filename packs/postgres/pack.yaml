@@ -2,7 +2,7 @@ schema_version: 1
 
 id: postgres
 name: Postgres operations
-version: 0.2.22
+version: 0.2.23
 # Versions below this ran the reads that return live query text (activity_detail,
 # slow_queries and the other pg_stat_activity and pg_stat_statements reads) at
 # low risk, so they auto-ran under a policy that gates medium. They fail closed.
@@ -104,6 +104,7 @@ actions:
   # Query analysis
   - actions/slow_queries.yaml
   - actions/pg_stat_statements_top.yaml
+  - actions/pg_stat_statements_window.yaml
   - actions/explain_query.yaml
   - actions/explain_analyze.yaml
   - actions/pg_stat_statements_reset.yaml
