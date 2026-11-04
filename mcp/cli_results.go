@@ -221,6 +221,8 @@ func cliErrorIssueMessage(issue cliErrorIssue, valueKind string, schema map[stri
 	switch issue.Code {
 	case "required":
 		return "Add this required argument."
+	case "one_of":
+		return "Pass exactly one of these arguments."
 	case "unknown", "unknown_arg":
 		return "Remove this argument; it is not accepted."
 	case "type":
@@ -263,7 +265,7 @@ func cliErrorIssueMessage(issue cliErrorIssue, valueKind string, schema map[stri
 	case "dependency":
 		return "Requires another argument."
 	default:
-		return "Does not match the published schema."
+		return "Does not match the tool's input schema or argument rules."
 	}
 }
 

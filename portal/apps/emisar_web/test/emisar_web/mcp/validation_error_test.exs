@@ -29,6 +29,7 @@ defmodule EmisarWeb.MCP.ValidationErrorTest do
   test "derives the published kind from the first rendered issue's code" do
     for {code, kind} <- [
           {:required, "missing"},
+          {:one_of, "missing"},
           {:unknown_arg, "unknown"},
           {:format, "format"},
           {:min, "range"},

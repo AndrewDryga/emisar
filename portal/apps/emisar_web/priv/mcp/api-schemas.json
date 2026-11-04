@@ -563,7 +563,7 @@
         },
         "code": {
           "enum": [
-            "required", "unknown", "unknown_arg", "type", "format", "range",
+            "required", "one_of", "unknown", "unknown_arg", "type", "format", "range",
             "conflict", "dependency", "unique", "size", "schema", "max_length",
             "max_items", "enum", "allowed", "min", "max", "min_duration",
             "max_duration", "duration", "path"
@@ -1938,24 +1938,14 @@
           "title": {"type": "string", "minLength": 1, "maxLength": 80, "pattern": "\\S"},
           "slug": {
             "description": "The runbook's permanent identifier. Null or blank derives it from the title. A slug already taken in this workspace returns invalid_draft; edit that runbook with update_runbook_draft instead.",
-            "oneOf": [
-              {"type": "null"},
-              {
-                "type": "string",
-                "maxLength": 80,
-                "anyOf": [
-                  {"pattern": "^\\s*$"},
-                  {"pattern": "^[a-z][a-z0-9_-]{0,79}$"}
-                ]
-              }
+            "type": ["null", "string"],
+            "maxLength": 80,
+            "anyOf": [
+              {"pattern": "^\\s*$"},
+              {"pattern": "^[a-z][a-z0-9_-]{0,79}$"}
             ]
           },
-          "description": {
-            "oneOf": [
-              {"type": "null"},
-              {"type": "string", "maxLength": 4096}
-            ]
-          },
+          "description": {"type": ["null", "string"], "maxLength": 4096},
           "definition": {
             "$ref": "https://emisar.dev/schemas/runbook-definition-v1.json"
           }
@@ -1982,12 +1972,7 @@
           "slug": {"$ref": "#/$defs/runbook_slug"},
           "definition_sha256": {"$ref": "#/$defs/definition_sha256"},
           "title": {"type": "string", "minLength": 1, "maxLength": 80, "pattern": "\\S"},
-          "description": {
-            "oneOf": [
-              {"type": "null"},
-              {"type": "string", "maxLength": 4096}
-            ]
-          },
+          "description": {"type": ["null", "string"], "maxLength": 4096},
           "definition": {"$ref": "https://emisar.dev/schemas/runbook-definition-v1.json"}
         }
       },

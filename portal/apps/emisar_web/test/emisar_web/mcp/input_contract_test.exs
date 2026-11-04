@@ -1,9 +1,29 @@
 defmodule EmisarWeb.MCP.InputContractTest do
   use ExUnit.Case, async: true
-  alias EmisarWeb.MCP.InputContract
+  alias EmisarWeb.MCP.{InputContract, SchemaRegistry}
+  alias EmisarWeb.MCP.SchemaRegistry.Compiler
 
   @pack_ref "operations@1.0.0/sha256:" <> String.duplicate("a", 64)
   @runner_ref "node~" <> String.duplicate("b", 32)
+  @samples %{
+    "action_id" => "linux.uptime",
+    "cursor" => "next",
+    "definition" => %{},
+    "definition_sha256" => String.duplicate("c", 64),
+    "operation_id" => "op_624NN9NMDZ1T76NARWCKM5A0D6",
+    "pack_id" => "ops",
+    "pack_ref" => @pack_ref,
+    "reason" => "Check the runbook",
+    "run_id" => "00000000-0000-4000-8000-000000000001",
+    "runbook_execution_id" => "00000000-0000-4000-8000-000000000002",
+    "runbook_ref" => "uptime@1",
+    "runner_ref" => @runner_ref,
+    "runner_refs" => [@runner_ref],
+    "slug" => "uptime",
+    "step_id" => "check",
+    "timeout" => "0",
+    "wait" => "0"
+  }
 
   test "rejects strings for published integer and boolean fields" do
     assert {:error, [%{path: "$.limit", code: "type"}]} =
@@ -296,6 +316,95 @@ defmodule EmisarWeb.MCP.InputContractTest do
     assert {:ok, _} = InputContract.validate("wait_for_run", Map.put(execution, "timeout", "0"))
   end
 
+  test "a refusal states everything wrong across the whole call" do
+    run_id = @samples["run_id"]
+    execution_id = @samples["runbook_execution_id"]
+    reason = %{"reason" => "Check the runbook"}
+    draft = %{"title" => "Draft", "slug" => nil, "description" => nil, "definition" => %{}}
+
+    ids = ["conflict $.run_id", "conflict $.runbook_execution_id"]
+
+    cases = [
+      # Exactly one is needed, so neither is required on its own.
+      {"wait_for_run", %{}, ["one_of $.run_id", "one_of $.runbook_execution_id"]},
+      {"wait_for_run", %{"cursor" => "next"},
+       ["one_of $.run_id", "one_of $.runbook_execution_id"]},
+      # A missing argument that would collide with a supplied one names that one too.
+      {"list_runners", %{"action_id" => "linux.uptime", "pack_id" => "ops"},
+       ["conflict $.pack_id", "required $.pack_ref"]},
+      {"execute_runbook", Map.put(reason, "slug", "uptime"),
+       ["conflict $.slug", "required $.runbook_ref"]},
+      {"execute_runbook",
+       Map.merge(reason, %{"allow_draft" => true, "runbook_ref" => "uptime@1"}),
+       ["conflict $.runbook_ref", "required $.definition_sha256", "required $.slug"]},
+      {"recent_runs", %{"operation_id" => @samples["operation_id"], "step_id" => "check"},
+       ["conflict $.operation_id", "conflict $.step_id", "required $.runbook_execution_id"]},
+      # A collision is not hidden behind another problem.
+      {"get_action", %{"target" => "web", "runner_refs" => [@runner_ref]},
+       [
+         "conflict $.runner_refs",
+         "conflict $.target",
+         "required $.action_id",
+         "required $.pack_ref"
+       ]},
+      {"list_runners", %{"query" => "web", "runner_refs" => [@runner_ref], "limit" => "many"},
+       ["conflict $.query", "conflict $.runner_refs", "type $.limit"]},
+      {"find_actions", %{"query" => "uptime", "action_id" => "linux.uptime", "nope" => 1},
+       ["conflict $.action_id", "conflict $.query", "unknown $.nope"]},
+      {"wait_for_run", %{"run_id" => "nope", "runbook_execution_id" => execution_id},
+       ids ++ ["format $.run_id"]},
+      {"wait_for_run",
+       %{"run_id" => run_id, "runbook_execution_id" => execution_id, "cursor" => "next"},
+       ids ++ ["required $.timeout"]},
+      # A value is judged only against what it could be.
+      {"wait_for_run",
+       %{"runbook_execution_id" => execution_id, "cursor" => "next", "timeout" => "1s"},
+       ["enum $.timeout"]},
+      {"create_runbook_draft", %{draft | "slug" => "BAD SLUG"}, ["format $.slug"]},
+      {"create_runbook_draft", %{draft | "slug" => 7}, ["type $.slug"]},
+      {"create_runbook_draft", %{draft | "description" => String.duplicate("a", 4097)},
+       ["max_length $.description"]}
+    ]
+
+    for {tool, arguments, expected} <- cases do
+      assert {:error, issues} = InputContract.validate(tool, arguments)
+
+      assert issues |> Enum.map(&"#{&1.code} #{&1.path}") |> Enum.sort() == Enum.sort(expected),
+             "#{tool} with #{inspect(Map.keys(arguments))}"
+    end
+  end
+
+  # Nothing in JSON Schema stops a refusal asking for what can only be refused next, so
+  # walk every combination of every tool's arguments and follow each refusal.
+  test "following any refusal can reach an accepted call" do
+    for contract <- SchemaRegistry.contracts() do
+      tool = contract["name"]
+      schema = contract["inputSchema"]
+      expanded = Compiler.expand!(schema, schema)
+      properties = Compiler.root_properties(expanded)
+      groups = Compiler.exclusive_groups(expanded)
+
+      for names <- subsets(Map.keys(properties)) do
+        arguments = Map.new(names, &{&1, sample_argument(&1, properties)})
+        collisions = Enum.filter(groups, &MapSet.subset?(&1, MapSet.new(names)))
+
+        case InputContract.validate(tool, arguments) do
+          {:ok, _} ->
+            assert collisions == [], "#{tool} accepted #{inspect(names)} against a conflict rule"
+
+          {:error, issues} ->
+            named = issue_arguments(issues, "conflict")
+
+            assert Enum.all?(collisions, &(&1 |> Enum.all?(fn field -> field in named end))),
+                   "#{tool} hid a conflict in #{inspect(names)}: #{inspect(issues)}"
+
+            assert follows_to_accepted_call?(tool, arguments, issues, properties),
+                   "#{tool} with #{inspect(names)} cannot follow #{inspect(issues)}"
+        end
+      end
+    end
+  end
+
   test "a mutual-exclusion conflict names the fields that actually collide" do
     assert {:error, issues} =
              InputContract.validate("find_actions", %{
@@ -319,6 +428,51 @@ defmodule EmisarWeb.MCP.InputContractTest do
 
     assert {:ok, _} =
              InputContract.validate("find_actions", %{"action_id" => "debugging.loadavg"})
+  end
+
+  defp follows_to_accepted_call?(tool, arguments, issues, properties) do
+    conflicting = issue_arguments(issues, "conflict")
+    removals = if conflicting == [], do: [[]], else: subsets(conflicting) -- [[]]
+
+    choices =
+      case issue_arguments(issues, "one_of") do
+        [] -> [[]]
+        alternatives -> Enum.map(alternatives, &[&1])
+      end
+
+    add = issue_arguments(issues, "required")
+
+    Enum.any?(for(removal <- removals, choice <- choices, do: {removal, choice}), fn {removal,
+                                                                                      choice} ->
+      next =
+        arguments
+        |> Map.drop(removal)
+        |> Map.merge(Map.new(add ++ choice, &{&1, sample_argument(&1, properties)}))
+
+      match?({:ok, _}, InputContract.validate(tool, next))
+    end)
+  end
+
+  defp issue_arguments(issues, code) do
+    for %{code: ^code, path: "$." <> argument} <- issues, do: argument
+  end
+
+  defp subsets(items) do
+    Enum.reduce(items, [[]], fn item, sets -> sets ++ Enum.map(sets, &[item | &1]) end)
+  end
+
+  defp sample_argument(name, properties) do
+    schema = Map.fetch!(properties, name)
+
+    cond do
+      Map.has_key?(@samples, name) -> @samples[name]
+      Map.has_key?(schema, "enum") -> hd(schema["enum"])
+      schema["type"] == "array" -> [hd(schema["items"]["enum"])]
+      schema["type"] == "boolean" -> true
+      schema["type"] == "integer" -> 5
+      schema["type"] == "object" -> %{}
+      true -> "text"
+    end
   end
 
   defp valid_action_args(overrides) do

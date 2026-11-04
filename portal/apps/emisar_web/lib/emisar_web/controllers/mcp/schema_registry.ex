@@ -122,6 +122,21 @@ defmodule EmisarWeb.MCP.SchemaRegistry.Compiler do
     Enum.uniq(forbidden_together ++ nested ++ alternatives ++ conditional)
   end
 
+  @doc """
+  Collects the argument sets of which one expanded object schema requires exactly
+  one, following allOf, so a refusal can ask for one of them rather than for all.
+  """
+  @spec required_alternatives(map()) :: [MapSet.t(String.t())]
+  def required_alternatives(schema) when is_map(schema) do
+    branches = Map.get(schema, "oneOf", [])
+    fields = for %{"required" => [field]} <- branches, do: field
+
+    own =
+      if fields != [] and length(fields) == length(branches), do: [MapSet.new(fields)], else: []
+
+    own ++ (schema |> Map.get("allOf", []) |> Enum.flat_map(&required_alternatives/1))
+  end
+
   # A branch that requires some arguments and forbids others makes each pair collide.
   defp branch_groups(branch, held) do
     required = held ++ Map.get(branch, "required", [])

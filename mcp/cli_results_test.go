@@ -428,6 +428,18 @@ func TestCLIToolErrorsExplainFailureAndSafeRecovery(t *testing.T) {
 	}
 }
 
+func TestCLIIssueMessagesCoverAlternativesAndOtherCodes(t *testing.T) {
+	for code, want := range map[string]string{
+		"one_of":   "Pass exactly one of these arguments.",
+		"conflict": "Remove one of the conflicting arguments.",
+		"schema":   "Does not match the tool's input schema or argument rules.",
+	} {
+		if got := cliErrorIssueMessage(cliErrorIssue{Code: code}, "", nil); got != want {
+			t.Errorf("%s message = %q, want %q", code, got, want)
+		}
+	}
+}
+
 func TestCLIToolValidationErrorsExplainFieldsWithoutEchoingValues(t *testing.T) {
 	arguments := []byte(`{"reason":"cli test","runner_refs":["secret-runner"],"scope":"global"}`)
 	inputSchema := []byte(`{"type":"object","properties":{"reason":{"$ref":"#/$defs/reason"},"runner_refs":{"type":"array","maxItems":2},"scope":{"type":"string","enum":["own","account"]},"missing":{"type":"string"}},"$defs":{"reason":{"type":"string","minLength":12}}}`)

@@ -17,13 +17,14 @@ defmodule EmisarWeb.MCP.ValidationError do
   @stages ~w(tool_call arguments action_arguments)
   @kinds ~w(missing unknown type format enum range size unique conflict dependency schema)
   @codes ~w(
-    required unknown unknown_arg type format range conflict dependency unique size schema
+    required one_of unknown unknown_arg type format range conflict dependency unique size schema
     max_length max_items enum allowed min max min_duration max_duration duration path
   )
   # One shared code→kind table: `details.kind` is derived from the first
   # rendered issue instead of a second per-caller classification.
   @kind_for_code %{
     "required" => "missing",
+    "one_of" => "missing",
     "unknown" => "unknown",
     "unknown_arg" => "unknown",
     "type" => "type",

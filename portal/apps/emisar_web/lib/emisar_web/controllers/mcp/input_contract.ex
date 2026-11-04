@@ -48,7 +48,8 @@ defmodule EmisarWeb.MCP.InputContract do
                   compiled: compiled,
                   integer_fields: integer_fields,
                   root_fields: root_fields,
-                  exclusive_groups: Compiler.exclusive_groups(expanded)
+                  exclusive_groups: Compiler.exclusive_groups(expanded),
+                  required_alternatives: Compiler.required_alternatives(expanded)
                 }}
              end)
 
@@ -87,7 +88,8 @@ defmodule EmisarWeb.MCP.InputContract do
           errors
           |> prefer_concrete_errors()
           |> Enum.sort_by(&error_priority(&1.rule))
-          |> Enum.flat_map(&error_issues(&1, contract, arguments))
+          |> Enum.flat_map(&error_issues/1)
+          |> state_cross_field_rules(contract, arguments)
           |> Enum.uniq()
           |> Enum.take(8)
 
@@ -95,25 +97,50 @@ defmodule EmisarWeb.MCP.InputContract do
     end
   end
 
-  # A mutual-exclusion violation is reported by JSON Schema as `not` or `oneOf` at
-  # the ROOT, so the generic translation emitted `conflict` at `$` — "something in
-  # your arguments conflicts", with no way to tell WHICH. A client cannot
-  # self-heal from that, and one stopped using find_actions entirely after
-  # sending `query` with `action_id`. The exclusive sets are declared in the
-  # schema, so name the ones the arguments actually supply. They describe root
-  # arguments, so a failure deeper in the arguments keeps its own path.
-  defp conflict_issues(contract, arguments, []) when is_map(arguments) do
+  # JSON Schema reports each failed rule and each failed alternative on its own, so
+  # the raw errors can ask for two arguments that exclude each other, ask for one
+  # that collides with an argument already supplied, report `conflict` at `$` with
+  # no way to tell which, or hide a collision behind a missing argument. A client
+  # cannot self-heal from that, and one stopped using find_actions entirely after
+  # sending `query` with `action_id`. Following a refusal must be able to reach an
+  # accepted call, so the refusal states the declared rules across the whole call.
+  # Only names the schema declares are ever reported.
+  defp state_cross_field_rules(issues, contract, arguments) when is_map(arguments) do
     supplied = arguments |> Map.keys() |> Enum.filter(&is_binary/1) |> MapSet.new()
+    issues = ask_for_one_alternative(issues, contract, supplied)
 
-    contract
-    |> Map.get(:exclusive_groups, [])
-    |> Enum.map(&MapSet.intersection(&1, supplied))
-    |> Enum.filter(&(MapSet.size(&1) > 1))
-    |> Enum.flat_map(&Enum.sort/1)
-    |> Enum.map(&ValidationError.issue([&1], :conflict))
+    asked =
+      for %{code: code, path: "$." <> field} <- issues,
+          code == "required",
+          into: MapSet.new(),
+          do: field
+
+    in_call = MapSet.union(supplied, asked)
+
+    collisions =
+      contract.exclusive_groups
+      |> Enum.filter(&MapSet.subset?(&1, in_call))
+      |> Enum.flat_map(&(&1 |> MapSet.intersection(supplied) |> Enum.sort()))
+      |> Enum.map(&ValidationError.issue([&1], :conflict))
+
+    case collisions do
+      [] -> issues
+      named -> named ++ Enum.reject(issues, &(&1 == ValidationError.issue([], :conflict)))
+    end
   end
 
-  defp conflict_issues(_contract, _arguments, _path), do: []
+  defp state_cross_field_rules(issues, _contract, _arguments), do: issues
+
+  defp ask_for_one_alternative(issues, contract, supplied) do
+    contract.required_alternatives
+    |> Enum.filter(&MapSet.disjoint?(&1, supplied))
+    |> Enum.reduce(issues, fn alternatives, issues ->
+      asked_for_all = Enum.map(alternatives, &ValidationError.issue([&1], :required))
+
+      Enum.map(alternatives, &ValidationError.issue([&1], :one_of)) ++
+        Enum.reject(issues, &(&1 in asked_for_all))
+    end)
+  end
 
   # JSONSchex accepts integral floats for `"type": "integer"` (Draft 2020-12
   # numeric equality), so a schema-valid `50.0` still reaches the handlers.
@@ -144,25 +171,13 @@ defmodule EmisarWeb.MCP.InputContract do
     if concrete == [], do: errors, else: concrete
   end
 
-  defp error_issues(
-         %{rule: :required, path: path, context: %{contrast: fields}},
-         _contract,
-         _args
-       )
+  defp error_issues(%{rule: :required, path: path, context: %{contrast: fields}})
        when is_list(fields) do
     path = safe_path(path)
     Enum.map(fields, &ValidationError.issue(path ++ [&1], :required))
   end
 
-  defp error_issues(%{rule: rule, path: path} = error, contract, args)
-       when rule in [:not, :oneOf] do
-    case conflict_issues(contract, args, safe_path(path)) do
-      [] -> [ValidationError.issue(safe_path(error.path), issue_code(rule))]
-      named -> named
-    end
-  end
-
-  defp error_issues(error, _contract, _args),
+  defp error_issues(error),
     do: [ValidationError.issue(safe_path(error.path), issue_code(error.rule))]
 
   defp safe_path(path), do: path |> Enum.reverse() |> Enum.reject(&is_integer/1)
@@ -178,7 +193,7 @@ defmodule EmisarWeb.MCP.InputContract do
   defp issue_code(:minItems), do: :min
   defp issue_code(:maxItems), do: :max_items
   defp issue_code(:uniqueItems), do: :unique
-  defp issue_code(:enum), do: :enum
+  defp issue_code(rule) when rule in [:enum, :const], do: :enum
   defp issue_code(rule) when rule in [:not, :oneOf], do: :conflict
   defp issue_code(_rule), do: :schema
 end
