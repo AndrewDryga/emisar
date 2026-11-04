@@ -13,7 +13,7 @@ execution:
     binary: mysql
     argv:
       - "-e"
-      - "SELECT table_schema, ROUND(SUM(data_length)/1024/1024, 2) AS data_mb, ROUND(SUM(index_length)/1024/1024, 2) AS idx_mb, ROUND(SUM(data_length+index_length)/1024/1024, 2) AS total_mb FROM information_schema.tables GROUP BY table_schema ORDER BY SUM(data_length+index_length) DESC;"
+      - "SET SESSION lock_wait_timeout=5 /*!50708 , max_execution_time=28000 */ /*M!100108 , max_statement_time=28 */; SELECT table_schema, ROUND(SUM(data_length)/1024/1024, 2) AS data_mb, ROUND(SUM(index_length)/1024/1024, 2) AS idx_mb, ROUND(SUM(data_length+index_length)/1024/1024, 2) AS total_mb FROM information_schema.tables GROUP BY table_schema ORDER BY SUM(data_length+index_length) DESC;"
   timeout: 30s
 output:
   parser: text

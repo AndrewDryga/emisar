@@ -10,9 +10,9 @@ execution:
   command:
     binary: psql
     argv:
-      - "-XAt"
+      - "-XAtq"
       - "-c"
-      - "SELECT s.pid, a.usename, a.application_name, s.ssl, s.version, s.cipher FROM pg_stat_ssl s JOIN pg_stat_activity a USING (pid) ORDER BY s.ssl DESC, s.pid LIMIT 100;"
+      - "SET LOCAL statement_timeout = '8s'; SET LOCAL lock_timeout = '5s'; SELECT s.pid, a.usename, a.application_name, s.ssl, s.version, s.cipher FROM pg_stat_ssl s JOIN pg_stat_activity a USING (pid) ORDER BY s.ssl DESC, s.pid LIMIT 100;"
   timeout: 10s
 output:
   parser: text

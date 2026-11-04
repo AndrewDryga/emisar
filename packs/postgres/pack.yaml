@@ -2,7 +2,7 @@ schema_version: 1
 
 id: postgres
 name: Postgres operations
-version: 0.2.21
+version: 0.2.22
 # Versions below this ran the reads that return live query text (activity_detail,
 # slow_queries and the other pg_stat_activity and pg_stat_statements reads) at
 # low risk, so they auto-ran under a policy that gates medium. They fail closed.
@@ -54,6 +54,7 @@ setup:
     - "Create the role with CREATE ROLE emisar LOGIN PASSWORD '...'; GRANT pg_monitor TO emisar; — pg_monitor covers the read actions without handing out superuser."
     - "Alternative to `PGPASSWORD`: put credentials in `~/.pgpass` (mode 0600) on the runner host — read from disk, so it needs no `inherit_env` entry."
     - High-risk mutators (terminate_backend, vacuum_table, reindex_concurrent) need a role with the matching privileges.
+    - Each read sets its own statement and lock limits with SET LOCAL, so a timed-out read stops on the server and a read behind a held lock fails in 5 seconds instead of waiting. SET LOCAL ends with the transaction, so this is safe behind PgBouncer.
   verify: postgres.uptime
 
 actions:

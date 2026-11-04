@@ -10,9 +10,9 @@ execution:
   command:
     binary: psql
     argv:
-      - "-XAt"
+      - "-XAtq"
       - "-c"
-      - "SELECT extname, extversion, n.nspname AS schema FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace ORDER BY extname;"
+      - "SET LOCAL statement_timeout = '8s'; SET LOCAL lock_timeout = '5s'; SELECT extname, extversion, n.nspname AS schema FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace ORDER BY extname;"
   timeout: 10s
 output:
   parser: text

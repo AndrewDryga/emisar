@@ -42,9 +42,9 @@ execution:
   command:
     binary: psql
     argv:
-      - "-XAt"
+      - "-XAtq"
       - "-c"
-      - "SELECT n.nspname AS schema, c.relname AS table, pg_size_pretty(pg_total_relation_size(c.oid)) AS total, pg_size_pretty(pg_relation_size(c.oid)) AS heap, pg_size_pretty(pg_indexes_size(c.oid)) AS indexes FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind = 'r' AND n.nspname = '{{ args.schema }}' ORDER BY pg_total_relation_size(c.oid) DESC LIMIT {{ args.limit }};"
+      - "SET LOCAL statement_timeout = '28s'; SET LOCAL lock_timeout = '5s'; SELECT n.nspname AS schema, c.relname AS table, pg_size_pretty(pg_total_relation_size(c.oid)) AS total, pg_size_pretty(pg_relation_size(c.oid)) AS heap, pg_size_pretty(pg_indexes_size(c.oid)) AS indexes FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind = 'r' AND n.nspname = '{{ args.schema }}' ORDER BY pg_total_relation_size(c.oid) DESC LIMIT {{ args.limit }};"
   timeout: 30s
 
 output:

@@ -13,7 +13,7 @@ execution:
     binary: mysql
     argv:
       - "-e"
-      - "SELECT object_schema, object_name, index_name FROM performance_schema.table_io_waits_summary_by_index_usage WHERE index_name IS NOT NULL AND count_star = 0 AND object_schema NOT IN ('mysql','performance_schema') ORDER BY object_schema, object_name;"
+      - "SET SESSION lock_wait_timeout=5 /*!50708 , max_execution_time=13000 */ /*M!100108 , max_statement_time=13 */; SELECT object_schema, object_name, index_name FROM performance_schema.table_io_waits_summary_by_index_usage WHERE index_name IS NOT NULL AND count_star = 0 AND object_schema NOT IN ('mysql','performance_schema') ORDER BY object_schema, object_name;"
   timeout: 15s
 output:
   parser: text

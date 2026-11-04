@@ -10,9 +10,9 @@ execution:
   command:
     binary: psql
     argv:
-      - "-XAt"
+      - "-XAtq"
       - "-c"
-      - "SELECT line_number, type, database, user_name, address, netmask, auth_method, array(SELECT o FROM unnest(options) AS o WHERE o NOT LIKE 'ldapbindpasswd=%' AND o NOT LIKE 'radiussecrets=%') AS options, error FROM pg_hba_file_rules ORDER BY line_number;"
+      - "SET LOCAL statement_timeout = '8s'; SET LOCAL lock_timeout = '5s'; SELECT line_number, type, database, user_name, address, netmask, auth_method, array(SELECT o FROM unnest(options) AS o WHERE o NOT LIKE 'ldapbindpasswd=%' AND o NOT LIKE 'radiussecrets=%') AS options, error FROM pg_hba_file_rules ORDER BY line_number;"
   timeout: 10s
 output:
   parser: text

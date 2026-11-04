@@ -13,7 +13,7 @@ execution:
     binary: mysql
     argv:
       - "-e"
-      - "SELECT user, host, plugin, account_locked, password_last_changed FROM mysql.user ORDER BY user, host"
+      - "SET SESSION lock_wait_timeout=5 /*!50708 , max_execution_time=13000 */ /*M!100108 , max_statement_time=13 */; SELECT user, host, plugin, account_locked, password_last_changed FROM mysql.user ORDER BY user, host"
   timeout: 15s
 output:
   parser: text

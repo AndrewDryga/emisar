@@ -16,9 +16,9 @@ execution:
   command:
     binary: psql
     argv:
-      - "-XAt"
+      - "-XAtq"
       - "-c"
-      - "SELECT pid, usename, application_name, EXTRACT(EPOCH FROM (now()-query_start))::int AS age_sec, wait_event_type, wait_event, substring(query, 1, 300) AS query FROM pg_stat_activity WHERE state='active' AND pid <> pg_backend_pid() ORDER BY query_start ASC NULLS LAST LIMIT 20;"
+      - "SET LOCAL statement_timeout = '8s'; SET LOCAL lock_timeout = '5s'; SELECT pid, usename, application_name, EXTRACT(EPOCH FROM (now()-query_start))::int AS age_sec, wait_event_type, wait_event, substring(query, 1, 300) AS query FROM pg_stat_activity WHERE state='active' AND pid <> pg_backend_pid() ORDER BY query_start ASC NULLS LAST LIMIT 20;"
   timeout: 10s
 output:
   parser: text

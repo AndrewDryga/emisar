@@ -46,9 +46,9 @@ execution:
   command:
     binary: psql
     argv:
-      - "-XAt"
+      - "-XAtq"
       - "-c"
-      - "SELECT calls, round(mean_exec_time::numeric, 2) AS mean_ms, round(total_exec_time::numeric, 2) AS total_ms, left(query, 200) AS query FROM pg_stat_statements WHERE calls >= {{ args.min_calls }} ORDER BY mean_exec_time DESC LIMIT {{ args.limit }};"
+      - "SET LOCAL statement_timeout = '13s'; SET LOCAL lock_timeout = '5s'; SELECT calls, round(mean_exec_time::numeric, 2) AS mean_ms, round(total_exec_time::numeric, 2) AS total_ms, left(query, 200) AS query FROM pg_stat_statements WHERE calls >= {{ args.min_calls }} ORDER BY mean_exec_time DESC LIMIT {{ args.limit }};"
   timeout: 15s
 
 output:

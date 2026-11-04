@@ -10,9 +10,9 @@ execution:
   command:
     binary: psql
     argv:
-      - "-XAt"
+      - "-XAtq"
       - "-c"
-      - "SELECT schemaname || '.' || relname AS table, seq_scan, COALESCE(idx_scan, 0) AS idx_scan, seq_tup_read, idx_tup_fetch, ROUND(100.0 * seq_scan / NULLIF(seq_scan + COALESCE(idx_scan, 0), 0), 2) AS seq_scan_pct, n_live_tup FROM pg_stat_user_tables WHERE seq_scan > COALESCE(idx_scan, 0) AND seq_tup_read > 100000 ORDER BY seq_tup_read DESC LIMIT 30;"
+      - "SET LOCAL statement_timeout = '13s'; SET LOCAL lock_timeout = '5s'; SELECT schemaname || '.' || relname AS table, seq_scan, COALESCE(idx_scan, 0) AS idx_scan, seq_tup_read, idx_tup_fetch, ROUND(100.0 * seq_scan / NULLIF(seq_scan + COALESCE(idx_scan, 0), 0), 2) AS seq_scan_pct, n_live_tup FROM pg_stat_user_tables WHERE seq_scan > COALESCE(idx_scan, 0) AND seq_tup_read > 100000 ORDER BY seq_tup_read DESC LIMIT 30;"
   timeout: 15s
 output:
   parser: text

@@ -10,9 +10,9 @@ execution:
   command:
     binary: psql
     argv:
-      - "-XAt"
+      - "-XAtq"
       - "-c"
-      - "SELECT * FROM pg_stat_archiver;"
+      - "SET LOCAL statement_timeout = '8s'; SET LOCAL lock_timeout = '5s'; SELECT * FROM pg_stat_archiver;"
   timeout: 10s
 output:
   parser: text

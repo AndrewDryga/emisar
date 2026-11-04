@@ -20,9 +20,9 @@ execution:
   command:
     binary: psql
     argv:
-      - "-XAt"
+      - "-XAtq"
       - "-c"
-      - "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) {{ args.query }}"
+      - "SET LOCAL statement_timeout = '298s'; SET LOCAL lock_timeout = '5s'; EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) {{ args.query }}"
   env:
     PGOPTIONS: "-c default_transaction_read_only=on"
   timeout: 5m

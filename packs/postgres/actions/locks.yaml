@@ -28,9 +28,9 @@ execution:
   command:
     binary: psql
     argv:
-      - "-XAt"
+      - "-XAtq"
       - "-c"
-      - "SELECT blocked.pid AS blocked_pid, blocked.usename AS blocked_user, left(blocked.query, 120) AS blocked_query, blocking.pid AS blocking_pid, blocking.usename AS blocking_user, left(blocking.query, 120) AS blocking_query, blocked.wait_event_type, blocked.wait_event FROM pg_stat_activity blocked JOIN pg_stat_activity blocking ON blocking.pid = ANY(pg_blocking_pids(blocked.pid)) WHERE blocked.wait_event_type IS NOT NULL ORDER BY blocked.pid LIMIT 50;"
+      - "SET LOCAL statement_timeout = '8s'; SET LOCAL lock_timeout = '5s'; SELECT blocked.pid AS blocked_pid, blocked.usename AS blocked_user, left(blocked.query, 120) AS blocked_query, blocking.pid AS blocking_pid, blocking.usename AS blocking_user, left(blocking.query, 120) AS blocking_query, blocked.wait_event_type, blocked.wait_event FROM pg_stat_activity blocked JOIN pg_stat_activity blocking ON blocking.pid = ANY(pg_blocking_pids(blocked.pid)) WHERE blocked.wait_event_type IS NOT NULL ORDER BY blocked.pid LIMIT 50;"
   timeout: 10s
 
 output:

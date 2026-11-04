@@ -49,6 +49,38 @@ cases:
         retry_every: 250ms
     expect:
       stdout_contains: [buffers_clean, buffers_alloc, checkpoints_timed, checkpoints_req, buffers_checkpoint, stats_reset]
+  # A read behind a held lock must fail fast with the server's own error, and leave
+  # no backend waiting: killing psql at the action timeout would not stop one.
+  - name: postgres.largest_tables_full-fails-fast-behind-a-held-lock
+    action: postgres.largest_tables_full
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - nohup psql -XAtq -c "BEGIN; LOCK TABLE orders IN ACCESS EXCLUSIVE MODE; SELECT pg_sleep(60); COMMIT;" >/tmp/packtest-lock-holder.log 2>&1 &
+      - argv: [psql, -XAt, -c, "SELECT 'lock-held' FROM pg_locks l JOIN pg_class c ON c.oid = l.relation WHERE c.relname = 'orders' AND l.mode = 'AccessExclusiveLock' AND l.granted"]
+        expect:
+          stdout_contains: [lock-held]
+        retry_for: 10s
+        retry_every: 250ms
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [canceling statement due to lock timeout]
+    probes:
+      - argv:
+          - /bin/sh
+          - -c
+          - test "$(psql -XAt -c "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND query LIKE 'SET LOCAL%'")" = 0 && echo no-backend-left-waiting
+        expect:
+          stdout_contains: [no-backend-left-waiting]
+  - name: postgres.explain_analyze-keeps-its-json-output-with-its-limits
+    action: postgres.explain_analyze
+    args:
+      query: "SELECT count(*) FROM orders"
+    expect:
+      json:
+        /0/Plan/Node Type: Aggregate
   - name: postgres.progress-vacuum-active
     action: postgres.progress_vacuum
     arrange:

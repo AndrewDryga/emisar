@@ -20,9 +20,9 @@ execution:
   command:
     binary: psql
     argv:
-      - "-XAt"
+      - "-XAtq"
       - "-c"
-      - "SELECT version(); SELECT pg_postmaster_start_time(); SELECT count(*) FROM pg_stat_activity;"
+      - "SET LOCAL statement_timeout = '8s'; SET LOCAL lock_timeout = '5s'; SELECT version(); SELECT pg_postmaster_start_time(); SELECT count(*) FROM pg_stat_activity;"
   timeout: 10s
 
 output:

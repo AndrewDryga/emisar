@@ -10,9 +10,9 @@ execution:
   command:
     binary: psql
     argv:
-      - "-XAt"
+      - "-XAtq"
       - "-c"
-      - "SELECT pg_is_in_recovery() AS in_recovery, CASE WHEN pg_is_in_recovery() THEN NULL ELSE pg_current_wal_lsn() END AS current_lsn, pg_last_wal_receive_lsn() AS last_receive_lsn, pg_last_wal_replay_lsn() AS last_replay_lsn, pg_last_xact_replay_timestamp() AS last_replay_time;"
+      - "SET LOCAL statement_timeout = '8s'; SET LOCAL lock_timeout = '5s'; SELECT pg_is_in_recovery() AS in_recovery, CASE WHEN pg_is_in_recovery() THEN NULL ELSE pg_current_wal_lsn() END AS current_lsn, pg_last_wal_receive_lsn() AS last_receive_lsn, pg_last_wal_replay_lsn() AS last_replay_lsn, pg_last_xact_replay_timestamp() AS last_replay_time;"
   timeout: 10s
 output:
   parser: text

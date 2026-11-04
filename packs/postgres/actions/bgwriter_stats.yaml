@@ -13,12 +13,16 @@ execution:
       - -c
       - |
         set -eu
-        exec psql -Xx --no-password -v ON_ERROR_STOP=1 <<'SQL'
+        exec psql -Xqx --no-password -v ON_ERROR_STOP=1 <<'SQL'
+        BEGIN;
+        SET LOCAL statement_timeout = '8s';
+        SET LOCAL lock_timeout = '5s';
         SELECT * FROM pg_stat_bgwriter;
         SELECT current_setting('server_version_num')::integer >= 170000 AS separate_checkpointer \gset
         \if :separate_checkpointer
         SELECT * FROM pg_stat_checkpointer;
         \endif
+        COMMIT;
         SQL
   timeout: 10s
 output:

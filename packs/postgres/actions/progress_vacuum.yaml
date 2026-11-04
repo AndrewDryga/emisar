@@ -10,9 +10,9 @@ execution:
   command:
     binary: psql
     argv:
-      - "-XAt"
+      - "-XAtq"
       - "-c"
-      - "SELECT pid, datname, p.relid::regclass AS table, phase, heap_blks_total, heap_blks_scanned, heap_blks_vacuumed, COALESCE(to_jsonb(p)->>'num_dead_item_ids', to_jsonb(p)->>'num_dead_tuples')::bigint AS num_dead_item_ids FROM pg_stat_progress_vacuum p;"
+      - "SET LOCAL statement_timeout = '8s'; SET LOCAL lock_timeout = '5s'; SELECT pid, datname, p.relid::regclass AS table, phase, heap_blks_total, heap_blks_scanned, heap_blks_vacuumed, COALESCE(to_jsonb(p)->>'num_dead_item_ids', to_jsonb(p)->>'num_dead_tuples')::bigint AS num_dead_item_ids FROM pg_stat_progress_vacuum p;"
   timeout: 10s
 output:
   parser: text

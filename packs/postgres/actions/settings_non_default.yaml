@@ -10,9 +10,9 @@ execution:
   command:
     binary: psql
     argv:
-      - "-XAt"
+      - "-XAtq"
       - "-c"
-      - "SELECT name, setting, unit, source, sourcefile, sourceline FROM pg_settings WHERE source NOT IN ('default', 'override') ORDER BY name;"
+      - "SET LOCAL statement_timeout = '13s'; SET LOCAL lock_timeout = '5s'; SELECT name, setting, unit, source, sourcefile, sourceline FROM pg_settings WHERE source NOT IN ('default', 'override') ORDER BY name;"
   timeout: 15s
 output:
   parser: text

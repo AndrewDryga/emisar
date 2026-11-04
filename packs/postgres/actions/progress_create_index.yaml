@@ -10,9 +10,9 @@ execution:
   command:
     binary: psql
     argv:
-      - "-XAt"
+      - "-XAtq"
       - "-c"
-      - "SELECT pid, datname, p.relid::regclass AS table, p.index_relid::regclass AS index, phase, blocks_total, blocks_done, tuples_total, tuples_done FROM pg_stat_progress_create_index p;"
+      - "SET LOCAL statement_timeout = '8s'; SET LOCAL lock_timeout = '5s'; SELECT pid, datname, p.relid::regclass AS table, p.index_relid::regclass AS index, phase, blocks_total, blocks_done, tuples_total, tuples_done FROM pg_stat_progress_create_index p;"
   timeout: 10s
 output:
   parser: text

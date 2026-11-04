@@ -114,6 +114,32 @@ cases:
   - action: mysql.users_grants
     expect:
       stdout_contains: [root]
+  # A read behind a held metadata lock must fail fast with the server's own error,
+  # and leave nothing waiting: killing the client would leave it there for up to the
+  # default lock_wait_timeout, one year.
+  - name: mysql.users_grants-fails-fast-behind-a-held-lock
+    action: mysql.users_grants
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - nohup mysql -e "LOCK TABLES mysql.user WRITE; SELECT SLEEP(60)" >/tmp/packtest-lock-holder.log 2>&1 &
+      - argv: [mysql, -NBe, "SELECT 'lock-held' FROM performance_schema.metadata_locks WHERE object_schema = 'mysql' AND object_name = 'user' AND lock_type = 'SHARED_NO_READ_WRITE' AND lock_status = 'GRANTED'"]
+        expect:
+          stdout_contains: [lock-held]
+        retry_for: 10s
+        retry_every: 250ms
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [Lock wait timeout exceeded]
+    probes:
+      - argv:
+          - /bin/sh
+          - -c
+          - test "$(mysql -NBe "SELECT COUNT(*) FROM performance_schema.processlist WHERE state = 'Waiting for table metadata lock'")" = 0 && echo nothing-left-waiting
+        expect:
+          stdout_contains: [nothing-left-waiting]
   - action: mysql.variables
     expect:
       stdout_contains: [innodb_buffer_pool_size]

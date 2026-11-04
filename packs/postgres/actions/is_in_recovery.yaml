@@ -13,9 +13,9 @@ execution:
   command:
     binary: psql
     argv:
-      - "-XAt"
+      - "-XAtq"
       - "-c"
-      - "SELECT pg_is_in_recovery();"
+      - "SET LOCAL statement_timeout = '8s'; SET LOCAL lock_timeout = '5s'; SELECT pg_is_in_recovery();"
   timeout: 10s
 output:
   parser: text

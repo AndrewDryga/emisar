@@ -13,7 +13,7 @@ execution:
     binary: mysql
     argv:
       - "-e"
-      - "SHOW BINARY LOGS"
+      - "SET SESSION lock_wait_timeout=5 /*!50708 , max_execution_time=8000 */ /*M!100108 , max_statement_time=8 */; SHOW BINARY LOGS"
   timeout: 10s
 output:
   parser: text

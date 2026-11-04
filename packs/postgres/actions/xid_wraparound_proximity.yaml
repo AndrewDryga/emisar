@@ -13,9 +13,9 @@ execution:
   command:
     binary: psql
     argv:
-      - "-XAt"
+      - "-XAtq"
       - "-c"
-      - "SELECT datname, age(datfrozenxid) AS xid_age, ROUND(100.0 * age(datfrozenxid) / 2147483648.0, 2) AS pct_to_wraparound FROM pg_database ORDER BY age(datfrozenxid) DESC;"
+      - "SET LOCAL statement_timeout = '8s'; SET LOCAL lock_timeout = '5s'; SELECT datname, age(datfrozenxid) AS xid_age, ROUND(100.0 * age(datfrozenxid) / 2147483648.0, 2) AS pct_to_wraparound FROM pg_database ORDER BY age(datfrozenxid) DESC;"
   timeout: 10s
 output:
   parser: text

@@ -2,7 +2,7 @@ schema_version: 1
 
 id: mysql
 name: MySQL / MariaDB operations
-version: 0.1.13
+version: 0.1.14
 # Versions below this ran processlist, innodb_status, slow_queries and
 # lock_waits, which return live SQL text, at low risk. They fail closed.
 retired_below: 0.1.12
@@ -48,6 +48,7 @@ setup:
   notes:
     - "Cleanest credential store: `~/.my.cnf` (mode 0600) on the runner host with [client] user/password/host — read from disk, so it needs no `inherit_env` entry."
     - The username is never read from the environment; set it in `~/.my.cnf`, otherwise it defaults to the runner's OS user.
+    - Each read sets its own session limits, so a timed-out read stops on the server and a read behind a metadata lock fails in 5 seconds instead of waiting up to a year, the default. `max_execution_time` on MySQL and `max_statement_time` on MariaDB each apply only on their own server.
     - Mutators (kill_query, kill_connection, flush_logs, analyze_table, optimize_table) need a user with PROCESS/RELOAD and the relevant table privileges.
   verify: mysql.uptime
 

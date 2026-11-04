@@ -10,9 +10,9 @@ execution:
   command:
     binary: psql
     argv:
-      - "-XAt"
+      - "-XAtq"
       - "-c"
-      - "SELECT array_agg(indexrelid::regclass::text ORDER BY indexrelid) AS indexes, indrelid::regclass AS table, indkey::text AS columns FROM pg_index GROUP BY indrelid, indkey HAVING count(*) > 1 LIMIT 50;"
+      - "SET LOCAL statement_timeout = '28s'; SET LOCAL lock_timeout = '5s'; SELECT array_agg(indexrelid::regclass::text ORDER BY indexrelid) AS indexes, indrelid::regclass AS table, indkey::text AS columns FROM pg_index GROUP BY indrelid, indkey HAVING count(*) > 1 LIMIT 50;"
   timeout: 30s
 output:
   parser: text

@@ -16,9 +16,9 @@ execution:
   command:
     binary: psql
     argv:
-      - "-XAt"
+      - "-XAtq"
       - "-c"
-      - "EXPLAIN (FORMAT JSON, VERBOSE) {{ args.query }}"
+      - "SET LOCAL statement_timeout = '28s'; SET LOCAL lock_timeout = '5s'; EXPLAIN (FORMAT JSON, VERBOSE) {{ args.query }}"
   timeout: 30s
 output:
   parser: json

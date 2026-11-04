@@ -10,9 +10,9 @@ execution:
   command:
     binary: psql
     argv:
-      - "-XAt"
+      - "-XAtq"
       - "-c"
-      - "SELECT datname, xact_commit, xact_rollback, blks_read, blks_hit, ROUND(100.0 * blks_hit / NULLIF(blks_hit + blks_read, 0), 2) AS cache_hit_pct, tup_returned, tup_fetched, tup_inserted, tup_updated, tup_deleted, deadlocks, conflicts, temp_files, pg_size_pretty(temp_bytes) AS temp_size FROM pg_stat_database WHERE datname IS NOT NULL ORDER BY (blks_read + blks_hit) DESC LIMIT 30;"
+      - "SET LOCAL statement_timeout = '13s'; SET LOCAL lock_timeout = '5s'; SELECT datname, xact_commit, xact_rollback, blks_read, blks_hit, ROUND(100.0 * blks_hit / NULLIF(blks_hit + blks_read, 0), 2) AS cache_hit_pct, tup_returned, tup_fetched, tup_inserted, tup_updated, tup_deleted, deadlocks, conflicts, temp_files, pg_size_pretty(temp_bytes) AS temp_size FROM pg_stat_database WHERE datname IS NOT NULL ORDER BY (blks_read + blks_hit) DESC LIMIT 30;"
   timeout: 15s
 output:
   parser: text

@@ -13,9 +13,9 @@ execution:
   command:
     binary: psql
     argv:
-      - "-XAt"
+      - "-XAtq"
       - "-c"
-      - "SELECT schemaname || '.' || relname AS table, n_live_tup, n_dead_tup, ROUND(100.0 * n_dead_tup / NULLIF(n_live_tup + n_dead_tup, 0), 2) AS dead_pct, last_vacuum, last_autovacuum FROM pg_stat_user_tables WHERE n_live_tup + n_dead_tup > 10000 ORDER BY n_dead_tup DESC LIMIT 30;"
+      - "SET LOCAL statement_timeout = '13s'; SET LOCAL lock_timeout = '5s'; SELECT schemaname || '.' || relname AS table, n_live_tup, n_dead_tup, ROUND(100.0 * n_dead_tup / NULLIF(n_live_tup + n_dead_tup, 0), 2) AS dead_pct, last_vacuum, last_autovacuum FROM pg_stat_user_tables WHERE n_live_tup + n_dead_tup > 10000 ORDER BY n_dead_tup DESC LIMIT 30;"
   timeout: 15s
 output:
   parser: text

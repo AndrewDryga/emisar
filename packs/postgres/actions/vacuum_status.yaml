@@ -40,9 +40,9 @@ execution:
   command:
     binary: psql
     argv:
-      - "-XAt"
+      - "-XAtq"
       - "-c"
-      - "SELECT schemaname, relname, n_live_tup, n_dead_tup, round(100 * n_dead_tup::numeric / NULLIF(n_live_tup + n_dead_tup, 0), 2) AS dead_pct, last_vacuum, last_autovacuum FROM pg_stat_user_tables WHERE schemaname = '{{ args.schema }}' ORDER BY n_dead_tup DESC LIMIT {{ args.limit }};"
+      - "SET LOCAL statement_timeout = '28s'; SET LOCAL lock_timeout = '5s'; SELECT schemaname, relname, n_live_tup, n_dead_tup, round(100 * n_dead_tup::numeric / NULLIF(n_live_tup + n_dead_tup, 0), 2) AS dead_pct, last_vacuum, last_autovacuum FROM pg_stat_user_tables WHERE schemaname = '{{ args.schema }}' ORDER BY n_dead_tup DESC LIMIT {{ args.limit }};"
   timeout: 30s
 
 output:
