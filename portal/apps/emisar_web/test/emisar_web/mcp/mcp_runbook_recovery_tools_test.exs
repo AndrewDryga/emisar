@@ -82,7 +82,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
       invalid = call(conn, tool, %{"limit" => limit})
 
       assert invalid["error"]["message"] ==
-               "Tool arguments do not match the published input schema."
+               "Tool arguments do not match the tool's input schema or argument rules."
 
       assert invalid["error"]["details"] == %{
                "schema_version" => 1,

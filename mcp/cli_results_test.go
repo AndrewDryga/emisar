@@ -431,14 +431,14 @@ func TestCLIToolErrorsExplainFailureAndSafeRecovery(t *testing.T) {
 func TestCLIToolValidationErrorsExplainFieldsWithoutEchoingValues(t *testing.T) {
 	arguments := []byte(`{"reason":"cli test","runner_refs":["secret-runner"],"scope":"global"}`)
 	inputSchema := []byte(`{"type":"object","properties":{"reason":{"$ref":"#/$defs/reason"},"runner_refs":{"type":"array","maxItems":2},"scope":{"type":"string","enum":["own","account"]},"missing":{"type":"string"}},"$defs":{"reason":{"type":"string","minLength":12}}}`)
-	raw := []byte(`{"ok":false,"dispatch_started":false,"error":{"code":"invalid_args","message":"Tool arguments do not match the published input schema.","retryable":false,"details":{"schema_version":1,"stage":"arguments","kind":"range","issues":[{"path":"$.reason","code":"min","message":"Is too short."},{"path":"$.runner_refs","code":"max_items"},{"path":"$.scope","code":"enum"},{"path":"$.missing","code":"required"}]}}}`)
+	raw := []byte(`{"ok":false,"dispatch_started":false,"error":{"code":"invalid_args","message":"Tool arguments do not match the tool's input schema or argument rules.","retryable":false,"details":{"schema_version":1,"stage":"arguments","kind":"range","issues":[{"path":"$.reason","code":"min","message":"Is too short."},{"path":"$.runner_refs","code":"max_items"},{"path":"$.scope","code":"enum"},{"path":"$.missing","code":"required"}]}}}`)
 	var stdout bytes.Buffer
 	if err := writeCLIToolOutputWithSchema(&stdout, executeRunbookToolName, arguments, raw, inputSchema, "immersive", false, false); err != nil {
 		t.Fatal(err)
 	}
 	output := stdout.String()
 	for _, want := range []string{
-		"Error: Tool arguments do not match the published input schema.",
+		"Error: Tool arguments do not match the tool's input schema or argument rules.",
 		"Code  invalid_args",
 		"Problems",
 		"reason  Use at least 12 characters.",
@@ -485,7 +485,7 @@ func TestCLIProcessLoadsPublishedConstraintForValidationError(t *testing.T) {
 			if request.Method != "tools/call" || request.Params.Name != executeRunbookToolName {
 				t.Errorf("tool call = %s %s", request.Method, request.Params.Name)
 			}
-			writeCLIResult(t, w, r, `{"structuredContent":{"ok":false,"dispatch_started":false,"error":{"code":"invalid_args","message":"Tool arguments do not match the published input schema.","retryable":false,"details":{"schema_version":1,"stage":"arguments","kind":"range","issues":[{"path":"$.reason","code":"min"}]}}},"content":[],"isError":true}`)
+			writeCLIResult(t, w, r, `{"structuredContent":{"ok":false,"dispatch_started":false,"error":{"code":"invalid_args","message":"Tool arguments do not match the tool's input schema or argument rules.","retryable":false,"details":{"schema_version":1,"stage":"arguments","kind":"range","issues":[{"path":"$.reason","code":"min"}]}}},"content":[],"isError":true}`)
 		case 2:
 			if request.Method != "tools/list" || request.Params.Name != "" {
 				t.Errorf("schema call = %s %s", request.Method, request.Params.Name)

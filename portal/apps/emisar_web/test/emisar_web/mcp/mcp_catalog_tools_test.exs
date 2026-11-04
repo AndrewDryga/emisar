@@ -303,7 +303,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
       invalid = call(conn, "list_runners", arguments)
 
       assert invalid["error"]["message"] ==
-               "Tool arguments do not match the published input schema."
+               "Tool arguments do not match the tool's input schema or argument rules."
 
       assert invalid["error"]["details"]["kind"] == "type"
     end
@@ -313,7 +313,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     junk = call(conn, "list_runners", %{"limit" => "many"})
 
     assert junk["error"]["message"] ==
-             "Tool arguments do not match the published input schema."
+             "Tool arguments do not match the tool's input schema or argument rules."
 
     out_of_range = call(conn, "list_runners", %{"limit" => 51})
     assert out_of_range["error"]["details"]["kind"] == "range"

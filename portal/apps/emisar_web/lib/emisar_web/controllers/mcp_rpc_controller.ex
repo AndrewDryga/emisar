@@ -453,7 +453,8 @@ defmodule EmisarWeb.MCPRpcController do
          fixed_tool_result(
            conn,
            name,
-           ValidationError.payload("Tool arguments do not match the published input schema.",
+           ValidationError.payload(
+             "Tool arguments do not match the tool's input schema or argument rules.",
              stage: :arguments,
              issues: issues
            ),
