@@ -20,8 +20,8 @@ import (
 )
 
 const (
-	publisherVersion = "1.8.5"
-	publisherSHA256  = "2d151ac57275c9a6684d9d22b1cba81058bab195ea0a162e8fce3c6a5ec32812"
+	publisherVersion = "1.8.6"
+	publisherSHA256  = "1fbe93fc0783c2394d8012c8d6e50a59e98cb2cc2d216264cc69f405d0e21340"
 	publisherURL     = "https://github.com/modelcontextprotocol/registry/releases/download/v" + publisherVersion + "/mcp-publisher_linux_amd64.tar.gz"
 )
 
