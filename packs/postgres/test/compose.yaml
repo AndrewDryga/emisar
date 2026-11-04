@@ -16,3 +16,37 @@ services:
       start_period: 30s
       start_interval: 1s
       retries: 10
+
+  # Poolers between the action and the server, in the two shapes an action's
+  # startup options fare worst: this one refuses them, and the next one drops them
+  # in silence. One server connection each, so a limit that outlived its transaction
+  # would show on the next read.
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.24.1-p1@sha256:3db3d7223e93af52b4116f642951a1a5fa44702a88c2a59cf7562cac19320c9e
+    environment: &pgbouncer-environment
+      DB_HOST: postgres
+      DB_USER: postgres
+      DB_PASSWORD: packtest-canary-postgres-2a6e1c
+      DB_NAME: testdb
+      AUTH_TYPE: scram-sha-256
+      POOL_MODE: transaction
+      DEFAULT_POOL_SIZE: "1"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck: &pgbouncer-healthcheck
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1"]
+      interval: 2s
+      start_period: 10s
+      start_interval: 1s
+      retries: 15
+
+  pgbouncer-dropping-options:
+    image: edoburu/pgbouncer:v1.24.1-p1@sha256:3db3d7223e93af52b4116f642951a1a5fa44702a88c2a59cf7562cac19320c9e
+    environment:
+      <<: *pgbouncer-environment
+      IGNORE_STARTUP_PARAMETERS: extra_float_digits,options
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck: *pgbouncer-healthcheck

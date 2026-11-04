@@ -15,8 +15,26 @@ func TestValidatePackDBReadBounds(t *testing.T) {
 		id      string
 		binary  string
 		argv    []string
+		env     map[string]string
 		wantErr string
 	}{
+		{
+			// The shape that wrote through a pooler while promising read-only.
+			name:    "a startup option set by the action",
+			id:      "fixture.read",
+			binary:  "psql",
+			argv:    []string{"-XAtq", "-c", bounded},
+			env:     map[string]string{"PGOPTIONS": "-c default_transaction_read_only=on"},
+			wantErr: "fixture.read (PGOPTIONS",
+		},
+		{
+			name:    "a startup option on an exempt action",
+			id:      "postgres.vacuum_table",
+			binary:  "psql",
+			argv:    []string{"-XAt", "-c", "VACUUM orders"},
+			env:     map[string]string{"PGOPTIONS": "-c lock_timeout=5s"},
+			wantErr: "postgres.vacuum_table (PGOPTIONS",
+		},
 		{name: "bounded psql", id: "fixture.read", binary: "psql", argv: []string{"-XAtq", "-c", bounded}},
 		{name: "bounded mysql", id: "fixture.read", binary: "mysql", argv: []string{"-e", boundedMySQL}},
 		{name: "another client", id: "fixture.read", binary: "redis-cli", argv: []string{"INFO"}},
@@ -58,6 +76,7 @@ func TestValidatePackDBReadBounds(t *testing.T) {
 			}
 			action := encodeFixtureAction(t, test.id, map[string]any{
 				"command": map[string]any{"binary": test.binary, "argv": test.argv},
+				"env":     test.env,
 			})
 			if err := os.WriteFile(filepath.Join(actionDir, "fixture.yaml"), action, 0o644); err != nil {
 				t.Fatal(err)

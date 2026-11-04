@@ -48,6 +48,7 @@ type packDBBoundAction struct {
 			Binary string   `yaml:"binary"`
 			Argv   []string `yaml:"argv"`
 		} `yaml:"command"`
+		Env map[string]string `yaml:"env"`
 	} `yaml:"execution"`
 }
 
@@ -61,6 +62,13 @@ func validatePackDBReadBounds(input packActionLintInput) error {
 		var action packDBBoundAction
 		if err := yaml.Unmarshal(data, &action); err != nil {
 			return fmt.Errorf("parse %s: %w", path, err)
+		}
+		// A startup option depends on what sits between the action and the server.
+		// PgBouncer refuses an unknown one by default, and before 1.26 one that
+		// ignores the options parameter drops it in silence: a read-only option set
+		// this way let a query write.
+		if _, set := action.Execution.Env["PGOPTIONS"]; set {
+			failures = append(failures, fmt.Sprintf("%s (PGOPTIONS, which a pooler can refuse or drop; use SET LOCAL in the program)", action.ID))
 		}
 		if _, exempt := packDBBoundExemptActions[action.ID]; exempt {
 			continue

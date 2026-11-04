@@ -1,4 +1,4 @@
-services: [postgres]
+services: [postgres, pgbouncer, pgbouncer-dropping-options]
 versions:
   - version: "18.6"
     digest: "@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280"
@@ -105,6 +105,73 @@ cases:
           - test "$(psql -XAt -c "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND query LIKE 'SET LOCAL%'")" = 0 && echo no-backend-left-waiting
         expect:
           stdout_contains: [no-backend-left-waiting]
+  # The action runs a query an operator or model wrote, and its promise is that the
+  # query cannot write. That promise must hold however the connection is made.
+  - name: postgres.explain_analyze-refuses-a-write
+    action: postgres.explain_analyze
+    args:
+      query: "WITH gone AS (DELETE FROM orders RETURNING 1) SELECT count(*) FROM gone"
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [read-only transaction]
+    probes:
+      - argv: [/bin/sh, -c, 'test "$(psql -XAt -c "SELECT count(*) FROM orders")" = 5000 && echo every-row-is-still-there']
+        expect:
+          stdout_contains: [every-row-is-still-there]
+  - name: postgres.explain_analyze-cannot-turn-read-only-off
+    action: postgres.explain_analyze
+    args:
+      query: "SELECT set_config('transaction_read_only', 'off', true)"
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [read-write mode must be set before any query]
+  - name: postgres.explain_analyze-refuses-a-sequence-write
+    action: postgres.explain_analyze
+    args:
+      query: "SELECT nextval('orders_id_seq')"
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [read-only transaction]
+  # Before PgBouncer 1.26, a pooler that ignores the options startup parameter drops
+  # a read-only option in silence, and this write would have deleted every row.
+  - name: postgres.explain_analyze-refuses-a-write-through-a-pooler-dropping-options
+    action: postgres.explain_analyze
+    env:
+      PGHOST: pgbouncer-dropping-options
+    args:
+      query: "WITH gone AS (DELETE FROM orders RETURNING 1) SELECT count(*) FROM gone"
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [read-only transaction]
+    probes:
+      - argv: [/bin/sh, -c, 'test "$(psql -XAt -c "SELECT count(*) FROM orders")" = 5000 && echo every-row-is-still-there']
+        expect:
+          stdout_contains: [every-row-is-still-there]
+  # A pooler with its default settings refuses an unknown startup option outright.
+  - name: postgres.explain_analyze-runs-through-a-pooler-refusing-options
+    action: postgres.explain_analyze
+    env:
+      PGHOST: pgbouncer
+    args:
+      query: "SELECT count(*) FROM orders"
+    expect:
+      json:
+        /0/Plan/Node Type: Aggregate
+    probes:
+      # One server connection in the pool, so this read lands where the action ran.
+      - argv: [/bin/sh, -c, 'test "$(psql -XAt -c "SHOW transaction_read_only")/$(psql -XAt -c "SHOW statement_timeout")" = off/0 && echo limits-ended-with-the-transaction']
+        expect:
+          stdout_contains: [limits-ended-with-the-transaction]
+  - name: postgres.largest_tables_full-runs-through-a-pooler
+    action: postgres.largest_tables_full
+    env:
+      PGHOST: pgbouncer
+    expect:
+      stdout_contains: [public.orders]
   - name: postgres.explain_analyze-keeps-its-json-output-with-its-limits
     action: postgres.explain_analyze
     args:

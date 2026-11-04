@@ -2,11 +2,12 @@ schema_version: 1
 
 id: postgres
 name: Postgres operations
-version: 0.2.23
-# Versions below this ran the reads that return live query text (activity_detail,
-# slow_queries and the other pg_stat_activity and pg_stat_statements reads) at
-# low risk, so they auto-ran under a policy that gates medium. They fail closed.
-retired_below: 0.2.17
+version: 0.2.24
+# Versions below this set explain_analyze's read-only transaction with a startup
+# option. PgBouncer before 1.26, ignoring the options parameter, drops that option
+# in silence, so a query the action promised could not write did write. They fail
+# closed. The floor before this was 0.2.17, for reads of live query text at low risk.
+retired_below: 0.2.24
 description: >
   Deep Postgres operations — activity introspection, session/lock
   diagnostics, table + index analytics (bloat, dead tuples, unused

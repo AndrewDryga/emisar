@@ -4,11 +4,12 @@ title: EXPLAIN ANALYZE (FORMAT JSON) <query>
 kind: exec
 risk: high
 description: >
-  Run EXPLAIN ANALYZE — the query IS executed (with timing). Forced into a read-only transaction (default_transaction_read_only=on) so data-modifying CTEs and volatile writes are rejected by the server, but the read still runs and can be expensive. High-risk because it executes an arbitrary operator-supplied query on the live database; use explain_query for a plan without execution.
+  Run EXPLAIN ANALYZE — the query IS executed (with timing). Forced into a read-only transaction by the action's own statement, so data-modifying CTEs and volatile writes in this session are rejected by the server however the connection is made, including through a pooler, but the read still runs and can be expensive. A function that works over its own connection, such as dblink_exec, is outside that transaction, so the connecting role should have no access to one. High-risk because it executes an arbitrary operator-supplied query on the live database; use explain_query for a plan without execution.
 side_effects:
   - Query is executed with timing instrumentation, inside a read-only transaction.
   - Slower than EXPLAIN-only; a heavy query loads the server for up to the timeout.
   - Data-modifying statements and CTEs (INSERT/UPDATE/DELETE) are rejected by the read-only transaction.
+  - A function that works over its own connection, such as dblink_exec, is not bound by that transaction.
 args:
   - name: query
     type: string
@@ -22,9 +23,11 @@ execution:
     argv:
       - "-XAtq"
       - "-c"
-      - "SET LOCAL statement_timeout = '298s'; SET LOCAL lock_timeout = '5s'; EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) {{ args.query }}"
-  env:
-    PGOPTIONS: "-c default_transaction_read_only=on"
+      # Read-only is set here, not by a PGOPTIONS startup option, because a pooler can
+      # refuse that option or drop it in silence. The pattern on query excludes `;`, so
+      # the query cannot end this transaction, and turning read-only off is refused
+      # once a statement has run.
+      - "SET LOCAL statement_timeout = '298s'; SET LOCAL lock_timeout = '5s'; SET LOCAL transaction_read_only = on; EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) {{ args.query }}"
   timeout: 5m
 output:
   parser: json

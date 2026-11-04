@@ -49,8 +49,12 @@ On a BEAM node, run the read in a worker the node itself kills at a deadline
 
 ```yaml
 env:
-  # A startup parameter: PgBouncer refuses unknown ones by default, so the read
-  # fails outright on a pooled server.
+  # A startup parameter, so what sits in front of the server decides what happens to
+  # it. PgBouncer refuses an unknown one by default, up to 1.24 for
+  # default_transaction_read_only too. Before 1.26, one set to ignore the options
+  # parameter drops it in silence: postgres.explain_analyze promised read-only this
+  # way, and a query it ran deleted rows. A limit or a guarantee an action depends on
+  # lives in its own program.
   PGOPTIONS: "-c statement_timeout=28s"
 ```
 
@@ -65,5 +69,7 @@ not been checked: for each, establish first whether a killed client really leave
 work behind, as MariaDB shows it may not.
 
 **Enforced.** `validatePackDBReadBounds` in `tools/internal/devtool/pack_db_bounds.go`,
-run by `./run check packs`, for `psql` and `mysql`. Behavior cases in `postgres` and
-`mysql` prove a read behind a held lock fails fast and leaves nothing waiting.
+run by `./run check packs`, for `psql` and `mysql`, and it refuses `PGOPTIONS` in any
+action. Behavior cases in `postgres` and `mysql` prove a read behind a held lock fails
+fast and leaves nothing waiting, and `postgres` runs reads through PgBouncer that
+refuses and that drops startup options.
