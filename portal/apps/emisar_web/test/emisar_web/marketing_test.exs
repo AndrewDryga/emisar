@@ -2881,7 +2881,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "tuf-repo-cdn.sigstore.dev"
       assert html =~ "tuf-repo.github.com"
       assert html =~ "To enable the optional GitHub release fallback"
-      refute html =~ "GCS"
+      refute page_text(html) =~ "GCS"
       refute html =~ "Google Storage"
       refute html =~ "needs no open port"
       refute html =~ "What never needs an inbound rule"
@@ -2901,7 +2901,7 @@ defmodule EmisarWeb.MarketingTest do
                "#{path} presents optional attestation egress as required"
 
         refute html =~ "api.github.com", "#{path} still presents GitHub as normal egress"
-        refute html =~ "GCS", "#{path} exposes the release backing store"
+        refute page_text(html) =~ "GCS", "#{path} exposes the release backing store"
         refute html =~ "inbound port", "#{path} adds an unsolicited non-requirement"
       end
 

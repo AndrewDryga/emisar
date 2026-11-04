@@ -3792,7 +3792,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
       assert has_element?(lv, "#group-access-section-#{provider.id}", "Runner unavailable")
-      refute html =~ "r21"
+      refute page_text(html) =~ "r21"
     end
 
     test "an IdP group without an external id uses the lowercase emisar fallback", %{

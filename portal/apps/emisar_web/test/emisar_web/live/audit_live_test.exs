@@ -1512,10 +1512,6 @@ defmodule EmisarWeb.AuditLiveTest do
     end
   end
 
-  # What the page shows. Searching the raw page also searches random tokens in its
-  # attributes, and those can spell a short word by chance.
-  defp page_text(html), do: html |> LazyHTML.from_document() |> LazyHTML.text()
-
   defp drain_audit_queries(pids, queries \\ []) do
     receive do
       {:audit_repo_query, pid, query} ->

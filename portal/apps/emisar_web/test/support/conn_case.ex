@@ -96,6 +96,12 @@ defmodule EmisarWeb.ConnCase do
   end
 
   @doc """
+  The text a page shows. Searching the raw HTML also searches random tokens in its
+  attributes, and those can spell a short word by chance, so check short words here.
+  """
+  def page_text(html), do: html |> LazyHTML.from_document() |> LazyHTML.text()
+
+  @doc """
   Creates a workspace, its owner Member (a verified address, every runner), the
   default policy and the `account.created` audit row, as a sign-up does, and
   signs the owner in. Returns `{conn, owner, account}`. `attrs[:member]`

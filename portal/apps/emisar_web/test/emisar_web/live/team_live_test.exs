@@ -2440,7 +2440,7 @@ defmodule EmisarWeb.TeamLiveTest do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
 
       assert has_element?(lv, "#member-runners-#{membership.id}", "Runner unavailable")
-      refute html =~ "r12"
+      refute page_text(html) =~ "r12"
     end
   end
 
