@@ -341,7 +341,11 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
       })
 
     assert combined["error"]["details"]["kind"] == "conflict"
-    assert combined["error"]["details"]["issues"] == [%{"path" => "$", "code" => "conflict"}]
+
+    assert combined["error"]["details"]["issues"] == [
+             %{"path" => "$.operation_id", "code" => "conflict"},
+             %{"path" => "$.runner_ref", "code" => "conflict"}
+           ]
   end
 
   test "an unpublished change names the release it does not replace yet, everywhere", %{

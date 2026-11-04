@@ -48,17 +48,7 @@ defmodule EmisarWeb.MCP.InputContract do
                   compiled: compiled,
                   integer_fields: integer_fields,
                   root_fields: root_fields,
-                  exclusive_groups:
-                    expanded
-                    |> Map.get("allOf", [])
-                    |> Enum.flat_map(fn
-                      %{"not" => %{"required" => fields}}
-                      when is_list(fields) and length(fields) > 1 ->
-                        [MapSet.new(fields)]
-
-                      _other ->
-                        []
-                    end)
+                  exclusive_groups: Compiler.exclusive_groups(expanded)
                 }}
              end)
 
@@ -105,13 +95,14 @@ defmodule EmisarWeb.MCP.InputContract do
     end
   end
 
-  # A mutual-exclusion violation is reported by JSON Schema as `not` at the
-  # ROOT, so the generic translation emitted `conflict` at `$` — "something in
+  # A mutual-exclusion violation is reported by JSON Schema as `not` or `oneOf` at
+  # the ROOT, so the generic translation emitted `conflict` at `$` — "something in
   # your arguments conflicts", with no way to tell WHICH. A client cannot
   # self-heal from that, and one stopped using find_actions entirely after
-  # sending `query` with `action_id`. The exclusive pairs are declared in the
-  # schema, so name the ones the arguments actually supply.
-  defp conflict_issues(contract, arguments, path) when is_map(arguments) do
+  # sending `query` with `action_id`. The exclusive sets are declared in the
+  # schema, so name the ones the arguments actually supply. They describe root
+  # arguments, so a failure deeper in the arguments keeps its own path.
+  defp conflict_issues(contract, arguments, []) when is_map(arguments) do
     supplied = arguments |> Map.keys() |> Enum.filter(&is_binary/1) |> MapSet.new()
 
     contract
@@ -119,7 +110,7 @@ defmodule EmisarWeb.MCP.InputContract do
     |> Enum.map(&MapSet.intersection(&1, supplied))
     |> Enum.filter(&(MapSet.size(&1) > 1))
     |> Enum.flat_map(&Enum.sort/1)
-    |> Enum.map(&ValidationError.issue(path ++ [&1], :conflict))
+    |> Enum.map(&ValidationError.issue([&1], :conflict))
   end
 
   defp conflict_issues(_contract, _arguments, _path), do: []

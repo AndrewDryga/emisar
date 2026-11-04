@@ -100,6 +100,51 @@ defmodule EmisarWeb.MCP.SchemaRegistry.Compiler do
     |> Enum.reduce(direct, &Map.merge(&2, root_properties(&1)))
   end
 
+  @doc """
+  Collects the argument sets one expanded object schema forbids together, following
+  allOf, so a refusal can name the supplied arguments that collide.
+  """
+  @spec exclusive_groups(map()) :: [MapSet.t(String.t())]
+  def exclusive_groups(schema) when is_map(schema) do
+    forbidden_together =
+      case schema do
+        %{"not" => %{"required" => [_, _ | _] = fields}} -> [MapSet.new(fields)]
+        _other -> []
+      end
+
+    nested = schema |> Map.get("allOf", []) |> Enum.flat_map(&exclusive_groups/1)
+    alternatives = schema |> Map.get("oneOf", []) |> Enum.flat_map(&branch_groups(&1, []))
+
+    conditional =
+      branch_groups(Map.get(schema, "then", %{}), presence_condition(schema)) ++
+        branch_groups(Map.get(schema, "else", %{}), [])
+
+    Enum.uniq(forbidden_together ++ nested ++ alternatives ++ conditional)
+  end
+
+  # A branch that requires some arguments and forbids others makes each pair collide.
+  defp branch_groups(branch, held) do
+    required = held ++ Map.get(branch, "required", [])
+    forbidden = forbidden_fields(Map.get(branch, "not", %{}))
+
+    for field <- required, other <- forbidden, do: MapSet.new([field, other])
+  end
+
+  defp forbidden_fields(%{"required" => fields}), do: fields
+
+  defp forbidden_fields(%{"anyOf" => alternatives}),
+    do: Enum.flat_map(alternatives, &forbidden_fields/1)
+
+  defp forbidden_fields(_schema), do: []
+
+  # Only a bare presence check makes the argument itself part of the collision. A
+  # condition on its value can be false while the argument is still supplied.
+  defp presence_condition(%{"if" => %{"required" => fields} = condition})
+       when map_size(condition) == 1,
+       do: fields
+
+  defp presence_condition(_schema), do: []
+
   defp flatten_input(schema, registry, name) do
     {members, flat} = Map.pop(schema, "allOf", [])
 

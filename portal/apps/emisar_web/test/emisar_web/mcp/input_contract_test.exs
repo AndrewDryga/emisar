@@ -131,10 +131,6 @@ defmodule EmisarWeb.MCP.InputContractTest do
     assert InputContract.known_root_fields("not_a_tool") == MapSet.new()
   end
 
-  # A mutually exclusive pair used to report `conflict` at `$` — "something
-  # conflicts" with no way to tell what. A client that sent query WITH action_id
-  # could not self-heal from that and abandoned find_actions for the rest of its
-  # run, which cost a release certification.
   test "every cross-field rule moved out of tools/list is still refused" do
     run_id = "00000000-0000-4000-8000-000000000001"
     execution_id = "00000000-0000-4000-8000-000000000002"
@@ -211,6 +207,75 @@ defmodule EmisarWeb.MCP.InputContractTest do
     for {tool, arguments} <- accepted do
       assert {:ok, _arguments} = InputContract.validate(tool, arguments),
              "#{tool} refused #{inspect(arguments)}"
+    end
+  end
+
+  # A mutually exclusive pair used to report `conflict` at `$` — "something
+  # conflicts" with no way to tell what. A client that sent query WITH action_id
+  # could not self-heal from that and abandoned find_actions for the rest of its
+  # run, which cost a release certification.
+  test "a conflict names the supplied arguments on every tool with such a rule" do
+    run_id = "00000000-0000-4000-8000-000000000001"
+    execution_id = "00000000-0000-4000-8000-000000000002"
+    operation_id = "op_624NN9NMDZ1T76NARWCKM5A0D6"
+    action_id = "linux.uptime"
+    sha = String.duplicate("c", 64)
+    reason = %{"reason" => "Check the runbook"}
+    runbook_ref = "uptime@1"
+
+    cases = [
+      {"list_packs", %{"pack_id" => "ops", "pack_ref" => @pack_ref}, ~w($.pack_id $.pack_ref)},
+      {"list_runners", %{"query" => "web", "runner_refs" => [@runner_ref]},
+       ~w($.query $.runner_refs)},
+      {"list_runners", %{"pack_id" => "ops", "pack_ref" => @pack_ref}, ~w($.pack_id $.pack_ref)},
+      # Two separate collisions in one call are both named.
+      {"list_runners",
+       %{
+         "query" => "web",
+         "runner_refs" => [@runner_ref],
+         "pack_id" => "ops",
+         "pack_ref" => @pack_ref
+       }, ~w($.pack_id $.pack_ref $.query $.runner_refs)},
+      # The valid action_id and pack_ref pair stays out of it.
+      {"get_action",
+       %{
+         "action_id" => action_id,
+         "pack_ref" => @pack_ref,
+         "target" => "web",
+         "runner_refs" => [@runner_ref]
+       }, ~w($.runner_refs $.target)},
+      {"wait_for_run", %{"run_id" => run_id, "runbook_execution_id" => execution_id},
+       ~w($.run_id $.runbook_execution_id)},
+      {"recent_runs", %{"operation_id" => operation_id, "action_id" => action_id},
+       ~w($.action_id $.operation_id)},
+      {"recent_runs",
+       %{"operation_id" => operation_id, "action_id" => action_id, "runner_ref" => @runner_ref},
+       ~w($.action_id $.operation_id $.runner_ref)},
+      {"execute_runbook", Map.merge(reason, %{"runbook_ref" => runbook_ref, "slug" => "uptime"}),
+       ~w($.runbook_ref $.slug)},
+      # allow_draft's value is what selects the rule, so it is not one of the collisions.
+      {"execute_runbook",
+       Map.merge(reason, %{
+         "allow_draft" => false,
+         "runbook_ref" => runbook_ref,
+         "slug" => "uptime"
+       }), ~w($.runbook_ref $.slug)},
+      {"execute_runbook",
+       Map.merge(reason, %{
+         "allow_draft" => true,
+         "slug" => "uptime",
+         "definition_sha256" => sha,
+         "runbook_ref" => runbook_ref
+       }), ~w($.definition_sha256 $.runbook_ref $.slug)}
+    ]
+
+    for {tool, arguments, paths} <- cases do
+      assert {:error, issues} = InputContract.validate(tool, arguments)
+
+      assert issues |> Enum.map(& &1.path) |> Enum.sort() == paths,
+             "#{tool} named #{inspect(issues)} for #{inspect(Map.keys(arguments))}"
+
+      assert Enum.all?(issues, &(&1.code == "conflict"))
     end
   end
 

@@ -428,7 +428,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
          %{
            "run_id" => Ecto.UUID.generate(),
            "runbook_execution_id" => Ecto.UUID.generate()
-         }, "conflict", "$", "conflict"},
+         }, "conflict", "$.run_id", "conflict"},
         {"list_runbooks", %{"cursor" => 7}, "type", "$.cursor", "type"},
         {"create_runbook_draft",
          %{

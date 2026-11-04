@@ -126,7 +126,7 @@ level of `inputSchema`, because some clients silently drop a tool that composes 
 (Claude Code 2.1.285 signed in with OAuth keeps 5 of the 14 tools). Each top-level rule
 is an `allOf` member with a `description`; that text moves to the tool description
 under "Argument rules", and the compiler refuses a rule that has none. Arguments that
-break a rule are still refused with the same validation errors.
+break a rule are still refused, and a conflict names the supplied arguments that collide.
 Portal, bridge, tests, and documentation do not maintain hand-written schema
 copies. Portal RPC tests validate live success and error results against the same
 published result schemas.
