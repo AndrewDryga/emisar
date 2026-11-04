@@ -279,6 +279,23 @@ defmodule EmisarWeb.MCP.InputContractTest do
     end
   end
 
+  # Each alternative's failures used to be reported together, so this also asked for
+  # run_id, and adding run_id is a conflict.
+  test "a run_id is never asked for alongside runbook_execution_id" do
+    execution = %{
+      "runbook_execution_id" => "00000000-0000-4000-8000-000000000002",
+      "cursor" => "next"
+    }
+
+    assert {:error, [%{path: "$.timeout", code: "required"}]} =
+             InputContract.validate("wait_for_run", execution)
+
+    assert {:error, [%{path: "$.timeout"}]} =
+             InputContract.validate("wait_for_run", Map.put(execution, "timeout", "1s"))
+
+    assert {:ok, _} = InputContract.validate("wait_for_run", Map.put(execution, "timeout", "0"))
+  end
+
   test "a mutual-exclusion conflict names the fields that actually collide" do
     assert {:error, issues} =
              InputContract.validate("find_actions", %{

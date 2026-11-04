@@ -327,19 +327,19 @@
       },
       "allOf": [
         {
-          "description": "Pass exactly one of `run_id` and `runbook_execution_id`. With `runbook_execution_id`, a `cursor` also requires `timeout` set to \"0\".",
+          "description": "Pass exactly one of `run_id` and `runbook_execution_id`.",
           "oneOf": [
             {"required": ["run_id"], "not": {"required": ["runbook_execution_id"]}},
-            {
-              "required": ["runbook_execution_id"],
-              "not": {"required": ["run_id"]},
-              "if": {"required": ["cursor"]},
-              "then": {
-                "required": ["timeout"],
-                "properties": {"timeout": {"const": "0"}}
-              }
-            }
+            {"required": ["runbook_execution_id"], "not": {"required": ["run_id"]}}
           ]
+        },
+        {
+          "description": "With `runbook_execution_id`, a `cursor` also requires `timeout` set to \"0\".",
+          "if": {"required": ["runbook_execution_id", "cursor"]},
+          "then": {
+            "required": ["timeout"],
+            "properties": {"timeout": {"const": "0"}}
+          }
         }
       ]
     },
