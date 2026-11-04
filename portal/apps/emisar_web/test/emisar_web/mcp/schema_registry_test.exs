@@ -115,7 +115,7 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
 
     expected_fields = ~w(annotations description inputSchema name title)
     assert Enum.all?(tools, &(Enum.sort(Map.keys(&1)) == expected_fields))
-    assert tools == Enum.map(SchemaRegistry.contracts(), &Map.delete(&1, "outputSchema"))
+    assert tools == Enum.map(SchemaRegistry.contracts(), &Compiler.publish!/1)
 
     # The wire catalog stays lean: response schemas live in the internal
     # contracts, never in tools/list. Every session pays for this in tokens, so
@@ -136,18 +136,70 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
     assert byte_size(encoded) <= ResponseBudget.max_frame_bytes()
   end
 
+  test "publishes every tool without a top-level composition and loses no argument" do
+    contracts = Map.new(SchemaRegistry.contracts(), &{&1["name"], &1})
+
+    for tool <- SchemaRegistry.tools() do
+      published = tool["inputSchema"]
+
+      assert Map.keys(published) -- ~w(allOf anyOf oneOf not if then else) ==
+               Map.keys(published)
+
+      strict = contracts[tool["name"]]["inputSchema"]
+      expanded = Compiler.expand!(strict, strict)
+
+      assert published["type"] == "object"
+      assert published["additionalProperties"] == false
+
+      assert published["properties"] |> Map.keys() |> Enum.sort() ==
+               expanded |> Compiler.root_properties() |> Map.keys() |> Enum.sort()
+
+      assert Enum.sort(Map.get(published, "required", [])) == root_required(expanded)
+      assert_self_contained_schemas(tool |> Map.put("outputSchema", %{"type" => "object"}))
+    end
+  end
+
+  test "states each top-level rule of the strict schema in the published description" do
+    for contract <- SchemaRegistry.contracts(),
+        tool = Enum.find(SchemaRegistry.tools(), &(&1["name"] == contract["name"])),
+        strict = contract["inputSchema"],
+        rule <- strict |> Compiler.expand!(strict) |> root_rules() do
+      assert tool["description"] =~ "- " <> rule
+    end
+
+    execute = Enum.find(SchemaRegistry.tools(), &(&1["name"] == "execute_runbook"))
+    assert execute["description"] =~ "`allow_draft: true` with `slug` and `definition_sha256`"
+  end
+
+  test "refuses to publish a top-level rule it would lose" do
+    contract = %{"name" => "probe", "description" => "Probe."}
+    undescribed = %{"type" => "object", "allOf" => [%{"not" => %{"required" => ["a", "b"]}}]}
+
+    assert_raise ArgumentError, ~r/no description/, fn ->
+      Compiler.publish!(Map.put(contract, "inputSchema", undescribed))
+    end
+
+    for keyword <- ~w(anyOf oneOf not if) do
+      composed = %{"type" => "object", keyword => [%{"required" => ["a"]}]}
+
+      assert_raise ArgumentError, ~r/composes/, fn ->
+        Compiler.publish!(Map.put(contract, "inputSchema", composed))
+      end
+    end
+  end
+
   test "pins model-facing descriptions for reasons, waits, pack availability, and runbook targets" do
     list_packs = Enum.find(SchemaRegistry.tools(), &(&1["name"] == "list_packs"))
     run_action = Enum.find(SchemaRegistry.tools(), &(&1["name"] == "run_action"))
     wait_for_run = Enum.find(SchemaRegistry.tools(), &(&1["name"] == "wait_for_run"))
 
     assert list_packs["description"] ==
-             "List trusted pack refs and bounded action catalogs observed in this workspace. Defaults to executable candidates; the all view includes trusted deployments outside your action permissions or currently unavailable."
+             "List trusted pack refs and bounded action catalogs observed in this workspace. Defaults to executable candidates; the all view includes trusted deployments outside your action permissions or currently unavailable.\n\nArgument rules:\n- Pass at most one of `pack_id` and `pack_ref`."
 
     find_actions = Enum.find(SchemaRegistry.tools(), &(&1["name"] == "find_actions"))
 
     assert find_actions["description"] ==
-             "Search runnable actions across every in-scope runner by operational task. Pass the task as `query`; one search covers the whole fleet, so do not repeat it per runner. Returns only actions you can run right now, ranked, without argument schemas — call get_action once for the chosen action_id and pack_ref; it lists up to 15 compatible runners and, when more exist, returns a list_runners continuation for the rest. The exact filters only narrow a known target; `query` is the normal path."
+             "Search runnable actions across every in-scope runner by operational task. Pass the task as `query`; one search covers the whole fleet, so do not repeat it per runner. Returns only actions you can run right now, ranked, without argument schemas — call get_action once for the chosen action_id and pack_ref; it lists up to 15 compatible runners and, when more exist, returns a list_runners continuation for the rest. The exact filters only narrow a known target; `query` is the normal path.\n\nArgument rules:\n- Pass at most one of `query` and `action_id`.\n- Pass at most one of `pack_id` and `pack_ref`.\n- Pass at most one of `target` and `runner_refs`."
 
     assert find_actions["inputSchema"]["properties"]["limit"]["description"] ==
              "Maximum candidates to return, 1 through 15 (default 15). Omit unless you deliberately want fewer."
@@ -183,8 +235,6 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
 
     assert get_in(wait_for_run, [
              "inputSchema",
-             "$defs",
-             "wait_for_run_arguments",
              "properties",
              "timeout",
              "description"
@@ -197,12 +247,12 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
     list_runners = Enum.find(SchemaRegistry.tools(), &(&1["name"] == "list_runners"))
 
     assert list_runners["description"] ==
-             "Inspect workspace runners, connectivity and trusted-pack compatibility. An action filter returns only eligible candidates. For runbooks, prefer group:<group_name> targets; they require access to the complete group."
+             "Inspect workspace runners, connectivity and trusted-pack compatibility. An action filter returns only eligible candidates. For runbooks, prefer group:<group_name> targets; they require access to the complete group.\n\nArgument rules:\n- Pass at most one of `query` and `runner_refs`.\n- Pass at most one of `pack_id` and `pack_ref`.\n- `action_id` requires `pack_ref`."
 
     get_action = Enum.find(SchemaRegistry.tools(), &(&1["name"] == "get_action"))
 
     assert get_action["description"] ==
-             "Get a trusted action's argument schema, optional stdout JSON output_schema, risk and side effects in an immutable pack_ref. compatible_runners may be empty and, without runner_refs, holds at most 15; more_compatible_runners then comes with a list_runners continuation for the rest. Explicit runner_refs must all be eligible. Call before run_action or authoring a runbook step."
+             "Get a trusted action's argument schema, optional stdout JSON output_schema, risk and side effects in an immutable pack_ref. compatible_runners may be empty and, without runner_refs, holds at most 15; more_compatible_runners then comes with a list_runners continuation for the rest. Explicit runner_refs must all be eligible. Call before run_action or authoring a runbook step.\n\nArgument rules:\n- Pass at most one of `target` and `runner_refs`."
 
     create_draft = Enum.find(SchemaRegistry.tools(), &(&1["name"] == "create_runbook_draft"))
 
@@ -559,6 +609,25 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
       end)
 
     codes
+  end
+
+  defp root_required(schema) do
+    schema
+    |> Map.get("allOf", [])
+    |> Enum.reject(&Map.has_key?(&1, "description"))
+    |> Enum.flat_map(&root_required/1)
+    |> Enum.concat(Map.get(schema, "required", []))
+    |> Enum.uniq()
+    |> Enum.sort()
+  end
+
+  defp root_rules(schema) do
+    schema
+    |> Map.get("allOf", [])
+    |> Enum.flat_map(fn
+      %{"description" => rule} -> [rule]
+      member -> root_rules(member)
+    end)
   end
 
   defp assert_self_contained_schemas(tool) do

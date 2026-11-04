@@ -1,7 +1,7 @@
 ---
 name: mcp-api
 sources: [portal/apps/emisar_web/priv/mcp/api-schemas.json, portal/apps/emisar_web/lib/emisar_web/controllers/mcp, portal/apps/emisar_web/lib/emisar_web/controllers/mcp_rpc_controller.ex, portal/apps/emisar/lib/emisar/mcp_operations.ex, mcp/protocol.go]
-updated: 2026-10-09
+updated: 2026-11-04
 ---
 
 # MCP action API specification
@@ -119,6 +119,14 @@ description, annotations, input schema, and result schema. The catalog compiler
 bundles only transitively reachable definitions into each self-contained wire
 schema. It rejects unresolved refs and compares the generated descriptors with
 fixed fixtures, including a hard encoded-size budget for the complete `tools/list`.
+
+The registry's input schema is the strict contract the portal validates. `tools/list`
+publishes a form generated from it, with only `properties` and `required` at the top
+level of `inputSchema`, because some clients silently drop a tool that composes there
+(Claude Code 2.1.285 signed in with OAuth keeps 5 of the 14 tools). Each top-level rule
+is an `allOf` member with a `description`; that text moves to the tool description
+under "Argument rules", and the compiler refuses a rule that has none. Arguments that
+break a rule are still refused with the same validation errors.
 Portal, bridge, tests, and documentation do not maintain hand-written schema
 copies. Portal RPC tests validate live success and error results against the same
 published result schemas.

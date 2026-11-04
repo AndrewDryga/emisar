@@ -58,6 +58,25 @@ defmodule EmisarWeb.MCP.SchemaRegistry.Compiler do
     end
   end
 
+  @doc """
+  Builds the lean tools/list descriptor from one compiled contract.
+
+  Some MCP clients silently drop a tool whose inputSchema composes at the top
+  level (Claude Code 2.1.285 does), so the published form keeps only flat
+  properties and required. Each cross-field rule moves into the description, from
+  the text beside it in the registry. The contract keeps the strict schema, which
+  is what the portal validates against.
+  """
+  @spec publish!(map()) :: map()
+  def publish!(%{"name" => name, "inputSchema" => schema} = contract) do
+    {flat, rules} = flatten_input(schema, schema, name)
+
+    contract
+    |> Map.delete("outputSchema")
+    |> Map.put("inputSchema", flat |> Map.drop(["$defs", "$schema"]) |> bundle!(schema))
+    |> Map.update!("description", &describe_rules(&1, rules))
+  end
+
   @doc "Inlines explicitly owned external schemas as namespaced local definitions."
   @spec inline_external_schemas(map(), map()) :: map()
   def inline_external_schemas(registry, external_schemas)
@@ -79,6 +98,45 @@ defmodule EmisarWeb.MCP.SchemaRegistry.Compiler do
     schema
     |> Map.get("allOf", [])
     |> Enum.reduce(direct, &Map.merge(&2, root_properties(&1)))
+  end
+
+  defp flatten_input(schema, registry, name) do
+    {members, flat} = Map.pop(schema, "allOf", [])
+
+    case Enum.filter(~w(anyOf oneOf not if then else), &Map.has_key?(flat, &1)) do
+      [] ->
+        :ok
+
+      keywords ->
+        raise ArgumentError,
+              "MCP tool #{inspect(name)} composes #{inspect(keywords)} at the top level of inputSchema; " <>
+                "move the rule into a described allOf member"
+    end
+
+    Enum.reduce(members, {flat, []}, fn
+      %{"$ref" => ref} = member, {flat, rules} when map_size(member) == 1 ->
+        definition = fetch_definition!(registry, definition_name!(ref), ref)
+        {referenced, nested} = flatten_input(definition, registry, name)
+        {Map.merge(flat, referenced, &merge_root_field/3), rules ++ nested}
+
+      %{"description" => rule}, {flat, rules} when is_binary(rule) ->
+        {flat, rules ++ [rule]}
+
+      member, _collected ->
+        raise ArgumentError,
+              "MCP tool #{inspect(name)} has a top-level rule with no description, " <>
+                "so publishing would lose it: #{inspect(member)}"
+    end)
+  end
+
+  defp merge_root_field("properties", own, referenced), do: Map.merge(own, referenced)
+  defp merge_root_field("required", own, referenced), do: Enum.uniq(own ++ referenced)
+  defp merge_root_field(_field, _own, referenced), do: referenced
+
+  defp describe_rules(description, []), do: description
+
+  defp describe_rules(description, rules) do
+    description <> "\n\nArgument rules:\n" <> Enum.map_join(rules, "\n", &("- " <> &1))
   end
 
   defp expand(%{"$ref" => ref} = value, registry, stack) when is_binary(ref) do
@@ -281,9 +339,9 @@ defmodule EmisarWeb.MCP.SchemaRegistry do
     @runbook_definition["$id"] => {"runbook_definition_v1", @runbook_definition}
   }
   @contracts Compiler.compile!(@schema_path, @tool_names, @external_schemas)
-  @tools Enum.map(@contracts, &Map.delete(&1, "outputSchema"))
+  @tools Enum.map(@contracts, &Compiler.publish!/1)
 
-  @doc "Returns the lean wire descriptors served by tools/list."
+  @doc "Returns the lean, flat wire descriptors served by tools/list."
   @spec tools() :: [map()]
   def tools, do: @tools
 

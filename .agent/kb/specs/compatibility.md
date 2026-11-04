@@ -1,7 +1,7 @@
 ---
 name: compatibility
 sources: [runner/pkg/packspec, runner/pkg/actionspec, runner/testdata/cli_surface.golden, portal/apps/emisar_web/priv/mcp/api-schemas.json, portal/apps/emisar/lib/emisar/canonical_json.ex, install.sh, install-mcp.sh, runner/release/container-packs.txt]
-updated: 2026-11-03
+updated: 2026-11-04
 ---
 
 # Compatibility and deprecation policy
@@ -209,8 +209,9 @@ create_runbook_draft update_runbook_draft
 The tool catalog advertises `tools.listChanged: false`. Packs and runner state
 appear in tool results; they do not become one tool per action.
 
-Every descriptor carries its complete, self-contained `inputSchema`; response
-schemas stay server-side as normative contracts exercised by the portal's
+Every descriptor carries its complete, self-contained `inputSchema`, with no
+top-level composition, and states cross-field rules in its description; the portal
+still enforces those rules. Response schemas stay server-side as normative contracts exercised by the portal's
 fixture and integration tests, so `tools/list` stays small on every client.
 
 The `wait_for_run` output-tail `cursor` input and its `output`-delta result

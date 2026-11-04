@@ -135,6 +135,85 @@ defmodule EmisarWeb.MCP.InputContractTest do
   # conflicts" with no way to tell what. A client that sent query WITH action_id
   # could not self-heal from that and abandoned find_actions for the rest of its
   # run, which cost a release certification.
+  test "every cross-field rule moved out of tools/list is still refused" do
+    run_id = "00000000-0000-4000-8000-000000000001"
+    execution_id = "00000000-0000-4000-8000-000000000002"
+    operation_id = "op_624NN9NMDZ1T76NARWCKM5A0D6"
+    action_id = "linux.uptime"
+    sha = String.duplicate("c", 64)
+    reason = %{"reason" => "Check the runbook"}
+    runbook_ref = "uptime@1"
+
+    refused = [
+      {"list_packs", %{"pack_id" => "ops", "pack_ref" => @pack_ref}},
+      {"list_runners", %{"query" => "web", "runner_refs" => [@runner_ref]}},
+      {"list_runners", %{"pack_id" => "ops", "pack_ref" => @pack_ref}},
+      {"list_runners", %{"action_id" => action_id}},
+      {"get_action",
+       %{
+         "action_id" => action_id,
+         "pack_ref" => @pack_ref,
+         "target" => "web",
+         "runner_refs" => [@runner_ref]
+       }},
+      {"find_actions", %{"query" => "uptime", "action_id" => action_id}},
+      {"find_actions", %{"pack_id" => "ops", "pack_ref" => @pack_ref}},
+      {"find_actions", %{"target" => "web", "runner_refs" => [@runner_ref]}},
+      {"wait_for_run", %{}},
+      {"wait_for_run", %{"run_id" => run_id, "runbook_execution_id" => execution_id}},
+      {"wait_for_run", %{"runbook_execution_id" => execution_id, "cursor" => "next"}},
+      {"wait_for_run",
+       %{"runbook_execution_id" => execution_id, "cursor" => "next", "timeout" => "1s"}},
+      {"recent_runs", %{"operation_id" => operation_id, "action_id" => action_id}},
+      {"recent_runs", %{"operation_id" => operation_id, "runner_ref" => @runner_ref}},
+      {"recent_runs", %{"operation_id" => operation_id, "pack_ref" => @pack_ref}},
+      {"recent_runs", %{"operation_id" => operation_id, "runbook_execution_id" => execution_id}},
+      {"recent_runs", %{"step_id" => "check"}},
+      {"execute_runbook", reason},
+      {"execute_runbook", Map.merge(reason, %{"slug" => "uptime"})},
+      {"execute_runbook", Map.merge(reason, %{"runbook_ref" => runbook_ref, "slug" => "uptime"})},
+      {"execute_runbook", Map.merge(reason, %{"allow_draft" => true, "slug" => "uptime"})},
+      {"execute_runbook",
+       Map.merge(reason, %{
+         "allow_draft" => true,
+         "slug" => "uptime",
+         "definition_sha256" => sha,
+         "runbook_ref" => runbook_ref
+       })}
+    ]
+
+    for {tool, arguments} <- refused do
+      assert {:error, [_issue | _]} = InputContract.validate(tool, arguments),
+             "#{tool} accepted #{inspect(arguments)}"
+    end
+
+    # Each value above is valid alone, so a refusal proves the combination rule.
+    accepted = [
+      {"list_packs", %{"pack_id" => "ops"}},
+      {"list_packs", %{"pack_ref" => @pack_ref}},
+      {"list_runners", %{"query" => "web"}},
+      {"list_runners", %{"runner_refs" => [@runner_ref]}},
+      {"get_action", %{"action_id" => action_id, "pack_ref" => @pack_ref, "target" => "web"}},
+      {"find_actions", %{"query" => "uptime"}},
+      {"find_actions", %{"action_id" => action_id}},
+      {"recent_runs", %{"operation_id" => operation_id}},
+      {"recent_runs", %{"action_id" => action_id, "runner_ref" => @runner_ref}},
+      {"execute_runbook", Map.put(reason, "runbook_ref", runbook_ref)},
+      {"wait_for_run", %{"run_id" => run_id}},
+      {"wait_for_run",
+       %{"runbook_execution_id" => execution_id, "cursor" => "n", "timeout" => "0"}},
+      {"recent_runs", %{"step_id" => "check", "runbook_execution_id" => execution_id}},
+      {"list_runners", %{"action_id" => action_id, "pack_ref" => @pack_ref}},
+      {"execute_runbook",
+       Map.merge(reason, %{"allow_draft" => true, "slug" => "uptime", "definition_sha256" => sha})}
+    ]
+
+    for {tool, arguments} <- accepted do
+      assert {:ok, _arguments} = InputContract.validate(tool, arguments),
+             "#{tool} refused #{inspect(arguments)}"
+    end
+  end
+
   test "a mutual-exclusion conflict names the fields that actually collide" do
     assert {:error, issues} =
              InputContract.validate("find_actions", %{

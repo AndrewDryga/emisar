@@ -255,7 +255,7 @@
         "cursor": {"$ref": "#/$defs/cursor"}
       },
       "allOf": [
-        {"not": {"required": ["pack_id", "pack_ref"]}}
+        {"description": "Pass at most one of `pack_id` and `pack_ref`.", "not": {"required": ["pack_id", "pack_ref"]}}
       ]
     },
     "list_runners_arguments": {
@@ -273,9 +273,9 @@
         "cursor": {"$ref": "#/$defs/cursor"}
       },
       "allOf": [
-        {"not": {"required": ["query", "runner_refs"]}},
-        {"not": {"required": ["pack_id", "pack_ref"]}},
-        {"if": {"required": ["action_id"]}, "then": {"required": ["pack_ref"]}}
+        {"description": "Pass at most one of `query` and `runner_refs`.", "not": {"required": ["query", "runner_refs"]}},
+        {"description": "Pass at most one of `pack_id` and `pack_ref`.", "not": {"required": ["pack_id", "pack_ref"]}},
+        {"description": "`action_id` requires `pack_ref`.", "if": {"required": ["action_id"]}, "then": {"required": ["pack_ref"]}}
       ]
     },
     "get_action_arguments": {
@@ -289,7 +289,7 @@
         "runner_refs": {"$ref": "#/$defs/runner_refs"}
       },
       "allOf": [
-        {"not": {"required": ["target", "runner_refs"]}}
+        {"description": "Pass at most one of `target` and `runner_refs`.", "not": {"required": ["target", "runner_refs"]}}
       ]
     },
     "cancel_reason": {
@@ -325,16 +325,21 @@
         "timeout": {"$ref": "#/$defs/wait_short", "default": "45s", "description": "Maximum time to block before returning the current state, as a duration string: \"0\", \"30s\", or \"1500ms\"."},
         "cursor": {"type": "string", "minLength": 1, "maxLength": 4096, "description": "Opaque output cursor. Do not construct or edit this; pass only the value from a prior response's `next` or `outputs_next`. With run_id it streams raw run output; with runbook_execution_id it pages extracted outputs omitted from a terminal execution result."}
       },
-      "oneOf": [
-        {"required": ["run_id"], "not": {"required": ["runbook_execution_id"]}},
+      "allOf": [
         {
-          "required": ["runbook_execution_id"],
-          "not": {"required": ["run_id"]},
-          "if": {"required": ["cursor"]},
-          "then": {
-            "required": ["timeout"],
-            "properties": {"timeout": {"const": "0"}}
-          }
+          "description": "Pass exactly one of `run_id` and `runbook_execution_id`. With `runbook_execution_id`, a `cursor` also requires `timeout` set to \"0\".",
+          "oneOf": [
+            {"required": ["run_id"], "not": {"required": ["runbook_execution_id"]}},
+            {
+              "required": ["runbook_execution_id"],
+              "not": {"required": ["run_id"]},
+              "if": {"required": ["cursor"]},
+              "then": {
+                "required": ["timeout"],
+                "properties": {"timeout": {"const": "0"}}
+              }
+            }
+          ]
         }
       ]
     },
@@ -420,6 +425,7 @@
       },
       "allOf": [
         {
+          "description": "`operation_id` cannot be combined with `runbook_execution_id`, `runner_ref`, `action_id`, `pack_ref`, or `step_id`.",
           "if": {"required": ["operation_id"]},
           "then": {
             "not": {
@@ -434,6 +440,7 @@
           }
         },
         {
+          "description": "`step_id` requires `runbook_execution_id`.",
           "if": {"required": ["step_id"]},
           "then": {"required": ["runbook_execution_id"]}
         }
@@ -1411,9 +1418,9 @@
           "cursor": {"$ref": "#/$defs/cursor"}
         },
         "allOf": [
-          {"not": {"required": ["query", "action_id"]}},
-          {"not": {"required": ["pack_id", "pack_ref"]}},
-          {"not": {"required": ["target", "runner_refs"]}}
+          {"description": "Pass at most one of `query` and `action_id`.", "not": {"required": ["query", "action_id"]}},
+          {"description": "Pass at most one of `pack_id` and `pack_ref`.", "not": {"required": ["pack_id", "pack_ref"]}},
+          {"description": "Pass at most one of `target` and `runner_refs`.", "not": {"required": ["target", "runner_refs"]}}
         ]
       },
       "outputSchema": {
@@ -1887,6 +1894,7 @@
         },
         "allOf": [
           {
+            "description": "Pass `runbook_ref` for the live release. To test an unpublished change, pass `allow_draft: true` with `slug` and `definition_sha256` instead, and no `runbook_ref`.",
             "if": {"required": ["allow_draft"], "properties": {"allow_draft": {"const": true}}},
             "then": {
               "required": ["slug", "definition_sha256"],
