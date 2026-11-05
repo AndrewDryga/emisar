@@ -5,6 +5,9 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/andrewdryga/emisar/runner/internal/attest"
 )
 
 // The runner answered 1 for every failure: a mistyped flag, a misconfigured
@@ -113,12 +116,13 @@ func TestFlagValueMistakesAreUsageErrors(t *testing.T) {
 	_, keyErr := generateSigningKey("rsa")
 	_, caKeyErr := parsePrivateKey("not base64!")
 	_, caCertErr := parseCACertificate("not pem")
+	_, scopeSize := mintLeaf(nil, nil, nil, "op", attest.Scope{Group: strings.Repeat("a", attest.MaxScopeURIBytes)}, time.Hour)
 	diffID := packDiffCmd()
 	diffID.SetArgs([]string{"Bad Name"})
 	diffTo := packDiffCmd()
 	diffTo.SetArgs([]string{"redis", "--to", "bad version"})
 	for name, err := range map[string]error{
-		"scope": scopeErr, "ttl": ttlErr, "ttl non-positive": ttlNeg, "ttl years": ttlYears,
+		"scope": scopeErr, "scope size": scopeSize, "ttl": ttlErr, "ttl non-positive": ttlNeg, "ttl years": ttlYears,
 		"pack spec": packSpec, "pack name": packName, "key alg": keyErr,
 		"ca key": caKeyErr, "ca cert": caCertErr,
 		"diff id": diffID.Execute(), "diff --to": diffTo.Execute(),

@@ -254,7 +254,7 @@ func caKeyMaterial(inline, file string) (string, error) {
 func mintLeaf(caKey crypto.Signer, caCert *x509.Certificate, leafPub crypto.PublicKey, name string, scope attest.Scope, ttl time.Duration) ([]byte, error) {
 	scopeURI, err := attest.EncodeScopeURI(scope)
 	if err != nil {
-		return nil, err
+		return nil, usageError{err}
 	}
 	parsedURI, err := url.Parse(scopeURI)
 	if err != nil {
