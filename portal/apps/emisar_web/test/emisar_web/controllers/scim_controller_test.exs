@@ -681,8 +681,9 @@ defmodule EmisarWeb.SCIMControllerTest do
       # the name sync this endpoint has supported all along.
       assert body["detail"] ==
                "This PATCH targets an attribute the directory connection does not support. " <>
-                 "Only `active`, `displayName`, `name.formatted`, `name.givenName` and " <>
-                 "`name.familyName` are supported on a User."
+                 "Only `active`, `displayName`, `name.formatted`, `name.givenName`, " <>
+                 "`name.familyName`, `emails`, `emails[type eq \"work\"].value` and " <>
+                 "`emails[primary eq true].value` are supported on a User."
     end
 
     test "a displayName-only PATCH renames the synced user", %{

@@ -128,7 +128,7 @@ defmodule EmisarWeb.SCIM.UserController do
   defp put_email(email), do: {:replace, email}
 
   # The write behind PUT: the domain commits everything the request asked for —
-  # rename and lifecycle — or nothing.
+  # rename, address and lifecycle — or nothing.
   defp apply_update(conn, id, %SSO.SCIMUserUpdate{} = update) do
     case SSO.scim_update_user(conn.assigns.scim_provider, id, update) do
       {:ok, _result} -> render_current(conn, :ok, id)
@@ -310,8 +310,9 @@ defmodule EmisarWeb.SCIM.UserController do
       conn,
       "invalidPath",
       "This PATCH targets an attribute the directory connection does not support. " <>
-        "Only `active`, `displayName`, `name.formatted`, `name.givenName` and " <>
-        "`name.familyName` are supported on a User."
+        "Only `active`, `displayName`, `name.formatted`, `name.givenName`, " <>
+        "`name.familyName`, `emails`, `emails[type eq \"work\"].value` and " <>
+        "`emails[primary eq true].value` are supported on a User."
     )
   end
 
