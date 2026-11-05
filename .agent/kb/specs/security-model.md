@@ -160,8 +160,8 @@ its actions from itself:
   trusted as given. A compromised host could declare a looser `group` to
   widen its own policy, but it already has code execution on the very box
   the runner executes on, so it gains nothing it couldn't already do
-  locally. Pin `group` to the auth key (cloud-side) if you want it
-  operator-authoritative rather than runner-declared.
+  locally. Enrollment keys do not bind a group, so treat group-scoped policy
+  as scoping, not a trust boundary.
 
 ## Threats considered
 
@@ -189,7 +189,7 @@ its actions from itself:
 | Pack sets `LD_PRELOAD`/`BASH_ENV`        | Hijack-vector env vars rejected at pack validation.           |
 | Action outlives a dying runner           | Process-group SIGTERM/SIGKILL on cancel, timeout, and runner exit, with `Pdeathsig` (Linux) as the backstop for a hard kill. `Pdeathsig` reaches the direct child only, so a wrapper script that forks and exits orphans its worker unless it `exec`s or forwards signals. |
 | Inbound surface attacked                 | There is none.                                                |
-| Compromised runner declares a looser policy `group` | Accepted: `group` is runner-declared and the host is the trust anchor. A host that can forge it already owns the box the runner executes on, so widening its own policy buys nothing. Pin `group` to the auth key for operator-authoritative scoping. |
+| Compromised runner declares a looser policy `group` | Accepted: `group` is runner-declared and the host is the trust anchor. A host that can forge it already owns the box the runner executes on, so widening its own policy buys nothing. Enrollment keys do not bind a group, so group-scoped policy is scoping, not a trust boundary. |
 | TOFU pack understates an action's `risk`/`kind`     | Accepted: those are runner-declared, so trusting a pack's *hash* = trusting its declared risk. A pack whose hash matches the configured published catalog carries its risk inside the hash that catalog authorized; a TOFU pack (no catalog entry) has no such anchor. Pin risk at trust-time if you need it author-independent. |
 | Compromised publisher of the configured catalog     | Accepted, bounded: whoever can write the catalog a portal fetches can authorize matching bytes already installed on a host, choose the trusted risk and kind that policy evaluates for those bytes, and set, lower, drop, or raise retirement floors. They cannot install bytes, bypass the runner's descriptor equality, argument validation, or local admission checks, or erase audit. The catalog is fetched over HTTPS, validated as a complete document, and its tarball URLs are pinned under the configured registry base, so an off-base or malformed document is refused and the last accepted snapshot is kept. |
 | Compromised control plane forges or replays a dispatch | With `signing.enforce_signatures` on, the runner requires a valid v5 signature from an Ed25519 or ECDSA P-256 leaf key. The claim binds the canonical origin, action, immutable pack, exact arguments, complete identity-bound runner references, reason, evidence and expected-result digests, operation, nonce, and time. A trusted offline CA vouches for the leaf key. The cloud does not hold either private key, so it cannot forge or widen the claim. The freshness window and fsynced replay journal prevent nonce reuse while durable replay state is preserved. A replacement that reuses an external ID must preserve that state or rotate its identity and trust material. CA scope adds a group or label ceiling. The cloud can still withhold a call, lie about display names during discovery, or render narrative text that does not match the signed digests. A queued call can also become stale. Verify runner suffixes and bridge-supplied approval narratives out of band, and use narrow certificate scopes for the highest-trust workflows. See [`signed-dispatch.md`](signed-dispatch.md). |
@@ -225,7 +225,7 @@ The runner-side guarantees above pair with the control plane's own model:
   output. Runner and pack scope limits actions, not confidentiality within an
   account. Fresh diagnostic commands are actions and require current target access.
 - Every bearer credential is hashed at rest: sessions, email tokens,
-  invitations, API keys, runner auth keys, per-runner tokens, OAuth
+  invitations, API keys, enrollment keys, per-runner tokens, OAuth
   access/refresh tokens, MFA recovery codes. A database leak yields no
   replayable secrets.
 - Policy is default-deny: with no policy row, no matching tier default, and no
@@ -296,10 +296,12 @@ available.
 ## Operational checklist
 
 - Run as a dedicated unprivileged user.
-- Keep the bootstrap key and per-runner token in the root-readable installer
-  environment file or a secrets manager. Do not commit them.
-- Treat each pack as code. Packs are baked into VM images by your image
-  pipeline; reviewing them is reviewing what the LLM can do on that host.
+- Keep the enrollment key in the root-readable installer environment file or
+  a secrets manager, and the per-runner token the runner writes under its data
+  directory (`/var/lib/emisar/token`) readable only by the runner user. Do
+  not commit them.
+- Treat each pack as code. Packs are installed by an administrator or your
+  image pipeline; reviewing them is reviewing what the LLM can do on that host.
 - Audit the JSONL log for `dispatch_refused`, `validation_failed`,
   `execution_failed`, and `execution_started` events without a later terminal
   event for the same request. They're often the most interesting signal.
