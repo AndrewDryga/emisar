@@ -1119,6 +1119,18 @@ func TestCLI_UsageMistakesExitWithUsageCode(t *testing.T) {
 		"missing required flag": {[]string{"signing", "new-cert", "--ca-key-file", "ca.key"}, ""},
 		"json on non-emitter":   {[]string{"pack", "install", "./p", "--json"}, ""},
 		"malformed --arg":       {[]string{"--config", cfg, "action", "run", "linux.ping", "--arg", "noequals"}, "must be key=value"},
+		"negative --timeout":    {[]string{"--config", cfg, "action", "run", "linux.ping", "--timeout=-5s"}, "--timeout must be positive"},
+		"negative --lines":      {[]string{"--config", cfg, "events", "tail", "--lines=-1"}, "--lines must be non-negative"},
+		"verify --arg no pack":  {[]string{"--config", cfg, "pack", "verify", "--arg", "k=v"}, "--arg needs exactly one pack id"},
+		"uninstall bad name":    {[]string{"--config", cfg, "pack", "uninstall", "bad/name"}, "must be a single path segment"},
+		"names-only and json":   {[]string{"--config", cfg, "pack", "suggest", "--names-only", "--json"}, "different output modes"},
+		"pack diff bad id":      {[]string{"--config", cfg, "pack", "diff", "Bad Name"}, "invalid pack name"},
+		"pack diff bad --to":    {[]string{"--config", cfg, "pack", "diff", "redis", "--to", "bad version"}, "invalid version"},
+		"missing argument":      {[]string{"--config", cfg, "pack", "uninstall"}, "requires <name>"},
+		"extra argument":        {[]string{"--config", cfg, "pack", "uninstall", "a", "b"}, "accepts 1 arg"},
+		"both CA key flags":     {[]string{"signing", "new-cert", "--ca-key", "x", "--ca-key-file", "y", "--ca-cert", "z"}, "are alternatives"},
+		"no CA key":             {[]string{"signing", "new-cert", "--ca-cert", "z"}, "provide --ca-key-file"},
+		"unknown flag":          {[]string{"--config", cfg, "events", "tail", "--bogus"}, "unknown flag"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, stderr, code := runCLI(t, tc.args, nil)
