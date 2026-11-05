@@ -107,9 +107,13 @@ func TestFlagValueMistakesAreUsageErrors(t *testing.T) {
 	_, scopeErr := parseScope("env")
 	_, ttlErr := parseTTL("soon")
 	_, ttlNeg := parseTTL("-1h")
+	_, ttlYears := parseTTL("293y")
+	_, _, packSpec := resolvePackSource(context.Background(), "a=Bad Version", "")
+	_, _, packName := resolvePackSource(context.Background(), "Bad Name", "")
 	_, keyErr := generateSigningKey("rsa")
 	for name, err := range map[string]error{
-		"scope": scopeErr, "ttl": ttlErr, "ttl non-positive": ttlNeg, "key alg": keyErr,
+		"scope": scopeErr, "ttl": ttlErr, "ttl non-positive": ttlNeg, "ttl years": ttlYears,
+		"pack spec": packSpec, "pack name": packName, "key alg": keyErr,
 	} {
 		if got := exitCode(context.Background(), err); got != exitUsage {
 			t.Errorf("%s: exit %d, want %d (err: %v)", name, got, exitUsage, err)

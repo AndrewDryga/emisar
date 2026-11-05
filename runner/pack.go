@@ -383,7 +383,7 @@ func resolvePackSource(ctx context.Context, arg, registry string) (dir string, c
 		// local-path case, so a path containing '=' still resolves as a path).
 		if name, version, versioned := strings.Cut(arg, "="); versioned {
 			if !packspec.ValidPackID(name) || !packspec.ValidVersion(version) {
-				return "", nil, fmt.Errorf("invalid pack spec %q: expected <name>=<version> with a valid pack id and version", arg)
+				return "", nil, usageError{fmt.Errorf("invalid pack spec %q: expected <name>=<version> with a valid pack id and version", arg)}
 			}
 			url := fmt.Sprintf("%s/packs/%s/versions/%s/pack.tar.gz", base, name, version)
 			banner("fetching pack %q version %s from %s", name, version, base)
@@ -394,7 +394,7 @@ func resolvePackSource(ctx context.Context, arg, registry string) (dir string, c
 		// would otherwise fail as a bare 404 instead of teaching the pin
 		// syntax.
 		if !packspec.ValidPackID(arg) {
-			return "", nil, fmt.Errorf("invalid pack name %q: use a pack id, pin a version as <name>=<version> (e.g. redis=0.2.3), or pass a local path", arg)
+			return "", nil, usageError{fmt.Errorf("invalid pack name %q: use a pack id, pin a version as <name>=<version> (e.g. redis=0.2.3), or pass a local path", arg)}
 		}
 		url := fmt.Sprintf("%s/packs/%s/pack.tar.gz", base, arg)
 		banner("fetching pack %q from %s", arg, base)
