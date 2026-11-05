@@ -2269,14 +2269,6 @@ defmodule Emisar.Audit.Events do
       ),
       do: sso_self_identity_event(subject, member, provider, "sso.identity_linked")
 
-  @doc "A user removed their own verified identity from this provider."
-  def sso_identity_unlinked(
-        %Subject{} = subject,
-        %Accounts.Membership{} = member,
-        %SSO.IdentityProvider{} = provider
-      ),
-      do: sso_self_identity_event(subject, member, provider, "sso.identity_unlinked")
-
   defp sso_self_identity_event(subject, member, provider, event_type) do
     Audit.changeset(
       provider.account_id,
