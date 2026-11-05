@@ -951,10 +951,6 @@ defmodule EmisarWeb.AuditLive do
   attr :id, :any, default: nil
   attr :label, :string, default: nil
   attr :refs, :map, default: %{}
-  # When true, the value links to this actor's filtered audit view
-  # (`?actor_id=…`) — "what did this identity do" — instead of the
-  # actor's own resource page. Used for the actor column.
-  attr :audit_link?, :boolean, default: false
   # When true, render human-first: an api_key/MCP actor leads with its owner
   # and shows the key/client on a second muted line (the Actor card, not targets).
   attr :actor?, :boolean, default: false
@@ -1069,13 +1065,6 @@ defmodule EmisarWeb.AuditLive do
   # tested explicitly.
   defp any_filter_active?(params, filters),
     do: blank_to_nil(params["actor_id"]) != nil or LiveTable.has_active_filters?(params, filters)
-
-  # The pivot carries the KIND too: the facet panel's dynamic Actor picker only
-  # exists under a kind, and it (highlighted + counted, panel auto-opened) is
-  # the pivot's ONE visible control now — the old dismissable chip died.
-  defp ref_href(%{audit_link?: true, kind: kind, id: id, current_account: account})
-       when not is_nil(id),
-       do: ~p"/app/#{account}/audit?#{[actor_kind: kind, actor_id: id]}"
 
   defp ref_href(%{kind: kind, id: id, current_account: account}), do: ref_path(account, kind, id)
 

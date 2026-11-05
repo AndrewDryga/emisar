@@ -4388,19 +4388,16 @@ defmodule EmisarWeb.CoreComponents do
 
   @doc """
   A hairline at a decision point — the instant a request is checked at the gate.
-  `state` colors it to a policy outcome.
 
       <.scan_line />
   """
-  attr :state, :atom, default: :pass, values: [:pass, :pending, :deny, :neutral]
   attr :class, :string, default: nil
 
   def scan_line(assigns) do
     ~H"""
     <div
       class={[
-        "h-px w-full bg-linear-to-r from-transparent to-transparent",
-        scan_via_class(@state),
+        "h-px w-full bg-linear-to-r from-transparent via-brand-500/50 to-transparent",
         @class
       ]}
       aria-hidden="true"
@@ -4408,11 +4405,6 @@ defmodule EmisarWeb.CoreComponents do
     </div>
     """
   end
-
-  defp scan_via_class(:pass), do: "via-brand-500/50"
-  defp scan_via_class(:pending), do: "via-amber-500/50"
-  defp scan_via_class(:deny), do: "via-rose-500/50"
-  defp scan_via_class(:neutral), do: "via-zinc-700/60"
 
   @doc """
   A policy-outcome chip — what the gate decided. `:pass` (brand-green), `:pending`

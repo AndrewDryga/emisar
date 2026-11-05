@@ -334,10 +334,8 @@ defmodule EmisarWeb.AuthComponents do
         Use a recovery code
       </.auth_footer_link>
   """
-  attr :navigate, :string, default: nil
   attr :href, :string, default: nil
   attr :event, :string, default: nil
-  attr :method, :string, default: "get"
   slot :lead, doc: "the muted lead-in text before the control"
   slot :inner_block, required: true
 
@@ -355,9 +353,7 @@ defmodule EmisarWeb.AuthComponents do
       </button>
       <.link
         :if={is_nil(@event)}
-        navigate={@navigate}
         href={@href}
-        method={@method}
         class="font-medium text-brand-400 hover:text-brand-300"
       >
         {render_slot(@inner_block)}

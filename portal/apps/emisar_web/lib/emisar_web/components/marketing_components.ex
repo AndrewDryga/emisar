@@ -622,14 +622,11 @@ defmodule EmisarWeb.MarketingComponents do
   The emisar gate mark — the logo icon as an inline SVG: an ink chevron and an
   emerald chevron flanking a vertical track of three nodes, the middle one
   emerald (a request passing the gate). Inline so it inherits `currentColor`
-  for the ink and sits in flows at any size. `animate` pulses the three nodes
-  top-to-bottom (a request crossing); base opacity is full, so reduced-motion
-  lands them lit and static. The mark is decorative, so it is `aria-hidden`.
+  for the ink and sits in flows at any size. The mark is decorative, so it is
+  `aria-hidden`.
 
       <.gate_mark class="h-9 w-9 text-zinc-100" />
-      <.gate_mark animate class="h-12 w-12 sm:h-14 sm:w-14" />
   """
-  attr :animate, :boolean, default: false
   attr :class, :string, default: "h-12 w-12"
 
   def gate_mark(assigns) do
@@ -647,7 +644,6 @@ defmodule EmisarWeb.MarketingComponents do
         r="34.5"
         stroke="currentColor"
         stroke-width="14"
-        class={@animate && "gate-dot"}
       />
       <circle
         cx="177"
@@ -655,7 +651,6 @@ defmodule EmisarWeb.MarketingComponents do
         r="34.5"
         stroke="#36E6A5"
         stroke-width="14"
-        class={@animate && "gate-dot gate-dot-2"}
       />
       <circle
         cx="177"
@@ -663,7 +658,6 @@ defmodule EmisarWeb.MarketingComponents do
         r="34.5"
         stroke="currentColor"
         stroke-width="14"
-        class={@animate && "gate-dot gate-dot-3"}
       />
     </svg>
     """

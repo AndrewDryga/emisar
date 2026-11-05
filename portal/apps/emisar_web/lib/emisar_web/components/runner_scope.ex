@@ -58,7 +58,6 @@ defmodule EmisarWeb.RunnerScope do
     ~H"""
     <.scope_panel
       variant={@variant}
-      label={@label}
       submit_error_field={@submit_error_field}
       submit_error_message={@submit_error_message}
       validation_error={@validation_error}
@@ -260,12 +259,6 @@ defmodule EmisarWeb.RunnerScope do
 
   attr :pack_submit_error_field, Phoenix.HTML.FormField, default: nil
 
-  attr :runner_validation_error, :string,
-    default: nil,
-    doc: "assign-backed callers pass the string"
-
-  attr :pack_validation_error, :string, default: nil
-
   attr :pack_access?, :boolean,
     default: true,
     doc: "false where the runner choice itself rules packs out (a directory or billing-only role)"
@@ -321,7 +314,6 @@ defmodule EmisarWeb.RunnerScope do
         selected={@runner_scope_selected}
         submit_error_field={@runner_submit_error_field}
         submit_error_message="Choose at least one runner group or runner for selected access."
-        validation_error={@runner_validation_error}
         loading?={@loading?}
         load_error={runner_load_error(@runner_load_error?)}
       />
@@ -341,7 +333,6 @@ defmodule EmisarWeb.RunnerScope do
         selected={@pack_scope_selected}
         submit_error_field={@pack_submit_error_field}
         submit_error_message="Choose at least one pack for selected pack access."
-        validation_error={@pack_validation_error}
         loading?={@loading?}
       />
     </div>
@@ -437,7 +428,6 @@ defmodule EmisarWeb.RunnerScope do
   attr :packs, :list, required: true, doc: "`[%{id: _, runner_count: _}]` from packs_in_scope/3"
   attr :empty_message, :string, default: "No packs available to grant on the selected runners."
   attr :selected, :list, default: [], doc: ~s(chosen "pack:id" values)
-  attr :label, :string, default: nil
   attr :locked, :list, default: [], doc: "inherited selections, displayed but never submitted"
   attr :variant, :atom, default: :standalone, values: [:standalone, :attached]
   attr :submit_error_field, Phoenix.HTML.FormField, default: nil
@@ -455,7 +445,6 @@ defmodule EmisarWeb.RunnerScope do
     ~H"""
     <.scope_panel
       variant={@variant}
-      label={@label}
       submit_error_field={@submit_error_field}
       submit_error_message={@submit_error_message}
       validation_error={@validation_error}
