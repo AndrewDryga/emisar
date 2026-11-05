@@ -426,14 +426,20 @@ func (a *App) portalTests(ctx context.Context, env map[string]string, args []str
 	if profile {
 		testEnv["EMISAR_TEST_PROFILE"] = "1"
 	}
-	// A focused run is the usual victim rather than the cause — it holds no
-	// migration of its own, and a gate migrating alongside it is what cancels
-	// its queries. Same lock, so the two cannot overlap either way round.
+	// A focused run is the usual victim rather than the cause: a gate migrating
+	// alongside it is what cancels its queries. Same lock, so the two cannot
+	// overlap either way round.
 	lock, err := a.portalTestLock(testEnv)
 	if err != nil {
 		return err
 	}
 	defer releasePortalTestLock(lock)
+	// A loop box starts with an empty database volume, and no gate suite uses
+	// the focused partition, so without this the application waits forever for
+	// a database nothing created.
+	if err := a.ensurePortalTestDatabase(ctx, testEnv); err != nil {
+		return err
+	}
 	return a.run(ctx, dir, testEnv, "mix", testArgs...)
 }
 

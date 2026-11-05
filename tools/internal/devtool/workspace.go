@@ -86,6 +86,16 @@ func (a *App) discoverWorkspace(ctx context.Context) (Workspace, error) {
 		if workspace.MetricsURL == "" {
 			workspace.MetricsURL = "http://localhost:9091"
 		}
+		// A filtered box gets no Coop service URL: it reaches Postgres by its
+		// Compose name through the approved rule, which .agent/project.yaml
+		// names in PGHOST and PGPORT.
+		if host := os.Getenv("PGHOST"); workspace.DatabaseURL == "" && host != "" {
+			port := os.Getenv("PGPORT")
+			if port == "" {
+				port = "5432"
+			}
+			workspace.DatabaseURL = "postgresql://" + net.JoinHostPort(host, port)
+		}
 		return workspace, nil
 	}
 	data, err := a.output(ctx, a.Root, nil, "coop", "fork", "ls", "--json")

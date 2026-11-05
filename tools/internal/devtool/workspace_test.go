@@ -182,6 +182,31 @@ func TestUnpublishedBoxUsesOwnedLocalListeners(t *testing.T) {
 	}
 }
 
+func TestFilteredBoxFindsPostgresByComposeName(t *testing.T) {
+	// A filtered box gets no COOP_SERVICE_DB_URL; .agent/project.yaml names the
+	// service in PGHOST and PGPORT instead.
+	app := boxWorkspace(t, nil)
+	if _, err := app.loadWorkspace(t.Context(), needDatabase); err == nil ||
+		!strings.Contains(err.Error(), "this command needs Postgres, and Coop injected no COOP_SERVICE_DB_URL") {
+		t.Fatalf("no URL and no PGHOST = %v, want the missing-dependency refusal", err)
+	}
+	t.Setenv("PGHOST", "db")
+	workspace, err := app.loadWorkspace(t.Context(), needDatabase)
+	if err != nil || workspace.DatabaseURL != "postgresql://db:5432" || workspace.DBPort != 5432 {
+		t.Fatalf("PGHOST fallback = %+v, %v", workspace, err)
+	}
+	t.Setenv("PGPORT", "6543")
+	workspace, err = app.loadWorkspace(t.Context(), needDatabase)
+	if err != nil || workspace.DatabaseURL != "postgresql://db:6543" || workspace.DBPort != 6543 {
+		t.Fatalf("PGPORT ignored = %+v, %v", workspace, err)
+	}
+	t.Setenv("COOP_SERVICE_DB_URL", "postgresql://localhost:31372")
+	workspace, err = app.loadWorkspace(t.Context(), needDatabase)
+	if err != nil || workspace.DatabaseURL != "postgresql://localhost:31372" || workspace.DBPort != 31372 {
+		t.Fatalf("injected URL did not win = %+v, %v", workspace, err)
+	}
+}
+
 func TestURLsReportsAnUnpublishedBoxWithoutRequiringSidecars(t *testing.T) {
 	app := boxWorkspace(t, nil)
 	if err := app.Run(t.Context(), []string{"urls"}); err != nil {
