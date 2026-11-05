@@ -1191,7 +1191,8 @@ defmodule Emisar.ApiKeys do
 
   The key is `kind: :mcp`, identity only — it carries no per-key scope; what it
   may do is account Policy + the minting operator's own runner scope. The
-  "Custom key" form is the same mint with an operator-set name/expiry.
+  "Custom key" form is a plain `:mcp` key made through `create_key/2` instead,
+  with an operator-set name/expiry.
   """
   def mint_quick_key(%Subject{account: account} = subject, opts \\ []) do
     account_id = account.id
