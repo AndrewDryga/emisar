@@ -1642,6 +1642,13 @@ defmodule Emisar.Runbooks do
   def activate_pending_approval(repo, execution_id),
     do: Emisar.Runbooks.Scheduler.activate_pending_approval(repo, execution_id)
 
+  @doc "Internal — the execution row, nil-or-struct (Approvals review reads its key issuer)."
+  def peek_execution_by_id(execution_id) do
+    RunbookExecution.Query.all()
+    |> RunbookExecution.Query.by_id(execution_id)
+    |> Repo.peek()
+  end
+
   @doc "Internal — lock an execution before its approval request is decided."
   def lock_pending_approval(repo, execution_id),
     do: Emisar.Runbooks.Scheduler.lock_pending_approval(repo, execution_id)

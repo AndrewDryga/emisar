@@ -299,16 +299,12 @@ defmodule Emisar.Approvals do
 
   defp review_self_blocked?(_request, _subject), do: false
 
-  defp review_target(%Request{run_id: run_id}) when is_binary(run_id) do
-    Runs.ActionRun.Query.all() |> Runs.ActionRun.Query.by_id(run_id) |> Repo.peek()
-  end
+  defp review_target(%Request{run_id: run_id}) when is_binary(run_id),
+    do: Runs.peek_run_by_id(run_id)
 
   defp review_target(%Request{runbook_execution_id: execution_id})
-       when is_binary(execution_id) do
-    Runbooks.RunbookExecution.Query.all()
-    |> Runbooks.RunbookExecution.Query.by_id(execution_id)
-    |> Repo.peek()
-  end
+       when is_binary(execution_id),
+       do: Runbooks.peek_execution_by_id(execution_id)
 
   defp review_target(_request), do: nil
 

@@ -3710,6 +3710,17 @@ defmodule Emisar.RunbooksTest do
     end
   end
 
+  describe "peek_execution_by_id/1" do
+    test "returns the execution row, or nil when it is gone" do
+      {owner, account, _subject} = Fixtures.Subjects.owner_subject()
+      request = Fixtures.Approvals.create_execution_request(account, owner)
+
+      assert %{id: id} = Runbooks.peek_execution_by_id(request.runbook_execution_id)
+      assert id == request.runbook_execution_id
+      assert Runbooks.peek_execution_by_id(Ecto.UUID.generate()) == nil
+    end
+  end
+
   describe "lock_pending_approval/2" do
     test "rejects a missing execution inside the caller's transaction boundary" do
       assert Runbooks.lock_pending_approval(Repo, Ecto.UUID.generate()) ==
