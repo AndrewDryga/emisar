@@ -1,7 +1,7 @@
 ---
 name: agent-tasks
 sources: [.agent/tasks/README.md, .githooks/commit-msg, tools/internal/devtool/screenshots.go, tools/internal/devtool/browser.go]
-updated: 2026-11-03
+updated: 2026-11-05
 ---
 
 # Agent tasks and batch execution
