@@ -147,7 +147,7 @@ admission allows the private actions, those eight host packs, `hcp-terraform`,
 and the GCP certificate, Cloud SQL, compute, DNS, IAM, load-balancing,
 monitoring, networking, and storage packs at every declared risk tier. The GCP
 credentials remain read-only, so mutation actions are visible but Google refuses
-them. The HCP token is organization-owner-equivalent (Free has no RBAC), so the
+them. The HCP token's permissions are broad, so the
 runner's admission excludes the run-mutating HCP actions (`tfc.apply_run`,
 `discard_run`, `cancel_run`, `retry_run`, `force_unlock_workspace`). Reads,
 plan-only runs, and the ordinary lock/unlock stay. Confirm & Apply in HCP

@@ -67,9 +67,9 @@ workflow checks prove the source. HCP's Confirm & Apply remains the separate
 portal deployment decision.
 
 Keep HCP Terraform workspace auto-apply disabled. Never store an HCP token as a
-repository secret. The token remains organization-owner-equivalent because Free
-has no team RBAC; the workflow never calls the apply API, and the environment's
-branch policy exposes the token only to protected `main`. The colocated admin
+repository secret. The token's HCP permissions are broad, so the workflow never
+calls the apply API, and the environment's branch policy exposes the token only
+to protected `main`. The colocated admin
 runner holds the same token for the HCP pack's reads; its admission denies
 `tfc.apply_run`, `discard_run`, `cancel_run`, `retry_run`, and
 `force_unlock_workspace`, so no MCP path reaches the apply either.
@@ -98,7 +98,7 @@ credentials.
 
 Protect `main` with signed commits and the single required check `Required - CI`.
 Keep linear history; disable force pushes and branch deletion. Do not require a
-second reviewer in a one-person company. Do not require area-specific jobs:
+second reviewer; `Required - CI` is the merge gate. Do not require area-specific jobs:
 unchanged areas intentionally report `skipped`, while `Required - CI` is stable
 and always reports a conclusion.
 
