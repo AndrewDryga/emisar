@@ -143,9 +143,11 @@ func DefaultRules() []actionspec.RedactionRule {
 	// The redis pack had already hand-written its own rule for `requirepass` for
 	// exactly this reason, which was the signal that the shared net was too
 	// narrow. The suffix group still requires its separator: a trailing
-	// `_v2`/`.old` is an affix, while an unseparated tail would make the secret
-	// word a substring of some longer unrelated word.
-	const secretField = `(?:[A-Za-z0-9]+[._-]?)*` + secretName + `(?:[._-][A-Za-z0-9]+)*`
+	// `_v2`/`.old` is an affix, while an unseparated tail of letters would make
+	// the secret word a substring of some longer unrelated word. Digits are the
+	// exception: they number a credential (MySQL's password1, DB_PASSWORD2,
+	// token2) rather than make another word.
+	const secretField = `(?:[A-Za-z0-9]+[._-]?)*` + secretName + `[0-9]*(?:[._-][A-Za-z0-9]+)*`
 
 	return []actionspec.RedactionRule{
 		{

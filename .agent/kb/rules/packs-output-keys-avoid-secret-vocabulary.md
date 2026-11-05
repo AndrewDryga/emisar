@@ -4,7 +4,8 @@
 runner's secret-name vocabulary — `token`, `secret`, `password`/`passwd`/`pwd`,
 `key` compounds (`api_key`, `access_key`, `signing_key`, …), `credential`,
 `dsn`, `connection_string`, and the rest of `secretName` in
-`runner/internal/redact/rules.go` — including as a `[._-]`-joined segment.
+`runner/internal/redact/rules.go` — including as a `[._-]`-joined segment or with
+digits on the end.
 Name pagination continuations `next_page_cursor` (arg side: `page_cursor`),
 never `next_page_token` or `continuation_token`. When a non-secret value
 genuinely must ship under such a name, prove it with a behavior case that
