@@ -50,7 +50,13 @@ func (a *App) qualifyAdminDiagnostics(ctx context.Context, revision, image strin
 		if err != nil {
 			return err
 		}
-		if err := os.WriteFile(filepath.Join(temp, filepath.Base(path)), data, 0o644); err != nil {
+		staged := filepath.Join(temp, filepath.Base(path))
+		if err := os.WriteFile(staged, data, 0o644); err != nil {
+			return err
+		}
+		// WriteFile honors the umask; a restrictive one would hide the file
+		// from the container's unrelated UID.
+		if err := os.Chmod(staged, 0o644); err != nil {
 			return err
 		}
 	}

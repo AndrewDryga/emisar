@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -82,6 +83,15 @@ func serveResponse(w http.ResponseWriter, r *http.Request, framing string, size 
 		_, _ = rw.WriteString("HTTP/1.0 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n")
 		_, _ = io.Copy(rw, body)
 		_ = rw.Flush()
+		// Close gracefully: an immediate close after a large write can lose the
+		// tail and the end-of-body signal on some kernels (observed in a Coop
+		// box), leaving the client waiting for EOF. Half-close, then wait for
+		// the client to finish reading and hang up.
+		if tcp, ok := conn.(*net.TCPConn); ok {
+			_ = tcp.CloseWrite()
+			_ = tcp.SetReadDeadline(time.Now().Add(10 * time.Second))
+			_, _ = io.Copy(io.Discard, tcp)
+		}
 		return
 	}
 	_, _ = io.Copy(w, body) // An over-limit client deliberately closes early.

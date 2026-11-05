@@ -6,6 +6,11 @@ port=$1
 # Preserve the native status, including when a failed read printed valid
 # partial JSON; jq cannot decide whether the source read succeeded.
 ruleset=$(nft -j -n -a -t list ruleset) || exit "$?"
+# Some jq builds exit 0 without output for empty input; that is no ruleset.
+if [ -z "$ruleset" ]; then
+  echo "unexpected nftables ruleset" >&2
+  exit 1
+fi
 printf "%s\n" "$ruleset" | jq -ce --argjson port "$port" '
   def is_port_match:
     (.left.payload.field? == "sport" or .left.payload.field? == "dport");
@@ -47,9 +52,9 @@ printf "%s\n" "$ruleset" | jq -ce --argjson port "$port" '
          ($right.range? | type) == "array" and
          ($right.range | length) == 2 then
       ($right.range[0] | numeric) as $start |
-      ($right.range[1] | numeric) as $end |
-      if $start == null or $end == null or $start > $end then null
-      else $candidate >= $start and $candidate <= $end
+      ($right.range[1] | numeric) as $stop |
+      if $start == null or $stop == null or $start > $stop then null
+      else $candidate >= $start and $candidate <= $stop
       end
     else
       null
