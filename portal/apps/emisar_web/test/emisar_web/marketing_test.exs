@@ -3578,6 +3578,21 @@ defmodule EmisarWeb.MarketingTest do
       assert Enum.all?(faq["mainEntity"], &(&1["@type"] == "Question"))
     end
 
+    test "the trust and zero-trust JSON-LD offers derive from Billing", %{conn: conn} do
+      free = Emisar.Billing.plans()["free"]
+
+      for path <- ["/trust", "/zero-trust"] do
+        app =
+          conn
+          |> get(path)
+          |> html_response(200)
+          |> ld_graph()
+          |> Enum.find(&(&1["@type"] == "SoftwareApplication"))
+
+        assert app["offers"]["description"] == "Free for up to #{free.runners_limit} runners"
+      end
+    end
+
     test "the pricing JSON-LD graph derives its Product offers from Billing",
          %{conn: conn} do
       html = conn |> get(~p"/pricing") |> html_response(200)
