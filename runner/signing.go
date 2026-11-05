@@ -83,22 +83,22 @@ func encodePrivateKey(key crypto.Signer) (string, error) {
 func parsePrivateKey(encoded string) (crypto.Signer, error) {
 	der, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encoded))
 	if err != nil {
-		return nil, fmt.Errorf("the CA key is not valid base64: %w", err)
+		return nil, usageError{fmt.Errorf("the CA key is not valid base64: %w", err)}
 	}
 	parsed, err := x509.ParsePKCS8PrivateKey(der)
 	if err != nil {
-		return nil, fmt.Errorf("the CA key is not a PKCS#8 private key: %w", err)
+		return nil, usageError{fmt.Errorf("the CA key is not a PKCS#8 private key: %w", err)}
 	}
 	switch key := parsed.(type) {
 	case ed25519.PrivateKey:
 		return key, nil
 	case *ecdsa.PrivateKey:
 		if key.Curve != elliptic.P256() {
-			return nil, fmt.Errorf("the CA key is an ECDSA key on %s, only P-256 is accepted", key.Curve.Params().Name)
+			return nil, usageError{fmt.Errorf("the CA key is an ECDSA key on %s, only P-256 is accepted", key.Curve.Params().Name)}
 		}
 		return key, nil
 	default:
-		return nil, fmt.Errorf("CA key algorithm %T is not accepted for dispatch signing", parsed)
+		return nil, usageError{fmt.Errorf("CA key algorithm %T is not accepted for dispatch signing", parsed)}
 	}
 }
 
@@ -495,14 +495,14 @@ keeps a leaked certificate usable longer.`,
 func parseCACertificate(pemText string) (*x509.Certificate, error) {
 	block, _ := pem.Decode([]byte(strings.TrimSpace(pemText)))
 	if block == nil || block.Type != "CERTIFICATE" {
-		return nil, fmt.Errorf("--ca-cert is not a PEM CERTIFICATE block")
+		return nil, usageError{fmt.Errorf("--ca-cert is not a PEM CERTIFICATE block")}
 	}
 	cert, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {
-		return nil, fmt.Errorf("--ca-cert does not parse: %w", err)
+		return nil, usageError{fmt.Errorf("--ca-cert does not parse: %w", err)}
 	}
 	if !cert.BasicConstraintsValid || !cert.IsCA {
-		return nil, fmt.Errorf("--ca-cert is not a CA certificate")
+		return nil, usageError{fmt.Errorf("--ca-cert is not a CA certificate")}
 	}
 	return cert, nil
 }

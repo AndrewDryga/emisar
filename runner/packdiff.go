@@ -94,10 +94,10 @@ allowlist, symlinks enabled, or a newly required setup variable.
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
 			if !packspec.ValidPackID(id) {
-				return fmt.Errorf("invalid pack name %q", id)
+				return usageError{fmt.Errorf("invalid pack name %q", id)}
 			}
 			if to != "" && !packspec.ValidVersion(to) {
-				return fmt.Errorf("invalid version %q", to)
+				return usageError{fmt.Errorf("invalid version %q", to)}
 			}
 			registry = resolveRegistry(registry)
 
