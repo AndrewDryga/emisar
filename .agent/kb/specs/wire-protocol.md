@@ -148,8 +148,10 @@ message contains the runner version, hostname, group, labels, complete
 pack/action advertisement, signature-enforcement state, trusted CA IDs, and
 maximum attestation age. `enforce_signatures` and `max_attestation_age_seconds`
 are persisted; `signing_ca_ids` currently is not, so the console cannot answer
-which CA a runner trusts. Ask the host: `emisar state` prints the exact
-`runner_state` this runner would advertise, `signing_ca_ids` included.
+which CA a runner trusts. Ask the host: `emisar state` prints the
+`runner_state` catalog, admission, and signing fields this runner would
+advertise, `signing_ca_ids` included. It omits `credential_rotation_supported`,
+which only a connected client sets.
 
 `credential_rotation_supported` is advertised by a connected client whose
 dialer supports durable, operator-requested credential refresh. An absent or

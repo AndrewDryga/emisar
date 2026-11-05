@@ -329,7 +329,7 @@ func formatScalar(v any) (string, error) {
 	case json.Number:
 		return t.String(), nil
 	case time.Duration:
-		// Render as Go-style duration ("5m", "1h30m") so downstream
+		// Render as Go-style duration ("5m0s", "1h30m0s") so downstream
 		// binaries that accept either Go-style or "5 minutes" can parse
 		// it. Pack authors who need a different format can do their own
 		// substitution upstream.
