@@ -10,7 +10,9 @@ runner:
     environment: dev
 
 cloud:
-  url: wss://cloud.example.com/runner/v1
+  # The portal origin, not a path: the runner appends /runner/register and
+  # /runner/socket/websocket itself.
+  url: https://cloud.example.com
   enrollment_key_env: EMISAR_ENROLLMENT_KEY
   token_path: ../var/lib/emisar/token
   # The cloud closes a socket 90s after the last heartbeat; 45s is the ceiling.
