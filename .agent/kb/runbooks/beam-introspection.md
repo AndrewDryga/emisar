@@ -1,7 +1,7 @@
 ---
 name: beam-introspection
-sources: [portal/apps/emisar/mix.exs, infra/monitoring_application.tf]
-updated: 2026-08-27
+sources: [portal/apps/emisar/mix.exs, infra/monitoring_application.tf, tools/internal/infraops/portal.go]
+updated: 2026-11-05
 ---
 
 # Inspecting a running portal node
