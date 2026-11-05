@@ -24,4 +24,11 @@ defmodule Emisar.PubSub do
     _ = Phoenix.PubSub.broadcast(@pubsub, topic, payload)
     :ok
   end
+
+  # Delivers only to subscribers on this node; for per-node signals (the
+  # shutdown drain) that must not reach other nodes in the cluster.
+  def local_broadcast(topic, payload) when is_binary(topic) do
+    _ = Phoenix.PubSub.local_broadcast(@pubsub, topic, payload)
+    :ok
+  end
 end

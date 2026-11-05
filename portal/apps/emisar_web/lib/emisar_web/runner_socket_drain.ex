@@ -4,12 +4,15 @@ defmodule EmisarWeb.RunnerSocketDrain do
 
   Sits in the supervision tree below `EmisarWeb.Endpoint`, so on SIGTERM
   it terminates BEFORE the Endpoint tears every socket down at once.
-  Its `terminate/2` broadcasts a `:drain` signal on the
+  Its `terminate/2` broadcasts a node-local `:drain` signal on the
   `runner_socket_drain` PubSub topic. Each `EmisarWeb.RunnerSocket`
   process subscribes to that topic at init; on `:drain` it pushes a
   `shutdown` envelope to the runner (so the runner knows to resync state
   after reconnecting, not silently retry an outbound queue with the
   cloud's old state) and stops normally.
+
+  The broadcast is node-local: other nodes in the cluster keep their
+  runners connected.
 
   The terminate call sleeps for up to `@drain_window_ms` to give the
   sockets time to flush their outbound queue before BEAM teardown
@@ -38,7 +41,7 @@ defmodule EmisarWeb.RunnerSocketDrain do
   def terminate(_reason, _state) do
     Logger.info("draining runner sockets before shutdown")
 
-    :ok = Emisar.PubSub.broadcast(@drain_topic, :runner_socket_drain)
+    :ok = Emisar.PubSub.local_broadcast(@drain_topic, :runner_socket_drain)
 
     # Give the sockets time to flush the shutdown envelope onto the wire
     # before BEAM teardown closes the transports.
