@@ -1111,15 +1111,22 @@ func TestCLI_JSONFlagRefusedWhereUnsupported(t *testing.T) {
 // Usage mistakes that cobra or a command's own flag validation reports must
 // all reach the frozen usage code, not the work-failed code.
 func TestCLI_UsageMistakesExitWithUsageCode(t *testing.T) {
-	for name, args := range map[string][]string{
-		"missing required flag": {"signing", "new-cert", "--ca-key-file", "ca.key"},
-		"json on non-emitter":   {"pack", "install", "./p", "--json"},
-		"malformed --arg":       {"run", "nope", "--arg", "noequals"},
+	cfg := writeRunnableConfig(t, t.TempDir(), false)
+	for name, tc := range map[string]struct {
+		args    []string
+		wantErr string
+	}{
+		"missing required flag": {[]string{"signing", "new-cert", "--ca-key-file", "ca.key"}, ""},
+		"json on non-emitter":   {[]string{"pack", "install", "./p", "--json"}, ""},
+		"malformed --arg":       {[]string{"--config", cfg, "action", "run", "linux.ping", "--arg", "noequals"}, "must be key=value"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, stderr, code := runCLI(t, args, nil)
+			_, stderr, code := runCLI(t, tc.args, nil)
 			if code != exitUsage {
 				t.Fatalf("exit = %d, want %d; stderr: %s", code, exitUsage, stderr)
+			}
+			if !strings.Contains(stderr, tc.wantErr) {
+				t.Fatalf("stderr = %q, want it to contain %q", stderr, tc.wantErr)
 			}
 		})
 	}
