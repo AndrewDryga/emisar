@@ -36,7 +36,8 @@ and passes after (plus the denial / cross-account variant for a context bug, §7
 - **LiveView**: value missing/doubled on load → `mount` runs twice (IL-18); a
   silent form failure → check the `{:error, changeset}` branch is handled, not the UI.
 - **MCP**: a doubled action → the operation-id recovery path
-  (`get_operation` / `MCPOperations.fetch_recovery`); MCP mutations have no
+  (`get_operation` / `MCPOperations.fetch_recovery`); MCP mutations
+  dedupe on the bridge's operation ID (mcp-api.md); there is no caller-supplied
   idempotency key. An auth error → the subject built at the MCP boundary.
 - **Runner socket**: state not updating → the runner-socket state helpers
   (`Runners.apply_state`, `connect_runner`, `disconnect_runner`,

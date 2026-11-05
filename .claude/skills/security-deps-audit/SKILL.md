@@ -41,13 +41,13 @@ So a bumped version must clear a release-age window before it can merge.
   resolution from selecting very fresh releases, but lock-pinned versions
   bypass it by design. Go has no equivalent. Dependabot `cooldown` controls
   only PRs Dependabot opens; it is not a general boundary.
-- **The gate:** `tools/cmd/depgate` runs from the reusable CI workflow on every
-  supported manifest/lockfile change. It diffs against the base and rejects an
+- **The gate:** `./run check deps` (wrapping `tools/cmd/depgate`) runs in CI
+  on every supported manifest/lockfile change and in `./run gate tooling`. It diffs against the base and rejects an
   added/upgraded version younger than its policy window: **patch 7d · minor 14d
-  · major 30d**. Run it locally from `tools/`:
+  · major 30d**. Run it locally:
 
   ```sh
-  go run ./cmd/depgate check --base origin/main
+  ./run check deps --base origin/main
   ```
 - **Adding/bumping a dep:** prefer a version already past its window, or expect
   the gate to hold the PR until it ages. For an urgent security fix that can't
