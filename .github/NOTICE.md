@@ -4,9 +4,11 @@ emisar is software owned by Andrii Dryga.
 
 This repository is dual-licensed:
 
-- **`runner/`, `mcp/`, and `packs/`** — the on-host runner, the stdio MCP
-  bridge, and the action-pack catalog — are open source under the
-  [Apache License, Version 2.0](../runner/LICENSE).
+- **`runner/`, `mcp/`, `packs/`, `skills/`, and `dist/cursor-plugin/`** — the
+  on-host runner, the stdio MCP bridge, the action-pack catalog, the public
+  customer skills, and the Cursor plugin — are open source under the
+  [Apache License, Version 2.0](../runner/LICENSE) (the skills and plugin:
+  [`dist/cursor-plugin/LICENSE`](../dist/cursor-plugin/LICENSE)).
 - **Everything else** (including the `portal/` control plane) is
   source-available under the
   [Business Source License 1.1](../LICENSE.md): free for non-production

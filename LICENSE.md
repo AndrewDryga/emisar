@@ -12,16 +12,17 @@ Licensor:             Andrii Dryga
 Licensed Work:        emisar
                       The Licensed Work is (c) 2026 Andrii Dryga, and
                       comprises the contents of this repository except the
-                      runner/, mcp/, and packs/ directories, which are
-                      separately licensed under the Apache License,
-                      Version 2.0 (see runner/LICENSE, mcp/LICENSE, and
-                      packs/LICENSE).
+                      runner/, mcp/, packs/, skills/, and dist/cursor-plugin/
+                      directories, which are separately licensed under the
+                      Apache License, Version 2.0 (see runner/LICENSE,
+                      mcp/LICENSE, packs/LICENSE, and
+                      dist/cursor-plugin/LICENSE, which also covers skills/).
 
 Additional Use Grant: You may make production use of the Licensed Work to the
                       extent necessary to install, configure, integrate with,
                       or operate the separately licensed emisar components
-                      (the runner/, mcp/, and packs/ directories, each under
-                      the Apache License, Version 2.0) or an emisar hosted
+                      (the runner/, mcp/, packs/, skills/, and dist/cursor-plugin/
+                      directories, each under the Apache License, Version 2.0) or an emisar hosted
                       service under its own terms of service.
 
 Change Date:          2029-11-03

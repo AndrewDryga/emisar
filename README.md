@@ -206,9 +206,10 @@ with `./run smoke`; it serves <http://localhost:4010>. See
 
 This repository is dual-licensed:
 
-- `runner/`, `mcp/`, and `packs/` are open source under the
-  [Apache License 2.0](runner/LICENSE). You can inspect, build, package, and
-  operate the on-host components independently.
+- `runner/`, `mcp/`, `packs/`, `skills/`, and `dist/cursor-plugin/` are open
+  source under the [Apache License 2.0](runner/LICENSE); the skills and the
+  Cursor plugin carry [their own copy](dist/cursor-plugin/LICENSE). You can
+  inspect, build, package, and operate the on-host components independently.
 - Everything else, including `portal/`, is source-available under the
   [Business Source License 1.1](LICENSE.md). Non-production use is free.
   Production use is permitted only as needed to operate the Apache-licensed

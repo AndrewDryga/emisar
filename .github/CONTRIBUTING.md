@@ -2,7 +2,7 @@
 
 Thank you for your interest in contributing.
 
-This repository is dual-licensed: `runner/`, `mcp/`, and `packs/` under the Apache License 2.0, everything else under the Business Source License 1.1 (see `NOTICE.md`). Contributions are welcome, but they must follow the applicable license, this guide, and any Contributor License Agreement required by the maintainers.
+This repository is dual-licensed: `runner/`, `mcp/`, `packs/`, `skills/`, and `dist/cursor-plugin/` under the Apache License 2.0, everything else under the Business Source License 1.1 (see `NOTICE.md`). Contributions are welcome, but they must follow the applicable license, this guide, and any Contributor License Agreement required by the maintainers.
 
 ## Ground rules
 
@@ -54,7 +54,7 @@ Do not submit code generated from another project's proprietary, source-availabl
 
 Before opening a pull request, confirm:
 
-- [ ] I have read `LICENSE.md` (and, for `runner/`/`mcp/`/`packs/`, the Apache-2.0 `LICENSE` there).
+- [ ] I have read `LICENSE.md` (and, for `runner/`/`mcp/`/`packs/`/`skills/`/`dist/cursor-plugin/`, the Apache-2.0 `LICENSE` there).
 - [ ] I have read and agree to this `CONTRIBUTING.md`.
 - [ ] I have the right to submit this contribution.
 - [ ] This contribution does not include confidential information.
