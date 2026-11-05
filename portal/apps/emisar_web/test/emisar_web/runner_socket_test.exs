@@ -66,11 +66,9 @@ defmodule EmisarWeb.RunnerSocketTest do
 
     test "answers a disabled runner with a retryable 403, not 401" do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
-      subject = Fixtures.Subjects.subject_for(owner)
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
       {raw, _token} = Runners.mint_runner_token(runner)
-      {:ok, _runner} = Runners.disable_runner(runner, subject)
+      Fixtures.Runners.disable_runner(runner)
 
       assert build_conn()
              |> put_req_header("authorization", "Bearer " <> raw)
@@ -278,12 +276,9 @@ defmodule EmisarWeb.RunnerSocketTest do
     test "a disabled runner's valid token → retryable 403", %{conn: conn} do
       account = Fixtures.Accounts.create_account()
 
-      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
-
-      subject = Fixtures.Subjects.subject_for(owner)
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
       {raw, _token} = Runners.mint_runner_token(runner)
-      {:ok, _runner} = Runners.disable_runner(runner, subject)
+      Fixtures.Runners.disable_runner(runner)
 
       conn =
         conn
