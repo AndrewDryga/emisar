@@ -676,6 +676,28 @@ defmodule EmisarWeb.DashboardLiveTest do
     end
   end
 
+  describe "same-role runner scope change" do
+    test "an open dashboard re-derives runner-dependent flags", %{conn: conn} do
+      {_owner_conn, _owner, account} = register_and_log_in(conn)
+      {:ok, none} = Emisar.Accounts.RunnerAccess.restricted(["nowhere"], [])
+
+      membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+        |> Fixtures.Memberships.force_runner_access(none)
+
+      {:ok, lv, _html} = live(log_in_member(build_conn(), membership), ~p"/app/#{account}")
+      refute :sys.get_state(lv.pid).socket.assigns.has_full_runner_access?
+
+      Fixtures.Memberships.force_runner_access(membership, Emisar.Accounts.RunnerAccess.all())
+      send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", membership.id})
+      render(lv)
+
+      assigns = :sys.get_state(lv.pid).socket.assigns
+      assert assigns.has_full_runner_access?
+      assert assigns.can_install_runners?
+    end
+  end
+
   describe "billing-status banner" do
     setup %{conn: conn} do
       {conn, owner, account} = register_and_log_in(conn)

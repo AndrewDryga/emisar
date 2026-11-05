@@ -671,6 +671,27 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     assert flash["error"] =~ "need access to all runners"
   end
 
+  test "an open page unlocks New key when the admin's runner access widens", %{conn: conn} do
+    {_owner_conn, _owner, account} = register_and_log_in(conn)
+    {:ok, production} = Emisar.Accounts.RunnerAccess.restricted(["production"], [])
+
+    membership =
+      Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+      |> Fixtures.Memberships.force_runner_access(production)
+
+    {:ok, lv, _html} =
+      live(log_in_member(build_conn(), membership), ~p"/app/#{account}/runners/keys")
+
+    assert has_element?(lv, "button[disabled]", "New key")
+
+    Fixtures.Memberships.force_runner_access(membership, Emisar.Accounts.RunnerAccess.all())
+    send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", membership.id})
+    render(lv)
+
+    refute has_element?(lv, "button[disabled]", "New key")
+    assert has_element?(lv, ~s(a[href="/app/#{account.slug}/runners/keys/new"]))
+  end
+
   # IL-15: hiding the control is never the authorization. A crafted create event
   # from that same admin is refused by the handler and writes nothing.
   test "a runner-restricted admin crafting a create event is refused", %{conn: conn} do

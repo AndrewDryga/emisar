@@ -54,6 +54,14 @@ defmodule EmisarWeb.DashboardLive do
   def handle_info({:approval_updated, _request_id}, socket),
     do: {:noreply, schedule_refresh(socket, :approvals)}
 
+  # Same-role scope change (the shared hook already rebuilt the Subject): the
+  # runner-dependent flags and tiles are scope-derived, so take the full load.
+  def handle_info(
+        {:list_changed, :team, "membership.runner_access_changed", membership_id},
+        %{assigns: %{current_subject: %{membership_id: membership_id}}} = socket
+      ),
+      do: {:noreply, load(socket)}
+
   def handle_info(:refresh_dashboard, socket) do
     socket =
       socket.assigns.pending_refreshes

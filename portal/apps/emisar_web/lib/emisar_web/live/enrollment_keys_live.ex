@@ -63,6 +63,12 @@ defmodule EmisarWeb.EnrollmentKeysLive do
   def handle_info({:list_changed, :enrollment_key, _event_type, _id}, socket),
     do: {:noreply, load(socket, socket.assigns[:filter_params] || %{})}
 
+  def handle_info(
+        {:list_changed, :team, "membership.runner_access_changed", membership_id},
+        %{assigns: %{current_subject: %{membership_id: membership_id}}} = socket
+      ),
+      do: {:noreply, load(socket, socket.assigns[:filter_params] || %{})}
+
   def handle_info(_, socket), do: {:noreply, socket}
 
   # ONE spelling of why key creation is locked — the disabled control's tooltip,
