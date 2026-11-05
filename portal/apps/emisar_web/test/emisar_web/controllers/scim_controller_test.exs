@@ -2028,7 +2028,10 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert conn |> auth(token) |> get(~p"/scim/v2/Schemas/nope") |> json_response(404)
     end
 
-    test "GET /Schemas declares the User schema's three attributes", %{conn: conn, token: token} do
+    test "GET /Schemas declares the User schema's supported attributes", %{
+      conn: conn,
+      token: token
+    } do
       body = conn |> auth(token) |> get(~p"/scim/v2/Schemas") |> json_response(200)
 
       assert body["schemas"] == ["urn:ietf:params:scim:api:messages:2.0:ListResponse"]
@@ -2049,14 +2052,22 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert attrs["userName"]["uniqueness"] == "server"
       assert attrs["userName"]["mutability"] == "readWrite"
 
-      # active: optional boolean. externalId: optional, caseExact. Deliberate
-      # subset — only userName is required even though the parser reads email/name.
+      # active: optional boolean. externalId: optional, caseExact. Only userName
+      # is required.
       assert attrs["active"]["type"] == "boolean"
       assert attrs["active"]["required"] == false
       assert attrs["externalId"]["required"] == false
       assert attrs["externalId"]["caseExact"] == true
-      refute Map.has_key?(attrs, "emails")
-      refute Map.has_key?(attrs, "name")
+      assert attrs["displayName"]["type"] == "string"
+      assert attrs["name"]["type"] == "complex"
+
+      assert Enum.map(attrs["name"]["subAttributes"], & &1["name"]) ==
+               ["formatted", "givenName", "familyName"]
+
+      assert attrs["emails"]["multiValued"] == true
+
+      assert Enum.map(attrs["emails"]["subAttributes"], & &1["name"]) ==
+               ["value", "type", "primary"]
     end
 
     test "discovery endpoints require the bearer too", %{conn: conn} do

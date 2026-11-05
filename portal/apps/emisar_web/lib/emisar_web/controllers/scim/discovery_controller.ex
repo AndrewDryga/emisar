@@ -57,6 +57,64 @@ defmodule EmisarWeb.SCIM.DiscoveryController do
         "required" => false,
         "caseExact" => true,
         "mutability" => "readWrite"
+      },
+      %{
+        "name" => "displayName",
+        "type" => "string",
+        "multiValued" => false,
+        "required" => false,
+        "caseExact" => false,
+        "mutability" => "readWrite"
+      },
+      %{
+        "name" => "name",
+        "type" => "complex",
+        "multiValued" => false,
+        "required" => false,
+        "mutability" => "readWrite",
+        "subAttributes" =>
+          for sub <- ["formatted", "givenName", "familyName"] do
+            %{
+              "name" => sub,
+              "type" => "string",
+              "multiValued" => false,
+              "required" => false,
+              "caseExact" => false,
+              "mutability" => "readWrite"
+            }
+          end
+      },
+      %{
+        "name" => "emails",
+        "type" => "complex",
+        "multiValued" => true,
+        "required" => false,
+        "mutability" => "readWrite",
+        "subAttributes" => [
+          %{
+            "name" => "value",
+            "type" => "string",
+            "multiValued" => false,
+            "required" => false,
+            "caseExact" => false,
+            "mutability" => "readWrite"
+          },
+          %{
+            "name" => "type",
+            "type" => "string",
+            "multiValued" => false,
+            "required" => false,
+            "caseExact" => false,
+            "mutability" => "readWrite"
+          },
+          %{
+            "name" => "primary",
+            "type" => "boolean",
+            "multiValued" => false,
+            "required" => false,
+            "mutability" => "readWrite"
+          }
+        ]
       }
     ]
   }
