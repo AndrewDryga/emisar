@@ -12,7 +12,7 @@ so the command that chooses the partition also chooses the database and its lock
 gate uses two persistent databases: `emisar_test_emisar` for the domain app and
 `emisar_test_emisar_web` for the web app. A Coop box sets `MIX_TEST_PARTITION=box`, and the gate
 appends its suite partition to that prefix (`emisar_testbox_emisar`, `emisar_testbox_emisar_web`),
-so a box gate never migrates the databases a host gate is using. It compiles the umbrella once, then prepares and runs
+so a box gate leaves the databases a host gate is using untouched. It compiles the umbrella once, then prepares and runs
 those app suites in parallel. Each suite gets one quarter of Mix's default process-level
 ExUnit case budget, so their combined test concurrency stays bounded at the CPU available to the command.
 

@@ -1,6 +1,7 @@
-# Shared build context for portal/Dockerfile, dev/runner/Dockerfile, and
-# dev/mcp/Dockerfile. The box image (.agent/Dockerfile), cloud-init, and test-pack
-# images use narrower contexts.
+# Shared build context for portal/Dockerfile, runner/release/Dockerfile (the
+# published runner image), dev/runner/Dockerfile, and dev/mcp/Dockerfile.
+# The box image (.agent/Dockerfile), cloud-init, and test-pack images use
+# narrower contexts.
 
 # Repository and local tool state
 .git
