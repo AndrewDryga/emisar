@@ -16,6 +16,32 @@ defmodule EmisarWeb.EndpointTest do
     assert_session_cookie(insecure_conn, false)
   end
 
+  test "a real Bandit listener built from the endpoint config accepts a legal 12 KB header" do
+    http = Keyword.put(EmisarWeb.Endpoint.config(:http), :port, 0)
+
+    [spec] =
+      Bandit.PhoenixAdapter.child_specs(EmisarWeb.Endpoint, otp_app: :emisar_web, http: http)
+
+    pid = start_supervised!(spec)
+    {:ok, {_ip, port}} = ThousandIsland.listener_info(pid)
+
+    {:ok, socket} = :gen_tcp.connect({127, 0, 0, 1}, port, [:binary, active: false])
+
+    :ok =
+      :gen_tcp.send(socket, [
+        "GET /healthz HTTP/1.1\r\nhost: localhost\r\nconnection: close\r\n",
+        "emisar-attestation: ",
+        String.duplicate("a", 12_000),
+        "\r\n\r\n"
+      ])
+
+    {:ok, response} = :gen_tcp.recv(socket, 0, 5_000)
+    :gen_tcp.close(socket)
+
+    assert "HTTP/1.1 " <> <<status::binary-size(3), _::binary>> = response
+    refute status == "431"
+  end
+
   defp request_with_session do
     build_conn()
     |> init_test_session(%{})
