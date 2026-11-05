@@ -86,6 +86,9 @@ func (m *Manager) isolatedSessionWithOptions(ctx context.Context, baseURL string
 			chromedp.Flag("no-sandbox", true),
 			chromedp.Flag("disable-dev-shm-usage", true),
 			chromedp.Flag("disable-gpu", true),
+			// Debian's Chromium does not put cross-site iframes in their own
+			// process by default; frame tracking (entra-capture) depends on it.
+			chromedp.Flag("site-per-process", true),
 			// A box or CI runner starts Chrome cold while the rest of the suite
 			// saturates its cores, and chromedp's 20s default for the WebSocket
 			// URL loses that race intermittently. A workstation keeps the short
