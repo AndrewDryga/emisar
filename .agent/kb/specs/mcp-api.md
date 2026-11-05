@@ -196,7 +196,10 @@ authentication, routing, or mutation preparation.
 
 Before or around tool dispatch the portal answers with its own JSON-RPC errors.
 These codes and statuses are a client contract. A request id is echoed only when
-the request is a valid request; a notification never receives an error body.
+the body parsed and the request is valid; a notification that parsed and passed
+the size check receives an empty body with the error status. An unparseable
+(`-32700`) or oversized (`-32600`, 413) body is never inspected, so it always
+gets an error body with `id: null`.
 
 | Code | HTTP | When | Client action |
 |---|---|---|---|
