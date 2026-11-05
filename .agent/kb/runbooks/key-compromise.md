@@ -102,7 +102,7 @@ registrations and the old key fails at `/runner/register`. If a host's old
 token may have been exposed, replace its runner identity as described above;
 changing only `EMISAR_ENROLLMENT_KEY` does not revoke an already-issued token.
 
-See the runner [installation and connection notes](../../../runner/README.md#after-install)
+See the runner [installation and connection notes](../../../runner/README.md#files-and-configuration)
 for the supported host paths and service layout.
 
 ## MCP Registry publisher key
