@@ -655,7 +655,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert body["active"] == false
     end
 
-    test "a PATCH whose ops never touch `active` → 400 invalidPath", %{
+    test "a PATCH targeting an unsupported attribute → 400 invalidPath", %{
       conn: conn,
       token: token,
       provider: provider
@@ -663,8 +663,8 @@ defmodule EmisarWeb.SCIMControllerTest do
       {:ok, _} =
         SSO.scim_provision_user(provider, %{external_id: "okta|noact", email: "noact@acme.test"})
 
-      # A real PatchOp shape, but no operation targets `active` — an honest
-      # invalidPath, not a silent no-op (the active op simply isn't present).
+      # A real PatchOp shape, but its only operation targets an unsupported
+      # attribute (`nickName`) — an honest invalidPath, not a silent no-op.
       patch_body = %{
         "Operations" => [%{"op" => "add", "path" => "nickName", "value" => "nick"}]
       }
