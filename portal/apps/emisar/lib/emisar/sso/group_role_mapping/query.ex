@@ -25,14 +25,6 @@ defmodule Emisar.SSO.GroupRoleMapping.Query do
 
   def lock_for_update(queryable), do: lock(queryable, "FOR NO KEY UPDATE")
 
-  # {provider_id, count} rows — the per-connection group-mapping tallies for the
-  # overview. Group by provider so one query covers every connection.
-  def count_by_provider(queryable) do
-    queryable
-    |> group_by([mappings: m], m.provider_id)
-    |> select([mappings: m], {m.provider_id, count(m.id)})
-  end
-
   @impl Emisar.Repo.Query
   def cursor_fields,
     do: [{:mappings, :asc, :directory_group_id}, {:mappings, :asc, :id}]

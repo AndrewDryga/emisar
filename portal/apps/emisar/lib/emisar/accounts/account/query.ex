@@ -15,9 +15,6 @@ defmodule Emisar.Accounts.Account.Query do
   def by_id(queryable, id),
     do: where(queryable, [accounts: a], a.id == ^id)
 
-  def by_ids(queryable, ids) when is_list(ids),
-    do: where(queryable, [accounts: a], a.id in ^ids)
-
   def lock_for_update(queryable),
     do: lock(queryable, "FOR NO KEY UPDATE")
 
@@ -31,9 +28,6 @@ defmodule Emisar.Accounts.Account.Query do
 
   def by_paddle_customer_id(queryable, customer_id),
     do: where(queryable, [accounts: a], a.paddle_customer_id == ^customer_id)
-
-  def ordered_by_name(queryable),
-    do: order_by(queryable, [accounts: a], asc: a.name)
 
   def ordered_by_id(queryable),
     do: order_by(queryable, [accounts: a], asc: a.id)

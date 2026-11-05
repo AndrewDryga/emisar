@@ -30,8 +30,6 @@ defmodule Emisar.SSO.DirectoryGroup.Query do
     )
   end
 
-  def none(queryable), do: where(queryable, false)
-
   def by_account_id(queryable \\ all(), account_id),
     do: where(queryable, [groups: g], g.account_id == ^account_id)
 

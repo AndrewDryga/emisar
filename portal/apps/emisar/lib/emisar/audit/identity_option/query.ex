@@ -77,7 +77,6 @@ defmodule Emisar.Audit.IdentityOption.Query do
   def by_account_id(queryable, account_id),
     do: where(queryable, [audit_identity_options: o], o.account_id == ^account_id)
 
-  def none(queryable), do: where(queryable, false)
   def search(queryable, ""), do: queryable
 
   def search(queryable, term) do

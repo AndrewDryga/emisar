@@ -71,8 +71,6 @@ defmodule Emisar.Runbooks.ExecutionItem.Query do
     )
   end
 
-  def limit_to(queryable, limit), do: limit(queryable, ^limit)
-
   def lock_for_update(queryable),
     do: lock(queryable, "FOR NO KEY UPDATE")
 end

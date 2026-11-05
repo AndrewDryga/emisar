@@ -79,13 +79,6 @@ defmodule Emisar.SSO.UserIdentity.Query do
     |> where([provider: p], p.scim_enabled == true)
   end
 
-  @doc "Just the ids, for a caller that needs them before and after a bulk write."
-  def select_ids(queryable), do: select(queryable, [identities: i], i.id)
-
-  @doc "Distinct account ids the matched identities belong to."
-  def select_account_ids(queryable),
-    do: queryable |> select([identities: i], i.account_id) |> distinct(true)
-
   # Join (if needed) + preload the identity's provider — powers the team page's
   # "synced from <provider>" attribution and the provider's synced-users list.
   # Matched on the account as well as the id: the identity carries its own

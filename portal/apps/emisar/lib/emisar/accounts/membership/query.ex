@@ -35,9 +35,6 @@ defmodule Emisar.Accounts.Membership.Query do
   def removed(queryable \\ all()),
     do: where(queryable, [memberships: m], not is_nil(m.deleted_at))
 
-  @doc "The fail-closed scope: a session that may act in no account reads nothing."
-  def none(queryable), do: where(queryable, false)
-
   def not_id(queryable, id),
     do: where(queryable, [memberships: m], m.id != ^id)
 
@@ -46,9 +43,6 @@ defmodule Emisar.Accounts.Membership.Query do
 
   def by_account_id(queryable, account_id),
     do: where(queryable, [memberships: m], m.account_id == ^account_id)
-
-  def by_account_ids(queryable, account_ids) when is_list(account_ids),
-    do: where(queryable, [memberships: m], m.account_id in ^account_ids)
 
   # Read credential validity and membership scope in one database snapshot.
   # A revoked or expired bearer cannot resolve the membership's current scope.
@@ -88,8 +82,6 @@ defmodule Emisar.Accounts.Membership.Query do
       is_nil(m.last_active_at) or m.last_active_at < ^cutoff
     )
   end
-
-  def select_ids(queryable), do: select(queryable, [memberships: m], m.id)
 
   def by_directory_provider_or_unmanaged(queryable, provider_id) do
     where(

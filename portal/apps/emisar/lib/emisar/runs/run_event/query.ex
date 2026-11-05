@@ -7,9 +7,6 @@ defmodule Emisar.Runs.RunEvent.Query do
   def by_run_id(queryable, run_id),
     do: where(queryable, [events: e], e.run_id == ^run_id)
 
-  def by_account_id(queryable, account_id),
-    do: where(queryable, [events: e], e.account_id == ^account_id)
-
   def by_kind(queryable, kind),
     do: where(queryable, [events: e], e.kind == ^kind)
 
