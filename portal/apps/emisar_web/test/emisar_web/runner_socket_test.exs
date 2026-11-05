@@ -63,6 +63,20 @@ defmodule EmisarWeb.RunnerSocketTest do
              |> post(~p"/runner/token/refresh")
              |> json_response(401) == %{"error" => "token_expired"}
     end
+
+    test "answers a disabled runner with a retryable 403, not 401" do
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+      subject = Fixtures.Subjects.subject_for(owner)
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      {raw, _token} = Runners.mint_runner_token(runner)
+      {:ok, _runner} = Runners.disable_runner(runner, subject)
+
+      assert build_conn()
+             |> put_req_header("authorization", "Bearer " <> raw)
+             |> post(~p"/runner/token/refresh")
+             |> json_response(403) == %{"error" => "runner_disabled"}
+    end
   end
 
   describe "POST /runner/register (bearer-authed)" do

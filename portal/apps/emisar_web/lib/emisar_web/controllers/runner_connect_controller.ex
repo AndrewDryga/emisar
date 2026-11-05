@@ -59,11 +59,17 @@ defmodule EmisarWeb.RunnerConnectController do
       {:error, :authentication_unavailable} ->
         authentication_unavailable(conn)
 
+      # 403, as on the upgrade: a disable is reversible, and a 401 would send
+      # the runner off to re-register instead of keeping its token.
       {:error, :runner_disabled} ->
-        unauthorized(conn, "runner_disabled")
+        conn
+        |> put_status(:forbidden)
+        |> json(%{error: "runner_disabled"})
 
       {:error, :account_disabled} ->
-        unauthorized(conn, "account_disabled")
+        conn
+        |> put_status(:forbidden)
+        |> json(%{error: "account_disabled"})
 
       # An expired token cannot buy a live successor — otherwise expiry would
       # be a formality any leaked credential could refresh its way out of.
