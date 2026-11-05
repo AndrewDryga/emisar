@@ -931,3 +931,20 @@ func TestTOMLReconnectKeepsOtherEmisarPrefixedServers(t *testing.T) {
 		}
 	}
 }
+
+func TestTOMLReconnectRefusesQuotedAndInlineEmisarEntries(t *testing.T) {
+	adapter, _ := lookupClientAdapter("codex")
+	for name, existing := range map[string]string{
+		"quoted parent":  "[\"mcp_servers\".emisar]\ncommand = \"old\"\n",
+		"inline table":   "mcp_servers = { emisar = { command = \"old\" } }\n",
+		"dotted key":     "mcp_servers.emisar.command = \"old\"\n",
+		"quoted sibling": "[mcp_servers.\"emisar\".env]\nA = \"1\"\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			client := adapter.resolve(testConfigRoots(t))
+			if _, err := client.renderTOML(testEntryRequest("/usr/local/bin/emisar-mcp", "codex"), existing); err == nil {
+				t.Fatalf("expected refusal for %q", existing)
+			}
+		})
+	}
+}
