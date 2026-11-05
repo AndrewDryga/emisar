@@ -1,7 +1,7 @@
 ---
 name: wire-protocol
 sources: [runner/internal/cloud, runner/internal/attest, mcp/internal/attest, portal/apps/emisar_web/lib/emisar_web/runner_socket.ex, portal/apps/emisar_web/lib/emisar_web/runner_socket_drain.ex]
-updated: 2026-10-09
+updated: 2026-11-05
 ---
 
 # Runner wire protocol
