@@ -142,7 +142,9 @@ func TestFirewallPortRulesSourceFailures(t *testing.T) {
 	if run.exit != 23 || run.stdout != "" || !strings.Contains(run.stderr, "packtest-netlink-refused") {
 		t.Fatalf("source error obscured: %#v", run)
 	}
-	for _, body := range []string{"", "not-json", `{}`, `[]`, `null`, `{"nftables":null}`, `{"nftables":{}}`} {
+	// Whitespace-only output holds no JSON value: jq 1.6 then exits 0 and
+	// prints nothing, which must not pass as an empty result.
+	for _, body := range []string{"", " ", " \t ", "\n", "not-json", `{}`, `[]`, `null`, `{"nftables":null}`, `{"nftables":{}}`} {
 		run := runFirewallPortRules(t, body, 443, "0")
 		if run.exit == 0 {
 			t.Fatalf("invalid source accepted: %#v", run)
