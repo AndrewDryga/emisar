@@ -1317,3 +1317,34 @@ func TestCLI_SuggestRefusesContradictoryOutputModes(t *testing.T) {
 		t.Errorf("nothing should reach stdout, got %q", stdout)
 	}
 }
+
+// The same malformed CA key is a usage mistake when typed on the command line
+// (--ca-key, exit 2) but a failure when it came from a file (--ca-key-file,
+// exit 1): file contents are not part of the invocation.
+func TestCLI_MalformedCAKeyExitCodeDependsOnSource(t *testing.T) {
+	const bad = "not base64!"
+	keyFile := filepath.Join(t.TempDir(), "ca.key")
+	if err := os.WriteFile(keyFile, []byte(bad+"\n"), 0o600); err != nil {
+		t.Fatalf("write key: %v", err)
+	}
+	tests := map[string]struct {
+		keyFlags []string
+		want     int
+		stderr   string
+	}{
+		"inline --ca-key": {[]string{"--ca-key", bad}, exitUsage, "the CA key is not valid base64"},
+		"--ca-key-file":   {[]string{"--ca-key-file", keyFile}, exitFailure, "CA key file " + keyFile},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			args := append([]string{"signing", "new-cert", "--ca-cert", "x"}, tc.keyFlags...)
+			_, stderr, code := runCLI(t, args, nil)
+			if code != tc.want {
+				t.Errorf("exit = %d, want %d; stderr: %s", code, tc.want, stderr)
+			}
+			if !strings.Contains(stderr, tc.stderr) {
+				t.Errorf("stderr %q does not contain %q", stderr, tc.stderr)
+			}
+		})
+	}
+}

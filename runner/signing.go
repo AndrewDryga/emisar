@@ -443,6 +443,12 @@ keeps a leaked certificate usable longer.`,
 			}
 			signer, err := parsePrivateKey(material)
 			if err != nil {
+				// File contents are not part of the invocation, so a bad key
+				// there is a failure (1); the plain error drops the usage type.
+				var u usageError
+				if caKeyFile != "" && errors.As(err, &u) {
+					err = fmt.Errorf("CA key file %s: %v", caKeyFile, u.err)
+				}
 				return err
 			}
 			caCert, err := parseCACertificate(caCertPEM)
