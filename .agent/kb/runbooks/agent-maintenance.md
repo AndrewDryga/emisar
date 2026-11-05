@@ -63,7 +63,7 @@ realistic requests and the new instructions, without providing expected verdicts
 Inspect the actions the reviewer would take. An instruction-only review is not a
 coding benchmark. Keep security, denial/isolation coverage, applied migrations,
 and one-writer ownership intact. Run `./run check agent-setup` and
-`./run gate tooling`, plus other touched project gates. Inspect moved anchors as
+`./run check docs`; executable agent tooling also needs `./run gate tooling`. Run other touched project gates. Inspect moved anchors as
 well as file links.
 
 ## Sources
