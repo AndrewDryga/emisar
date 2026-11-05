@@ -205,7 +205,7 @@ the request is a valid request; a notification never receives an error body.
 | `-32002` | 200 | The key authenticates but is not an `mcp` key; `data.required` is `"mcp"` | Use an MCP key; do not retry |
 | `-32003` | 200 | Bridge below the enforced minimum version ([compatibility](compatibility.md)) | Upgrade the bridge |
 | `-32020` / `-32022` | 400 | Modern-revision header mismatch / unsupported protocol version (above) | Fix the headers |
-| `-32600` | 403, 406, 413, 415 | Disallowed `Origin`; `Accept` without `application/json`; body over the 128 KiB limit; `Content-Type` not `application/json`. A malformed envelope is 400 | Fix the request; do not retry unchanged |
+| `-32600` | 403, 406, 413, 415 | Disallowed `Origin`; `Accept` present but accepting none of `application/json`, `application/*`, `*/*` (absent `Accept` is fine); body over the 128 KiB limit; `Content-Type` not `application/json`. A malformed envelope is 400 | Fix the request; do not retry unchanged |
 | `-32601` | 200 legacy, 404 modern | Unknown method | Do not retry |
 | `-32602` | 200 | Malformed `Emisar-Client-Metadata`, or invalid tool-call params | Fix the request |
 | `-32603` | 200 | A response frame over 512 KiB; `data.operation_id` and `data.next` (a `get_operation` call) appear when the call created an operation | Follow `data.next`, or retry reads with a lower `limit` |
