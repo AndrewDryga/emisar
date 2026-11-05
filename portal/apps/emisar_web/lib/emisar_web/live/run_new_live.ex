@@ -481,6 +481,17 @@ defmodule EmisarWeb.RunNewLive do
             phx-submit="dispatch"
             phx-change="validate"
           >
+            <%!-- Enter in a field clicks the form's first submit button. On a
+                 confirm-required action that must be inert, so only the
+                 dialog's explicit click on #dispatch-form-submit dispatches. --%>
+            <button
+              :if={dispatch_confirm_required?(@action)}
+              type="submit"
+              class="hidden"
+              tabindex="-1"
+              aria-hidden="true"
+              disabled
+            ></button>
             <.arg_input :for={arg <- @args_schema} arg={arg} form={@form} />
 
             <%!-- Mark-optional-only: Reason is required, so it carries no marker;

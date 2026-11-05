@@ -529,6 +529,28 @@ defmodule EmisarWeb.RunNewLiveTest do
     assert render(lv) =~ "The run will wait if approval is required or the runner is offline."
   end
 
+  test "a high-risk form's default submit is disabled so Enter cannot skip the dialog",
+       %{conn: conn} do
+    {conn, _owner, account} = register_and_log_in(conn)
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+    action =
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.reboot", risk: "critical")
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
+
+    [first | _] =
+      lv
+      |> element("#dispatch_form")
+      |> render()
+      |> LazyHTML.from_fragment()
+      |> LazyHTML.query("button[type=submit]")
+      |> Enum.to_list()
+
+    assert LazyHTML.attribute(first, "disabled") == [""]
+    assert has_element?(lv, "#dispatch-form-submit:not([disabled])")
+  end
+
   test "a high-risk confirm folds in the entered args (the blast radius)", %{conn: conn} do
     {conn, _owner, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
