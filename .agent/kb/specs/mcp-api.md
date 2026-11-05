@@ -822,6 +822,11 @@ never relies on pagination or truncation.
 | `expected` | Optional nonblank justification, at most 2000 characters: the outcome that would confirm the action worked. |
 | `wait` | `0`, or an integer duration in `ms`/`s`; default 45 seconds, maximum 60 seconds. |
 
+`wait` bounds only how long this call blocks before it returns the current
+state; it never limits the action's execution, which the runner's clamped
+timeout governs. `wait_for_run` names the same bound `timeout`; the split is
+deliberate, so neither name is renamed.
+
 Bare durations, minutes, negative values, and values above 60 seconds are
 rejected rather than clamped. A whitespace-only `reason`, `evidence`, or
 `expected`, including Unicode space characters, is invalid. Callers cannot
@@ -1421,6 +1426,7 @@ Input:
 
 Exactly one of `run_id` or `runbook_execution_id` is required. `timeout` accepts
 `0`, or an integer duration with `ms` or `s`; the default is 45 seconds and the maximum 60.
+It bounds only how long this call blocks, the same bound `run_action` calls `wait`.
 Values above the maximum are rejected. With `run_id`, the optional `cursor`
 switches the call into raw output-tail mode (below). With
 `runbook_execution_id`, a cursor from a terminal execution's `outputs_next`
