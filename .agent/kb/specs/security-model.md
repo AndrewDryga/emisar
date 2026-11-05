@@ -1,7 +1,7 @@
 ---
 name: security-model
 sources: [runner/internal/engine, runner/internal/admission, runner/internal/validation, runner/internal/redact, runner/internal/packs, runner/internal/attest, portal/apps/emisar/lib/emisar/auth/authorizer.ex, portal/apps/emisar/lib/emisar/policies.ex, portal/apps/emisar/lib/emisar/runs.ex, portal/apps/emisar/lib/emisar/runners/runner.ex, portal/apps/emisar/lib/emisar/sso.ex, portal/apps/emisar/lib/emisar/accounts.ex]
-updated: 2026-11-03
+updated: 2026-11-05
 ---
 
 # Security model
@@ -308,6 +308,13 @@ available.
 
 ## Changelog
 
+- 2026-11-05 — removed the group-pinning mitigation, which no enrollment key
+  field supports (a runner declares its own `group`, so group-scoped policy is
+  scoping, not a trust boundary); the checklist now names the per-runner token
+  under the data directory and registry or administrator pack installs, and
+  "runner auth keys" reads "enrollment keys" (verified against
+  `Runners.EnrollmentKey` fields, `install.sh` `token_path` and
+  `emisar pack install`).
 - 2026-11-03 — a service account added from Settings starts with the runner and
   pack access chosen on its form, revalidated against live runners and packs and
   capped by the creator's own; one created during OAuth consent still copies the
