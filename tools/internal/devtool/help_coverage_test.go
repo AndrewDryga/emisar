@@ -126,3 +126,14 @@ func TestTopicHelpListsEveryDispatchedTarget(t *testing.T) {
 		t.Fatal("gate help does not explain the affected-app mode")
 	}
 }
+
+func TestMainHelpNamesTheRealCaptureProviders(t *testing.T) {
+	if strings.Contains(usageText, "|idp>") {
+		t.Error("main help advertises a nonexistent `capture idp` subcommand")
+	}
+	for _, provider := range captureProviders {
+		if !strings.Contains(usageText, provider) {
+			t.Errorf("main help does not name capture provider %q", provider)
+		}
+	}
+}
