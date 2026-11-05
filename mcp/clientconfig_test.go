@@ -941,11 +941,35 @@ func TestTOMLReconnectRefusesQuotedAndInlineEmisarEntries(t *testing.T) {
 		"inline sibling": "mcp_servers = { emisar-prod = { command = \"prod\" } }\n",
 		"dotted key":     "mcp_servers.emisar.command = \"old\"\n",
 		"quoted sibling": "[mcp_servers.\"emisar\".env]\nA = \"1\"\n",
+		"table key":      "[mcp_servers]\nemisar = { command = \"old\" }\n",
+		"table dotted":   "[mcp_servers]\nother = 1\nemisar.command = \"old\"\n",
+		"table quoted":   "[ mcp_servers ] # servers\n\"emisar\" = { command = \"old\" }\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			client := adapter.resolve(testConfigRoots(t))
 			if _, err := client.renderTOML(testEntryRequest("/usr/local/bin/emisar-mcp", "codex"), existing); err == nil {
 				t.Fatalf("expected refusal for %q", existing)
+			}
+		})
+	}
+}
+
+func TestTOMLReconnectKeepsSiblingKeysUnderMCPServersTable(t *testing.T) {
+	adapter, _ := lookupClientAdapter("codex")
+	for name, existing := range map[string]string{
+		"sibling key":    "[mcp_servers]\nemisar-prod = { command = \"prod\" }\n",
+		"prefixed key":   "[mcp_servers]\nemisario = { command = \"x\" }\n",
+		"other table":    "[mcp_servers]\nother = { command = \"x\" }\n\n[profiles]\nemisar = 1\n",
+		"unrelated emis": "[settings]\nemisar = 1\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			client := adapter.resolve(testConfigRoots(t))
+			raw, err := client.renderTOML(testEntryRequest("/usr/local/bin/emisar-mcp", "codex"), existing)
+			if err != nil {
+				t.Fatalf("render: %v", err)
+			}
+			if !strings.HasPrefix(raw, existing) || strings.Count(raw, "[mcp_servers.emisar]") != 1 {
+				t.Errorf("expected the original kept and one emisar table:\n%s", raw)
 			}
 		})
 	}

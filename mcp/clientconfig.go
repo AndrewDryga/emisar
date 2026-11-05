@@ -241,7 +241,7 @@ func (client detectedClient) renderJSON(request clientEntryRequest, raw string) 
 
 func (client detectedClient) renderTOML(request clientEntryRequest, raw string) (string, error) {
 	withoutEmisar := removeTOMLTable(raw)
-	if tomlEmisarReference.MatchString(withoutEmisar) {
+	if tomlEmisarReference.MatchString(withoutEmisar) || hasEmisarKeyUnderMCPServers(withoutEmisar) {
 		return "", errors.New("this config uses an unsupported TOML form for the emisar entry")
 	}
 	command, err := quoteConfigString(request.Command)
@@ -463,6 +463,30 @@ func (client detectedClient) remove() error {
 // next unrelated table header. A client's own CLI may have written the env as a
 // child table where this bridge writes an inline one.
 var tomlEmisarHeader = regexp.MustCompile(`^[ \t]*\[mcp_servers\.emisar(\.[^\]]+)?\][ \t]*$`)
+
+var (
+	tomlMCPServersHeader = regexp.MustCompile(`^[ \t]*\[[ \t]*["']?mcp_servers["']?[ \t]*\][ \t]*(#.*)?$`)
+	tomlEmisarKeyLine    = regexp.MustCompile(`^[ \t]*(?:emisar|"emisar"|'emisar')[ \t]*[.=]`)
+)
+
+// hasEmisarKeyUnderMCPServers reports a key-value line under a bare
+// [mcp_servers] header whose first key segment is exactly emisar. Sibling keys
+// such as emisar-prod are other servers and stay untouched.
+func hasEmisarKeyUnderMCPServers(raw string) bool {
+	inServers := false
+	for _, line := range strings.Split(raw, "\n") {
+		trimmed := strings.TrimRight(line, "\r")
+		switch {
+		case tomlMCPServersHeader.MatchString(trimmed):
+			inServers = true
+		case strings.HasPrefix(strings.TrimLeft(trimmed, " \t"), "["):
+			inServers = false
+		case inServers && tomlEmisarKeyLine.MatchString(trimmed):
+			return true
+		}
+	}
+	return false
+}
 
 func removeTOMLTable(raw string) string {
 	lines := strings.Split(raw, "\n")
