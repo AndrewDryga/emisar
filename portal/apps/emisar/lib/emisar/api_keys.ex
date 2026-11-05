@@ -9,8 +9,8 @@ defmodule Emisar.ApiKeys do
   Programmatic-access keys. Issued in the UI; presented as
   `Authorization: Bearer <key>` on the MCP HTTP endpoint.
 
-  Auto-generated keys are minted on every Agents page load so the
-  snippet renders pre-filled; they're hidden from operator-facing
+  Auto-generated keys are minted when an operator picks a sandbox or
+  reveals a manual snippet on the Agents page; they're hidden from operator-facing
   lists until an LLM actually authenticates with one. Ring-evicted at
   #{@quick_ring_cap} unused entries per account.
   """
@@ -1180,14 +1180,14 @@ defmodule Emisar.ApiKeys do
   end
 
   @doc """
-  Mints a fresh API key for the Agents page's pre-filled snippet,
+  Mints a fresh API key for the Agents page's connect snippet,
   marks it auto-generated (invisible until an LLM uses it), and evicts
   the oldest auto-unused key beyond the per-account ring cap of
   #{@quick_ring_cap}. All in one transaction.
 
   Returns `{:ok, raw_secret, key}`. No audit log on mint — auto-gen
-  is noise. Once an LLM authenticates with the key, `usage/1` clears
-  the auto flag and `api_key.bound` is logged.
+  is noise. Once an LLM authenticates with the key, `peek_api_key_by_secret/1`
+  clears the auto flag and `api_key.bound` is logged.
 
   The key is `kind: :mcp`, identity only — it carries no per-key scope; what it
   may do is account Policy + the minting operator's own runner scope. The

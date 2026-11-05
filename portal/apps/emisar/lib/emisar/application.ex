@@ -34,8 +34,8 @@ defmodule Emisar.Application do
        [Application.get_env(:emisar, :cluster_topologies, []), [name: Emisar.ClusterSupervisor]]},
 
       # Every OIDC fetch is proxied through this, so the SSRF policy applies at
-      # CONNECT time — including redirect hops, which httpc follows and oidcc
-      # gives us no way to disable. See `Emisar.SSO.OIDC.Guard`.
+      # CONNECT time, so even a URL that escaped validation cannot dial around the
+      # address policy. See `Emisar.SSO.OIDC.Guard`.
       {Task.Supervisor, name: Emisar.SSO.OIDC.GuardTasks},
       Emisar.SSO.OIDC.Guard,
 

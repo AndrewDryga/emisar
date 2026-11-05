@@ -6,7 +6,7 @@ defmodule Emisar.Throttle do
   the test env so the fast suite never trips shared ETS counters — so the
   domain's SSO discovery calls (`Emisar.SSO.OIDC`), the route plug
   (`EmisarWeb.Plugs.RateLimit`), and the LiveView event handlers
-  that can't sit behind a plug (magic-link / password-reset sends arrive
+  that can't sit behind a plug (magic-link verification arrives
   over the socket) share one on/off semantics.
 
   Returns `:ok | {:error, :rate_limited}`; the caller decides how to
