@@ -208,7 +208,8 @@ This repository is dual-licensed:
 
 - `runner/`, `mcp/`, `packs/`, `skills/`, and `dist/cursor-plugin/` are open
   source under the [Apache License 2.0](runner/LICENSE); the skills and the
-  Cursor plugin carry [their own copy](dist/cursor-plugin/LICENSE). You can
+  Cursor plugin carry their own copy ([skills](skills/LICENSE),
+  [plugin](dist/cursor-plugin/LICENSE)). You can
   inspect, build, package, and operate the on-host components independently.
 - Everything else, including `portal/`, is source-available under the
   [Business Source License 1.1](LICENSE.md). Non-production use is free.

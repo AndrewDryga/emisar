@@ -15,8 +15,8 @@ Licensed Work:        emisar
                       runner/, mcp/, packs/, skills/, and dist/cursor-plugin/
                       directories, which are separately licensed under the
                       Apache License, Version 2.0 (see runner/LICENSE,
-                      mcp/LICENSE, packs/LICENSE, and
-                      dist/cursor-plugin/LICENSE, which also covers skills/).
+                      mcp/LICENSE, packs/LICENSE, skills/LICENSE, and
+                      dist/cursor-plugin/LICENSE).
 
 Additional Use Grant: You may make production use of the Licensed Work to the
                       extent necessary to install, configure, integrate with,

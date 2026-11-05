@@ -7,7 +7,8 @@ This repository is dual-licensed:
 - **`runner/`, `mcp/`, `packs/`, `skills/`, and `dist/cursor-plugin/`** — the
   on-host runner, the stdio MCP bridge, the action-pack catalog, the public
   customer skills, and the Cursor plugin — are open source under the
-  [Apache License, Version 2.0](../runner/LICENSE) (the skills and plugin:
+  [Apache License, Version 2.0](../runner/LICENSE) (the skills and plugin
+  each carry their own copy: [`skills/LICENSE`](../skills/LICENSE),
   [`dist/cursor-plugin/LICENSE`](../dist/cursor-plugin/LICENSE)).
 - **Everything else** (including the `portal/` control plane) is
   source-available under the

@@ -93,3 +93,9 @@ example `/install-emisar`) for the target environment.
 
 Re-run the same command to update a skill. Review changes before updating any
 pinned or centrally managed customer installation.
+
+## License
+
+Apache License 2.0. See [LICENSE](LICENSE). Copyright 2026 Andrii Dryga.
+The emisar name and logo are trademarks of their owner; this license grants no
+trademark rights.
