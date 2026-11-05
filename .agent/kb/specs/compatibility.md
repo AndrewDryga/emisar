@@ -235,8 +235,9 @@ identifies itself as `emisar-mcp/<version>` and the current bridge
 threshold is `mcp_minimum >= 0.3.0`, also warn-only in production today.
 
 **What happens on skew.** An older client calling a renamed or removed tool
-gets JSON-RPC `method-not-found`. A stray or renamed input field is rejected;
-it is not silently ignored. A new optional input field or a new tool is
+gets a tool result with `isError: true` and `error.code: unknown_tool`; only an
+unknown JSON-RPC method gets `-32601`. A stray or renamed input field is
+rejected; it is not silently ignored. A new optional input field or a new tool is
 additive for clients that do not use it. If MCP enforcement is enabled, a
 bridge below the minimum receives a structured JSON-RPC `-32003` upgrade error
 with the required minimum and upgrade URL. A bridge reporting a missing or
