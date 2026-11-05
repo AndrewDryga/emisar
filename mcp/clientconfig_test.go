@@ -937,6 +937,7 @@ func TestTOMLReconnectRefusesQuotedAndInlineEmisarEntries(t *testing.T) {
 	for name, existing := range map[string]string{
 		"quoted parent":  "[\"mcp_servers\".emisar]\ncommand = \"old\"\n",
 		"inline table":   "mcp_servers = { emisar = { command = \"old\" } }\n",
+		"inline dotted":  "mcp_servers = { emisar.command = \"old\" }\n",
 		"dotted key":     "mcp_servers.emisar.command = \"old\"\n",
 		"quoted sibling": "[mcp_servers.\"emisar\".env]\nA = \"1\"\n",
 	} {

@@ -373,7 +373,7 @@ var (
 	tomlEmisarTable = regexp.MustCompile(`(?m)^[ \t]*\[mcp_servers\.emisar\][ \t]*$`)
 	// Noncanonical but valid TOML spellings are refused rather than merged. The
 	// tiny editor owns one spelling and must never append a semantic duplicate.
-	tomlEmisarReference = regexp.MustCompile(`(?m)^[ \t]*(?:\[[^]\r\n]*mcp_servers["']?[ \t]*\.[ \t]*["']?emisar(?:["'. \t][^]\r\n]*)?\][^\r\n]*|[^#\r\n]*mcp_servers["']?[ \t]*\.[ \t]*["']?emisar(?:["'. \t][^#\r\n]*)?=|["']?mcp_servers["']?[ \t]*=[^#\r\n]*[{,\s"']emisar["']?[ \t]*=)`)
+	tomlEmisarReference = regexp.MustCompile(`(?m)^[ \t]*(?:\[[^]\r\n]*mcp_servers["']?[ \t]*\.[ \t]*["']?emisar(?:["'. \t][^]\r\n]*)?\][^\r\n]*|[^#\r\n]*mcp_servers["']?[ \t]*\.[ \t]*["']?emisar(?:["'. \t][^#\r\n]*)?=|["']?mcp_servers["']?[ \t]*=[^#\r\n]*[{,\s"']emisar["']?[ \t]*[=.])`)
 	yamlEmisarEntry     = regexp.MustCompile(`(?m)^[ \t]+emisar:[ \t]*$`)
 	jsonEmisarKey       = regexp.MustCompile(`"emisar"[ \t\r\n]*:`)
 )
