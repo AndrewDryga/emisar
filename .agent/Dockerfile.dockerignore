@@ -1,0 +1,4 @@
+# The box image copies only .tool-versions. Coop's build approval covers the whole build
+# context, so keeping the context to that file stops source edits from voiding it.
+*
+!.tool-versions

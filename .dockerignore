@@ -1,5 +1,5 @@
-# Shared build context for .agent/Dockerfile, portal/Dockerfile,
-# dev/runner/Dockerfile, and dev/mcp/Dockerfile. Cloud-init and test-pack
+# Shared build context for portal/Dockerfile, dev/runner/Dockerfile, and
+# dev/mcp/Dockerfile. The box image (.agent/Dockerfile), cloud-init, and test-pack
 # images use narrower contexts.
 
 # Repository and local tool state

@@ -88,6 +88,11 @@ func TestCheckDependabotDockerCoverage(t *testing.T) {
 			want:  "stack/docker-compose.yaml: /stack matches no docker directory",
 		},
 		{
+			// Dependabot parses no ignore file, so a directory holding only one needs no lane.
+			name:  "a per-Dockerfile ignore file is not a build file",
+			files: []string{".agent/Dockerfile.dockerignore", "portal/assets/Dockerfile.dockerignore"},
+		},
+		{
 			name:  "a suffixed Dockerfile is enumerated like any other",
 			files: []string{"dev/test-host-access/Dockerfile.debian"},
 			want:  "dev/test-host-access/Dockerfile.debian: /dev/test-host-access matches no docker directory",

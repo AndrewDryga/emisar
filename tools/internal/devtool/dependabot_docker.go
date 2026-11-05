@@ -52,6 +52,10 @@ func isDependabotDockerFile(name string) bool {
 	case "compose.yml", "compose.yaml", "docker-compose.yml", "docker-compose.yaml":
 		return true
 	}
+	// A per-Dockerfile ignore file (Dockerfile.dockerignore) shares the prefix but is not a build file.
+	if strings.HasSuffix(name, ".dockerignore") {
+		return false
+	}
 	return strings.HasPrefix(name, "Dockerfile") || strings.HasSuffix(name, ".Dockerfile")
 }
 

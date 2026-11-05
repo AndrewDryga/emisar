@@ -46,7 +46,7 @@ erl_crash.dump
 # .agent/ is local working state — only the PUBLIC KNOWLEDGE and CONFIG are committed:
 # kb/ (public cards, specifications, runbooks, and normative rules), presets/
 # (orchestration recipes), scripts/ (agent-only enforcement), project.yaml
-# (monorepo/box policy), loop.yaml, and the project Dockerfile.
+# (monorepo/box policy), loop.yaml, and the project Dockerfile with its ignore file.
 # kb/internal/, tasks, the backlog drawer, pending decisions, log, and archive
 # stay on the machine (no internal material in Git, no cross-agent merge
 # conflicts). See AGENTS.md.
@@ -61,6 +61,7 @@ erl_crash.dump
 !**/.agent/tasks/README.md
 !.agent/loop.yaml
 !.agent/Dockerfile
+!.agent/Dockerfile.dockerignore
 .expert/*.log
 
 # Self-signed dev/e2e TLS certs (mix phx.gen.cert)

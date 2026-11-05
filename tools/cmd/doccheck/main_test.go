@@ -64,6 +64,7 @@ func TestForbiddenVersionedPath(t *testing.T) {
 		".agent/project.yaml":                                 false,
 		".agent/loop.yaml":                                    false,
 		".agent/Dockerfile":                                   false,
+		".agent/Dockerfile.dockerignore":                      false,
 		".agent/compose.yml":                                  true,
 		".agent/kb/README.md":                                 false,
 		".agent/kb/rules/shared-example.md":                   false,
