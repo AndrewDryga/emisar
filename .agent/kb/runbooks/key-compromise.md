@@ -38,8 +38,8 @@ The key is presented to `POST /runner/register`.
 
 The key is a bootstrap credential, not the credential used on every websocket
 connection. Registration returns an `rnrtok-…` runner token, which the
-runner stores at `cloud.token_path` (by default
-`/var/lib/emisar/token.json`) and reuses on later boots. That token expires
+runner stores at `cloud.token_path` (`/var/lib/emisar/token`
+on installer hosts, which set it explicitly; `<data_dir>/token.json` when unset) and reuses on later boots. That token expires
 after 90 days and the runner refreshes it at 60 over
 `POST /runner/token/refresh`, so a token stolen from a host stops working on its
 own — but bounding a leak is not containing a known one, and the steps below
@@ -88,8 +88,9 @@ For each legitimate host:
    to a shared reusable key after this incident.
 2. Stop the runner service before changing its credentials.
 3. Replace `EMISAR_ENROLLMENT_KEY` in the host's protected environment file.
-4. Remove the cached token at the configured `cloud.token_path`. If the path is
-   not explicitly configured, remove `/var/lib/emisar/token.json`.
+4. Remove the cached token at the configured `cloud.token_path`. Installer hosts
+   configure `/var/lib/emisar/token`; only if the path is unset is it
+   `<data_dir>/token.json`.
 5. Start the runner and confirm that it registers with the new key, receives a
    new `rnrtok-…` token, and appears online under the expected identity. Refresh
    runner references before dispatching work.
