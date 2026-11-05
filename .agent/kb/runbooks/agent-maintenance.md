@@ -1,7 +1,7 @@
 ---
 name: agent-maintenance
 sources: [AGENTS.md, .agent/presets/frontier/preset.yaml, .agent/loop.yaml, .claude/skills, tools/cmd/agentcheck/main.go]
-updated: 2026-09-05
+updated: 2026-11-05
 ---
 
 # Maintaining agent instructions
