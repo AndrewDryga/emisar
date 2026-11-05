@@ -60,7 +60,11 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
             <.docs_inline_code>--config &lt;path&gt;</.docs_inline_code>:
             the config.yaml to load. Defaults to <.docs_inline_code>$EMISAR_CONFIG</.docs_inline_code>, then the
             <.docs_inline_code>/etc/emisar/config.yaml</.docs_inline_code>
-            install location, then a per-user <.docs_inline_code>~/.config/emisar/config.yaml</.docs_inline_code>.
+            install location, then a per-user
+            <.docs_inline_code>emisar/config.yaml</.docs_inline_code>
+            in your user config directory (<.docs_inline_code>$XDG_CONFIG_HOME</.docs_inline_code>, or
+            <.docs_inline_code>~/Library/Application Support</.docs_inline_code>
+            on macOS), then in <.docs_inline_code>~/.config</.docs_inline_code>.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -76,7 +80,9 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <.docs_inline_code>--json</.docs_inline_code>:
-            machine-readable JSON, on <.docs_inline_code>action list</.docs_inline_code>, every
+            machine-readable JSON, on <.docs_inline_code>action list</.docs_inline_code>, <.docs_inline_code>action describe</.docs_inline_code>, <.docs_inline_code>action run</.docs_inline_code>,
+            <.docs_inline_code>events</.docs_inline_code>
+            (with <.docs_inline_code>tail</.docs_inline_code>, <.docs_inline_code>cat</.docs_inline_code>, and <.docs_inline_code>grep</.docs_inline_code>), <.docs_inline_code>state</.docs_inline_code>, every
             <.docs_inline_code>pack</.docs_inline_code>
             verb except
             <.docs_inline_code>install</.docs_inline_code>
@@ -511,7 +517,10 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
             the cert's validity window and the runners it binds to. The window accepts Go durations plus long-form <.docs_inline_code>30d</.docs_inline_code>/<.docs_inline_code>
               1y
             </.docs_inline_code>
-            and defaults to 24h. Keep the TTL short. The only revocation is expiry, so a long TTL keeps a leaked cert usable longer. An empty scope means any runner that trusts the CA.
+            and defaults to 24h. (<.docs_inline_code>new-ca</.docs_inline_code>
+            also takes
+            <.docs_inline_code>--ttl</.docs_inline_code>
+            for the CA's own validity, default <.docs_inline_code>5y</.docs_inline_code>.) Keep the TTL short. The only revocation is expiry, so a long TTL keeps a leaked cert usable longer. An empty scope means any runner that trusts the CA.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
