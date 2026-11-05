@@ -1,6 +1,6 @@
 ---
 name: key-compromise
-sources: [portal/apps/emisar/lib/emisar/api_keys.ex, portal/apps/emisar/lib/emisar/oauth.ex, portal/apps/emisar/lib/emisar/runners.ex, portal/apps/emisar/lib/emisar/crypto.ex, portal/apps/emisar_web/priv/static/.well-known/mcp-registry-auth, infra/iam.tf]
+sources: [portal/apps/emisar/lib/emisar/api_keys.ex, portal/apps/emisar/lib/emisar/oauth.ex, portal/apps/emisar/lib/emisar/runners.ex, portal/apps/emisar/lib/emisar/crypto.ex, portal/apps/emisar_web/priv/static/.well-known/mcp-registry-auth, infra/iam.tf, infra/secrets.tf]
 updated: 2026-11-05
 ---
 
