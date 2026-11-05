@@ -114,9 +114,6 @@ defmodule EmisarWeb.SandboxRisks do
     }
   }
 
-  @doc "The sandbox ids with shared copy, in no particular order."
-  def ids, do: Map.keys(@sandboxes)
-
   @doc "The title, risks, and optional rotation paragraph for one sandbox id."
   def fetch!(id), do: Map.fetch!(@sandboxes, id)
 end

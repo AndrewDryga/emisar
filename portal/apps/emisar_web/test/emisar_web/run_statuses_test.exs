@@ -3,17 +3,19 @@ defmodule EmisarWeb.RunStatusesTest do
   alias Emisar.Runs
   alias EmisarWeb.RunStatuses
 
-  describe "all/0" do
-    test "returns the ordered {label, meaning} pairs, first and last pinned, at the exact count" do
-      pairs = RunStatuses.all()
+  describe "entries/0" do
+    test "returns the ordered {status, {label, meaning}} entries, first and last pinned, at the exact count" do
+      pairs = RunStatuses.entries()
 
       assert List.first(pairs) ==
-               {"Pending",
-                "Queued for the runner. If the runner is offline, the run waits for it to reconnect."}
+               {:pending,
+                {"Pending",
+                 "Queued for the runner. If the runner is offline, the run waits for it to reconnect."}}
 
       assert List.last(pairs) ==
-               {"Cancelled",
-                "The run was cancelled before it started or stopped by the runner. Check the recorded reason."}
+               {:cancelled,
+                {"Cancelled",
+                 "The run was cancelled before it started or stopped by the runner. Check the recorded reason."}}
 
       assert length(pairs) == 14
     end

@@ -39,9 +39,6 @@ defmodule EmisarWeb.RunStatuses do
        "The run was cancelled before it started or stopped by the runner. Check the recorded reason."}
   ]
 
-  @doc "The ordered `{label, meaning}` pairs, in /docs/runs status-table order."
-  def all, do: Keyword.values(@statuses)
-
   @doc "The ordered `{status_atom, {label, meaning}}` entries — the /docs/runs table renders the console's own status badge from the atom."
   def entries, do: @statuses
 
