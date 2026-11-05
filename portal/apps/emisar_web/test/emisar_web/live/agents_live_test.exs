@@ -405,12 +405,17 @@ defmodule EmisarWeb.AgentsLiveTest do
           name: "burst-key"
         })
 
+      :erlang.trace(lv.pid, true, [:receive, tracer: self()])
+
       for _ <- 1..3, do: send(lv.pid, {:list_changed, :api_key, "api_key.revoked", "x"})
 
       refute render(lv) =~ "burst-key"
       assert :sys.get_state(lv.pid).socket.assigns.reload_scheduled?
 
-      send(lv.pid, :reload_agents)
+      # The scheduled timer, not the test, delivers :reload_agents — once.
+      pid = lv.pid
+      assert_receive {:trace, ^pid, :receive, :reload_agents}, 1500
+      refute_receive {:trace, ^pid, :receive, :reload_agents}, 700
       assert render(lv) =~ "burst-key"
       refute :sys.get_state(lv.pid).socket.assigns.reload_scheduled?
     end
