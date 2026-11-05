@@ -1,7 +1,7 @@
 ---
 name: signed-dispatch
 sources: [mcp/sign.go, mcp/internal/attest, runner/internal/signing, runner/internal/attest, portal/apps/emisar/lib/emisar/runs/attestation.ex, portal/apps/emisar/lib/emisar/runs.ex]
-updated: 2026-09-03
+updated: 2026-11-05
 ---
 
 # Signed dispatch (bridge-attested dispatch)
