@@ -335,9 +335,8 @@ func validateUniqueJSON(raw []byte) error {
 	return jsonvalue.Validate(raw, jsonvalue.Limits{MaxDepth: 64})
 }
 
-// RunOpts is the per-call override envelope. Each field is clamped to the
-// action's declared min/max bounds before use.
-// RunOpts are the per-dispatch limit overrides the portal may send.
+// RunOpts is the per-dispatch override envelope the portal may send. Each field
+// is clamped to the action's declared min/max bounds before use.
 //
 // The timeout is milliseconds, and its name says so. It was `timeout` carrying
 // a raw Go nanosecond int64, which is this language's internal representation
@@ -471,9 +470,9 @@ type ActionProgressMsg struct {
 }
 
 // ActionResultMsg is the terminal message for an action call. Stdout/stderr
-// content is not repeated here. Emitted-output hashes and byte counts cover
-// every normalized, redacted byte admitted by the action's output caps; the
-// progress counters let the portal distinguish those facts from the subset it
+// content is not repeated here. Emitted-output byte counts (counts only, no
+// digests) cover every normalized, redacted byte admitted by the action's
+// output caps; the progress counters let the portal distinguish those facts from the subset it
 // durably received.
 type ActionResultMsg struct {
 	Envelope

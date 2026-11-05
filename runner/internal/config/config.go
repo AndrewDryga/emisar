@@ -347,8 +347,9 @@ func (c *Config) Validate() error {
 
 // validateSigning checks the bridge-attested-dispatch config. enforce_signatures
 // with no trusted_cas is a footgun — the runner would refuse EVERY dispatch — so
-// it's rejected. CA ids must be present and unique; the public-key bytes are
-// parsed and length-checked when the verifier is built at connect.
+// it's rejected. Each CA's PEM must be present (the name is an
+// optional display label); the PEM is parsed when the verifier is built at
+// connect.
 func (c *Config) validateSigning() error {
 	if c.Signing.EnforceSignatures && strings.TrimSpace(c.Paths.DataDir) == "" {
 		return fmt.Errorf(

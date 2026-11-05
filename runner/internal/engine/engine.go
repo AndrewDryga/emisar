@@ -862,8 +862,7 @@ func (e *Engine) requestInfo(req Request, redactedArgs map[string]any) *audit.Re
 // The trade-off is that two runs with different secret values but
 // otherwise-identical args share an args_sha256; that's the safe
 // direction for a local audit log.
-// redactArgs masks the arguments recorded in the journal and shipped to the
-// cloud. Like redactedInvocation, it runs both the schema pass and the default
+// Like redactedInvocation, it runs both the schema pass and the default
 // rule net, so a credential in an unflagged arg is not stored verbatim — for
 // every value shape the net can read, not just scalar strings. A string_array
 // element goes into argv exactly like a scalar does, so masking one and not

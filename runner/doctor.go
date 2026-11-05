@@ -315,10 +315,6 @@ func checkPackDirs(dirs []string) checkResult {
 	return checkResult{"pack dirs", checkOK, strings.Join(dirs, ", ")}
 }
 
-// checkPacks loads every pack and lists what's installed. A load error (an
-// unreadable dir, a malformed pack) fails the check with the underlying
-// reason. Trust is the cloud's call at dispatch — this only confirms the local
-// packs parse and what versions they are.
 // checkDispatchLog validates the durable dispatch log. A corrupt one makes
 // connect refuse to start (deliberately — a fresh empty log could double-run
 // a redelivered mutation), which is invisible from the host until you know
@@ -330,7 +326,7 @@ func checkDispatchLog(cfg *config.Config) checkResult {
 		return checkResult{"dispatch log", checkOK, "none yet — the first connect creates it"}
 	case cloud.DispatchLogLegacy:
 		return checkResult{"dispatch log", checkOK,
-			fmt.Sprintf("%d entries at %s (pre-v0.12 state; connect migrates it forward)",
+			fmt.Sprintf("%d entries at %s (legacy store format; connect migrates it forward)",
 				report.Entries, report.Path)}
 	case cloud.DispatchLogCorrupt:
 		return checkResult{"dispatch log", checkFail,
@@ -342,6 +338,10 @@ func checkDispatchLog(cfg *config.Config) checkResult {
 	}
 }
 
+// checkPacks loads every pack and lists what's installed. A load error (an
+// unreadable dir, a malformed pack) fails the check with the underlying
+// reason. Trust is the cloud's call at dispatch — this only confirms the local
+// packs parse and what versions they are.
 func checkPacks(dirs []string) (*packs.Registry, checkResult) {
 	registry, err := packs.LoadAll(dirs, packs.LoadOptions{SkipBrokenPacks: true})
 	if err != nil {

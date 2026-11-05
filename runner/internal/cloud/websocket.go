@@ -446,8 +446,8 @@ func (d *WebsocketDialer) readToken() (runnerToken, error) {
 		Token string `json:"token"`
 		KeyFP string `json:"key_fp"`
 		// RFC3339, written by whoever issued the token. Absent on every token
-		// minted before rotation shipped, which is exactly right: those have no
-		// refresh path, so the runner must never ask for one.
+		// minted before rotation shipped, which is exactly right: empty means
+		// the runner asks for a successor (see refreshDue).
 		RefreshAfter string `json:"refresh_after,omitempty"`
 	}
 	decoder := json.NewDecoder(bytes.NewReader(contents))

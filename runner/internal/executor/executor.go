@@ -97,9 +97,10 @@ func (e *Executor) AllowInheritEnv(keys ...string) {
 	}
 }
 
-// Execute runs p under its limits. Returns nil error only when the executor
-// itself cannot start the call; process non-zero exits and timeouts are
-// reported on Result and return nil.
+// Execute runs p under its limits. A failure to start the process, a non-zero
+// exit and a timeout are all reported on Result (StatusFailed and so on) with a
+// nil error. The error return is only for an invalid Plan or a credential drop
+// that cannot be applied.
 func (e *Executor) Execute(ctx context.Context, p Plan) (*Result, error) {
 	if p.Binary == "" {
 		return nil, fmt.Errorf("executor: empty binary")
@@ -320,9 +321,8 @@ type streamResult struct {
 // vast majority of single lines without artificial splitting.
 const streamReaderBuf = 64 * 1024
 
-// streamPipe drains r line-by-line. Hashes are computed over the full
-// stream regardless of truncation. Bytes past the size limit are dropped
-// but counted (and truncated=true). When onChunk is non-nil, completed
+// streamPipe drains r line-by-line. Bytes past the size limit are dropped
+// but counted (and truncated=true); nothing is hashed here. When onChunk is non-nil, completed
 // lines are pushed to it instead of being captured.
 //
 // A final partial line (no trailing newline at EOF) is still shipped. A line
@@ -347,10 +347,10 @@ func streamPipe(r io.Reader, limit int, stream Stream, onChunk func(Stream, []by
 	for {
 		line, err := br.ReadSlice('\n')
 		if err == bufio.ErrBufferFull {
-			// A line longer than the read buffer: ship/hash THIS bounded piece and
+			// A line longer than the read buffer: process THIS bounded piece and
 			// keep reading — never accumulate a whole (possibly unbounded, attacker-
-			// influenced) line in RAM. ReadSlice's slice is transient, but `ship` and
-			// the hash both copy, so processing it here is safe.
+			// influenced) line in RAM. ReadSlice's slice is transient, but both the
+			// capture and onChunk paths copy it, so processing it here is safe.
 			err = nil
 		}
 		if len(line) > 0 {

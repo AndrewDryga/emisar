@@ -284,8 +284,8 @@ re-reads the catalog; without one: sudo systemctl reload emisar
 }
 
 // inspectInstalledPacks deliberately loads each pack independently. A broken
-// official pack must remain discoverable so `pack update` can replace it; the
-// runtime's all-or-nothing loader still fails closed on the same bytes.
+// official pack must remain discoverable so `pack update` can replace it; a
+// SIGHUP reload's all-or-nothing loader still fails closed on the same bytes.
 func inspectInstalledPacks(dir string) ([]installedPack, error) {
 	roots, err := installedPackRoots(dir)
 	if err != nil {
