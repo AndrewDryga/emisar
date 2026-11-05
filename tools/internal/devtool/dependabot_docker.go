@@ -1,6 +1,7 @@
 package devtool
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -108,6 +109,14 @@ func (a *App) checkDependabotDockerCoverage() error {
 	claimed := map[string]bool{}
 	walkErr := filepath.WalkDir(a.Root, func(full string, entry fs.DirEntry, err error) error {
 		if err != nil {
+			// Inside a Coop box, secret-shaped paths are unreadable stand-ins for the real
+			// ones; nothing under them is this repository's to check.
+			if errors.Is(err, fs.ErrPermission) && os.Getenv("COOP_BOX") != "" {
+				if entry != nil && entry.IsDir() {
+					return fs.SkipDir
+				}
+				return nil
+			}
 			return err
 		}
 		relative, err := filepath.Rel(a.Root, full)

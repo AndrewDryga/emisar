@@ -158,3 +158,29 @@ func TestCheckDependabotDockerCoverageOnRepository(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestCheckDependabotDockerCoverageSkipsUnreadableDirectoriesOnlyInABox(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can read a mode-000 directory")
+	}
+	app := writeDependabotDockerFixtures(t, dependabotDockerFixture,
+		".agent/Dockerfile", "dev/compose.yml", "dev/test-packs/gcloud/Dockerfile")
+	hidden := filepath.Join(app.Root, "portal", ".agent", "secrets")
+	if err := os.MkdirAll(hidden, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(hidden, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(hidden, 0o755) })
+
+	t.Setenv("COOP_BOX", "")
+	if err := app.checkDependabotDockerCoverage(); err == nil {
+		t.Fatal("an unreadable directory outside a box must fail the walk")
+	}
+
+	t.Setenv("COOP_BOX", "1")
+	if err := app.checkDependabotDockerCoverage(); err != nil {
+		t.Fatalf("inside a box an unreadable stand-in must be skipped: %v", err)
+	}
+}
