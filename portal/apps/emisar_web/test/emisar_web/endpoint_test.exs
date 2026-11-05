@@ -5,6 +5,29 @@ defmodule EmisarWeb.EndpointTest do
     assert EmisarWeb.Endpoint.url() == Emisar.PublicUrl.base()
   end
 
+  test "a multipart POST to a capped path is passed through unparsed" do
+    body = "--b\r\ncontent-disposition: form-data; name=\"a\"\r\n\r\n1\r\n--b--\r\n"
+
+    conn =
+      build_conn(:post, "/scim/v2/Users", body)
+      |> Plug.Conn.put_req_header("content-type", "multipart/form-data; boundary=b")
+      |> EmisarWeb.Endpoint.call([])
+
+    # Plug.Parsers leaves the body untouched when no parser claims it.
+    assert %Plug.Conn.Unfetched{} = conn.body_params
+    refute is_map_key(conn.params, "a")
+  end
+
+  test "an oversized body on an unrouted path is refused before routing" do
+    body = Jason.encode!(%{"x" => String.duplicate("a", 2 * 1024 * 1024 + 1)})
+
+    assert_error_sent 413, fn ->
+      build_conn(:post, "/no/such/path", body)
+      |> Plug.Conn.put_req_header("content-type", "application/json")
+      |> EmisarWeb.Endpoint.call([])
+    end
+  end
+
   test "the session cookie follows the runtime secure-cookie setting" do
     Emisar.Config.put_override(:emisar_web, :force_secure_cookies, true)
     secure_conn = request_with_session()

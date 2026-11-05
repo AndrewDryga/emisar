@@ -143,12 +143,17 @@ defmodule EmisarWeb.Endpoint do
   # bytes: Paddle verifies its HMAC, while MCP rejects ambiguous JSON and checks
   # signed argument slices. `Plug.Parsers` otherwise consumes those bytes before
   # the controller can inspect them.
+  # No multipart parser: nothing accepts uploads here, and Plug's multipart
+  # parser reads parts itself, bypassing the body reader's per-path caps. The
+  # global `length` is the SCIM ceiling; it bounds unrouted paths too, and the
+  # reader's per-path caps only tighten below it.
   # A thin wrapper over Plug.Parsers: a malformed body on /api/mcp/rpc returns the
   # JSON-RPC -32700 parse-error envelope instead of the generic 400 (every other
   # path is unchanged). Same options Plug.Parsers takes.
   plug EmisarWeb.Plugs.JSONRPCParseError,
-    parsers: [:urlencoded, :multipart, :json],
+    parsers: [:urlencoded, :json],
     pass: ["*/*"],
+    length: 2 * 1024 * 1024,
     json_decoder: Phoenix.json_library(),
     body_reader: {EmisarWeb.CachedBodyReader, :read_body, []}
 
