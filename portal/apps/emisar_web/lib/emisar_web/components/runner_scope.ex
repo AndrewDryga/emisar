@@ -58,6 +58,7 @@ defmodule EmisarWeb.RunnerScope do
     ~H"""
     <.scope_panel
       variant={@variant}
+      label={@label}
       submit_error_field={@submit_error_field}
       submit_error_message={@submit_error_message}
       validation_error={@validation_error}
