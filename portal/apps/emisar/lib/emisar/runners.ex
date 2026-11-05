@@ -1580,8 +1580,9 @@ defmodule Emisar.Runners do
           # group selects which policy override governs dispatches to THIS runner
           # (Policies.resolve_policy), so a compromised host could declare a looser
           # group — but it already owns the box the runner executes on, so it gains
-          # nothing it couldn't do locally. The host is the trust anchor. Pin to the
-          # enrollment key if you need it operator-authoritative. See .agent/kb/specs/security-model.md.
+          # nothing it couldn't do locally. The host is the trust anchor; enrollment
+          # keys do not bind a group, so group-scoped policy is scoping, not a trust
+          # boundary. See .agent/kb/specs/security-model.md.
           group: nonblank(payload["group"]) || active_runner.group,
           # Runner-declared too, but trusting it is unconditionally safe: it only
           # makes the runner STRICTER (refuse unsigned dispatch), never looser. A
