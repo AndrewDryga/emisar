@@ -100,8 +100,4 @@ defmodule Emisar.Runners.EnrollmentKey.Changeset do
     |> validate_required([:revoked_by_membership_id])
     |> foreign_key_constraint(:revoked_by_membership_id)
   end
-
-  def delete(%EnrollmentKey{} = key) do
-    change(key, deleted_at: DateTime.utc_now())
-  end
 end
