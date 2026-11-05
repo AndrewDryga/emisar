@@ -192,6 +192,29 @@ portal's transient exact-body cache while leaving headroom above every
 tool-input schema's encoded-size limit. Oversized input is rejected before
 authentication, routing, or mutation preparation.
 
+### Boundary errors
+
+Before or around tool dispatch the portal answers with its own JSON-RPC errors.
+These codes and statuses are a client contract. A request id is echoed only when
+the request is a valid request; a notification never receives an error body.
+
+| Code | HTTP | When | Client action |
+|---|---|---|---|
+| `-32000` | 429 | Rate limit, before authentication; carries `retry-after` seconds | Back off for `retry-after`, then retry |
+| `-32001` | 401 | Missing, invalid or expired bearer; carries the RFC 9728 `WWW-Authenticate` challenge | Re-authenticate through the challenge's resource metadata |
+| `-32002` | 200 | The key authenticates but is not an `mcp` key; `data.required` is `"mcp"` | Use an MCP key; do not retry |
+| `-32003` | 200 | Bridge below the enforced minimum version ([compatibility](compatibility.md)) | Upgrade the bridge |
+| `-32020` / `-32022` | 400 | Modern-revision header mismatch / unsupported protocol version (above) | Fix the headers |
+| `-32600` | 403, 406, 413, 415 | Disallowed `Origin`; `Accept` without `application/json`; body over the 128 KiB limit; `Content-Type` not `application/json`. A malformed envelope is 400 | Fix the request; do not retry unchanged |
+| `-32601` | 200 legacy, 404 modern | Unknown method | Do not retry |
+| `-32602` | 200 | Malformed `Emisar-Client-Metadata`, or invalid tool-call params | Fix the request |
+| `-32603` | 200 | A response frame over 512 KiB; `data.operation_id` and `data.next` (a `get_operation` call) appear when the call created an operation | Follow `data.next`, or retry reads with a lower `limit` |
+| `-32700` | 400 | Body is not strictly parseable JSON (including duplicate keys) | Fix the request |
+
+An accepted notification gets an empty `202`. The stdio bridge also uses `-32000`
+for its own local limits ("too many in-flight requests"); the portal's rate limit
+is told apart by HTTP 429 and `retry-after`, so the code is not renumbered.
+
 ### Runner references
 
 MCP never exposes a database runner ID or the runner's full external ID. It uses:
