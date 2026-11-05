@@ -93,7 +93,7 @@ func TestImageContractRejectsChangedArchiveSBOMAndImage(t *testing.T) {
 }
 
 func TestDiagnosticsSelectionAndWorkflowContract(t *testing.T) {
-	for _, path := range []string{"infra/runtime/admin-runner/diagnostics/run-tool", "infra/runtime/admin-runner/start.sh", "tools/internal/infraops/admin_diagnostics.go", "portal/docker/debian.sources", ".dockerignore"} {
+	for _, path := range []string{"infra/runtime/admin-runner/diagnostics/run-tool", "infra/runtime/admin-runner/start.sh", "tools/internal/infraops/admin_diagnostics.go", "portal/docker/debian.sources", "portal/docker/debian-snapshot.pref", ".dockerignore"} {
 		var selection Selection
 		selection.include(path)
 		if !selection.AdminDiagnostics {

@@ -1,0 +1,15 @@
+# Install only what the dated snapshot in debian.sources holds. A version that is
+# also in the current archives gets this priority too, so apt can fetch its file
+# from either, with the same hash. A version only the current archives hold is
+# never installed.
+Package: *
+Pin: origin "snapshot.debian.org"
+Pin-Priority: 990
+
+Package: *
+Pin: origin "deb.debian.org"
+Pin-Priority: -1
+
+Package: *
+Pin: origin "security.debian.org"
+Pin-Priority: -1

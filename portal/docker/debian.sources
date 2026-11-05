@@ -1,3 +1,6 @@
+# Packages come from this dated snapshot. debian-snapshot.pref pins every version to
+# it, so the current Debian archives below only serve the same files when the
+# snapshot fails to deliver them, and are never a source of newer versions.
 Types: deb
 URIs: http://snapshot.debian.org/archive/debian/20261105T000000Z
 Suites: bookworm bookworm-updates
@@ -11,3 +14,15 @@ Suites: bookworm-security
 Components: main
 Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
 Check-Valid-Until: no
+
+Types: deb
+URIs: http://deb.debian.org/debian
+Suites: bookworm bookworm-updates
+Components: main
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+
+Types: deb
+URIs: http://security.debian.org/debian-security
+Suites: bookworm-security
+Components: main
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg

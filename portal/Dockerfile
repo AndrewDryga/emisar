@@ -28,6 +28,7 @@ ARG RUNNER_IMAGE="debian:${DEBIAN_VERSION}@sha256:99c0b25c46d0214d5a2091092e7908
 FROM ${BUILDER_IMAGE} AS builder
 
 COPY portal/docker/debian.sources /etc/apt/sources.list.d/debian.sources
+COPY portal/docker/debian-snapshot.pref /etc/apt/preferences.d/debian-snapshot.pref
 RUN apt-get update -y \
   && apt-get install -y --no-install-recommends build-essential git curl ca-certificates \
   && apt-get clean \
@@ -124,6 +125,7 @@ FROM ${RUNNER_IMAGE}
 # security fixes; bump the snapshot when the required CI vulnerability scan
 # reports a fixed Debian package.
 COPY portal/docker/debian.sources /etc/apt/sources.list.d/debian.sources
+COPY portal/docker/debian-snapshot.pref /etc/apt/preferences.d/debian-snapshot.pref
 # The builder's OTP has SCTP enabled and loads libsctp.so.1 at VM startup; keep
 # its runtime library here so migrations and the server boot without warnings.
 RUN apt-get update -y \

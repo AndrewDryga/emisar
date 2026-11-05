@@ -114,7 +114,7 @@ func (selection *Selection) include(file string) {
 
 	packFile := isPackFile(file)
 	if toolutil.HasAnyPrefix(file, "infra/runtime/admin-runner/", "tools/internal/infraops/", "tools/internal/ci/", "tools/cmd/ci/") ||
-		slices.Contains([]string{".dockerignore", "portal/docker/debian.sources", "portal/Dockerfile", "infra/compute.tf", "infra/runtime/portal/cloud-init.yaml", "infra/variables.tf"}, file) {
+		slices.Contains([]string{".dockerignore", "portal/docker/debian.sources", "portal/docker/debian-snapshot.pref", "portal/Dockerfile", "infra/compute.tf", "infra/runtime/portal/cloud-init.yaml", "infra/variables.tf"}, file) {
 		selection.AdminDiagnostics = true
 	}
 	packRegistryPointerContract := file == "infra/pack_registry_mutable_pointers.json"

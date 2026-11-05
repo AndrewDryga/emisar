@@ -6,6 +6,7 @@ RUN --mount=type=cache,id=emisar-diagnostics-compose-go1.27.3-modules,target=/go
 
 FROM debian:bookworm-20261027-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3 AS build
 COPY portal/docker/debian.sources /etc/apt/sources.list.d/debian.sources
+COPY portal/docker/debian-snapshot.pref /etc/apt/preferences.d/debian-snapshot.pref
 RUN sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources \
     && apt-get update && apt-get upgrade -y --no-install-recommends \
     && apt-get install -y --no-install-recommends \
@@ -16,7 +17,7 @@ RUN sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.s
     && cd /ntp-source && apt-get download ntpsec \
     && dpkg-deb --extract ntpsec_*.deb extracted \
     && install -m 0755 extracted/usr/bin/ntpq /usr/local/bin/ntpq \
-    && cd /sysstat-source && apt-get source sysstat \
+    && cd /sysstat-source && apt-get source "sysstat=$(dpkg-query -W -f='${source:Version}' sysstat)" \
     && cd sysstat-* && ./configure --disable-nls --disable-documentation --disable-sensors \
     && make -j2 SA_LIB_DIR=/run/emisar-admin-runner/diagnostics/bin sar sadc iostat \
     && install -m 0755 sar sadc iostat /usr/local/bin/ \

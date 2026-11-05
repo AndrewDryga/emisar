@@ -1,4 +1,4 @@
-# Only the bundle and the shared signed Debian snapshot are build inputs.
+# Only the bundle and the shared signed Debian snapshot and its pins are build inputs.
 **
 !infra
 !infra/runtime
@@ -8,3 +8,4 @@
 !portal
 !portal/docker
 !portal/docker/debian.sources
+!portal/docker/debian-snapshot.pref
