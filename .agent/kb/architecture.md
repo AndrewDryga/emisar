@@ -88,15 +88,16 @@ and [`infra/README.md`](../../infra/README.md).
 
 The runner exposes no inbound network listener. Its durable local state is the
 per-runner credential, dispatch log, installed packs, signing nonces, and the
-JSONL journal. The MCP bridge runs as a local child process of the MCP client or as a
-direct CLI. In the user's config directory it persists one owner-only
-long-lived credential file per stored account (`emisar/credentials/`), the
-`current-account.json` selection, and rotated API-key successors; `connect`
-also writes entries into each LLM client's own configuration file.
+JSONL journal. The MCP bridge runs as a local child process of the MCP client
+or as a direct CLI. In the user's config directory it persists one owner-only
+long-lived credential file per stored account (`emisar/credentials/`), VS
+Code's key file (`vscode.env`) in that directory, the `current-account.json`
+selection, and rotated API-key successors; `connect` also writes entries into
+each LLM client's own configuration file.
 
 ## Changelog
 
-- 2026-11-05 - corrected the MCP bridge's local state inventory: stored accounts, account selection, and client configuration entries
+- 2026-11-05 - corrected the MCP bridge's local state inventory: stored accounts, VS Code's `vscode.env` key file, account selection, and client configuration entries
 - 2026-09-10 - enforcement ownership and the staff lane route to the security model instead of restating it
 - 2026-08-13 - documented the read-only staff console and its audited account view
 - 2026-07-26 - documented the authoring-time shell-program data-channel boundary
