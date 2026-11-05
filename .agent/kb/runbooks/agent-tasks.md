@@ -118,8 +118,8 @@ then continue. Do not stop while an actionable task remains in that batch. Skip 
 claims and blocked decisions. An interactive question does not start a queue sweep.
 
 Before a handoff, record the exact next action, accepted constraints, completed
-checks, evidence, and pending processes. On the host `coop tasks release` hands back
-a claim while leaving it in_progress for loop adoption; it does not move it to todo.
+checks, evidence, and pending processes. On the host `coop tasks release` returns the
+task to todo and drops your claim; its state.md handoff is what the next agent resumes from.
 Establish that a claim is orphaned before recovering it through Coop. Reconcile the
 batch's done tasks with their Coop-Task trailers after an interrupted commit/transition.
 Never adopt another active agent's work or delete done tasks automatically; archive
