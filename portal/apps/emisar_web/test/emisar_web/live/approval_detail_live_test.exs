@@ -54,6 +54,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
         reason: "needs review",
         args: %{},
         initiating_membership_id: requested_by.id,
+        api_key_id: opts[:api_key_id],
         pack_ref: Fixtures.Catalog.default_pack_ref(),
         expected_pack_hash: Fixtures.Catalog.default_pack_hash(),
         status: :pending_approval
@@ -876,12 +877,11 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
         issued_by_membership_id: owner.id
       )
 
-    request = pending_request(account, service_account, allow_self_approval: false)
-    import Ecto.Query
-
-    Repo.update_all(from(r in Emisar.Runs.ActionRun, where: r.id == ^request.run_id),
-      set: [api_key_id: key.id]
-    )
+    request =
+      pending_request(account, service_account,
+        allow_self_approval: false,
+        api_key_id: key.id
+      )
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
