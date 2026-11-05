@@ -3559,8 +3559,14 @@ defmodule EmisarWeb.MarketingTest do
       assert app["offers"]["price"] == "0"
       free = Emisar.Billing.plans()["free"]
       assert app["offers"]["description"] == "Free for up to #{free.runners_limit} runners"
-      note = EmisarWeb.MarketingComponents.free_plan_note()
-      assert note == "Three runners. Seven-day audit. No credit card."
+
+      # The CTA note restates the Free plan in words; a Billing change makes
+      # the fetch! below fail until the wording is revisited.
+      words = %{3 => "Three", 5 => "Five", 7 => "Seven", 14 => "14", 30 => "30"}
+      runners = Map.fetch!(words, free.runners_limit)
+      retention = Map.fetch!(words, free.audit_retention_days)
+      note = "#{runners} runners. #{retention}-day audit. No credit card."
+      assert EmisarWeb.MarketingComponents.free_plan_note() == note
       assert conn |> get(~p"/security") |> html_response(200) =~ note
 
       # The FAQPage's questions are real Q&A entities, not an empty shell.
