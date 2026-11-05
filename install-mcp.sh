@@ -123,12 +123,6 @@ ASSUME_YES="${ASSUME_YES:-0}"
 # install without GitHub CLI: the checksum from the release mirror stands alone.
 verifier_missing=0
 
-# Config writers stage through mktemp, not a predictable "${file}.emisar-new.$$".
-# A shell > redirect FOLLOWS a destination symlink and chmod follows it too, so
-# under the documented `sudo bash -s -- --uninstall` a local user who pre-created
-# that path (the PID space is small enough to blanket) got an arbitrary
-# root-written 0600 file with content they controlled. mktemp's template creates
-# with O_EXCL and a random suffix, so there is nothing to pre-create.
 require_value() {
   local flag="$1"
   if [ "$#" -lt 2 ] || [ -z "$2" ] || [[ "$2" == -* ]]; then
