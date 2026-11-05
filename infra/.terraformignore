@@ -18,7 +18,7 @@ override.tf.json
 crash.log
 crash.*.log
 
-# Local variable files can contain secrets. Committed examples remain included.
+# Local variable files can contain secrets. Example files (none tracked today) remain included.
 *.tfvars
 *.tfvars.json
 !*.tfvars.example
