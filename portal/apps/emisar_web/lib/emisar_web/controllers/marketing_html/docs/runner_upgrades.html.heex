@@ -202,7 +202,7 @@
         binary, container image, or infrastructure-managed runner is refused. Update that
         deployment at its source instead of letting the host drift from it.
       </p>
-      <.docs_verify_download component={:runner} />
+      <.docs_verify_download component={:runner} detected_os={@detected_os} />
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The update touches only the binary: <.docs_inline_code>config.yaml</.docs_inline_code>, <.docs_inline_code>runner.env</.docs_inline_code>, the cached token, installed packs, the dispatch log, and the local
         audit journal all stay as they are. Before the service stops, the installer authenticates the signed

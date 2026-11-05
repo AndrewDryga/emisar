@@ -568,7 +568,7 @@ defmodule EmisarWeb.DocsComponents do
       bundle: "SHA256SUMS.sigstore.jsonl",
       tag: "runner-v<version>",
       workflow: "AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml",
-      macos_tarball: nil,
+      macos_tarball: "emisar-<version>-darwin-<arch>.tar.gz",
       windows_tarball: nil
     },
     mcp: %{
@@ -631,6 +631,12 @@ defmodule EmisarWeb.DocsComponents do
 
     windows_tarball = assigns.windows_tarball || assigns.tarball
 
+    # The runner ships no Windows archive, so a Windows reader gets the plain Linux block.
+    detected_os =
+      if assigns.detected_os == :windows && !assigns.windows_tarball,
+        do: nil,
+        else: assigns.detected_os
+
     windows_checksum_command = """
     $archive = '#{windows_tarball}'
     $entry = Get-Content #{assigns.checksums} | Where-Object { ($_ -split '\\s+', 2)[1] -eq $archive }
@@ -658,7 +664,8 @@ defmodule EmisarWeb.DocsComponents do
         macos_commands: macos_commands,
         macos_transcript: macos_transcript,
         windows_commands: windows_commands,
-        windows_transcript: windows_transcript
+        windows_transcript: windows_transcript,
+        detected_os: detected_os
       )
 
     ~H"""
@@ -681,7 +688,7 @@ defmodule EmisarWeb.DocsComponents do
         </p>
         <.os_docs_code :if={@detected_os} detected={@detected_os}>
           <:tab os={:linux} label="Linux" copy_text={@linux_commands}>{@linux_transcript}</:tab>
-          <:tab os={:windows} label="Windows" copy_text={@windows_commands}>
+          <:tab :if={@windows_tarball} os={:windows} label="Windows" copy_text={@windows_commands}>
             {@windows_transcript}
           </:tab>
           <:tab os={:macos} label="macOS" copy_text={@macos_commands}>{@macos_transcript}</:tab>
