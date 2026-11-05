@@ -4,7 +4,7 @@
 
 Your AI client runs the agent and calls emisar's tools. Emisar does not isolate the agent's other tools, and an allowed action can still cause damage. Review the installed packs, policy, runner settings, and host permissions together.
 
-Remote MCP clients connect through OAuth at `https://emisar.dev/api/mcp/rpc`. Local clients can use the `emisar-mcp` stdio bridge described below.
+Remote MCP clients connect through OAuth at `https://emisar.dev/api/mcp/rpc`. Local clients can use the `emisar-mcp` stdio bridge; see Connect a CLI agent below.
 
 ## Start here
 
