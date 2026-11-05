@@ -14,16 +14,19 @@ const diagnosticsBase = "debian:bookworm-20261027-slim@sha256:99c0b25c46d0214d5a
 // qualifyAdminDiagnostics is intentionally outside the Docker-free infra gate.
 // It builds once, extracts the final image, and executes those bytes on Linux
 // at the production /run path, with no old sadc available to mask a broken build.
-func (a *App) qualifyAdminDiagnostics(ctx context.Context, revision, image string) error {
+func (a *App) qualifyAdminDiagnostics(ctx context.Context, revision, image string, prebuilt bool) error {
 	if !regexp.MustCompile(`^[a-f0-9]{40}$`).MatchString(revision) || !strings.HasPrefix(image, "emisar/admin-diagnostics:") {
-		return usage("usage: ./run ops qualify-admin-diagnostics REVISION emisar/admin-diagnostics:TAG")
+		return usage("usage: ./run ops qualify-admin-diagnostics [--prebuilt] REVISION emisar/admin-diagnostics:TAG")
 	}
 	if err := a.require("docker"); err != nil {
 		return err
 	}
-	if err := a.run(ctx, a.Root, nil, "docker", "build", "--platform", "linux/amd64",
-		"--build-arg", "SOURCE_REVISION="+revision, "--file", "infra/runtime/admin-runner/diagnostics/Dockerfile", "--tag", image, "."); err != nil {
-		return err
+	// CI builds through its layer cache and loads the image under this tag.
+	if !prebuilt {
+		if err := a.run(ctx, a.Root, nil, "docker", "build", "--platform", "linux/amd64",
+			"--build-arg", "SOURCE_REVISION="+revision, "--file", "infra/runtime/admin-runner/diagnostics/Dockerfile", "--tag", image, "."); err != nil {
+			return err
+		}
 	}
 	temp, err := os.MkdirTemp("", "emisar-admin-diagnostics-")
 	if err != nil {

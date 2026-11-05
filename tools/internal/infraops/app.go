@@ -21,8 +21,9 @@ const usageText = `usage: ./run ops <command> [args]
   drill pitr [--apply]               run the PITR and IAM recovery drill
   drill cleanup [--apply [ID]]       list or clean recovery drill resources
   validate-templates                 render and validate production cloud-init
-  qualify-admin-diagnostics REVISION emisar/admin-diagnostics:TAG
-                                     build and qualify extracted native Linux bytes (requires Docker)
+  qualify-admin-diagnostics [--prebuilt] REVISION emisar/admin-diagnostics:TAG
+                                     build and qualify extracted native Linux bytes (requires Docker);
+                                     --prebuilt qualifies an image already loaded under that tag
   verify-release-pins [--resolve-comments]
                                      verify trusted release workflow commit pins and WIF literals;
                                      --resolve-comments also resolves every action pin's version
@@ -93,10 +94,14 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		}
 		return a.validateTemplates(ctx)
 	case "qualify-admin-diagnostics":
-		if len(args) != 3 {
-			return usage("usage: ./run ops qualify-admin-diagnostics REVISION emisar/admin-diagnostics:TAG")
+		prebuilt := len(args) == 4 && args[1] == "--prebuilt"
+		if prebuilt {
+			args = append(args[:1:1], args[2:]...)
 		}
-		return a.qualifyAdminDiagnostics(ctx, args[1], args[2])
+		if len(args) != 3 {
+			return usage("usage: ./run ops qualify-admin-diagnostics [--prebuilt] REVISION emisar/admin-diagnostics:TAG")
+		}
+		return a.qualifyAdminDiagnostics(ctx, args[1], args[2], prebuilt)
 	case "verify-release-pins":
 		resolveComments := false
 		switch {

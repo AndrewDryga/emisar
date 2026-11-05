@@ -256,6 +256,40 @@ func TestDiagnosticsQualifierRequiresDockerWithoutAddingGateDependency(t *testin
 	}
 }
 
+func TestDiagnosticsQualifierBuildsUnlessPrebuilt(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		flags []string
+		first string
+	}{
+		{"builds by default", nil, "build"},
+		{"prebuilt starts from the loaded image", []string{"--prebuilt"}, "create"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bin := t.TempDir()
+			calls := filepath.Join(bin, "calls")
+			script := "#!/bin/sh\necho \"$1\" >> " + calls + "\nexit 1\n"
+			if err := os.WriteFile(filepath.Join(bin, "docker"), []byte(script), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+			a := New(repositoryRoot(t), nil, io.Discard, io.Discard)
+			args := append([]string{"qualify-admin-diagnostics"}, tc.flags...)
+			args = append(args, diagnosticsRevision, "emisar/admin-diagnostics:test")
+			if err := a.Run(context.Background(), args); err == nil {
+				t.Fatal("the failing fake docker must fail qualification")
+			}
+			got, err := os.ReadFile(calls)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if first := strings.Fields(string(got))[0]; first != tc.first {
+				t.Fatalf("first docker command = %q, want %q", first, tc.first)
+			}
+		})
+	}
+}
+
 func TestDiagnosticsLinkageRejectsHostFallbackAndMissingLibraries(t *testing.T) {
 	for _, tc := range []struct {
 		name, listing string

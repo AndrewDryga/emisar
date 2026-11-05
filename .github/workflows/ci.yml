@@ -503,9 +503,25 @@ jobs:
           go-version-file: tools/go.mod
           cache: true
           cache-dependency-path: tools/go.*
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      # Cached apt layers keep a snapshot.debian.org outage from failing a push.
+      # Only a Dockerfile or Debian snapshot change still needs the mirror.
+      - name: Build native bundle image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: infra/runtime/admin-runner/diagnostics/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: emisar/admin-diagnostics:ci
+          build-args: |
+            SOURCE_REVISION=${{ github.sha }}
+          cache-from: type=gha,scope=admin-diagnostics
+          cache-to: type=gha,mode=max,scope=admin-diagnostics
       # Explicit Docker qualifier; canonical gates remain Docker-free.
-      - name: Build once and qualify extracted Linux native bundle
-        run: ./run ops qualify-admin-diagnostics "$GITHUB_SHA" emisar/admin-diagnostics:ci
+      - name: Qualify extracted Linux native bundle
+        run: ./run ops qualify-admin-diagnostics --prebuilt "$GITHUB_SHA" emisar/admin-diagnostics:ci
       - name: Install Trivy (pinned, checksum-verified)
         env:
           TRIVY_VERSION: "0.76.1"
