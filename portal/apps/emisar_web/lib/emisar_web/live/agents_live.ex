@@ -405,8 +405,13 @@ defmodule EmisarWeb.AgentsLive do
   # Every api_key change (including `api_key.first_used`) reloads the list;
   # `quick_key_connected?/2` derives the waiting→connected flip from the
   # reloaded keys, so the broadcast and the tick fallback share one judgment.
+  # Debounced: "revoke all" broadcasts once per key and would otherwise run a
+  # full reload per key.
   def handle_info({:list_changed, :api_key, _event_type, _id}, socket),
-    do: {:noreply, reload(socket)}
+    do: {:noreply, LiveTable.schedule_reload(socket, :reload_agents)}
+
+  def handle_info(:reload_agents, socket),
+    do: {:noreply, socket |> LiveTable.reload_drained() |> reload()}
 
   # The badge hooks (UserAuth) forward account-topic broadcasts to every
   # authenticated LV — ignore the ones this page doesn't render.

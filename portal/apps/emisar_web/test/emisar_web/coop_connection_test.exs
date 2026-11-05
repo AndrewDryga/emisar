@@ -115,6 +115,10 @@ defmodule EmisarWeb.CoopConnectionTest do
 
     assert %ApiKey{id: key_id} = ApiKeys.peek_api_key_by_secret(raw)
     assert key_id == key.id
+    # The key-event reload is debounced; run it now.
+    render(lv)
+    send(lv.pid, :reload_agents)
+    assert render(lv) =~ "Agent connected"
     assert has_element?(lv, "#agent-connection-status[data-state='connected']")
 
     render_click(lv, "select_client", %{"client" => "codex"})

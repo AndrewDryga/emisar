@@ -394,6 +394,27 @@ defmodule EmisarWeb.AgentsLiveTest do
       refute current_html =~ "Unsupported"
     end
 
+    test "a burst of key broadcasts reloads the list once, after the debounce", %{conn: conn} do
+      {conn, owner, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents")
+
+      {_raw, _key} =
+        Fixtures.ApiKeys.create_api_key(%{
+          account_id: account.id,
+          created_by_membership_id: owner.id,
+          name: "burst-key"
+        })
+
+      for _ <- 1..3, do: send(lv.pid, {:list_changed, :api_key, "api_key.revoked", "x"})
+
+      refute render(lv) =~ "burst-key"
+      assert :sys.get_state(lv.pid).socket.assigns.reload_scheduled?
+
+      send(lv.pid, :reload_agents)
+      assert render(lv) =~ "burst-key"
+      refute :sys.get_state(lv.pid).socket.assigns.reload_scheduled?
+    end
+
     test "a revoked client does not prompt the operator to upgrade its old bridge", %{conn: conn} do
       {conn, owner, account} = register_and_log_in(conn)
       subject = Fixtures.Subjects.subject_for(owner)
@@ -709,6 +730,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       {:ok, _approved} = ApiKeys.approve_device_grant(grant, subject)
       {:ok, %{client_keys: client_keys}} = ApiKeys.claim_device_grant(device_code)
       assert %ApiKey{} = ApiKeys.peek_api_key_by_secret(client_keys["claude-code"])
+      flush_key_broadcast(lv)
 
       assert render(lv) =~ "Agent connected"
 
@@ -796,6 +818,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       send(lv.pid, {:agent_connection_timeout, manual_attempt})
       assert has_element?(lv, "#agent-connection-status ol", "Confirm the bridge path")
       assert %ApiKey{} = ApiKeys.peek_api_key_by_secret(raw)
+      flush_key_broadcast(lv)
       assert has_element?(lv, "#agent-connection-status[data-state='connected']")
       refute has_element?(lv, "#agent-connection-status ol")
       assert Process.read_timer(manual_timer) == false
@@ -1080,11 +1103,13 @@ defmodule EmisarWeb.AgentsLiveTest do
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "outside-filter"}, subject)
       key_id = key.id
       assert_receive {:list_changed, :api_key, "api_key.created", ^key_id}
+      flush_key_broadcast(lv)
       refute render(lv) =~ "outside-filter"
       assert has_element?(lv, "#{button}:not([disabled])")
 
       assert {:ok, _key} = ApiKeys.revoke_api_key(key, subject)
       assert_receive {:list_changed, :api_key, "api_key.revoked", ^key_id}
+      flush_key_broadcast(lv)
       refute render(lv) =~ "outside-filter"
       assert has_element?(lv, "#{button}[disabled]")
     end
@@ -1457,6 +1482,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       key_id = key.id
 
       assert_receive {:list_changed, :api_key, "api_key.created", ^key_id}, 500
+      flush_key_broadcast(lv)
       assert render(lv) =~ "other-operator-bot"
       assert has_element?(lv, ~s(#api_key_form input[value="draft-bot"]))
 
@@ -2512,8 +2538,13 @@ defmodule EmisarWeb.AgentsLiveTest do
   # back to it — local PubSub delivery is synchronous, so the message is already
   # queued when the mutating call returns. One render/1 makes the view run that
   # reload while the test still owns the DB sandbox; without it the reload can
-  # land after teardown as Postgrex disconnect noise, which fails the gate.
-  defp flush_key_broadcast(lv), do: render(lv)
+  # land after teardown as Postgrex disconnect noise, which fails the gate. The
+  # reload is debounced, so the second step runs it now instead of waiting.
+  defp flush_key_broadcast(lv) do
+    render(lv)
+    send(lv.pid, :reload_agents)
+    render(lv)
+  end
 
   defp rendered_text(html) do
     html |> LazyHTML.from_document() |> LazyHTML.text() |> String.replace(~r/\s+/, " ")
