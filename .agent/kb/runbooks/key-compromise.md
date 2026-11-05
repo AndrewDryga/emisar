@@ -1,7 +1,7 @@
 ---
 name: key-compromise
 sources: [portal/apps/emisar/lib/emisar/api_keys.ex, portal/apps/emisar/lib/emisar/oauth.ex, portal/apps/emisar/lib/emisar/runners.ex, portal/apps/emisar/lib/emisar/crypto.ex, portal/apps/emisar_web/priv/static/.well-known/mcp-registry-auth, infra/iam.tf]
-updated: 2026-09-03
+updated: 2026-11-05
 ---
 
 # Key-compromise response
@@ -72,9 +72,13 @@ host's token or control of the host.
    soft-delete any runner identity that was not expected. Deletion preserves
    history but makes its old runner tokens fail the normal token check.
 3. If an attacker may have obtained a token for a legitimate runner identity,
-   keep that identity disabled and replace it rather than simply re-enabling it:
-   the repo has no token-only revocation operation, and old tokens are durable
-   until the runner identity is deleted.
+   keep that identity disabled and replace it rather than simply re-enabling it.
+   The repo has no token-only revocation operation. A token expires 90 days
+   after issue, and a refresh or **Rotate key** leaves the previous token valid
+   for a 24-hour retirement grace after its successor, so neither contains a
+   stolen token. **Rotate key** is routine rotation: its request is delivered to
+   whichever authenticated connection holds the token, which can be the
+   attacker's. Deleting the identity is what makes its tokens fail at once.
 
 ### Rotation and required fleet roll
 
@@ -180,8 +184,9 @@ second**:
    window and delivery backlog are clear, revoke the old provider value if the
    provider did not revoke it as part of replacement.
 
-Only `emisar-secret-key-base` and `emisar-release-cookie` still use the
-hand-maintained `local.secret_generations` counter, and they have their own
+Only the three provider-generated secrets, `emisar-secret-key-base`,
+`emisar-release-cookie`, and `emisar-livebook-secret-key-base`, use the
+hand-maintained `local.secret_generations` counter. They have their own
 procedure linked at the end of this page.
 
 ### Paddle webhook secret
@@ -241,8 +246,41 @@ update `mixpanel_token`. Verify one controlled event and
 that the old token is no longer accepted where the provider exposes that
 signal.
 
-The repository confirms the application-side provisioning for all four
-providers, but it does not contain provider-specific rotation commands or
+### X Ads conversion credentials
+
+**Blast radius.** `X_ADS_CONVERSIONS_JSON` carries a full OAuth 1.0a
+user-context set (consumer key and secret, access token and secret) plus the
+pixel and event IDs. An attacker can act as the authorizing X user toward the X
+Ads API, including sending forged conversion events.
+
+**Containment and rotation.** At X, regenerate the consumer secret and revoke
+or regenerate the access token, so the whole set changes. Then update
+`x_ads_conversions_json` with the complete JSON object, keeping the pixel and
+event IDs. Verify one controlled conversion under the new set.
+
+### Admin-runner HCP Terraform and Sentry tokens
+
+**Blast radius.** The private admin runners hold `emisar_tfe_token` and
+`emisar_sentry_auth_token` in Secret Manager. The HCP Terraform token is
+production infrastructure access, and HCP workspace exposure is production
+exposure. The Sentry auth token is an API credential for the Sentry
+organization, not the ingestion-only DSN.
+
+**Containment and rotation.** Revoke each token at its provider first (HCP
+Terraform, then Sentry), then update `emisar_tfe_token` and
+`emisar_sentry_auth_token`. Both derive their version from the payload hash, so
+the workspace edit is the rotation. Review what the old HCP token could have
+changed, and check the runners still authenticate with the new values. A leaked
+`emisar_runner_enrollment_key` is handled under Runner enrollment keys.
+
+### Other CI-held provider keys
+
+The GitHub `mcp-evaluation` and `mcp-certification` environments hold paid
+`ANTHROPIC_API_KEY` and `OPENAI_API_KEY` secrets. Revoke the key at the
+provider, then replace the environment secret.
+
+The repository confirms the application-side provisioning for all the
+providers above, but it does not contain provider-specific rotation commands or
 confirm each provider's overlap semantics. Use the provider's current
 credential procedure for step 1 and record the provider-side result; do not
 treat an HCP Terraform apply as provider rotation.
@@ -254,7 +292,7 @@ Use these procedures instead of copying their mechanics into this page:
 - [Dispatch signing CA — rotating and revoking](../specs/signed-dispatch.md#rotating-and-revoking):
   add the replacement CA, reload with `SIGHUP`, re-issue certificates, then
   remove the old CA and reload again.
-- [Portal `SECRET_KEY_BASE` and `RELEASE_COOKIE`](../../../infra/README.md#secrets):
+- [Portal `SECRET_KEY_BASE`, `RELEASE_COOKIE`, and the Livebook secret key base](../../../infra/README.md#secrets):
   separate generations and separate rollouts; the release cookie must stay
   identical across the serving cluster during its staged cutover.
 - [DNSSEC](../../../infra/README.md#dns-and-dnssec):
