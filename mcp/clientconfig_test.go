@@ -907,3 +907,27 @@ func TestInstallEditsTheJSONCSpellingsAClientAccepts(t *testing.T) {
 		})
 	}
 }
+
+func TestTOMLReconnectKeepsOtherEmisarPrefixedServers(t *testing.T) {
+	adapter, _ := lookupClientAdapter("codex")
+	client := adapter.resolve(testConfigRoots(t))
+	if err := os.MkdirAll(filepath.Dir(client.ConfigFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	existing := "[mcp_servers.emisar-prod]\ncommand = \"prod\"\n\n[mcp_servers.emisar_admin]\ncommand = \"admin\"\n\n[mcp_servers.emisario]\ncommand = \"other\"\n"
+	if err := os.WriteFile(client.ConfigFile, []byte(existing), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.install(testEntryRequest("/usr/local/bin/emisar-mcp", "codex")); err != nil {
+		t.Fatalf("connect with sibling emisar-prefixed servers: %v", err)
+	}
+	raw, err := readConfigFile(client.ConfigFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, kept := range []string{"[mcp_servers.emisar-prod]", "[mcp_servers.emisar_admin]", "[mcp_servers.emisario]", "[mcp_servers.emisar]"} {
+		if strings.Count(raw, kept) != 1 {
+			t.Errorf("expected exactly one %q:\n%s", kept, raw)
+		}
+	}
+}
