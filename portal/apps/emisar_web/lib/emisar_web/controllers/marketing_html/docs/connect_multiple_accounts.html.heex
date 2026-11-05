@@ -43,7 +43,11 @@
         For a client that runs the
         <.docs_inline_code>emisar-mcp</.docs_inline_code>
         bridge (Claude Code, Cursor, and the other local clients), mint a key in each
-        account's <strong>AI agents</strong>
+        account's
+        <.link
+          href={~p"/app/agents"}
+          class="text-brand-400 hover:text-brand-300"
+        ><strong>AI agents</strong></.link>
         page, then add one server entry per account.
         Put the account in the entry's name: the client namespaces tool calls by that name,
         so "check staging" has one clear target and the model cannot mix accounts up.
