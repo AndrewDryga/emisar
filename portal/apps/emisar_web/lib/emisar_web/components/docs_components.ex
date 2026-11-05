@@ -631,11 +631,10 @@ defmodule EmisarWeb.DocsComponents do
 
     windows_tarball = assigns.windows_tarball || assigns.tarball
 
-    # The runner ships no Windows archive, so a Windows reader gets the plain Linux block.
-    detected_os =
-      if assigns.detected_os == :windows && !assigns.windows_tarball,
-        do: nil,
-        else: assigns.detected_os
+    # The runner ships no Windows archive. The tab stays so the page-wide OS choice never
+    # leaves this block with nothing showing.
+    windows_unavailable =
+      "# No Windows archive ships for this component; verify on Linux or macOS."
 
     windows_checksum_command = """
     $archive = '#{windows_tarball}'
@@ -650,12 +649,16 @@ defmodule EmisarWeb.DocsComponents do
       String.replace(gh_command, " \\\n  ", " ") <> "\n" <> windows_checksum_command
 
     windows_transcript =
-      verification_transcript(
-        String.replace(gh_command, " \\\n  ", " "),
-        windows_checksum_command,
-        windows_tarball,
-        "PS> "
-      )
+      if assigns.windows_tarball do
+        verification_transcript(
+          String.replace(gh_command, " \\\n  ", " "),
+          windows_checksum_command,
+          windows_tarball,
+          "PS> "
+        )
+      else
+        windows_unavailable
+      end
 
     assigns =
       assign(assigns,
@@ -663,9 +666,9 @@ defmodule EmisarWeb.DocsComponents do
         linux_transcript: linux_transcript,
         macos_commands: macos_commands,
         macos_transcript: macos_transcript,
-        windows_commands: windows_commands,
-        windows_transcript: windows_transcript,
-        detected_os: detected_os
+        windows_commands:
+          if(assigns.windows_tarball, do: windows_commands, else: windows_unavailable),
+        windows_transcript: windows_transcript
       )
 
     ~H"""
@@ -688,7 +691,7 @@ defmodule EmisarWeb.DocsComponents do
         </p>
         <.os_docs_code :if={@detected_os} detected={@detected_os}>
           <:tab os={:linux} label="Linux" copy_text={@linux_commands}>{@linux_transcript}</:tab>
-          <:tab :if={@windows_tarball} os={:windows} label="Windows" copy_text={@windows_commands}>
+          <:tab os={:windows} label="Windows" copy_text={@windows_commands}>
             {@windows_transcript}
           </:tab>
           <:tab os={:macos} label="macOS" copy_text={@macos_commands}>{@macos_transcript}</:tab>

@@ -2887,6 +2887,17 @@ defmodule EmisarWeb.MarketingTest do
       refute html =~ "What never needs an inbound rule"
     end
 
+    test "runner verification keeps the macOS tab for a Windows visitor", %{conn: conn} do
+      html =
+        conn
+        |> put_req_header("user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0")
+        |> get(~p"/docs/host-install")
+        |> html_response(200)
+
+      assert html =~ "emisar-&lt;version&gt;-darwin-&lt;arch&gt;.tar.gz"
+      assert html =~ "shasum -a 256 -c -"
+    end
+
     test "install guides use Emisar domains for primary release and pack traffic", %{conn: conn} do
       for path <- [~p"/docs/quickstart", ~p"/docs/host-install"] do
         html = conn |> get(path) |> html_response(200) |> squish()
