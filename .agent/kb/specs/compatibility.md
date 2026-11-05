@@ -486,11 +486,9 @@ the arguable one, but moving it would break every installed host for a tidiness
 that no operator asked for. `emisar pack list` prints the resolved directory, so
 the answer to "where do packs live" is a command rather than a memorized path.
 
-**Eleven of install.sh's environment variables carry no `EMISAR_` prefix, and
+**Ten of install.sh's environment variables carry no `EMISAR_` prefix, and
 they freeze that way.** `VERSION`, `BIN_DIR`, `ETC_DIR`, `DATA_DIR`, `LOG_DIR`,
-`SERVICE_USER`, `SERVICE_GROUP`, `ASSUME_YES`, `NO_START`, `NO_SERVICE`, and
-`QUARANTINE_DISPATCH_LOG` (set to the literal `1`, it moves the durable dispatch
-log aside so the runner boots on a clean one, and is the destructive knob of the set)
+`SERVICE_USER`, `SERVICE_GROUP`, `ASSUME_YES`, `NO_START`, and `NO_SERVICE`
 are the conventional spellings for a shell installer, and `VERSION` in particular is
 set by GitLab CI and most Makefiles, which is exactly why `emisar update`
 has a denylist that strips all of them before re-running the installer
