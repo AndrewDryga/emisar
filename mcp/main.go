@@ -73,7 +73,6 @@ const httpTimeout = 90 * time.Second
 
 const (
 	maxConcurrentRequests      = 8
-	maxInflightRequestBytes    = maxConcurrentRequests * maxFrameBytes
 	maxRequestIDBytes          = 4_096
 	cancellationForwardTimeout = 5 * time.Second
 	requestTokenHeader         = "X-Emisar-MCP-Request-Token"
@@ -736,7 +735,6 @@ type inflightRequest struct {
 	meta                  requestMeta
 	idKey                 string
 	operationID           string
-	frameBytes            int
 	cancel                context.CancelFunc
 	cancelled             bool
 	cancellationForwarded bool
@@ -758,7 +756,6 @@ type requestHeaders struct {
 
 type serveState struct {
 	inflight       map[string]*inflightRequest
-	inflightBytes  int
 	requestTokens  map[string]string
 	sequence       uint64
 	cancelForwards int
@@ -770,7 +767,6 @@ func (s *serveState) completeRequest(token string) *inflightRequest {
 		return nil
 	}
 	delete(s.inflight, token)
-	s.inflightBytes -= request.frameBytes
 	if request.idKey != "" && s.requestTokens[request.idKey] == token {
 		delete(s.requestTokens, request.idKey)
 	}
@@ -838,12 +834,6 @@ func (b *bridge) handleFrame(
 		}
 		return writeFrame(w, rpcErrorFrame(meta, -32000, "too many in-flight requests"))
 	}
-	if len(frame.line) > maxInflightRequestBytes-state.inflightBytes {
-		if meta.notification() {
-			return nil
-		}
-		return writeFrame(w, rpcErrorFrame(meta, -32000, "in-flight request byte limit reached"))
-	}
 
 	state.sequence++
 	token := b.requestToken(state.sequence)
@@ -854,10 +844,8 @@ func (b *bridge) handleFrame(
 		meta:        meta,
 		idKey:       idKey,
 		operationID: operationID,
-		frameBytes:  len(frame.line),
 		cancel:      cancel,
 	}
-	state.inflightBytes += len(frame.line)
 	if idKey != "" {
 		state.requestTokens[idKey] = token
 	}

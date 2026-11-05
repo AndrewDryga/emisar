@@ -440,9 +440,8 @@ Server-side tool changes do not require a bridge release.
 
 ## Transport identity and recovery
 
-The bridge accepts at most eight requests at once, within a 1 MiB total
-request budget. Each request is capped at 128 KiB, each response at 512 KiB,
-and decoded string IDs and integer decimal forms at 4,096 bytes. Its 90-second
+The bridge accepts at most eight requests at once. Each request is capped at 128 KiB, each response at 512 KiB, and
+decoded string IDs and integer decimal forms at 4,096 bytes. Its 90-second
 HTTP deadline stays above the control plane's 60-second wait cap, so pings and
 unrelated calls remain responsive during a wait.
 
