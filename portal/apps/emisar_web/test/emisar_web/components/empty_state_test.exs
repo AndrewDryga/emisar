@@ -10,7 +10,7 @@ defmodule EmisarWeb.Components.EmptyStateTest do
   alias EmisarWeb.CoreComponents
 
   defp render_empty_state(attrs) do
-    assigns = %{attrs: Map.merge(%{icon: "state.approved", title: "Nothing here"}, attrs)}
+    assigns = %{attrs: Map.merge(%{icon: "state.success", title: "Nothing here"}, attrs)}
 
     rendered_to_string(~H"""
     <CoreComponents.empty_state {@attrs}>Body</CoreComponents.empty_state>
