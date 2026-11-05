@@ -39,6 +39,9 @@ erl_crash.dump
 *~
 .DS_Store
 .claude/scheduled_tasks.lock
+.claude/settings.local.json
+.zed/
+.expert/
 
 # Docker Compose reads a local .env on its own; it may hold secrets, never commit it.
 /.env
