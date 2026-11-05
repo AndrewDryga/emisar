@@ -18,7 +18,7 @@ Do not duplicate or improvise the release procedure here. The invariants are:
 - product tag, changelog entry, `portal/VERSION`, and anchor describe one window;
 - `LICENSE.md` carries that release's three-year BUSL Change Date;
 - tags are signed and verified before push;
-- the complete portal gate is green before the release commit;
+- `./run gate all` is green before the release commit;
 - every `git push`, tag push, and `gh release create` requires explicit user
   confirmation because it leaves the machine.
 
