@@ -3,7 +3,7 @@ name: architecture
 description: runtime components, request flow, runner lifecycle, and deployment shape
 subsystem: agent-stack
 sources: [portal, runner, mcp, packs, tools, infra, .github/workflows]
-updated: 2026-09-10
+updated: 2026-11-05
 ---
 
 # Architecture
@@ -19,7 +19,7 @@ MCP bridge connects local MCP clients to the same control-plane surface.
 | --- | --- | --- |
 | `portal/` | Phoenix control plane, operator console, staff console, remote MCP/OAuth, policy, approvals, pack trust, runbooks, and searchable audit | Authorizes callers and dispatches only trusted catalog actions; it is not trusted to bypass runner validation |
 | `runner/` | Long-lived host agent, pack loader, local admission, argument validation, execution, redaction, and hash-chained journal | Has the OS permissions of its service user and gets the final decision on what this host will execute |
-| `mcp/` | Thin stdio-to-HTTP JSON-RPC bridge for local MCP clients | Holds the operator API key and optional signed-dispatch leaf key; it does not implement policy or action behavior |
+| `mcp/` | Thin stdio-to-HTTP JSON-RPC bridge for local MCP clients, also usable as a direct CLI | Holds the operator API key, stored account credentials, and optional signed-dispatch leaf key; it does not implement policy or action behavior |
 | `packs/` | Versioned action manifests, schemas, commands, scripts, limits, and redaction rules | Pack bytes are executable configuration; a trusted content hash is the reviewed unit |
 
 `tools/` contains pack-authoring support, repository checks, and maintainer E2E
@@ -88,11 +88,15 @@ and [`infra/README.md`](../../infra/README.md).
 
 The runner exposes no inbound network listener. Its durable local state is the
 per-runner credential, dispatch log, installed packs, signing nonces, and the
-JSONL journal. The MCP bridge is a local child process of the MCP client and
-persists only rotated API-key successors in the user's config directory.
+JSONL journal. The MCP bridge runs as a local child process of the MCP client or as a
+direct CLI. In the user's config directory it persists one owner-only
+long-lived credential file per stored account (`emisar/credentials/`), the
+`current-account.json` selection, and rotated API-key successors; `connect`
+also writes entries into each LLM client's own configuration file.
 
 ## Changelog
 
+- 2026-11-05 - corrected the MCP bridge's local state inventory: stored accounts, account selection, and client configuration entries
 - 2026-09-10 - enforcement ownership and the staff lane route to the security model instead of restating it
 - 2026-08-13 - documented the read-only staff console and its audited account view
 - 2026-07-26 - documented the authoring-time shell-program data-channel boundary
