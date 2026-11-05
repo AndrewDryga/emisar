@@ -320,8 +320,8 @@ defmodule EmisarWeb.AuthComponents do
   brand control ("New to emisar? Create an account"). One shape for the whole
   auth family (design-console-ux §3; the hand-rolled copies drifted mt-6/mt-8 and
   dropped classes). The lead-in rides the `:lead` slot, the control label is the
-  default slot, and exactly one of `navigate`/`href`/`event` picks the control:
-  the first two render a link, `event` a `phx-click` button — the MFA factor
+  default slot, and exactly one of `href`/`event` picks the control:
+  `href` renders a link, `event` a `phx-click` button — the MFA factor
   toggle (a same-page switch, not navigation) uses that mode.
 
       <.auth_footer_link href={~p"/sign_up"}>
