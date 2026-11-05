@@ -83,9 +83,8 @@ passing the gate). Plus a **custom geometric wordmark** "emisar".
 **Components (reuse — never re-inline the SVG):**
 - `<.brand size={:sm|:md|:lg} wordmark?>` — the lockup img (or icon-only). Used in
   every nav/auth/error/oauth shell. White-baked (dark contexts).
-- `<.gate_mark animate? class>` — the icon as inline SVG (so it inherits
-  `currentColor` for ink + animates). `animate` pulses the three rings
-  top→bottom (a request crossing). Anchors the /security architecture diagram.
+- `<.gate_mark class>` — the icon as inline SVG (so it inherits
+  `currentColor` for ink). Static; anchors the /security architecture diagram.
   **For any "gate moment", reuse this — don't redraw.**
 
 **Logo emerald = `#36E6A5` = `brand-400`.** (The source art shipped a brighter
@@ -320,7 +319,6 @@ Decorative, non-animating, `aria-hidden`, used **sparingly** (1–2 per page):
 - `[data-reveal]` under `.js-reveal` — on-scroll reveals via `reveal.js`
   (IntersectionObserver adds `.is-in`). **Progressive enhancement:** hiding only
   engages once JS adds `.js-reveal`, so crawlers/no-JS see everything.
-- `.gate-dot`/`gate-pulse` — the calm gate device pulse (the one loop).
 - **Reduced motion is non-negotiable:** a global `@media (prefers-reduced-motion)`
   neutralizes animations/transitions; every signature also lands at its lit end
   state explicitly. Console hover-lifts/pings/spins are caught by the same global
