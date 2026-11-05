@@ -331,4 +331,4 @@ cause. The runner's refusal codes:
 | `invalid_args` | The dispatch's argument bytes are not one well-formed JSON object, so no exact-args digest can be formed. | Refresh discovery and submit a fresh call; do not hand-edit the arguments. |
 | `bad_nonce` | The envelope's nonce is not 32 lowercase hex characters. | Upgrade or repair the MCP bridge; do not retry the altered envelope. |
 | `bad_issued_at` | The envelope's `issued_at` is not a parseable RFC3339 timestamp. | Upgrade or repair the MCP bridge; check the client's clock. |
-| `dispatch_invalid` | The dispatch frame itself was malformed before signature checking began. | Upgrade the control plane and the bridge; re-issue the run. |
+| `dispatch_undecodable` | The dispatch frame did not decode (malformed or invalid fields), so it was refused before signature checking began. | Upgrade the control plane and the bridge; re-issue the run. |
