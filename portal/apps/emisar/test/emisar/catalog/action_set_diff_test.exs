@@ -20,40 +20,9 @@ defmodule Emisar.Catalog.ActionSetDiffTest do
     }
   end
 
-  defp manifest(actions), do: ActionSetDiff.manifest_from_actions(actions)
-
-  describe "manifest_from_actions/1" do
-    test "builds a versioned complete descriptor manifest" do
-      result = manifest([act("a.read", :low), act("a.write", :critical, :script)])
-
-      assert result["schema_version"] == 1
-      assert result["actions"] |> Map.keys() |> Enum.sort() == ["a.read", "a.write"]
-
-      assert result["actions"]["a.write"] == %{
-               "title" => "Title for a.write",
-               "summary" => "Description for a.write.",
-               "description" => "Description for a.write.",
-               "kind" => "script",
-               "risk" => "critical",
-               "side_effects" => ["Reads state."],
-               "args_schema" => %{
-                 "args" => [%{"name" => "limit", "type" => "integer"}]
-               },
-               "examples" => [%{"title" => "Example", "args" => %{}}],
-               "search_terms" => []
-             }
-    end
-
-    test "is a complete empty manifest for no actions" do
-      assert manifest([]) == %{"schema_version" => 1, "actions" => %{}}
-    end
-
-    test "conflicting duplicate action descriptors fail closed" do
-      assert manifest([
-               act("a.write", :low, :exec),
-               act("a.write", :critical, :script)
-             ]) == %{"schema_version" => 1, "actions" => %{}}
-    end
+  defp manifest(actions) do
+    {:ok, manifest} = TrustedManifest.from_runner_actions(actions)
+    manifest
   end
 
   describe "changes/2" do

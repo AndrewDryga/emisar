@@ -31,21 +31,6 @@ defmodule Emisar.Catalog.ActionSetDiff do
   @type t :: %{added: [entry], removed: [entry], changed: [changed]}
 
   @doc """
-  A complete versioned manifest built from already-fetched `%RunnerAction{}`
-  rows. Trust mutations use `TrustedManifest.from_runner_actions/1` directly
-  so malformed or conflicting duplicate descriptors abort the transaction;
-  this convenience function returns an empty complete manifest on invalid
-  input for the read-only operator diff fallback.
-  """
-  @spec manifest_from_actions([RunnerAction.t()]) :: %{optional(String.t()) => map()}
-  def manifest_from_actions(actions) when is_list(actions) do
-    case TrustedManifest.from_runner_actions(actions) do
-      {:ok, manifest} -> manifest
-      {:error, _reason} -> %{"schema_version" => 1, "actions" => %{}}
-    end
-  end
-
-  @doc """
   Diff the currently-advertised `%RunnerAction{}` rows against a stored complete
   manifest. A nil, sparse, malformed, or conflicting manifest yields an empty
   diff so the UI falls back to listing the advertised actions.

@@ -30,10 +30,6 @@ defmodule Emisar.Runbooks.Definition do
   @spec schema() :: map()
   def schema, do: @schema
 
-  @doc "The byte, fan-out, wait, and runtime limits owned by the schema."
-  @spec limits() :: map()
-  def limits, do: @limits
-
   @doc "Fetch one trusted first-party limit by its atom name."
   @spec limit!(atom()) :: pos_integer()
   def limit!(name) when is_atom(name), do: Map.fetch!(@limits, Atom.to_string(name))
@@ -169,10 +165,6 @@ defmodule Emisar.Runbooks.Definition do
        )
      ]}
   end
-
-  @doc "Whether a value satisfies the complete static definition contract."
-  @spec valid?(term()) :: boolean()
-  def valid?(definition), do: match?({:ok, _definition}, validate(definition))
 
   @doc """
   Stable SHA-256 identity for one JSON-compatible runbook definition. Shares one

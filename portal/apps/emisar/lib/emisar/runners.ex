@@ -2221,18 +2221,6 @@ defmodule Emisar.Runners do
 
   defp unix_to_datetime(_invalid), do: nil
 
-  @doc """
-  True when a runner is visible/dispatchable under a membership's runner access.
-  The membership is re-resolved by account and id; a missing or inactive one
-  fails closed, as does the web passing no membership at all.
-  """
-  def runner_in_scope?(runner, %Accounts.Membership{} = membership) do
-    access = Accounts.runner_access_for_membership(membership.account_id, membership.id)
-    Accounts.RunnerAccess.runner_in_scope?(runner, access)
-  end
-
-  def runner_in_scope?(_runner, _membership), do: false
-
   # -- Enrollment keys -------------------------------------------------------
 
   @doc "The enrollment-keys table's `%Repo.Filter{}` list."

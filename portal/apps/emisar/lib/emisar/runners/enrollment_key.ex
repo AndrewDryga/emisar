@@ -33,15 +33,6 @@ defmodule Emisar.Runners.EnrollmentKey do
     timestamps()
   end
 
-  @doc """
-  True when the key is auto-generated AND has never been used. Drives
-  cleanup eligibility (only auto-unused keys get evicted; once bound, the key stays).
-  """
-  def auto_unused?(%__MODULE__{auto_generated_at: nil}), do: false
-  def auto_unused?(%__MODULE__{last_used_at: ts}) when not is_nil(ts), do: false
-  def auto_unused?(%__MODULE__{uses_count: count}) when count > 0, do: false
-  def auto_unused?(%__MODULE__{}), do: true
-
   @doc "Is this key currently presentable for a runner registration?"
   def usable?(%__MODULE__{} = key) do
     cond do

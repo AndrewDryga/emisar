@@ -116,15 +116,6 @@ defmodule Emisar.Accounts.Membership.Changeset do
     end
   end
 
-  # Directory sync sets the role AND marks it directory-managed, so the operator
-  # role-change path rejects a manual change to it (the lock is domain-owned, not
-  # UI-only). `role` is a validated atom off the sync path.
-  def sync_role(%Membership{} = membership, role) do
-    membership
-    |> change(role: role, directory_managed: true)
-    |> put_access_the_role_carries()
-  end
-
   def sync_authorization(
         %Membership{} = membership,
         role,

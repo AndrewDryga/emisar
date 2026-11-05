@@ -24,20 +24,6 @@ defmodule Emisar.CryptoTest do
     end
   end
 
-  describe "email_token/0 + email_token_digest/1" do
-    test "the emitted token re-derives its stored digest" do
-      {encoded, digest} = Crypto.email_token()
-
-      assert {:ok, ^digest} = Crypto.email_token_digest(encoded)
-      # url-safe alphabet only — it rides in a URL.
-      assert encoded =~ ~r/\A[A-Za-z0-9_-]+\z/
-    end
-
-    test "a non-base64 presented token is :error, not a crash or false match" do
-      assert Crypto.email_token_digest("not valid base64 !!!") == :error
-    end
-  end
-
   describe "user_invite_token/0 + user_invite_token_digest/1" do
     test "returns a URL-safe token whose digest can be re-derived" do
       {raw, digest} = Crypto.user_invite_token()

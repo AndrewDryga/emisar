@@ -110,7 +110,7 @@ defmodule Emisar.EnrollmentKeyLifecycleTest do
     assert {:ok, [key], _} = Runners.list_enrollment_keys(subject, filter: [source: ["console"]])
     assert key.auto_generated_at == console.auto_generated_at
     assert Runners.enrollment_key_status(key) == :spent
-    refute EnrollmentKey.auto_unused?(key)
+    assert key.last_used_at != nil
 
     viewer =
       Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")

@@ -926,22 +926,6 @@ defmodule Emisar.RunnerAccessTest do
   end
 
   describe "runner_in_scope?/2" do
-    test "resolves the membership's own access and fails closed without one" do
-      account = Fixtures.Accounts.create_account()
-      runner = %{id: Ecto.UUID.generate(), group: "db"}
-      reaching = Fixtures.Memberships.create_membership(account_id: account.id)
-
-      unreachable =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          runner_access_mode: "none"
-        )
-
-      assert Runners.runner_in_scope?(runner, reaching)
-      refute Runners.runner_in_scope?(runner, unreachable)
-      refute Runners.runner_in_scope?(runner, nil)
-    end
-
     test "an explicit access value accepts only the runners it names" do
       runner = %{id: Ecto.UUID.generate(), group: "db"}
       {:ok, db_access} = RunnerAccess.restricted(["db"], [])

@@ -413,7 +413,7 @@ defmodule Emisar.Runbooks.DefinitionTest do
 
   test "schema and runtime limits have one machine-readable owner" do
     assert Definition.schema()["$schema"] == "https://json-schema.org/draft/2020-12/schema"
-    refute Map.has_key?(Definition.limits(), "max_steps")
+    refute Map.has_key?(Definition.schema()["x-emisar-limits"], "max_steps")
     assert Definition.limit!(:default_stage_parallelism) == 5
   end
 

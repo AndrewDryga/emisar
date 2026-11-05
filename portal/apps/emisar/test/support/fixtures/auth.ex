@@ -39,7 +39,7 @@ defmodule Emisar.Fixtures.Auth do
   """
   def create_aged_token!(membership, context, %DateTime{} = inserted_at)
       when is_binary(context) do
-    {_raw, digest} = Crypto.email_token()
+    digest = Crypto.hash(Crypto.random_secret())
 
     token =
       membership

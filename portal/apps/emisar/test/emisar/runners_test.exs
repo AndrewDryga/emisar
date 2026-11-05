@@ -3705,7 +3705,7 @@ defmodule Emisar.RunnersTest do
       assert key.auto_generated_at != nil
       assert key.created_by_membership_id == subject.membership_id
       assert is_nil(key.last_used_at)
-      assert EnrollmentKey.auto_unused?(key)
+      assert key.uses_count == 0
     end
 
     test "ring eviction caps the auto-unused set at the configured size", %{subject: subject} do
@@ -4814,7 +4814,7 @@ defmodule Emisar.RunnersTest do
     test "preserves console origin and excludes a used install key from cleanup" do
       {_account, _user, subject} = account_with_owner_subject()
       {:ok, raw, key} = Runners.mint_install_key(subject)
-      assert EnrollmentKey.auto_unused?(key)
+      assert key.uses_count == 0
 
       assert {:ok, %Runner{}, _, _} =
                Runners.register_via_enrollment_key(raw, %{
@@ -4830,7 +4830,6 @@ defmodule Emisar.RunnersTest do
         |> Repo.fetch!(EnrollmentKey.Query)
 
       assert reloaded.auto_generated_at == key.auto_generated_at
-      refute EnrollmentKey.auto_unused?(reloaded)
       assert reloaded.last_used_at != nil
       assert {:ok, [%EnrollmentKey{id: id}], _} = Runners.list_enrollment_keys(subject)
       assert id == key.id

@@ -159,9 +159,6 @@ defmodule Emisar.Runbooks.Scheduler do
   @doc "Bounded authoritative recovery sweep for active executions and due waits in active accounts."
   def recover_due, do: Recovery.recover_due()
 
-  @doc "Fleet-wide bounded scheduler gauges; never grouped by account."
-  def recovery_stats, do: Recovery.recovery_stats()
-
   @doc "Drop terminal raw input/argument/output bytes once no physical peer remains active."
   def scrub_terminal_execution(execution_id), do: Recovery.scrub_terminal_execution(execution_id)
 

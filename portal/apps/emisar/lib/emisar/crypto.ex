@@ -77,35 +77,12 @@ defmodule Emisar.Crypto do
     {raw, hash(raw)}
   end
 
-  @doc """
-  Single-use emailed token (magic link / password reset / confirm) as
-  `{encoded, digest}` — the url-safe-base64 string goes in the emailed
-  link, only the digest is stored. Verify a presented token with
-  `email_token_digest/1`.
-  """
-  def email_token do
-    raw = :crypto.strong_rand_bytes(@secret_bytes)
-    {Base.url_encode64(raw, padding: false), hash(raw)}
-  end
-
-  @doc """
-  Digest of a presented emailed token: decodes the url-safe form and
-  re-hashes it for the row lookup. `:error` when the presented string
-  isn't valid base64 (mangled or forged link).
-  """
-  def email_token_digest(encoded) when is_binary(encoded) do
-    case Base.url_decode64(encoded, padding: false) do
-      {:ok, raw} -> {:ok, hash(raw)}
-      :error -> :error
-    end
-  end
-
   # Salt namespacing the monthly-report unsubscribe signature.
   @monthly_report_unsubscribe_salt "monthly report unsubscribe"
 
   @doc """
   A signed, account-scoped monthly-report unsubscribe token for an emailed
-  `List-Unsubscribe` link. Unlike the stored single-use `email_token/0`, this is
+  `List-Unsubscribe` link. Unlike a stored single-use token, this is
   **stateless** — the account id rides inside a `Phoenix.Token` MAC, so no digest
   is stored and there's nothing to revoke; it only ever flips one notification
   preference. The link never expires (a months-old email must still unsubscribe).

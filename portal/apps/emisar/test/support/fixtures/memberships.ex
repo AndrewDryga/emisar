@@ -210,7 +210,7 @@ defmodule Emisar.Fixtures.Memberships do
   def mark_directory_managed(%Membership{} = membership) do
     {:ok, managed} =
       membership
-      |> Membership.Changeset.sync_role(membership.role)
+      |> Ecto.Changeset.change(directory_managed: true)
       |> Repo.update()
 
     managed
