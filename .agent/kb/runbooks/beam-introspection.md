@@ -14,11 +14,12 @@ The release ships two libraries for exactly this: `recon` and `observer_cli`.
 
 ## Getting a shell on the node
 
-`bin/emisar remote` attaches an IEx session to the running release. Reach the
-instance first through IAP (`./run ops portal ...`); the release is at `/app`.
+`./run ops portal remsh` connects through IAP and attaches an IEx session to
+the running release inside the `emisar` container. It needs exactly one VM; add
+`--host NAME` to pick one (`--list-hosts` prints the names).
 
 ```
-/app/bin/emisar remote
+./run ops portal remsh
 ```
 
 This is a real shell on a serving node. Prefer the counting and sampling calls
