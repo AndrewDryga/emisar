@@ -128,11 +128,12 @@ the next connection. Heartbeats let the portal expire half-open sockets.
 
 The portal sends `shutdown` before lifecycle-driven disconnects. A reversible
 disable uses `reason: "runner_disabled"`; the runner retains its bearer token and
-retries with bounded backoff. While disabled, websocket upgrades return
-`403 {"error":"runner_disabled"}`. Enabling the same runner lets the next retry
+retries with bounded backoff. While disabled, websocket upgrades and
+`POST /runner/token/refresh` return `403 {"error":"runner_disabled"}`; the
+runner keeps its current token on that refresh answer and retries later. Enabling the same runner lets the next retry
 connect without a host restart. A tenant-wide disable uses the same retryable
 behavior with `reason: "account_disabled"` and
-`403 {"error":"account_disabled"}`; its runners recover with their existing
+`403 {"error":"account_disabled"}` on both routes; its runners recover with their existing
 tokens after the account is enabled. Deleting the runner uses terminal
 `reason: "runner_revoked"`; invalid or removed credentials return `401`, the
 runner discards the cached token, and the process stops rather than retrying a
