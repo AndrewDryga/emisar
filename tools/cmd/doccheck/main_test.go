@@ -129,3 +129,45 @@ func TestCheckRepositoryIgnoresDeletedTrackedPaths(t *testing.T) {
 		t.Fatalf("findings = %#v", findings)
 	}
 }
+
+func TestCheckRepositorySkipsUnreadableFilesOnlyInABox(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can read a mode-000 file")
+	}
+	root := t.TempDir()
+	git := func(args ...string) {
+		t.Helper()
+		command := exec.Command("git", args...)
+		command.Dir = root
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, output)
+		}
+	}
+	git("init", "-q")
+	path := filepath.Join(root, "fixtures", "ca-key.pem")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("fixture\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git("add", "fixtures/ca-key.pem")
+	if err := os.Chmod(path, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(path, 0o644) })
+
+	t.Setenv("COOP_BOX", "")
+	if _, _, err := checkRepository(root); err == nil {
+		t.Fatal("an unreadable tracked file outside a box must fail the check")
+	}
+
+	t.Setenv("COOP_BOX", "1")
+	findings, _, err := checkRepository(root)
+	if err != nil {
+		t.Fatalf("inside a box an unreadable stand-in must be skipped: %v", err)
+	}
+	if len(findings) != 0 {
+		t.Fatalf("findings = %#v", findings)
+	}
+}

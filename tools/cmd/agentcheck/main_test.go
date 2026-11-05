@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -845,5 +846,33 @@ func TestKnowledgeCardIndexAndChangelogAgree(t *testing.T) {
 	check.checkKnowledgeCards()
 	if !hasFailure(check, "updated is 2026-07-22 but the newest changelog entry is 2026-08-04") {
 		t.Fatalf("stale updated not reported: %v", check.failures)
+	}
+}
+
+func TestWalkRepositorySkipsUnreadableDirectoriesOnlyInABox(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can read a mode-000 directory")
+	}
+	check := testChecker(t)
+	hidden := filepath.Join(check.root, "portal", ".agent", "secrets")
+	if err := os.MkdirAll(hidden, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(hidden, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(hidden, 0o755) })
+
+	t.Setenv("COOP_BOX", "")
+	check.walkRepository(func(string, fs.DirEntry) {})
+	if len(check.failures) == 0 {
+		t.Fatal("an unreadable directory outside a box must fail the walk")
+	}
+
+	t.Setenv("COOP_BOX", "1")
+	check = &checker{root: check.root, out: io.Discard, errOut: io.Discard}
+	check.walkRepository(func(string, fs.DirEntry) {})
+	if len(check.failures) != 0 {
+		t.Fatalf("inside a box an unreadable stand-in must be skipped: %v", check.failures)
 	}
 }

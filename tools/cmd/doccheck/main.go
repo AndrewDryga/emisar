@@ -5,7 +5,9 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"io/fs"
 	"net/url"
 	"os"
 	"os/exec"
@@ -189,6 +191,12 @@ func checkRepository(root string) ([]finding, int, error) {
 		}
 		data, err := os.ReadFile(fullPath)
 		if err != nil {
+			// Inside a Coop box, files with secret-shaped names are unreadable stand-ins
+			// for the real ones and carry nothing to check. Anywhere else an unreadable
+			// tracked file is a real error.
+			if errors.Is(err, fs.ErrPermission) && os.Getenv("COOP_BOX") != "" {
+				continue
+			}
 			return nil, markdownFiles, fmt.Errorf("reading %s: %w", file, err)
 		}
 		if bytes.IndexByte(data, 0) >= 0 {

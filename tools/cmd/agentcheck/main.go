@@ -7,6 +7,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -414,6 +415,14 @@ func skipGeneratedDirectory(entry fs.DirEntry) bool {
 func (c *checker) walkRepository(visit func(string, fs.DirEntry)) {
 	err := filepath.WalkDir(c.root, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
+			// Inside a Coop box, secret-shaped paths are unreadable stand-ins for the real
+			// ones; nothing under them is this repository's to check.
+			if errors.Is(err, fs.ErrPermission) && os.Getenv("COOP_BOX") != "" {
+				if entry != nil && entry.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
 			return err
 		}
 		if path != c.root && skipGeneratedDirectory(entry) {
