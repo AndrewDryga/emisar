@@ -32,7 +32,7 @@ defmodule EmisarWeb.CheckoutController do
         redirect(conn, to: "/pricing")
 
       # Paddle's checkout.url always carries ?_ptxn=; without it Paddle.js has
-      # no transaction to open and the "Opening secure checkout…" spinner would
+      # no transaction to open and the "Opening checkout…" spinner would
       # spin forever. Render the honest dead-link state instead.
       missing_transaction?(params["_ptxn"]) ->
         conn
