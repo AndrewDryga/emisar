@@ -565,9 +565,13 @@ while calling that XDG, so on a Mac the two binaries disagreed about where
 per-user config lives.
 
 The runner's exit codes match the bridge's: **0 success, 2 for a usage
-failure (an unknown command, an unknown flag, a missing or extra argument),
+failure (an unknown command or flag, a missing or extra argument, a missing
+required flag, a flag value that is malformed, out of range or the wrong
+combination, `--json` on a command that does not emit JSON),
 130 for an interrupt, and 1 for everything else**, which is a failure of the
-work rather than of the invocation. It previously answered 1 for all of them,
+work rather than of the invocation; a value that only fails once a referenced
+file or the network is read, and a transport or security policy refusal, are
+both 1. It previously answered 1 for all of them,
 so a script could not tell a mistyped flag from a misconfigured host from an
 action that ran and failed. That matters because `action run` is the documented
 post-install verification step, and this section froze the bridge's codes
