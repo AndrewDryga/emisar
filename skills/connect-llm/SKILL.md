@@ -98,6 +98,13 @@ choosing the intended account on the consent screen. Then continue at step 4.
 
 ## 3. Local client: install the bridge and register
 
+If `emisar-mcp` is already installed and current (`emisar-mcp --version`), skip
+the installer: it stops at "already current" without registering anything. Run
+`emisar-mcp connect --url "$EMISAR_URL"` where it can prompt. That adds a client
+installed later; `emisar-mcp connect --client <id>` repairs one client and
+refreshes its key. Then continue at step 4. Use the installer below only to
+install or upgrade the bridge.
+
 Download first so failures are unambiguous and `--help` can be inspected:
 
 ```sh
@@ -186,8 +193,9 @@ every client config it touches.
 Keep the client's `emisar/credentials` directory durable and owner-only so key
 rotation survives restarts; containerized clients must persist `/config`.
 
-When a browser is genuinely unavailable, or the installer ran without its
-prompts, fall back to the **Agents** page's manual per-client snippet. Keep
+If the installer ran without its prompts (`--yes`) or stopped at "already
+current", finish with `emisar-mcp connect`. When a browser is genuinely
+unavailable, fall back to the **Agents** page's manual per-client snippet. Keep
 the key out of shell history and command arguments.
 
 Restart or reload the actual client afterward.

@@ -632,7 +632,11 @@ fi
 # asked to go backwards here, so refuse — `emisar update` applies the same rule
 # for the runner. An explicit --version stays the deliberate rollback route.
 select_upgrade_install_dirs
-[ -n "${install_dirs}" ] || exit 0
+if [ -z "${install_dirs}" ]; then
+  log "Connect a client with the installed bridge: emisar-mcp connect"
+  log "Manual client snippets: ${EMISAR_URL}/app/agents/connect"
+  exit 0
+fi
 log "install target: ${OS}/${ARCH}"
 while IFS= read -r dir; do
   log "  → ${dir}/emisar-mcp"

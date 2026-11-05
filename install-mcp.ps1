@@ -590,6 +590,9 @@ $installedVersion = Get-InstalledVersion $executable
 if ($null -ne $installedVersion) {
     if (-not $Version -and -not $ConnectAll -and $installedVersion -ge [Version]$versionNumber) {
         Write-Info "emisar-mcp $installedVersion is already current"
+        Write-Host ""
+        Write-Host "Connect a client with the installed bridge: emisar-mcp connect"
+        Write-Host "Manual client snippets: $($script:PortalOrigin)/app/agents/connect"
         return
     }
     if ($installedVersion -gt [Version]$versionNumber) {
