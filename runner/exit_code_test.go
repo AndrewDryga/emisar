@@ -2,7 +2,16 @@ package main
 
 import (
 	"context"
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/base64"
 	"errors"
+	"math/big"
 	"strings"
 	"testing"
 	"time"
@@ -129,6 +138,56 @@ func TestFlagValueMistakesAreUsageErrors(t *testing.T) {
 	} {
 		if got := exitCode(context.Background(), err); got != exitUsage {
 			t.Errorf("%s: exit %d, want %d (err: %v)", name, got, exitUsage, err)
+		}
+	}
+}
+
+// The CA key and certificate are flag text, so a value that does not parse is a
+// usage mistake. Inputs are generated here, one per branch of parsePrivateKey
+// and parseCACertificate.
+func TestCAInputParseFailuresAreUsageErrors(t *testing.T) {
+	p384, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encode := func(k crypto.Signer) string {
+		s, err := encodePrivateKey(k)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	leafTmpl := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "not-a-ca"}}
+	leafDER, err := x509.CreateCertificate(rand.Reader, leafTmpl, leafTmpl, &rsaKey.PublicKey, rsaKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name, want string
+		err        error
+	}{
+		{"invalid PKCS#8", "not a PKCS#8 private key", func() error {
+			_, err := parsePrivateKey(base64.StdEncoding.EncodeToString([]byte("junk")))
+			return err
+		}()},
+		{"unsupported curve", "only P-256 is accepted", func() error { _, err := parsePrivateKey(encode(p384)); return err }()},
+		{"rsa key", "is not accepted for dispatch signing", func() error { _, err := parsePrivateKey(encode(rsaKey)); return err }()},
+		{"invalid cert DER", "does not parse", func() error {
+			_, err := parseCACertificate(encodeCertPEM([]byte("junk")))
+			return err
+		}()},
+		{"not a CA", "is not a CA certificate", func() error { _, err := parseCACertificate(encodeCertPEM(leafDER)); return err }()},
+	} {
+		if got := exitCode(context.Background(), tc.err); got != exitUsage {
+			t.Errorf("%s: exit %d, want %d (err: %v)", tc.name, got, exitUsage, tc.err)
+		}
+		if tc.err == nil || !strings.Contains(tc.err.Error(), tc.want) {
+			t.Errorf("%s: err %v, want substring %q", tc.name, tc.err, tc.want)
 		}
 	}
 }
