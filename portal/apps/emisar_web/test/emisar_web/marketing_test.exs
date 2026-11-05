@@ -3567,6 +3567,9 @@ defmodule EmisarWeb.MarketingTest do
       retention = Map.fetch!(words, free.audit_retention_days)
       note = "#{runners} runners. #{retention}-day audit. No credit card."
       assert EmisarWeb.MarketingComponents.free_plan_note() == note
+
+      # The locked hero line restates the runner count in plain copy.
+      assert html =~ "Free for #{free.runners_limit} runners &middot; No credit card required"
       assert conn |> get(~p"/security") |> html_response(200) =~ note
 
       # The FAQPage's questions are real Q&A entities, not an empty shell.
