@@ -137,8 +137,11 @@ behavior with `reason: "account_disabled"` and
 tokens after the account is enabled. Deleting the runner uses terminal
 `reason: "runner_revoked"`; invalid or removed credentials return `401`, the
 runner discards the cached token, and the process stops rather than retrying a
-revoked identity. `reason: "cloud_shutdown"` is also retryable, while
-`reason: "runner_version_unsupported"` is terminal until the binary is upgraded.
+revoked identity. `reason: "cloud_shutdown"` is also retryable; a portal node sends it only to the
+runner sockets connected to that node when it shuts down, so during a rolling
+deploy runners on the other nodes stay connected and only the draining node's
+runners reconnect (to a remaining node). `reason: "runner_version_unsupported"`
+is terminal until the binary is upgraded.
 
 ## `runner_state`
 
