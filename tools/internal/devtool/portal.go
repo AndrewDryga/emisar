@@ -175,6 +175,14 @@ func portalTestMaxCases(suiteCount int) int {
 	return availableCPUs * 2
 }
 
+func portalTestPartition(env map[string]string, suite portalTestSuite) string {
+	base := env["MIX_TEST_PARTITION"]
+	if base == "" {
+		base = os.Getenv("MIX_TEST_PARTITION")
+	}
+	return base + suite.partition
+}
+
 func (a *App) runPortalTestSuite(ctx context.Context, env map[string]string, suite portalTestSuite, profile bool) portalTestSuiteResult {
 	started := time.Now()
 	var output bytes.Buffer
@@ -186,7 +194,9 @@ func (a *App) runPortalTestSuite(ctx context.Context, env map[string]string, sui
 	shard.Err = &output
 	testEnv := cloneEnv(env)
 	testEnv["MIX_ENV"] = "test"
-	testEnv["MIX_TEST_PARTITION"] = suite.partition
+	// Append to an inherited partition (a Coop box sets "box") so a box gate
+	// and a host gate never migrate the same database.
+	testEnv["MIX_TEST_PARTITION"] = portalTestPartition(env, suite)
 	if profile {
 		testEnv["EMISAR_TEST_PROFILE"] = "1"
 	}

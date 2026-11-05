@@ -90,3 +90,25 @@ func TestPortalTestLockSerializesOnlyMatchingDatabases(t *testing.T) {
 		t.Fatalf("an uncontended run announced a wait: %q", output.String())
 	}
 }
+
+// A Coop box sets MIX_TEST_PARTITION=box; the gate shards must append to it so
+// the box and the host never share a database or a lock key.
+func TestPortalTestPartitionAppendsInheritedPrefix(t *testing.T) {
+	suite := portalTestSuite{partition: "_emisar_web"}
+	for _, test := range []struct {
+		name, inherited, wantDatabase string
+	}{
+		{"host", "", "localhost:5432/emisar_test_emisar_web"},
+		{"box", "box", "localhost:5432/emisar_testbox_emisar_web"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("PGHOST", "")
+			t.Setenv("PGPORT", "")
+			t.Setenv("MIX_TEST_PARTITION", test.inherited)
+			env := map[string]string{"MIX_TEST_PARTITION": portalTestPartition(nil, suite)}
+			if got := portalTestDatabaseKey(env); got != test.wantDatabase {
+				t.Fatalf("portalTestDatabaseKey = %q, want %q", got, test.wantDatabase)
+			}
+		})
+	}
+}
