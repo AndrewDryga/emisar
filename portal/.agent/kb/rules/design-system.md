@@ -369,7 +369,7 @@ genuinely missing (then it's shared, not one-off).
 `brand`, `gate_mark`.
 
 ### Marketing kit (the Gate primitives — marketing-only; home file per entry)
-- `scan_line state` (`core_components.ex`) — the decision-point hairline.
+- `scan_line` (`core_components.ex`) — the decision-point hairline.
 - `state_chip state={:pass|:pending|:deny} label?` (`core_components.ex`) — the
   semantic outcome chip (thin wrapper over `<.chip>`; default words
   Allowed/Approval/Denied).
