@@ -108,7 +108,7 @@ defmodule EmisarWeb.MCP.ActionTools do
                "dispatch_failed",
                "The action call failed persistence validation. No target was dispatched.",
                false,
-               %{fields: changeset_errors(changeset)}
+               %{fields: EmisarWeb.ChangesetErrors.messages(changeset)}
              )}
 
           # A control/formatting character in the justification chain is a caller
@@ -258,14 +258,6 @@ defmodule EmisarWeb.MCP.ActionTools do
     error = %{code: code, message: message, retryable: false}
     error = if details, do: Map.put(error, :details, details), else: error
     %{ok: false, error: error, dispatch_started: dispatch_started}
-  end
-
-  defp changeset_errors(changeset) do
-    Ecto.Changeset.traverse_errors(changeset, fn {message, opts} ->
-      Enum.reduce(opts, message, fn {key, value}, rendered ->
-        String.replace(rendered, "%{#{key}}", to_string(value))
-      end)
-    end)
   end
 
   @justification_fields [:reason, :evidence, :expected]

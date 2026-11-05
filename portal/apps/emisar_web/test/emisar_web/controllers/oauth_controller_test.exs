@@ -211,6 +211,17 @@ defmodule EmisarWeb.OAuthControllerTest do
       assert @redirect in body["redirect_uris"]
     end
 
+    test "answers a non-string list element with invalid_client_metadata", %{conn: conn} do
+      for params <- [
+            %{"redirect_uris" => [1]},
+            %{"redirect_uris" => [@redirect], "grant_types" => [%{}]}
+          ] do
+        body = conn |> post_json(~p"/oauth/register", params) |> json_response(400)
+
+        assert body["error"] == "invalid_client_metadata"
+      end
+    end
+
     test "rejects an invalid redirect uri", %{conn: conn} do
       body =
         conn

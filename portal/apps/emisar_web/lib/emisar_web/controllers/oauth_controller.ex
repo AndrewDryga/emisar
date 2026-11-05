@@ -517,11 +517,7 @@ defmodule EmisarWeb.OAuthController do
 
   defp changeset_errors(changeset) do
     changeset
-    |> Ecto.Changeset.traverse_errors(fn {msg, opts} ->
-      Enum.reduce(opts, msg, fn {key, value}, acc ->
-        String.replace(acc, "%{#{key}}", to_string(value))
-      end)
-    end)
+    |> EmisarWeb.ChangesetErrors.messages()
     |> Enum.map_join("; ", fn {field, msgs} -> "#{field} #{Enum.join(msgs, ", ")}" end)
   end
 end

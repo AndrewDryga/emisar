@@ -135,7 +135,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
       {:error, %Ecto.Changeset{} = changeset} ->
         {:error,
          error("invalid_draft", "The draft failed validation.", false, %{
-           fields: changeset_errors(changeset)
+           fields: EmisarWeb.ChangesetErrors.messages(changeset)
          })}
 
       {:error, :unauthorized} ->
@@ -196,7 +196,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
       {:error, %Ecto.Changeset{} = changeset} ->
         {:error,
          error("invalid_draft", "The draft failed validation.", false, %{
-           fields: changeset_errors(changeset)
+           fields: EmisarWeb.ChangesetErrors.messages(changeset)
          })}
 
       {:error, :unauthorized} ->
@@ -844,14 +844,6 @@ defmodule EmisarWeb.MCP.RunbookTools do
 
   defp drop_through(items, nil), do: items
   defp drop_through(items, key), do: Enum.drop_while(items, &(&1.slug <= key))
-
-  defp changeset_errors(changeset) do
-    Ecto.Changeset.traverse_errors(changeset, fn {message, opts} ->
-      Enum.reduce(opts, message, fn {key, value}, rendered ->
-        String.replace(rendered, "%{#{key}}", to_string(value))
-      end)
-    end)
-  end
 
   defp issue_error([first | _rest] = issues) do
     if Enum.all?(issues, &SchemaRegistry.error_code?(&1.code)) do
