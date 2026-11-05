@@ -42,7 +42,6 @@ const PAUSE = {
   "srv-install": 80,
   "srv-ask": 700,
   "srv-out": 30,
-  "srv-banner": 380,
   "srv-log": 280,
   "srv-ok": 650,
   "cc-meta": 400,

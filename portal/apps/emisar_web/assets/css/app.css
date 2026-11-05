@@ -516,7 +516,6 @@ pre::-webkit-scrollbar-track,
   font-weight: 600;
   color: #60a5fa; /* blue-400 — matches install.sh */
 }
-.demo-srv-banner,
 .demo-srv-out {
   color: #a1a1aa;
 }
@@ -855,7 +854,6 @@ pre::-webkit-scrollbar-track,
 [data-hiw] .pm{display:none}
 [data-hiw] .hiw-sp{display:none}
 [data-hiw] .hiw-badge-key{top:64px}
-[data-hiw] .hiw-olds{display:contents}
 [data-hiw] .hiw-ask.hiw-ask-m{display:none}
 
 [data-hiw] .hiw-eyebrow{display:flex;align-items:center;gap:7px;font-size:12px;line-height:16px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--color-zinc-400)}
@@ -1010,7 +1008,6 @@ pre::-webkit-scrollbar-track,
 [data-hiw] .hiw-evr.is-lit .hiw-ev::before{background:var(--color-brand-400);box-shadow:0 0 0 3px rgba(54,230,165,.16)}
 [data-hiw] .hiw-ev-id{flex:1 1 auto;min-width:0;white-space:nowrap;color:var(--color-zinc-200);transition:color .4s var(--e)}
 [data-hiw] .hiw-evr.is-lit .hiw-ev-id{color:var(--color-zinc-50)}
-[data-hiw] .hiw-empty{font-size:12px;line-height:16px;color:var(--color-zinc-400)}
 
 /* Lanes: one short label each */
 [data-hiw] .hiw-lane-t{position:absolute;left:0;right:0;top:50px;text-align:center;white-space:nowrap;color:var(--color-zinc-300);transition:color .4s var(--e)}
@@ -1187,7 +1184,6 @@ pre::-webkit-scrollbar-track,
   [data-hiw] .hiw-svcs{position:relative;left:auto;right:auto;top:auto;margin-top:14px;height:26px;gap:4px}
   [data-hiw] .hiw-svc{flex-direction:row;gap:6px;font-size:13px}
   [data-hiw] .hiw-svc .emisar-icon{width:18px;height:18px}
-  [data-hiw] .hiw-empty{font-size:13px}
 }
 /* The first act names the world it shows; a narrow map keeps the tab short (the step titles say it). */
 @container hiw (max-width:560px){
@@ -1204,7 +1200,7 @@ pre::-webkit-scrollbar-track,
 @media (prefers-reduced-motion:reduce){
   [data-hiw] .hiw-fx,[data-hiw] .hiw-fx.is-off,[data-hiw] .hiw-w,[data-hiw] .hiw-w-lit{transition-property:opacity,visibility!important;transition-duration:.3s,0s!important}
   [data-hiw] .hiw-fx.is-off{transform:none!important;filter:none!important;transition-delay:0s,.3s!important}
-  [data-hiw] .hiw-caret,[data-hiw] [data-k="rn-dot"]{animation:none!important}
+  [data-hiw] [data-k="rn-dot"]{animation:none!important}
   [data-hiw] .hiw-swap>span,[data-hiw] .hiw-swap>span:not(.on),[data-hiw] .hiw-swap>span.pre{transform:none!important}
   [data-hiw] .hiw-swap>span{transition-property:opacity!important;transition-duration:.3s!important}
 }
