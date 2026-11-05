@@ -199,10 +199,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
       :already_decided?,
       Enum.any?(decisions, &(&1.decider_membership_id == membership_id))
     )
-    |> assign(
-      :self_blocked?,
-      not request.allow_self_approval and request.requested_by_membership_id == membership_id
-    )
   end
 
   defp approval_event_refs(request, subject) do
@@ -620,6 +616,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
       :decision_authority,
       Map.take(review, [:can_decide?, :can_override?, :target_authorized?])
     )
+    |> assign(:self_blocked?, review.self_blocked?)
   end
 
   defp decision_error_message(:expired),

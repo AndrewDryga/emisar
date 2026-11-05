@@ -865,6 +865,31 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert html =~ note
   end
 
+  test "the issuer of the requesting service account's key is self-blocked and offered override",
+       %{conn: conn} do
+    {conn, owner, account} = register_and_log_in(conn)
+    service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+
+    {_raw, key} =
+      Fixtures.ApiKeys.create_api_key(
+        created_by_membership_id: service_account.id,
+        issued_by_membership_id: owner.id
+      )
+
+    request = pending_request(account, service_account, allow_self_approval: false)
+    import Ecto.Query
+
+    Repo.update_all(from(r in Emisar.Runs.ActionRun, where: r.id == ^request.run_id),
+      set: [api_key_id: key.id]
+    )
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    assert html =~ "Policy doesn&#39;t allow you to approve your own request."
+    refute has_element?(lv, "#approval-decision-form button[name=decision][value=approve]")
+    assert has_element?(lv, "[data-shot=approval-override]")
+  end
+
   test "a self-blocked requester gets deny-only copy, no Approve affordance", %{conn: conn} do
     {conn, owner, account} = register_and_log_in(conn)
     request = pending_request(account, owner, allow_self_approval: false)

@@ -285,10 +285,32 @@ defmodule Emisar.Approvals do
          risk: request_risk(request, risks),
          can_decide?: subject_can_decide_approval?(subject),
          can_override?: subject_can_override_approval?(subject),
-         target_authorized?: request_target_authorized?(request, subject)
+         target_authorized?: request_target_authorized?(request, subject),
+         self_blocked?: review_self_blocked?(request, subject)
        }}
     end
   end
+
+  # The decision path's own-request rule (requester or key issuer), read-only,
+  # so the page offers Approve and the break-glass override consistently.
+  defp review_self_blocked?(%Request{allow_self_approval: false} = request, subject) do
+    own_request?(subject, request, review_target(request))
+  end
+
+  defp review_self_blocked?(_request, _subject), do: false
+
+  defp review_target(%Request{run_id: run_id}) when is_binary(run_id) do
+    Runs.ActionRun.Query.all() |> Runs.ActionRun.Query.by_id(run_id) |> Repo.peek()
+  end
+
+  defp review_target(%Request{runbook_execution_id: execution_id})
+       when is_binary(execution_id) do
+    Runbooks.RunbookExecution.Query.all()
+    |> Runbooks.RunbookExecution.Query.by_id(execution_id)
+    |> Repo.peek()
+  end
+
+  defp review_target(_request), do: nil
 
   defp request_target_authorized?(request, subject) do
     subject_can_decide_approval?(subject) and
