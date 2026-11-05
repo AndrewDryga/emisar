@@ -468,25 +468,34 @@ defmodule EmisarWeb.ApprovalsLive do
   defp grant_lifetime_label(7_776_000), do: "90 days"
   defp grant_lifetime_label(seconds), do: "#{seconds} s"
 
-  # A strict→loose scale: disabled up to the longest supported duration.
+  # A strict→loose scale up to the longest supported duration. "Disabled" is not
+  # a choice here — it revokes every grant, so it lives behind a confirm button;
+  # the option only appears while it is the current state.
   defp grant_lifetime_options(current) do
-    [
-      %{
-        value: "0",
-        label: "Disabled (approvals are always single-use)",
-        selected: current == 0,
-        disabled: false
-      },
-      %{value: "3600", label: "1 hour", selected: current == 3_600, disabled: false},
-      %{value: "86400", label: "1 day", selected: current == 86_400, disabled: false},
-      %{value: "2592000", label: "30 days", selected: current == 2_592_000, disabled: false},
-      %{
-        value: "7776000",
-        label: "90 days",
-        selected: current in [nil, 7_776_000],
-        disabled: false
-      }
-    ]
+    disabled =
+      if current == 0,
+        do: [
+          %{
+            value: "0",
+            label: "Disabled (approvals are always single-use)",
+            selected: true,
+            disabled: false
+          }
+        ],
+        else: []
+
+    disabled ++
+      [
+        %{value: "3600", label: "1 hour", selected: current == 3_600, disabled: false},
+        %{value: "86400", label: "1 day", selected: current == 86_400, disabled: false},
+        %{value: "2592000", label: "30 days", selected: current == 2_592_000, disabled: false},
+        %{
+          value: "7776000",
+          label: "90 days",
+          selected: current in [nil, 7_776_000],
+          disabled: false
+        }
+      ]
   end
 
   def render(assigns) do
@@ -883,6 +892,21 @@ defmodule EmisarWeb.ApprovalsLive do
                       }
                     />
                   </form>
+                  <.confirm_button
+                    :if={not grants_disabled?(@current_account)}
+                    id="disable-grants"
+                    title="Disable standing grants?"
+                    confirm_label="Disable and revoke all"
+                    size={:sm}
+                    class="mt-2"
+                    on_confirm={JS.push("set_max_grant_lifetime", value: %{seconds: "0"})}
+                  >
+                    <:body>
+                      Every approval becomes single-use and all active grants are revoked now.
+                      Choosing a duration later does not bring them back.
+                    </:body>
+                    Disable standing grants
+                  </.confirm_button>
                 </.gated_setting>
               </div>
             </div>

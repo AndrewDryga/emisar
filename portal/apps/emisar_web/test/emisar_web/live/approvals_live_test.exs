@@ -820,7 +820,16 @@ defmodule EmisarWeb.ApprovalsLiveTest do
 
       refute has_element?(lv, ~s(#approvals-grant-cap option[value=""]))
 
-      html = render_change(lv, "set_max_grant_lifetime", %{"seconds" => "0"})
+      # Disabling is never one select change away: no "Disabled" option until it
+      # is the state, and the revoke sits behind a confirm dialog that states it.
+      refute has_element?(lv, ~s(#approvals-grant-cap option[value="0"]))
+      assert has_element?(lv, "#disable-grants", "Disable standing grants?")
+      assert Emisar.Repo.reload!(account).settings.max_grant_lifetime_seconds != 0
+
+      html =
+        lv
+        |> element("#disable-grants button", "Disable and revoke all")
+        |> render_click()
 
       # The sweep revoked the grant (flash counts it), the setting stuck, and
       # the section speaks the disabled state everywhere the operator looks.
