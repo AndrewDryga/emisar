@@ -13,7 +13,7 @@ defmodule EmisarWeb.MarketingController do
   """
   use EmisarWeb, :controller
   alias Emisar.{Billing, Catalog}
-  alias EmisarWeb.{BillingIntent, UserAgent}
+  alias EmisarWeb.{BillingIntent, MarketingComponents, UserAgent}
 
   plug :put_layout, html: {EmisarWeb.Layouts, :app}
   plug :assign_detected_os
@@ -238,7 +238,7 @@ defmodule EmisarWeb.MarketingController do
                 "@type" => "Offer",
                 "priceCurrency" => "USD",
                 "price" => "0",
-                "description" => "Free for up to 3 runners"
+                "description" => MarketingComponents.free_plan_offer_description()
               }
             },
             %{
@@ -765,7 +765,7 @@ defmodule EmisarWeb.MarketingController do
                     "@type" => "Offer",
                     "priceCurrency" => "USD",
                     "price" => "0",
-                    "description" => "Free for up to 3 runners"
+                    "description" => MarketingComponents.free_plan_offer_description()
                   }
                 }
               ]

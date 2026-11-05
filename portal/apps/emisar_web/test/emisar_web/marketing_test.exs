@@ -3557,7 +3557,11 @@ defmodule EmisarWeb.MarketingTest do
       # The SoftwareApplication carries the free-tier Offer the copy promises.
       app = Enum.find(graph, &(&1["@type"] == "SoftwareApplication"))
       assert app["offers"]["price"] == "0"
-      assert app["offers"]["description"] == "Free for up to 3 runners"
+      free = Emisar.Billing.plans()["free"]
+      assert app["offers"]["description"] == "Free for up to #{free.runners_limit} runners"
+      note = EmisarWeb.MarketingComponents.free_plan_note()
+      assert note == "Three runners. Seven-day audit. No credit card."
+      assert conn |> get(~p"/security") |> html_response(200) =~ note
 
       # The FAQPage's questions are real Q&A entities, not an empty shell.
       faq = Enum.find(graph, &(&1["@type"] == "FAQPage"))

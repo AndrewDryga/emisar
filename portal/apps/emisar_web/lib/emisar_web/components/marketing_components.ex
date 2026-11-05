@@ -17,6 +17,25 @@ defmodule EmisarWeb.MarketingComponents do
     statics: EmisarWeb.static_paths()
 
   import EmisarWeb.CoreComponents
+  alias Emisar.Billing
+
+  @doc "The free-tier reassurance under a CTA, derived from the Free plan."
+  def free_plan_note do
+    free = Billing.plans()["free"]
+
+    "#{String.capitalize(count_word(free.runners_limit))} runners. " <>
+      "#{String.capitalize(count_word(free.audit_retention_days))}-day audit. No credit card."
+  end
+
+  @doc "The free-tier Offer description in structured data, derived from the Free plan."
+  def free_plan_offer_description do
+    "Free for up to #{Billing.plans()["free"].runners_limit} runners"
+  end
+
+  @count_words ~w[zero one two three four five six seven eight nine ten]
+
+  defp count_word(n) when is_integer(n) and n in 0..10, do: Enum.at(@count_words, n)
+  defp count_word(n), do: to_string(n)
 
   # -- emisar-specific layout helpers -----------------------------------
 
@@ -569,9 +588,11 @@ defmodule EmisarWeb.MarketingComponents do
     default: false,
     doc: "secondary CTA is an outbound link — opens a new, isolated tab"
 
-  attr :note, :string, default: "Three runners. Seven-day audit. No credit card."
+  attr :note, :string, default: nil
 
   def marketing_cta(assigns) do
+    assigns = assign(assigns, :note, assigns.note || free_plan_note())
+
     ~H"""
     <section class="pb-24 sm:pb-32">
       <div class="mx-auto max-w-3xl px-6 lg:px-8">
