@@ -7,7 +7,9 @@ Widgets templates in the reference to learn the shape without copying incidental
 production complexity.
 
 Emisar.Auth owns sign-in, per-workspace sessions, MFA and the Subject. Emisar.Accounts
-owns tenancy, Members (the only person record), invitations, permissions, and audit.
+owns tenancy, Members (the only person record), invitations, and member roles. Emisar.Audit
+owns the audit log, and Emisar.Auth.Permissions unions every context authorizer into the
+permission catalogue.
 
 ## Required reading by task
 
