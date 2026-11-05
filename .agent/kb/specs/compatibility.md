@@ -1,7 +1,7 @@
 ---
 name: compatibility
 sources: [runner/pkg/packspec, runner/pkg/actionspec, runner/testdata/cli_surface.golden, portal/apps/emisar_web/priv/mcp/api-schemas.json, portal/apps/emisar/lib/emisar/canonical_json.ex, install.sh, install-mcp.sh, runner/release/container-packs.txt]
-updated: 2026-11-04
+updated: 2026-11-05
 ---
 
 # Compatibility and deprecation policy
@@ -509,10 +509,12 @@ script in the runner and installer test suites.
 
 **`paths.work_dir` in the runner config is accepted and ignored.** `install.sh`
 wrote it into every host's config until 2026-08-06 and nothing has ever read
-it. The loader rejects unknown keys, so the field stays until this document's
-deprecation path retires it: runner 0.24.0 removed it and refused to start on
-every host installed before that date. `connect` warns about the line at boot
-and `doctor` reports it.
+it. The loader rejects unknown keys, so the field stays: runner 0.24.0 removed
+it and refused to start on every host installed before that date. `connect`
+warns about the line at boot and `doctor` reports it. At 1.0 it is a permanent,
+ignored member of the v1 config schema, not a scheduled deprecation: no removal
+release is set, and none is invented. Only a major release may remove it, and
+only with evidence that no supported install still carries the line.
 
 A duration on the runner CLI, in the runner config, and in pack action YAML is
 ONE spelling: Go's syntax extended with whole-value `d` and `w` suffixes, plus

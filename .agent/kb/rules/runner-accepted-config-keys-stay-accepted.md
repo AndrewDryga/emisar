@@ -3,7 +3,7 @@ name: runner-accepted-config-keys-stay-accepted
 description: A config key the runner ever accepted keeps loading — it becomes an ignored, warned-about field, never an unknown-key rejection
 subsystem: runner
 sources: [runner/internal/config/config.go, runner/internal/config/loader_test.go, runner/connect.go, runner/doctor.go, install.sh, tools/internal/installtest/runner.go]
-updated: 2026-09-12
+updated: 2026-11-05
 ---
 
 # Accepted config keys stay accepted
@@ -17,8 +17,10 @@ loses its purpose stays in the struct as a field the runner reads nowhere:
 reports it. It is never deleted while a fielded config may still carry the
 line; removal goes through the deprecation path in
 `.agent/kb/specs/compatibility.md` with evidence that no supported install
-still writes or carries it. `install.sh`'s `check_staged_config` runs the
-staged binary as `--config ${ETC_DIR}/config.yaml action list --packs-dir
+still writes or carries it. Such a key has no removal release until a human
+sets one: `paths.work_dir` stays accepted and ignored, including in 1.0.
+`install.sh`'s `check_staged_config` runs the staged binary as
+`--config ${ETC_DIR}/config.yaml action list --packs-dir
 <empty dir>` BEFORE the service stops — a verb that loads the config and exits
 without connecting, with the pack list pinned empty so config rejection is the
 only way it can fail. A rejection is then a refusal that repeats the binary's
