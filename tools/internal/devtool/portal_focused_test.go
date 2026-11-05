@@ -34,7 +34,7 @@ func TestFocusedPortalTestsPrepareTheirDatabaseFirst(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "emisar ecto.create --quiet\nemisar ecto.migrate --quiet\nemisar test test/one_test.exs\n"
+	want := "portal deps.compile\nemisar ecto.create --quiet\nemisar ecto.migrate --quiet\nemisar test test/one_test.exs\n"
 	if string(got) != want {
 		t.Fatalf("mix calls =\n%s\nwant\n%s", got, want)
 	}

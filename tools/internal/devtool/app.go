@@ -139,6 +139,10 @@ func exact(args []string, count int, text string) error {
 func (a *App) Run(ctx context.Context, args []string) error {
 	defer a.stopServiceForwards()
 
+	if err := a.isolateBoxBuildRoot(); err != nil {
+		return err
+	}
+
 	if len(args) == 0 {
 		a.usage()
 		return nil

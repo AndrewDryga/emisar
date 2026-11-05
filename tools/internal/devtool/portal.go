@@ -436,7 +436,11 @@ func (a *App) portalTests(ctx context.Context, env map[string]string, args []str
 	defer releasePortalTestLock(lock)
 	// A loop box starts with an empty database volume, and no gate suite uses
 	// the focused partition, so without this the application waits forever for
-	// a database nothing created.
+	// a database nothing created. A fresh build directory compiles third-party
+	// deps first, whose warnings are not ours, so warm them unscanned as the gate does.
+	if err := a.warmPortalTestDependencies(ctx, testEnv); err != nil {
+		return err
+	}
 	if err := a.ensurePortalTestDatabase(ctx, testEnv); err != nil {
 		return err
 	}
