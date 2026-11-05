@@ -94,7 +94,7 @@ func usageErrorFromExecute(err error) error {
 		"unknown shorthand flag",
 		"accepts ",
 		"requires at least",
-		"requires exactly",
+		"required flag(s)",
 	} {
 		if strings.HasPrefix(err.Error(), prefix) {
 			return usageError{err}
@@ -178,7 +178,7 @@ authoring, approval workflow, and audit storage live in the cloud.`,
 	// once (see the note in packValidateCmd).
 	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
 		if cmd.Flags().Changed("json") && cmd.Annotations[jsonOutputAnnotation] == "" {
-			return fmt.Errorf("%s does not emit JSON; --json is not supported here", cmd.CommandPath())
+			return usageError{fmt.Errorf("%s does not emit JSON; --json is not supported here", cmd.CommandPath())}
 		}
 		return nil
 	}

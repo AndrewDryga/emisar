@@ -109,7 +109,7 @@ func actionRunCmd() *cobra.Command {
 			// default and exit 0, so `--timeout=-5s` looked accepted and ran with
 			// a limit the operator never chose. Say so instead.
 			if timeout < 0 {
-				return fmt.Errorf("--timeout must be positive (got %s)", timeout)
+				return usageError{fmt.Errorf("--timeout must be positive (got %s)", timeout)}
 			}
 			if timeout > 0 {
 				req.Opts.Timeout = timeout

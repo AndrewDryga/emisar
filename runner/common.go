@@ -298,7 +298,7 @@ func parseArgFlag(pairs []string) (map[string]any, error) {
 	for _, p := range pairs {
 		i := strings.IndexByte(p, '=')
 		if i < 0 {
-			return nil, fmt.Errorf("--arg %q must be key=value", p)
+			return nil, usageError{fmt.Errorf("--arg %q must be key=value", p)}
 		}
 		key, raw := p[:i], p[i+1:]
 		out[key] = coerceArgValue(raw)

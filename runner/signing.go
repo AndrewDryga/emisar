@@ -62,7 +62,7 @@ func generateSigningKey(alg signingKeyAlg) (crypto.Signer, error) {
 		}
 		return priv, nil
 	default:
-		return nil, fmt.Errorf("--key must be %s or %s, got %q", algEd25519, algP256, alg)
+		return nil, usageError{fmt.Errorf("--key must be %s or %s, got %q", algEd25519, algP256, alg)}
 	}
 }
 
@@ -135,7 +135,7 @@ func parseScope(s string) (attest.Scope, error) {
 		k, v, ok := strings.Cut(part, "=")
 		k, v = strings.TrimSpace(k), strings.TrimSpace(v)
 		if !ok || k == "" || v == "" {
-			return scope, fmt.Errorf("scope item %q must be key=value", part)
+			return scope, usageError{fmt.Errorf("scope item %q must be key=value", part)}
 		}
 		if k == "group" {
 			scope.Group = v
@@ -174,10 +174,10 @@ func parseTTL(s string) (time.Duration, error) {
 	// d and w, and neither knew what the other accepted.
 	d, err := actionspec.ParseExtendedDuration(s)
 	if err != nil {
-		return 0, fmt.Errorf("invalid ttl %q: %w", s, err)
+		return 0, usageError{fmt.Errorf("invalid ttl %q: %w", s, err)}
 	}
 	if d <= 0 {
-		return 0, fmt.Errorf("ttl must be positive, got %q", s)
+		return 0, usageError{fmt.Errorf("ttl must be positive, got %q", s)}
 	}
 	return d, nil
 }

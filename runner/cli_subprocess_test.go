@@ -766,10 +766,10 @@ func TestCLI_ActionRunResultStatusesAndArgError(t *testing.T) {
 		}
 	})
 
-	t.Run("--arg without = is a CLI error, exit 1", func(t *testing.T) {
+	t.Run("--arg without = is a CLI error, exit 2", func(t *testing.T) {
 		cfg := writeRunnableConfig(t, t.TempDir(), false)
 		stdout, stderr, code := runCLI(t, []string{"--config", cfg, "action", "run", "linux.ping", "--reason", "why", "--arg", "novalue"}, nil)
-		if code != 1 {
+		if code != exitUsage {
 			t.Errorf("a malformed --arg is a CLI error; exit=%d", code)
 		}
 		if !strings.Contains(stderr, "must be key=value") {
@@ -1098,11 +1098,28 @@ func TestCLI_JSONFlagRefusedWhereUnsupported(t *testing.T) {
 	for _, args := range [][]string{{"connect"}, {"pack"}, {"audit"}} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			_, stderr, code := runCLI(t, append(args, "--json"), nil)
-			if code == 0 {
-				t.Fatalf("exit = 0, want non-zero: --json was accepted and ignored")
+			if code != exitUsage {
+				t.Fatalf("exit = %d, want %d: --json was accepted and ignored", code, exitUsage)
 			}
 			if !strings.Contains(stderr, "does not emit JSON") {
 				t.Fatalf("stderr = %q, want it to say the command emits no JSON", stderr)
+			}
+		})
+	}
+}
+
+// Usage mistakes that cobra or a command's own flag validation reports must
+// all reach the frozen usage code, not the work-failed code.
+func TestCLI_UsageMistakesExitWithUsageCode(t *testing.T) {
+	for name, args := range map[string][]string{
+		"missing required flag": {"signing", "new-cert", "--ca-key-file", "ca.key"},
+		"json on non-emitter":   {"pack", "install", "./p", "--json"},
+		"malformed --arg":       {"run", "nope", "--arg", "noequals"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, stderr, code := runCLI(t, args, nil)
+			if code != exitUsage {
+				t.Fatalf("exit = %d, want %d; stderr: %s", code, exitUsage, stderr)
 			}
 		})
 	}

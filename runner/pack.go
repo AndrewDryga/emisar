@@ -445,7 +445,7 @@ advertised catalog; without one, reload manually: systemctl reload emisar.
 			// guard that keeps `uninstall ../../etc` (or an absolute path)
 			// from turning into a RemoveAll outside the packs dir.
 			if !safePackName(name) {
-				return fmt.Errorf("invalid pack name %q (must be a single path segment, no slashes or '..')", name)
+				return usageError{fmt.Errorf("invalid pack name %q (must be a single path segment, no slashes or '..')", name)}
 			}
 
 			if dest == "" {

@@ -52,7 +52,7 @@ func eventsTailCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			n, _ := cmd.Flags().GetInt("lines")
 			if n < 0 {
-				return fmt.Errorf("--lines must be non-negative")
+				return usageError{fmt.Errorf("--lines must be non-negative")}
 			}
 			f, path, err := openJSONL()
 			if err != nil {

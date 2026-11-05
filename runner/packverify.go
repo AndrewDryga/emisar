@@ -112,7 +112,7 @@ the same — read the detail before concluding the pack is misconfigured.`,
 			// same value to unrelated schemas and fail them all as
 			// unknown_arg.
 			if len(probeArgs) > 0 && len(args) != 1 {
-				return fmt.Errorf("--arg needs exactly one pack id (got %d)", len(args))
+				return usageError{fmt.Errorf("--arg needs exactly one pack id (got %d)", len(args))}
 			}
 
 			rt, err := boot()

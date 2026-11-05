@@ -58,7 +58,7 @@ func TestUsageErrorFromExecute(t *testing.T) {
 		"unknown shorthand flag: 'z' in -z",
 		"accepts 1 arg(s), received 2",
 		"requires at least 1 arg(s), only received 0",
-		"requires exactly 2 arg(s)",
+		`required flag(s) "ca-cert" not set`,
 	}
 	for _, message := range usage {
 		if got := exitCode(context.Background(), usageErrorFromExecute(errors.New(message))); got != exitUsage {
@@ -98,5 +98,21 @@ func TestVersionFlagMatchesTheInstallerContract(t *testing.T) {
 	want := "emisar version " + Version + "\n"
 	if out.String() != want {
 		t.Errorf("--version = %q, want %q (install.sh compares this exactly)", out.String(), want)
+	}
+}
+
+// Value mistakes found inside helpers and RunE bodies are the same class as a
+// mistyped flag and must exit 2 too.
+func TestFlagValueMistakesAreUsageErrors(t *testing.T) {
+	_, scopeErr := parseScope("env")
+	_, ttlErr := parseTTL("soon")
+	_, ttlNeg := parseTTL("-1h")
+	_, keyErr := generateSigningKey("rsa")
+	for name, err := range map[string]error{
+		"scope": scopeErr, "ttl": ttlErr, "ttl non-positive": ttlNeg, "key alg": keyErr,
+	} {
+		if got := exitCode(context.Background(), err); got != exitUsage {
+			t.Errorf("%s: exit %d, want %d (err: %v)", name, got, exitUsage, err)
+		}
 	}
 }
