@@ -42,6 +42,21 @@ box:
     - to: {service: "keycloak"}
       protocol: tcp
       ports: [8443]
+    # Package registries the gates fetch locked dependencies from. A fork merge
+    # runs `./run gate review` in a fresh clone with no deps/, so without these
+    # `mix deps.get --check-locked` fails before any check runs.
+    - to: {domain: "repo.hex.pm"}
+      protocol: tls
+      ports: [443]
+    - to: {domain: "builds.hex.pm"}
+      protocol: tls
+      ports: [443]
+    - to: {domain: "proxy.golang.org"}
+      protocol: tls
+      ports: [443]
+    - to: {domain: "sum.golang.org"}
+      protocol: tls
+      ports: [443]
 
 # Coop hides secret-looking files from everything it starts, sidecars included, so Keycloak was
 # handed an empty stand-in for its generated dev TLS key and died on startup. This declares the
