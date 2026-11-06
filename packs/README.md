@@ -155,7 +155,8 @@ Packs do not carry credentials, and callers do not send credentials as action
 arguments. The command-line tool named by an action reads its normal host-local
 environment or configuration file.
 
-Put required values in the runner's mode-0600 environment file:
+Put required values in the runner's mode-0600 environment file,
+`/etc/emisar/runner.env` on a default install:
 
 ```sh
 PGHOST=postgres.internal
@@ -163,7 +164,10 @@ PGUSER=emisar
 PGPASSWORD=<secret>
 ```
 
-Then allowlist only the variable names the action process needs:
+Then allowlist only the variable names the action process needs. This block
+belongs in the runner's own configuration, `/etc/emisar/config.yaml` on a
+default install, not in an action's YAML, whose `execution:` block has no
+`inherit_env` key:
 
 ```yaml
 execution:
@@ -173,7 +177,8 @@ execution:
     - PGPASSWORD
 ```
 
-Restart the runner after changing its environment. `emisar pack info postgres`
+An install made with `--etc-dir DIR` keeps both files in `DIR` instead.
+Restart the runner after changing either file. `emisar pack info postgres`
 reports required variables and points out names missing from `inherit_env` when
 a runner config is available. File-based credentials such as a kubeconfig or
 `.pgpass` still require correct filesystem ownership and service-user access.
@@ -186,8 +191,14 @@ Every action declares one risk tier. The caller cannot lower it.
 | --- | --- | --- |
 | `low` | Read-only or negligible impact | uptime, disk use, service status |
 | `medium` | Limited, reversible state change or heavier diagnostic | refresh metadata, start a bounded profile |
-| `high` | Production-affecting or user-visible change | restart a service, scale a workload, kill a query |
-| `critical` | Broad or difficult-to-reverse change | reboot, terminate an instance, flush data, drain a node |
+| `high` | Production-affecting or user-visible change | restart a service, restart or reset a cloud VM, scale a workload, kill a query, drain a Nomad node |
+| `critical` | Broad or difficult-to-reverse change | reboot a host from its OS, switch server power, terminate an instance, flush a datastore, drain a Kubernetes node |
+
+Tiers are set per action, not per verb, so similar operations can sit in
+different rows: `ec2.reboot_instance` and `gcp.instance_reset` are `high`, while
+`linux.reboot_host` and `pfsense.reboot` are `critical`. Read an action's own
+tier in the catalog or with `emisar action describe <id>` before relying on a
+policy default.
 
 Account policy decides whether an action runs, waits for approval, or is denied.
 The first override whose glob matches the action id decides; otherwise the
