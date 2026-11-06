@@ -2987,7 +2987,7 @@ defmodule EmisarWeb.AgentsLive do
           Skip the per-tool prompts <span class="text-zinc-400">(optional)</span>
         </span>
       </:summary>
-      <.auto_permit_why client_label={@client_label} />
+      <.auto_permit_why />
       <.auto_permit_installer_note :if={@auto_permit[:installer]} />
       <p class="mt-3 break-all text-[11px] text-zinc-400 font-mono">{@auto_permit.location}</p>
       <.code_panel
@@ -3010,7 +3010,7 @@ defmodule EmisarWeb.AgentsLive do
           Skip the per-tool prompts <span class="text-zinc-400">(optional)</span>
         </span>
       </:summary>
-      <.auto_permit_why client_label={@client_label} />
+      <.auto_permit_why />
       <.auto_permit_installer_note :if={@auto_permit[:installer]} />
       <p class="mt-3 text-xs text-zinc-400">{@auto_permit.pointer}</p>
       <p :if={@auto_permit.doc_url} class="mt-2 text-[11px] text-zinc-400">
@@ -3036,8 +3036,6 @@ defmodule EmisarWeb.AgentsLive do
   end
 
   # One direct safety sentence; the client-specific instruction follows it.
-  attr :client_label, :string, required: true
-
   defp auto_permit_why(assigns) do
     ~H"""
     <p class="text-xs text-zinc-400">
