@@ -108,6 +108,25 @@ func TestDiagnosticsScanAssessesOnlyTheNTPQueryClientPayload(t *testing.T) {
 	}
 }
 
+func TestDiagnosticsScanAssessesTheNTSClientParserFinding(t *testing.T) {
+	// CVE-2026-121506 is in ntpd's extens_client_recv, which this payload also omits.
+	bundle, sbom, report := ntpsecScanFixture(t)
+	raw, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw = bytes.ReplaceAll(raw, []byte("CVE-2026-102486"), []byte("CVE-2026-121506"))
+	assessed, accepted, blocking, err := classifyDiagnosticsScan(bundle, sbom, raw, time.Date(2026, 10, 29, 0, 0, 0, 0, time.UTC))
+	if err != nil || len(assessed) != 2 || len(accepted) != 0 || len(blocking) != 0 {
+		t.Fatalf("client-only payload: assessed=%d accepted=%d blocking=%d err=%v", len(assessed), len(accepted), len(blocking), err)
+	}
+
+	writeFixture(t, bundle, "libexec/ntpd", "daemon\n")
+	if _, _, _, err := classifyDiagnosticsScan(bundle, sbom, raw, time.Date(2026, 10, 29, 0, 0, 0, 0, time.UTC)); err == nil {
+		t.Fatal("a shipped daemon must fail the assessment")
+	}
+}
+
 func TestDiagnosticsScanRejectsNTPDaemonOrCopiedParser(t *testing.T) {
 	for _, tc := range []struct {
 		name string

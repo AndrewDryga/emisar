@@ -88,10 +88,10 @@ toolchain_image=golang:1.27.3-alpine3.24@sha256:d200d2dd76b03a99b52651fd1325aff7
 toolchain_version=go1.27.3
 go_mod_sha256=cdf5424bec2a7c75fa955a56efc88fb1731db5cca019cf63d4a1980a218e0868
 go_sum_sha256=8e96090883306abcd19ed57025a3e108b0b1cf6a6dff220c73d1aa77bb408a10
-module_update=go get golang.org/x/net@v0.60.0 github.com/containerd/containerd/v2@v2.3.6
-module_update_advisories=CVE-2026-78669 / GO-2026-6611; CVE-2026-53493 / GO-2026-6597; CVE-2026-53495 / GO-2026-6444
-derived_go_mod_sha256=b0d21d722c2c107ef015d5bf9124861069233d0d3d8c9efc886d7097810d6188
-derived_go_sum_sha256=bedd903633cc37dbcd3864196cfd1bacc420376e7c46301bab8b1a6e14a4a434
+module_update=go get golang.org/x/net@v0.62.0 github.com/containerd/containerd/v2@v2.3.6
+module_update_advisories=CVE-2026-78661 / GO-2026-6860; CVE-2026-78669 / GO-2026-6611; CVE-2026-53493 / GO-2026-6597; CVE-2026-53495 / GO-2026-6444
+derived_go_mod_sha256=ef497676896c4982d9edca4a782127cb363388129e7a819cf4deb35ab30a7b14
+derived_go_sum_sha256=01fe0885018328a640a0e32e0e85f9c59dec938642fcb2d96febec28effce3b7
 build_flags=GOWORK=off GOTOOLCHAIN=local CGO_ENABLED=0 GOOS=linux GOARCH=amd64 -mod=readonly -trimpath -tags=e2e -ldflags=-w -X github.com/docker/compose/v5/internal.Version=v5.5.1
 binary_sha256=%x
 build_info_sha256=%x

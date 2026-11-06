@@ -72,10 +72,10 @@ func TestComposeRejectsFalseSourceCompilerAndResealedNonGoBytes(t *testing.T) {
 		{"foreign source", composeSourceURL, "https://example.invalid/source"},
 		{"old compiler", "toolchain_version=go1.27.3", "toolchain_version=go1.26.8"},
 		{"changed source inputs", "go_mod_sha256=cdf5424", "go_mod_sha256=0000000"},
-		{"unpatched module selection", "module_update=go get golang.org/x/net@v0.60.0", "module_update=go get golang.org/x/net@v0.58.0"},
+		{"unpatched module selection", "module_update=go get golang.org/x/net@v0.62.0", "module_update=go get golang.org/x/net@v0.58.0"},
 		{"unpatched containerd selection", "github.com/containerd/containerd/v2@v2.3.6", "github.com/containerd/containerd/v2@v2.3.4"},
-		{"changed derived module graph", "derived_go_mod_sha256=b0d21d7", "derived_go_mod_sha256=0000000"},
-		{"changed derived checksums", "derived_go_sum_sha256=bedd903", "derived_go_sum_sha256=0000000"},
+		{"changed derived module graph", "derived_go_mod_sha256=ef49767", "derived_go_mod_sha256=0000000"},
+		{"changed derived checksums", "derived_go_sum_sha256=01fe088", "derived_go_sum_sha256=0000000"},
 		{"extra provenance", "\nbinary_sha256=", "\nunknown=allowed\nbinary_sha256="},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -133,10 +133,10 @@ func TestHostComposeReceiptRejectsStaleAndTamperedProvenance(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct{ name, old, replacement string }{
-		{"old module selection", "module_update=go get golang.org/x/net@v0.60.0", "module_update=go get golang.org/x/net@v0.58.0"},
+		{"old module selection", "module_update=go get golang.org/x/net@v0.62.0", "module_update=go get golang.org/x/net@v0.58.0"},
 		{"old containerd selection", "github.com/containerd/containerd/v2@v2.3.6", "github.com/containerd/containerd/v2@v2.3.4"},
-		{"foreign derived graph", "derived_go_mod_sha256=b0d21d7", "derived_go_mod_sha256=0000000"},
-		{"foreign derived sums", "derived_go_sum_sha256=bedd903", "derived_go_sum_sha256=0000000"},
+		{"foreign derived graph", "derived_go_mod_sha256=ef49767", "derived_go_mod_sha256=0000000"},
+		{"foreign derived sums", "derived_go_sum_sha256=01fe088", "derived_go_sum_sha256=0000000"},
 		{"unbound workspace setting", "build_flags=GOWORK=off ", "build_flags="},
 		{"extra provenance", "\nbinary_sha256=", "\nunknown=allowed\nbinary_sha256="},
 		{"reordered provenance", "build_info_sha256=", "unexpected=allowed\nbuild_info_sha256="},

@@ -52,6 +52,9 @@ var diagnosticsNonaffected = map[string]nonaffectedRule{
 	// Both fixes change only ntpd/nts_extens.c::extens_server_recv. This exact
 	// Debian subset ships the Python query client and its separate libntpc, not ntpd.
 	"CVE-2026-102486": {"ntpsec", "1.2.2+dfsg1-1+deb12u1", "ntpq-no-nts-daemon", "https://github.com/ntpsec/ntpsec/commit/7cc079387a0c8f94a4a82ebd0fc3cbe32f705557", []string{"ntpsec", "python3-ntp"}},
+	// The fix changes ntpd/nts_extens.c::extens_client_recv, the daemon's NTS
+	// client, which the same reviewed subset does not ship.
+	"CVE-2026-121506": {"ntpsec", "1.2.2+dfsg1-1+deb12u1", "ntpq-no-nts-daemon", "https://gitlab.com/NTPsec/ntpsec/-/commit/0a36941e499d533dfbc3fb6b1fcd8c367679d719", []string{"ntpsec", "python3-ntp"}},
 	"CVE-2026-102483": {"ntpsec", "1.2.2+dfsg1-1+deb12u1", "ntpq-no-nts-daemon", "https://github.com/ntpsec/ntpsec/commit/df83f3c4f8a515970e33db0af7d3a50c8d6319b3", []string{"ntpsec", "python3-ntp"}},
 	"CVE-2023-33204":  {"sysstat", "12.6.1-1", "sysstat-elf64", "https://security-tracker.debian.org/tracker/CVE-2023-33204", []string{"sysstat"}},
 	"CVE-2023-45853":  {"zlib", "1:1.2.13.dfsg-1", "no-minizip", "https://security-tracker.debian.org/tracker/CVE-2023-45853", []string{"zlib1g"}},
