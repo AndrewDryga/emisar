@@ -154,7 +154,7 @@ the packs whose actions the harness genuinely cannot run, and why:
 | `shell` | break-glass: the operator supplies the command, so there is nothing fixed to assert |
 | `iperf3` | needs two hosts and a saturable link between them |
 | `bonding`, `nic`, `multipath`, `iscsi` | need real NICs, multipath devices, or an iSCSI target |
-| `aws-cost`, `tailscale`, `git-local`, `github-cli` | drive a remote credentialed service with no disposable substitute |
+| `aws-cost`, `tailscale`, `github-cli` | drive a remote credentialed service with no disposable substitute |
 | `cloud-init` | reads a boot that already happened; a container has none |
 
 Anything else without a plan is a gap, not an exemption. The ordinary

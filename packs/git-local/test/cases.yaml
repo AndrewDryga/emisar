@@ -1,0 +1,247 @@
+# git-local reads a checkout on the machine the action runs on, which is the
+# client container, so every case seeds the repository it asserts on and
+# nothing outlives the case. Fixed authors and dates make every asserted line
+# deterministic; no assertion pins a commit id.
+services: [git-host]
+versions:
+  - version: "trixie-20260918-slim"
+    digest: "@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a"
+    default: true
+# Remote URLs are where this pack meets a credential. These values are written
+# into a checkout by the remote_list arrange steps; none is in inherit_env, so
+# an action could only print one by reading it back from the checkout.
+secret_env:
+  - PACKTEST_GIT_TOKEN
+  - PACKTEST_GIT_PASSWORD
+  - PACKTEST_GIT_AT_PASSWORD
+  - PACKTEST_GIT_SSH_USER
+  - PACKTEST_GIT_PUSH_TOKEN
+inherit_env: [GIT_REPO]
+env:
+  GIT_REPO: /tmp/packtest-repo
+  PACKTEST_GIT_TOKEN: packtest-canary-git-local-token-0b5f90
+  PACKTEST_GIT_PASSWORD: packtest-canary-git-local-password-b843e6
+  # A raw `@` inside a password, with a canary on each side of it: the runner's
+  # own url-credentials rule stops at the first `@` and would leave the tail.
+  PACKTEST_GIT_AT_PASSWORD: packtest-canary-git-local-at-head-0f294e@packtest-canary-git-local-at-tail-72163e
+  PACKTEST_GIT_SSH_USER: packtest-canary-git-local-ssh-user-93924b
+  PACKTEST_GIT_PUSH_TOKEN: packtest-canary-git-local-push-token-98d956
+cases:
+  # One history serves every history read. Ada and Bob have names of the same
+  # length, so blame pads neither. main is pushed to a local bare origin after
+  # its second commit and gains a third; an experiment is then committed and
+  # reset away, so it survives only in the reflog. release/0.1 stays on the
+  # first commit. The working tree ends with one staged new file, one unstaged
+  # edit and one untracked file.
+  - action: git.status
+    arrange: &checkout
+      - argv:
+          - /bin/sh
+          - -c
+          - |
+            set -eu
+            commit() {
+              GIT_AUTHOR_NAME="$1" GIT_AUTHOR_EMAIL="$2" GIT_AUTHOR_DATE="$3" \
+              GIT_COMMITTER_NAME="$1" GIT_COMMITTER_EMAIL="$2" GIT_COMMITTER_DATE="$3" \
+                git commit -q -m "$4"
+            }
+            git init -q --bare -b main /tmp/packtest-origin.git
+            git init -q -b main "$GIT_REPO"
+            cd "$GIT_REPO"
+            git remote add origin /tmp/packtest-origin.git
+            mkdir config
+            printf 'listen 8080\nworkers 2\n' > config/app.conf
+            git add config/app.conf
+            commit 'Ada Packtest' ada@packtest.invalid 2026-01-02T03:04:05Z 'packtest: add app config'
+            printf 'listen 8080\nworkers 4\n' > config/app.conf
+            git add config/app.conf
+            commit 'Bob Packtest' bob@packtest.invalid 2026-01-03T04:05:06Z 'packtest: raise worker count'
+            git push -q -u origin main
+            printf '# packtest app\n' > README.md
+            git add README.md
+            commit 'Ada Packtest' ada@packtest.invalid 2026-01-04T05:06:07Z 'packtest: add readme'
+            printf 'experiment\n' > experiment.txt
+            git add experiment.txt
+            commit 'Bob Packtest' bob@packtest.invalid 2026-01-05T06:07:08Z 'packtest: try an experiment'
+            git reset -q --hard HEAD~1
+            git branch release/0.1 HEAD~2
+            printf 'packtest: unstaged edit\n' >> README.md
+            printf -- '- packtest: staged entry\n' > CHANGELOG.md
+            git add CHANGELOG.md
+            printf 'scratch\n' > scratch.txt
+    expect:
+      # Contiguous, so this pins the tracking header and each path's two-column
+      # code rather than three names mentioned somewhere.
+      stdout_contains: ["## main...origin/main [ahead 1]\nA  CHANGELOG.md\n M README.md\n?? scratch.txt"]
+
+  - action: git.log_recent
+    args: {count: 2}
+    arrange: *checkout
+    expect:
+      stdout_contains:
+        - " 2026-01-04 05:06:07 +0000 Ada Packtest packtest: add readme"
+        - " 2026-01-03 04:05:06 +0000 Bob Packtest packtest: raise worker count"
+      # The first commit is past the count, and the reset experiment is no
+      # longer in main's history at all.
+      stdout_not_contains: ["packtest: add app config", "packtest: try an experiment"]
+
+  - action: git.diff_head
+    arrange: *checkout
+    expect:
+      stdout_contains:
+        - "diff --git a/CHANGELOG.md b/CHANGELOG.md\nnew file mode 100644"
+        - "+- packtest: staged entry"
+        - " # packtest app\n+packtest: unstaged edit"
+      # An untracked file is not a change against HEAD.
+      stdout_not_contains: [scratch.txt]
+
+  # Each window closes on the next line's branch name, which ties a subject to
+  # its branch without depending on the commit ids between them.
+  - action: git.branch_list
+    arrange: *checkout
+    expect:
+      stdout_contains:
+        - "* main "
+        - "[ahead 1] packtest: add readme\n  release/0.1 "
+        - "packtest: add app config\n  remotes/origin/main "
+        - "packtest: raise worker count"
+
+  - action: git.show_commit
+    args: {ref: "HEAD~1"}
+    arrange: *checkout
+    expect:
+      stdout_contains:
+        - "Author: Bob Packtest <bob@packtest.invalid>"
+        - "    packtest: raise worker count\n"
+        - "diff --git a/config/app.conf b/config/app.conf"
+        - " listen 8080\n-workers 2\n+workers 4"
+      stdout_not_contains: ["packtest: add readme"]
+
+  - name: git.show-commit-unknown-ref-fails
+    action: git.show_commit
+    args: {ref: "v9.9.9"}
+    arrange: *checkout
+    expect:
+      status: failure
+      exit: [128]
+      reason_contains: [process exited with code 128]
+      stderr_contains: ["ambiguous argument 'v9.9.9': unknown revision"]
+
+  # A ref may not start with `-`, so it never reaches git show as an option.
+  - name: git.show-commit-rejects-an-option-as-ref
+    action: git.show_commit
+    args: {ref: "--ext-diff"}
+    expect:
+      status: failure
+      reason: argument_invalid
+      error_contains: [must match pattern]
+
+  - action: git.blame_file
+    args: {path: config/app.conf}
+    arrange: *checkout
+    expect:
+      stdout_contains:
+        - "(Ada Packtest 2026-01-02 03:04:05 +0000 1) listen 8080"
+        - "(Bob Packtest 2026-01-03 04:05:06 +0000 2) workers 4"
+
+  # No path segment may be "." or "..", which is the boundary the path pattern
+  # declares even though git would refuse a path outside the checkout itself.
+  - name: git.blame-file-rejects-a-parent-segment
+    action: git.blame_file
+    args: {path: "config/../../outside.conf"}
+    expect:
+      status: failure
+      reason: argument_invalid
+      error_contains: [must match pattern]
+
+  # Newest first: the reset, then the experiment it discarded, which is how an
+  # operator finds a commit that git log no longer shows.
+  - action: git.reflog
+    args: {count: 2}
+    arrange: *checkout
+    expect:
+      stdout_contains:
+        - "HEAD@{0}: reset: moving to HEAD~1"
+        - "HEAD@{1}: commit: packtest: try an experiment"
+      stdout_not_contains: ["commit (initial)"]
+
+  # git remote -v lists remotes by name. Every scheme:// URL loses its whole
+  # user-info, including a bare token login and an ssh:// user name, which the
+  # runner's url-credentials rule alone does not match. scp-style and
+  # credential-free URLs print as configured.
+  - action: git.remote_list
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - |
+            set -eu
+            git init -q "$GIT_REPO"
+            cd "$GIT_REPO"
+            git remote add azure "https://$PACKTEST_GIT_TOKEN@dev.azure.packtest.invalid/org/project/_git/app"
+            git remote add backup "ssh://$PACKTEST_GIT_SSH_USER@git.packtest.invalid:2222/org/app.git"
+            git remote add github git@git.packtest.invalid:org/app.git
+            git remote add mirror "https://deploy:$PACKTEST_GIT_PASSWORD@git.packtest.invalid/org/app.git"
+            git remote add public https://git.packtest.invalid/org/public.git
+    expect:
+      stdout_contains:
+        - "azure\thttps://[REDACTED]@dev.azure.packtest.invalid/org/project/_git/app (fetch)"
+        - "backup\tssh://[REDACTED]@git.packtest.invalid:2222/org/app.git (fetch)"
+        - "github\tgit@git.packtest.invalid:org/app.git (fetch)\ngithub\tgit@git.packtest.invalid:org/app.git (push)"
+        - "mirror\thttps://[REDACTED]@git.packtest.invalid/org/app.git (fetch)"
+        - "public\thttps://git.packtest.invalid/org/public.git (fetch)"
+      stdout_not_contains:
+        - packtest-canary-git-local-token-0b5f90
+        - packtest-canary-git-local-ssh-user-93924b
+        - packtest-canary-git-local-password-b843e6
+        - "deploy:"
+
+  # The match runs to the last `@` before the path, so neither half of the
+  # password survives.
+  - name: git.remote-list-password-with-a-raw-at-sign
+    action: git.remote_list
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - |
+            set -eu
+            git init -q "$GIT_REPO"
+            git -C "$GIT_REPO" remote add atsign "https://deploy:$PACKTEST_GIT_AT_PASSWORD@git.packtest.invalid/org/app.git"
+    expect:
+      stdout_contains: ["atsign\thttps://[REDACTED]@git.packtest.invalid/org/app.git (fetch)\natsign\thttps://[REDACTED]@git.packtest.invalid/org/app.git (push)"]
+      stdout_not_contains:
+        - packtest-canary-git-local-at-head-0f294e
+        - packtest-canary-git-local-at-tail-72163e
+        - "deploy:"
+
+  # A remote that fetches anonymously and pushes with a token carries the token
+  # only on its push line.
+  - name: git.remote-list-separate-push-url
+    action: git.remote_list
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - |
+            set -eu
+            git init -q "$GIT_REPO"
+            cd "$GIT_REPO"
+            git remote add origin https://git.packtest.invalid/org/app.git
+            git remote set-url --push origin "https://$PACKTEST_GIT_PUSH_TOKEN@git.packtest.invalid/org/app.git"
+    expect:
+      stdout_contains: ["origin\thttps://git.packtest.invalid/org/app.git (fetch)\norigin\thttps://[REDACTED]@git.packtest.invalid/org/app.git (push)"]
+      stdout_not_contains: [packtest-canary-git-local-push-token-98d956]
+
+  # git's status is captured rather than piped, so a directory that is not a
+  # checkout fails the action instead of reporting an empty remote list.
+  - name: git.remote-list-not-a-checkout-fails
+    action: git.remote_list
+    env: {GIT_REPO: /tmp/packtest-not-a-checkout}
+    arrange:
+      - argv: [mkdir, -p, /tmp/packtest-not-a-checkout]
+    expect:
+      status: failure
+      exit: [128]
+      reason_contains: [process exited with code 128]
+      stderr_contains: ["fatal: not a git repository"]
