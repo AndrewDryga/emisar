@@ -120,6 +120,9 @@ func testWindowsMCPInstaller(root, shell string) error {
 	if err := testWindowsRedirectChain(root, shell, temp); err != nil {
 		return err
 	}
+	if err := testWindowsDownloadFallback(root, shell, temp); err != nil {
+		return err
+	}
 
 	releaseDir := filepath.Join(temp, "release")
 	archiveRoot := "emisar-mcp-" + windowsMCPVersion + "-windows-" + runtime.GOARCH
@@ -779,6 +782,98 @@ if (Test-Path (Join-Path %[2]s "offsite")) { throw "a refused artifact download 
 	}
 	if got := atomic.LoadInt32(&loops); got > int32(8) {
 		return fmt.Errorf("redirect loop was followed %d times, want a bounded chain", got)
+	}
+	return nil
+}
+
+// A mirror download that failed once the mirror manifest validated used to end
+// the Windows install, where install-mcp.sh retries and then falls back to the
+// GitHub release mirror. Each file now gets the same bounded retry, and a mirror
+// that keeps failing hands the same tag to the GitHub release mirror once.
+func testWindowsDownloadFallback(root, shell, temp string) error {
+	installer := filepath.Join(root, "install-mcp.ps1")
+	var parts strings.Builder
+	for _, name := range []string{"Test-Truthy", "Test-TrustedWebUri", "New-WebClient", "Get-WebResponse", "Save-WebFile", "Save-ReleaseFile", "Save-ReleaseDownloads"} {
+		function, err := powershellFunction(installer, name)
+		if err != nil {
+			return err
+		}
+		parts.WriteString(function)
+	}
+
+	var flaky int32
+	serve := func(body string) http.HandlerFunc {
+		return func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(body)) }
+	}
+	mux := http.NewServeMux()
+	// One transient failure: the retry recovers it on the same mirror.
+	mux.HandleFunc("/flaky/archive.zip", func(w http.ResponseWriter, r *http.Request) {
+		if atomic.AddInt32(&flaky, 1) == 1 {
+			http.Error(w, "busy", http.StatusServiceUnavailable)
+			return
+		}
+		serve("archive")(w, r)
+	})
+	mux.HandleFunc("/flaky/SHA256SUMS-MCP", serve("sums"))
+	// A mirror that never serves the checksum list: the GitHub mirror does.
+	mux.HandleFunc("/broken/archive.zip", serve("stale archive"))
+	mux.HandleFunc("/broken/SHA256SUMS-MCP", func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "gone", http.StatusBadGateway)
+	})
+	mux.HandleFunc("/github/archive.zip", serve("archive"))
+	mux.HandleFunc("/github/SHA256SUMS-MCP", serve("sums"))
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	script := "Add-Type -AssemblyName System.Net.Http\n" + parts.String() + fmt.Sprintf(`
+$script:MaximumRedirects = 5
+function Stop-Install([string]$Message) { throw "[install-mcp] $Message" }
+function Write-WarningLine([string]$Message) { $script:Warned = $Message }
+function Start-Sleep { }
+function Get-GitHubRelease([string]$Tag) {
+    return [pscustomobject]@{ Tag = $Tag; Base = "%[1]s/github"; Source = "GitHub release mirror"; Test = $false }
+}
+function New-Release([string]$Base, [string]$Source) {
+    return [pscustomobject]@{ Tag = "mcp-v1.2.3"; Base = "%[1]s/$Base"; Source = $Source; Test = $false }
+}
+$env:EMISAR_ALLOW_INSECURE = "1"
+$names = @("archive.zip", "SHA256SUMS-MCP")
+
+$script:Warned = $null
+$directory = Join-Path %[2]s "download-retry"
+[void](New-Item -ItemType Directory -Path $directory)
+$used = Save-ReleaseDownloads (New-Release "flaky" "Emisar release mirror") $names $directory
+if ($used.Source -ne "Emisar release mirror" -or $script:Warned) { throw "a transient mirror failure was not retried on the mirror" }
+if ([IO.File]::ReadAllText((Join-Path $directory "archive.zip")) -ne "archive") { throw "the retried archive has the wrong bytes" }
+
+$script:Warned = $null
+$directory = Join-Path %[2]s "download-fallback"
+[void](New-Item -ItemType Directory -Path $directory)
+$used = Save-ReleaseDownloads (New-Release "broken" "Emisar release mirror") $names $directory
+if ($used.Source -ne "GitHub release mirror" -or $used.Tag -ne "mcp-v1.2.3") { throw "a failing mirror did not fall back to the same GitHub release" }
+if (-not $script:Warned) { throw "the GitHub fallback was silent" }
+foreach ($name in $names) {
+    $want = if ($name -eq "archive.zip") { "archive" } else { "sums" }
+    if ([IO.File]::ReadAllText((Join-Path $directory $name)) -ne $want) { throw "$name did not come from the GitHub release mirror" }
+}
+
+$refused = $false
+$directory = Join-Path %[2]s "download-no-fallback"
+[void](New-Item -ItemType Directory -Path $directory)
+try { [void](Save-ReleaseDownloads (New-Release "broken" "installer test server") $names $directory) } catch { $refused = $true }
+if (-not $refused) { throw "a source other than the Emisar mirror fell back to GitHub" }
+`, server.URL, powershellLiteral(temp))
+
+	scriptPath := filepath.Join(temp, "download-fallback.ps1")
+	if err := os.WriteFile(scriptPath, []byte(script), 0o600); err != nil {
+		return err
+	}
+	output, err := runPowerShellInstaller(shell, scriptPath, environment(nil))
+	if err != nil {
+		return fmt.Errorf("download fallback: %w\n%s", err, output)
+	}
+	if got := atomic.LoadInt32(&flaky); got != 2 {
+		return fmt.Errorf("flaky archive requests = %d, want one failure and one retry", got)
 	}
 	return nil
 }

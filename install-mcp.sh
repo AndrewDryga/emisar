@@ -948,6 +948,15 @@ first_bin=${installed_paths%%$'\n'*}
 # the terminal explicitly — under the documented `curl … | sudo bash` this
 # script's own stdin is the pipe, not the operator.
 if interactive_connect_available; then
+  # sudo's env_reset clears per-user config-root overrides before this script
+  # runs, so connect below uses the default roots; nothing here can recover them.
+  if [ "$(id -u)" -eq 0 ] && [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != "root" ]; then
+    config_roots="HERMES_HOME or GOOSE_PATH_ROOT"
+    if [ "${OS}" = linux ]; then
+      config_roots="XDG_CONFIG_HOME, HERMES_HOME, or GOOSE_PATH_ROOT"
+    fi
+    dim "sudo normally clears ${config_roots}. If you set one, run 'emisar-mcp connect' again in your own shell, without sudo."
+  fi
   run_cli_as_invoking_user connect --url "${EMISAR_URL}" </dev/tty ||
     warn "connection setup did not finish — run 'emisar-mcp connect', or use the manual snippets at ${EMISAR_URL}/app/agents/connect"
 else

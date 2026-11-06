@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -299,6 +300,63 @@ func TestConnectAcceptsANamedClientThatIsInstalled(t *testing.T) {
 	if err != nil || !strings.Contains(raw, "emisar") {
 		t.Fatalf("cursor config = %q, err = %v", raw, err)
 	}
+	if strings.Contains(stderr.String(), "API key is now in") {
+		t.Errorf("a regular config file drew the linked-config warning:\n%s", stderr.String())
+	}
+}
+
+// Following a linked config keeps a dotfiles repository's copy current, and it
+// also writes the client's key into that copy, so connect names the file.
+func TestConnectWarnsWhenTheKeyLandsBehindALinkedConfig(t *testing.T) {
+	roots := useConnectTestHome(t)
+	adapter, _ := lookupClientAdapter("cursor")
+	link := adapter.file(roots)
+	if err := os.MkdirAll(filepath.Dir(link), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(roots.home, "dotfiles", "cursor-mcp.json")
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("{\n  \"mcpServers\": {}\n}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		if runtime.GOOS == "windows" {
+			t.Skip("creating a Windows symlink requires developer mode or SeCreateSymbolicLinkPrivilege")
+		}
+		t.Fatal(err)
+	}
+	resolved, err := filepath.EvalSymlinks(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := testAPIKey(0x61)
+	server := newConnectAuthServer(t, "cursor", key, testAPIKey(0x62))
+	defer server.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := connectClients(
+		connectOptions{origin: server.URL, clientIDs: []string{"cursor"}},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+		testConnectAuthenticator(server),
+	)
+	if code != 0 {
+		t.Fatalf("exit = %d\nstdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+	}
+	if raw, err := os.ReadFile(target); err != nil || !strings.Contains(string(raw), key) {
+		t.Fatalf("the key did not land in the linked file: %q, %v", raw, err)
+	}
+	if !strings.Contains(stdout.String(), "connected → "+resolved) {
+		t.Errorf("the connected row does not name the file that was written:\n%s", stdout.String())
+	}
+	for _, want := range []string{"Cursor's API key is now in " + resolved, link + " is a link to that file.", "revoke the key"} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Errorf("warning missing %q:\n%s", want, stderr.String())
+		}
+	}
 }
 
 func TestExplicitReconnectRotatesKeyAndRepointsURL(t *testing.T) {
@@ -371,6 +429,114 @@ func TestExplicitReconnectRotatesKeyAndRepointsURL(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "connected") {
 		t.Errorf("successful reconnect was not reported:\n%s", stdout.String())
+	}
+}
+
+func TestDisconnectForgetWithNoConnectedClientNamesTheStoredCredentials(t *testing.T) {
+	useConnectTestHome(t)
+	var stdout, stderr bytes.Buffer
+	code := disconnectClients(connectOptions{forget: true}, strings.NewReader(""), &stdout, &stderr)
+	if code != 0 || !strings.Contains(stdout.String(), "No connected clients or stored credentials found.") {
+		t.Fatalf("nothing to forget: exit=%d\nstdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+	}
+
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	credentials := filepath.Join(configDir, "emisar", "credentials")
+	if err := os.MkdirAll(credentials, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(credentials, cliAccountFilePrefix+"stored.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	code = disconnectClients(connectOptions{forget: true}, strings.NewReader(""), &stdout, &stderr)
+	if code != 2 || !strings.Contains(stderr.String(), "Refusing to delete stored credentials without a confirmation") ||
+		!strings.Contains(stderr.String(), "--yes") || strings.Contains(stderr.String(), "client entries") {
+		t.Fatalf("unconfirmed forget: exit=%d\nstdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+	}
+	if _, err := os.Stat(credentials); err != nil {
+		t.Fatalf("an unconfirmed --forget removed the credentials: %v", err)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = disconnectClients(connectOptions{forget: true, assumeYes: true}, strings.NewReader(""), &stdout, &stderr)
+	if code != 0 || !strings.Contains(stdout.String(), "Removed stored CLI accounts and rotation state: "+credentials) {
+		t.Fatalf("confirmed forget: exit=%d\nstdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+	}
+	if _, err := os.Lstat(credentials); !os.IsNotExist(err) {
+		t.Fatalf("credentials after --forget --yes: %v", err)
+	}
+}
+
+func TestDisconnectOneClientWithForgetKeepsTheKeysOtherClientsUse(t *testing.T) {
+	roots := useConnectTestHome(t)
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := "{\n  \"mcpServers\": {\n    \"emisar\": {\"command\": \"emisar-mcp\"}\n  }\n}\n"
+	clients := map[string]detectedClient{}
+	for _, id := range []string{"cursor", "claude-code"} {
+		adapter, _ := lookupClientAdapter(id)
+		client := adapter.resolve(roots)
+		if err := os.MkdirAll(filepath.Dir(client.ConfigFile), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(client.ConfigFile, []byte(entry), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		clients[id] = client
+	}
+	// Claude Code stays connected on a rotated successor, and a client set up by
+	// hand from the console snippet keeps its own rotation state beside it.
+	const origin = "https://emisar.dev"
+	kept := map[*credentialStore]string{}
+	for bootstrap, successor := range map[byte]byte{'a': 'b', 'c': 'd'} {
+		store := newCredentialStoreAt(configDir, origin, keyPrefix(testAPIKey(bootstrap)))
+		if err := store.persist(credentialState{
+			Version:         credentialStateVersion,
+			EndpointOrigin:  origin,
+			BootstrapPrefix: keyPrefix(testAPIKey(bootstrap)),
+			Current:         testAPIKey(successor),
+		}); err != nil {
+			t.Fatal(err)
+		}
+		kept[store] = testAPIKey(successor)
+	}
+	storeTestCLIAccount(t, configDir, origin, blitzAccountID, "blitz", "Blitz", testAPIKey('e'), true)
+	vscodeEnv := filepath.Join(configDir, "emisar", "credentials", "vscode.env")
+	if err := os.WriteFile(vscodeEnv, []byte("EMISAR_API_KEY="+testAPIKey('f')+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := disconnectClients(connectOptions{clientIDs: []string{"cursor"}, forget: true}, strings.NewReader(""), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit = %d\nstdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+	}
+	if clients["cursor"].configured(clients["cursor"].ConfigFile) || !clients["claude-code"].configured(clients["claude-code"].ConfigFile) {
+		t.Fatalf("disconnect --client cursor removed the wrong entries:\n%s", stdout.String())
+	}
+	for store, successor := range kept {
+		state, err := store.load("")
+		if err != nil || state.Current != successor {
+			t.Fatalf("rotated key of a client left connected: state=%+v err=%v", state, err)
+		}
+	}
+	accounts, skipped, err := loadStoredCLIAccounts()
+	if err != nil || len(accounts) != 0 || len(skipped) != 0 {
+		t.Fatalf("stored CLI accounts after --forget: %d accounts, %d skipped, err=%v", len(accounts), len(skipped), err)
+	}
+	if _, err := os.Lstat(filepath.Join(configDir, "emisar", "credentials", accountSelectionFilename)); !os.IsNotExist(err) {
+		t.Fatalf("account selection after --forget: %v", err)
+	}
+	if _, err := os.Stat(vscodeEnv); err != nil {
+		t.Fatalf("VS Code's env file after disconnecting another client: %v", err)
 	}
 }
 
@@ -503,6 +669,41 @@ func TestAutoPermitLandsInsideTheEntry(t *testing.T) {
 	}
 }
 
+// A `connect --client` refresh rewrites the whole entry. The auto-permit an
+// operator chose earlier is carried into the new one; one they never chose is
+// never added.
+func TestRefreshKeepsAnEarlierAutoPermitInsideTheEntry(t *testing.T) {
+	for _, testCase := range []struct{ id, expected string }{
+		{id: "gemini", expected: `"trust": true`},
+		{id: "codex", expected: `default_tools_approval_mode = "approve"`},
+	} {
+		adapter, _ := lookupClientAdapter(testCase.id)
+		for _, earlier := range []bool{true, false} {
+			client := adapter.resolve(testConfigRoots(t))
+			first := testEntryRequest("/usr/local/bin/emisar-mcp", testCase.id)
+			first.AutoPermit = earlier
+			if err := client.install(first); err != nil {
+				t.Fatalf("%s install: %v", testCase.id, err)
+			}
+			refresh := testEntryRequest("/usr/local/bin/emisar-mcp", testCase.id)
+			refresh.APIKey = "emk-refreshed"
+			if err := client.install(refresh); err != nil {
+				t.Fatalf("%s refresh: %v", testCase.id, err)
+			}
+			raw, err := readConfigFile(client.ConfigFile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(raw, "emk-refreshed") || strings.Contains(raw, `"emk-key"`) {
+				t.Fatalf("%s refresh did not replace the key:\n%s", testCase.id, raw)
+			}
+			if strings.Contains(raw, testCase.expected) != earlier {
+				t.Errorf("%s auto-permit after refresh = %v, want %v:\n%s", testCase.id, !earlier, earlier, raw)
+			}
+		}
+	}
+}
+
 // Only Gemini's schema defines `trust` inside the server entry. Claude Code
 // keeps its auto-permit in settings.json, so an opted-in run must not also leave
 // a key Claude Code never defined inside the operator's ~/.claude.json.
@@ -569,6 +770,9 @@ func TestClaudeCodePermissionEditKeepsOtherRules(t *testing.T) {
 	if !strings.Contains(raw, claudeToolPattern) {
 		t.Errorf("the emisar rule was not added:\n%s", raw)
 	}
+	if backup, err := os.ReadFile(settings + configBackupSuffix); err != nil || string(backup) != existing {
+		t.Fatalf("the settings backup = %q, %v; want the pre-edit file", backup, err)
+	}
 
 	if err := editClaudePermission(settings, false); err != nil {
 		t.Fatalf("remove: %v", err)
@@ -582,6 +786,11 @@ func TestClaudeCodePermissionEditKeepsOtherRules(t *testing.T) {
 	}
 	if !strings.Contains(after, "Bash(ls:*)") {
 		t.Errorf("removal dropped another rule:\n%s", after)
+	}
+	// The backup is ours. Once the rule is gone it goes too, rather than
+	// leaving a stale copy of the operator's settings behind.
+	if _, err := os.Lstat(settings + configBackupSuffix); !os.IsNotExist(err) {
+		t.Errorf("the settings backup survived removal: %v", err)
 	}
 }
 

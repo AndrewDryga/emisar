@@ -48,7 +48,7 @@ type cliRunResult struct {
 	Status             string             `json:"status"`
 	ExitCode           *int               `json:"exit_code"`
 	DurationMS         *int64             `json:"duration_ms"`
-	ErrorMessage       string             `json:"error_message"`
+	FailureCode        string             `json:"failure_code"`
 	Stdout             string             `json:"stdout"`
 	Stderr             string             `json:"stderr"`
 	EmittedStdoutBytes int64              `json:"emitted_stdout_bytes"`
@@ -520,8 +520,8 @@ func renderCLIRuns(w io.Writer, runs []cliRunResult, includeIdentity bool) strin
 		if run.DurationMS != nil {
 			fmt.Fprintf(&out, "  Duration  %s\n", cliResultDuration(*run.DurationMS))
 		}
-		if run.ErrorMessage != "" {
-			fmt.Fprintf(&out, "  %s  %s\n", cliStyledText(w, "31", "Error"), cliResultText(run.ErrorMessage, maxCLIHumanStringRunes))
+		if run.FailureCode != "" {
+			fmt.Fprintf(&out, "  %s  %s\n", cliStyledText(w, "31", "Failure"), cliResultText(run.FailureCode, 60))
 		}
 		if run.Approval != nil {
 			writeCLIResultField(&out, "Approval", run.Approval.URL, maxCLIFleetCommand)

@@ -226,7 +226,8 @@ COMMANDS
 
     emisar-mcp disconnect [--all | --client <id>]
       Remove the emisar entry from connected clients. Add --forget to also
-      delete every stored account and this bridge's rotation state.
+      delete every stored account and, without --client, this bridge's
+      rotation state.
 
   MCP CLIENT AND DISCOVERY
     emisar-mcp
@@ -330,7 +331,7 @@ CLIENT SETUP
     emisar-mcp connect
 
   Manual client setup:
-    https://emisar.dev/docs/connect-a-cli-client
+    https://emisar.dev/docs/connect-cli-agent
 
 KEY ROTATION
   emisar-mcp replaces expiring emk- keys automatically. It saves the new key
@@ -339,7 +340,7 @@ KEY ROTATION
   If a direct command stops authenticating, run 'emisar-mcp auth' again and
   choose that account. If an MCP client stops authenticating, reconnect it from
   https://emisar.dev/app/agents/connect. Reconnecting does not revoke old keys;
-  revoke connected keys in LLM agents.
+  revoke connected keys in AI agents.
 
 FLAGS
   -h, --help

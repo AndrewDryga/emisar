@@ -67,8 +67,8 @@ func TestCLIFixedToolsHavePurposeBuiltHumanOutput(t *testing.T) {
 		{
 			name:   "recent runs",
 			tool:   recentRunsToolName,
-			result: `{"ok":true,"runs":[{"run_id":"run-1","runner_ref":"db-1~abc","status":"failed","error_message":"command failed"}],"next_cursor":"cursor"}`,
-			want:   []string{"1 recent run", "db-1~abc — failed", "Error  command failed", "More runs are available"},
+			result: `{"ok":true,"runs":[{"run_id":"run-1","runner_ref":"db-1~abc","status":"validation_failed","failure_code":"argument_invalid"}],"next_cursor":"cursor"}`,
+			want:   []string{"1 recent run", "db-1~abc — validation_failed", "Failure  argument_invalid", "More runs are available"},
 		},
 		{
 			name:      "runbook list",
@@ -284,7 +284,7 @@ func TestCLIRunbookInspectCommandPreservesAccountAndRejectsUnsafeIdentity(t *tes
 }
 
 func TestCLIGetRunbookDraftUsesExactEditableExecutionTemplate(t *testing.T) {
-	raw := []byte(`{"ok":true,"runbook":{"slug":"database-check","draft_id":"draft-1","status":"draft","definition_sha256":"abc123","title":"Database check","description":"Inspect database health.","summary":{"input_count":1,"stage_count":1,"step_count":1},"definition":{"schema_version":1,"inputs":[{"id":"target","name":"Target","type":"string","required":true}],"stages":[]},"live_ref":"database-check@3"}}`)
+	raw := []byte(`{"ok":true,"runbook":{"slug":"database-check","draft_id":"draft-1","status":"draft","definition_sha256":"abc123","title":"Database check","description":"Inspect database health.","summary":{"input_count":1,"stage_count":1,"step_count":1},"definition":{"schema_version":1,"inputs":[{"id":"target","type":"string","required":true}],"stages":[]},"live_ref":"database-check@3"}}`)
 	var stdout bytes.Buffer
 	if err := writeCLIToolOutputWithSchema(&stdout, getRunbookToolName, json.RawMessage(`{}`), raw, nil, "immersive", false, true); err != nil {
 		t.Fatal(err)
@@ -293,7 +293,7 @@ func TestCLIGetRunbookDraftUsesExactEditableExecutionTemplate(t *testing.T) {
 	if !strings.Contains(stdout.String(), want) {
 		t.Fatalf("output missing %q:\n%s", want, stdout.String())
 	}
-	for _, notice := range []string{"Request a draft test", "emisar checks access and execution requirements before starting."} {
+	for _, notice := range []string{"target — string, required", "Request a draft test", "emisar checks access and execution requirements before starting."} {
 		if !strings.Contains(stdout.String(), notice) {
 			t.Fatalf("output missing %q:\n%s", notice, stdout.String())
 		}
@@ -598,7 +598,7 @@ func TestCLISchemaAtPathBoundsRecursiveArraySchema(t *testing.T) {
 }
 
 func TestCLIPurposeBuiltOutputSanitizesHostileTerminalText(t *testing.T) {
-	raw := []byte(`{"ok":true,"runs":[{"run_id":"run-1","runner_ref":"safe\u001b[31m\u202evil","status":"failed","error_message":"bad\nnews\u0007"}],"next_cursor":null}`)
+	raw := []byte(`{"ok":true,"runs":[{"run_id":"run-1","runner_ref":"safe\u001b[31m\u202evil","status":"validation_failed","failure_code":"bad\nnews\u0007"}],"next_cursor":null}`)
 	var stdout bytes.Buffer
 	if err := writeCLIToolOutputWithSchema(&stdout, recentRunsToolName, nil, raw, nil, "", false, true); err != nil {
 		t.Fatal(err)

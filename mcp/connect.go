@@ -266,7 +266,22 @@ func connectClients(
 				)
 			}
 		}
-		printClientRow(stdout, client.Label, cliStyleConnected, "connected → "+client.ConfigFile)
+		destination := client.ConfigFile
+		if target, err := resolveConfigSymlink(client.ConfigFile); err == nil && target != client.ConfigFile {
+			destination = target
+		}
+		printClientRow(stdout, client.Label, cliStyleConnected, "connected → "+destination)
+		// The edit follows a linked config so a dotfiles repository keeps its
+		// copy current, which also puts the key wherever that copy lives.
+		if destination != client.ConfigFile && client.EnvFilePath == "" {
+			writeCLIWarning(
+				stderr,
+				client.Label+"'s API key is now in "+destination,
+				[]string{client.ConfigFile + " is a link to that file."},
+				"Keep that file out of any repository or synced folder, or paste the snippet from "+origin+"/app/agents/connect into a config that stays on this machine.",
+				"If the file was shared, revoke the key under AI agents.",
+			)
+		}
 	}
 
 	fmt.Fprintln(stdout)
@@ -295,13 +310,38 @@ func disconnectClients(options connectOptions, stdin io.Reader, stdout, stderr i
 			connected = append(connected, client)
 		}
 	}
-	if len(connected) == 0 && !options.forget {
-		fmt.Fprintln(stdout, "No connected clients found.")
+	// --forget acts on the stored credentials even when no client is connected,
+	// so the confirmation below names them rather than an empty client list.
+	credentials := ""
+	if options.forget {
+		credentials, err = storedCredentialsDirectory()
+		if err != nil {
+			return cliCommandError(
+				stderr,
+				"Could not find the stored credentials",
+				[]string{err.Error()},
+				"Set the variable it names and run `emisar-mcp disconnect --forget` again.",
+			)
+		}
+	}
+	if len(connected) == 0 && credentials == "" {
+		if options.forget {
+			fmt.Fprintln(stdout, "No connected clients or stored credentials found.")
+		} else {
+			fmt.Fprintln(stdout, "No connected clients found.")
+		}
 		return 0
 	}
 	if !options.assumeYes && !options.all && len(options.clientIDs) == 0 {
 		reader := bufio.NewReader(stdin)
 		if !readerIsTerminal(stdin) {
+			if len(connected) == 0 {
+				return cliInputError(
+					stderr,
+					"Refusing to delete stored credentials without a confirmation",
+					"Pass --yes, or run this from a terminal.",
+				)
+			}
 			return cliInputError(
 				stderr,
 				"Refusing to remove client entries without a confirmation",
@@ -311,7 +351,15 @@ func disconnectClients(options connectOptions, stdin io.Reader, stdout, stderr i
 		for _, client := range connected {
 			fmt.Fprintln(stdout, "  "+client.Label+": "+client.ConfigFile)
 		}
-		if !askYesNo(reader, stdout, "Remove the emisar entry from these clients?") {
+		question := "Remove the emisar entry from these clients?"
+		if credentials != "" {
+			fmt.Fprintln(stdout, "  Stored CLI accounts and rotation state: "+credentials)
+			question = "Remove the emisar entry from these clients and delete the stored credentials?"
+			if len(connected) == 0 {
+				question = "Delete the stored CLI accounts and rotation state?"
+			}
+		}
+		if !askYesNo(reader, stdout, question) {
 			fmt.Fprintln(stdout, "Nothing was removed.")
 			return 0
 		}
@@ -340,18 +388,22 @@ func disconnectClients(options connectOptions, stdin io.Reader, stdout, stderr i
 		fmt.Fprintln(stdout, "Removed emisar from "+client.Label+": "+client.ConfigFile)
 	}
 
-	if options.forget {
-		removed, err := removeStoredCredentials()
-		if err != nil {
+	if credentials != "" {
+		accountsOnly := len(options.clientIDs) > 0
+		removed, fix := "stored CLI accounts and rotation state", "Remove the emisar credentials directory by hand."
+		if accountsOnly {
+			removed, fix = "stored CLI accounts", "Remove the "+cliAccountFilePrefix+"*.json and "+accountSelectionFilename+" files there by hand."
+		}
+		if err := removeStoredCredentials(credentials, accountsOnly); err != nil {
 			failures++
 			writeCLIWarning(
 				stderr,
-				"Could not remove stored CLI accounts and rotation state",
+				"Could not remove "+removed+" in "+credentials,
 				[]string{err.Error()},
-				"Remove the emisar credentials directory by hand.",
+				fix,
 			)
-		} else if removed != "" {
-			fmt.Fprintln(stdout, "Removed stored CLI accounts and rotation state: "+removed)
+		} else {
+			fmt.Fprintln(stdout, "Removed "+removed+": "+credentials)
 		}
 	}
 	if failures > 0 {
@@ -548,24 +600,48 @@ func storedCLICredentialWorks(origin string) bool {
 	}
 }
 
-// removeStoredCredentials drops every stored CLI account and the bridge's
-// rotation state, the way the runner uninstall removes its cached identity.
-func removeStoredCredentials() (string, error) {
+// storedCredentialsDirectory returns the directory that holds the stored CLI
+// accounts and the bridge's rotation state, or "" when nothing is stored.
+func storedCredentialsDirectory() (string, error) {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
 	}
 	directory := filepath.Join(configDir, "emisar", "credentials")
-	if _, err := os.Stat(directory); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return "", nil
-		}
-		return "", err
-	}
-	if err := os.RemoveAll(directory); err != nil {
-		return "", err
+	if _, err := os.Lstat(directory); errors.Is(err, os.ErrNotExist) {
+		return "", nil
 	}
 	return directory, nil
+}
+
+// removeStoredCredentials drops what --forget owns. A full disconnect removes
+// the whole directory, the way the runner uninstall removes its cached identity.
+// A disconnect that names clients removes only the stored CLI accounts and the
+// account selection: the rotation state and env files beside them belong to the
+// clients that stay connected, including ones configured by hand, and a client
+// whose rotated key is deleted falls back to a bootstrap key the portal retired.
+func removeStoredCredentials(directory string, accountsOnly bool) error {
+	if !accountsOnly {
+		return os.RemoveAll(directory)
+	}
+	if err := rejectUnsafeCredentialDirectory(directory); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if !strings.HasPrefix(name, cliAccountFilePrefix) &&
+			name != accountSelectionFilename && name != accountSelectionFilename+".lock" {
+			continue
+		}
+		if err := os.Remove(filepath.Join(directory, name)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	return nil
 }
 
 func connectAuthorizationError(stderr io.Writer, err error, origin string) int {
@@ -577,13 +653,6 @@ func connectAuthorizationError(stderr io.Writer, err error, origin string) int {
 			[]string{"The server at " + origin + " does not provide browser approval."},
 			"For a self-hosted server, upgrade it and make sure `/api/mcp/device_authorization` is routed.",
 			"Or paste the manual client snippets from "+origin+"/app/agents/connect.",
-		)
-	case errors.Is(err, context.Canceled):
-		return cliCommandError(
-			stderr,
-			"Browser approval was cancelled",
-			[]string{"Nothing was configured."},
-			"Run `emisar-mcp connect` when you are ready to try again.",
 		)
 	default:
 		return cliCommandError(
@@ -637,12 +706,13 @@ WHAT IT DOES
   Detects the supported LLM clients installed for your user. Runs one browser
   approval covering the direct CLI and every client you choose, and writes each
   client's own configuration format. --all skips already connected clients;
-  explicitly naming one with --client refreshes its key and server URL.
+  explicitly naming one with --client refreshes its key and server URL and
+  keeps an --auto-permit set earlier.
 
 FLAGS
   --url <origin>
-    The Emisar server to connect to. Defaults to the stored account's server,
-    then https://emisar.dev.
+    The Emisar server to connect to. Defaults to EMISAR_URL, then the stored
+    account's server, then https://emisar.dev.
 
   --all
     Connect every detected client that is not connected yet, without asking.
@@ -656,7 +726,7 @@ FLAGS
 
 NOTES
   Restart a client after connecting it. Reconnecting does not revoke old keys;
-  revoke them in the portal under LLM agents.
+  revoke them in the portal under AI agents.
 `
 
 var disconnectHelpText = `emisar-mcp disconnect - remove emisar from LLM clients
@@ -680,9 +750,11 @@ FLAGS
     Do not ask for confirmation.
 
   --forget
-    Also delete every stored direct-CLI account and the bridge's rotation state.
+    Also delete every stored direct-CLI account. With --client, the keys of
+    clients that stay connected are kept. Otherwise the bridge's rotation state
+    goes too, including that of clients you configured by hand; reconnect them.
 
 NOTES
   A key removed from a config keeps working until you revoke it in the portal
-  under LLM agents.
+  under AI agents.
 `

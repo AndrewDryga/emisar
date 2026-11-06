@@ -223,6 +223,11 @@ func (client detectedClient) renderConfig(request clientEntryRequest, raw string
 }
 
 func (client detectedClient) renderJSON(request clientEntryRequest, raw string) (string, error) {
+	// A refresh rewrites the whole entry, so an earlier --auto-permit stored
+	// inside it is carried over; a refresh never adds one on its own.
+	if client.autoPermit == autoPermitEntryTrust && jsonEmisarTrusted(raw, client.container) {
+		request.AutoPermit = true
+	}
 	entry := client.entry(request)
 	edited, err := insertJSONMember(raw, client.container, emisarServerName, entry)
 	if err != nil {
@@ -264,10 +269,43 @@ func (client detectedClient) renderTOML(request clientEntryRequest, raw string) 
 	block.WriteString("[mcp_servers.emisar]\n")
 	fmt.Fprintf(&block, "command = %s\n", command)
 	fmt.Fprintf(&block, "env = { EMISAR_URL = %s, EMISAR_API_KEY = %s, EMISAR_CLIENT = %s }\n", origin, key, id)
-	if request.AutoPermit && client.autoPermit == autoPermitEntryApprovalMode {
+	// As with Gemini's trust flag, an approval mode already in the entry stays.
+	if client.autoPermit == autoPermitEntryApprovalMode && (request.AutoPermit || tomlEmisarApproves(raw)) {
 		fmt.Fprintf(&block, "%s = \"approve\"\n", codexApprovalOption)
 	}
 	return appendConfigBlock(withoutEmisar, block.String()), nil
+}
+
+// jsonEmisarTrusted reports whether the existing emisar entry already carries
+// the trust flag --auto-permit writes.
+func jsonEmisarTrusted(raw string, container []string) bool {
+	document, err := parseJSONConfig(raw)
+	if err != nil {
+		return false
+	}
+	existing, _ := lookupJSONPath(document, container, emisarServerName)
+	entry, _ := existing.(map[string]any)
+	return entry["trust"] == true
+}
+
+var tomlApprovalLine = regexp.MustCompile(`^[ \t]*` + codexApprovalOption + `[ \t]*=[ \t]*(?:"approve"|'approve')[ \t]*(?:#.*)?$`)
+
+// tomlEmisarApproves reports whether the [mcp_servers.emisar] table already
+// carries the approval mode --auto-permit writes.
+func tomlEmisarApproves(raw string) bool {
+	inEmisar := false
+	for _, line := range strings.Split(raw, "\n") {
+		trimmed := strings.TrimRight(line, "\r")
+		switch {
+		case tomlEmisarTable.MatchString(trimmed):
+			inEmisar = true
+		case strings.HasPrefix(strings.TrimLeft(trimmed, " \t"), "["):
+			inEmisar = false
+		case inEmisar && tomlApprovalLine.MatchString(trimmed):
+			return true
+		}
+	}
+	return false
 }
 
 func (client detectedClient) renderYAML(request clientEntryRequest, raw string) (string, error) {
@@ -488,24 +526,55 @@ func hasEmisarKeyUnderMCPServers(raw string) bool {
 	return false
 }
 
+// removeTOMLTable holds the blank and comment lines after the last emisar key
+// rather than dropping them: a comment there usually introduces the next table,
+// and it is the operator's. Held lines that more emisar content follows are part
+// of our table.
 func removeTOMLTable(raw string) string {
 	lines := strings.Split(raw, "\n")
 	kept := make([]string, 0, len(lines))
 	skipping := false
+	var held []string
 	for _, line := range lines {
 		trimmed := strings.TrimRight(line, "\r")
+		bare := strings.TrimLeft(trimmed, " \t")
 		switch {
 		case tomlEmisarHeader.MatchString(trimmed):
 			skipping = true
+			held = nil
 			continue
-		case strings.HasPrefix(strings.TrimLeft(trimmed, " \t"), "["):
+		case strings.HasPrefix(bare, "["):
+			if skipping {
+				kept = keepHeldTOMLLines(kept, held)
+				held = nil
+			}
 			skipping = false
+		case skipping && (bare == "" || strings.HasPrefix(bare, "#")):
+			held = append(held, line)
+			continue
+		case skipping:
+			held = nil
+			continue
 		}
 		if !skipping {
 			kept = append(kept, line)
 		}
 	}
+	if skipping {
+		kept = keepHeldTOMLLines(kept, held)
+	}
 	return strings.Join(kept, "\n")
+}
+
+// keepHeldTOMLLines restores the held lines without doubling the blank line
+// that already separated the removed table from what came before it.
+func keepHeldTOMLLines(kept, held []string) []string {
+	if len(kept) == 0 || strings.TrimSpace(kept[len(kept)-1]) == "" {
+		for len(held) > 0 && strings.TrimSpace(held[0]) == "" {
+			held = held[1:]
+		}
+	}
+	return append(kept, held...)
 }
 
 // removeYAMLEntry drops the emisar entry under the client's top-level key, and
@@ -623,7 +692,7 @@ func editClaudePermission(path string, allow bool) error {
 	if !allow && !present {
 		// Our rule is not here. Writing anyway would add a permissions block to
 		// a file that never had one, which is not what a removal does.
-		return nil
+		return removeConfigBackup(path)
 	}
 	if allow {
 		updated = append(updated, claudeToolPattern)
@@ -632,7 +701,23 @@ func editClaudePermission(path string, allow bool) error {
 	if err != nil {
 		return err
 	}
-	return replaceConfigFile(path, raw, edited)
+	if err := replaceConfigFile(path, raw, edited); err != nil {
+		return err
+	}
+	if !allow {
+		return removeConfigBackup(path)
+	}
+	return nil
+}
+
+// removeConfigBackup deletes the copy an --auto-permit run saved beside the
+// operator's settings, once the settings no longer carry our rule. The settings
+// file stays as the operator now has it; the older copy is never restored.
+func removeConfigBackup(path string) error {
+	if err := os.Remove(path + configBackupSuffix); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 func claudeAllowList(document map[string]any) ([]string, error) {

@@ -785,6 +785,37 @@ func TestTOMLRemovalKeepsUnrelatedTables(t *testing.T) {
 	}
 }
 
+func TestTOMLRemovalKeepsCommentsBeforeTheNextTable(t *testing.T) {
+	for _, testCase := range []struct {
+		name, raw, want string
+	}{
+		{
+			name: "comment introducing the next table",
+			raw:  "model = \"gpt-5\"\n\n[mcp_servers.emisar]\ncommand = \"x\"\n\n# Production DB tools\n[mcp_servers.db]\ncommand = \"db\"\n",
+			want: "model = \"gpt-5\"\n\n# Production DB tools\n[mcp_servers.db]\ncommand = \"db\"\n",
+		},
+		{
+			name: "comment before an emisar child table is ours",
+			raw:  "[mcp_servers.emisar]\ncommand = \"x\"\n# the env table\n[mcp_servers.emisar.env]\nEMISAR_URL = \"https://emisar.dev\"\n\n# Profiles\n[profiles.work]\nname = \"work\"\n",
+			want: "# Profiles\n[profiles.work]\nname = \"work\"\n",
+		},
+		{
+			name: "comment between emisar keys is ours",
+			raw:  "model = \"gpt-5\"\n\n[mcp_servers.emisar]\n# the command\ncommand = \"x\"\n",
+			want: "model = \"gpt-5\"\n",
+		},
+		{
+			name: "comment after the last table",
+			raw:  "model = \"gpt-5\"\n\n[mcp_servers.emisar]\ncommand = \"x\"\n\n# end of file\n",
+			want: "model = \"gpt-5\"\n\n# end of file\n",
+		},
+	} {
+		if got := removeTOMLTable(testCase.raw); got != testCase.want {
+			t.Errorf("%s:\n got: %q\nwant: %q", testCase.name, got, testCase.want)
+		}
+	}
+}
+
 func TestYAMLRemovalKeepsSiblingExtensions(t *testing.T) {
 	raw := "extensions:\n  developer:\n    enabled: true\n  emisar:\n    name: emisar\n    envs:\n      EMISAR_API_KEY: \"emk-key\"\n  memory:\n    enabled: false\n"
 	edited := removeYAMLEntry(raw, "extensions")
@@ -928,6 +959,49 @@ func TestTOMLReconnectKeepsOtherEmisarPrefixedServers(t *testing.T) {
 	for _, kept := range []string{"[mcp_servers.emisar-prod]", "[mcp_servers.emisar_admin]", "[mcp_servers.emisario]", "[mcp_servers.emisar]"} {
 		if strings.Count(raw, kept) != 1 {
 			t.Errorf("expected exactly one %q:\n%s", kept, raw)
+		}
+	}
+}
+
+// Another server whose name merely starts with emisar is the operator's, and
+// so are its child tables: connect and disconnect touch only the exact entry.
+func TestTOMLConnectAndRemoveKeepOtherEmisarPrefixedServerTables(t *testing.T) {
+	existing := "[mcp_servers.emisar-prod]\ncommand = \"prod\"\n\n[mcp_servers.emisar-prod.env]\nEMISAR_URL = \"https://prod.example\"\n\n" +
+		"[mcp_servers.emisar_staging]\ncommand = \"staging\"\n\n[mcp_servers.emisar_staging.env]\nEMISAR_URL = \"https://staging.example\"\n"
+	tables := []string{"[mcp_servers.emisar-prod]", "[mcp_servers.emisar-prod.env]", "[mcp_servers.emisar_staging]", "[mcp_servers.emisar_staging.env]"}
+	for _, id := range []string{"codex", "grok"} {
+		adapter, _ := lookupClientAdapter(id)
+		client := adapter.resolve(testConfigRoots(t))
+		if err := os.MkdirAll(filepath.Dir(client.ConfigFile), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(client.ConfigFile, []byte(existing), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := client.install(testEntryRequest("/usr/local/bin/emisar-mcp", id)); err != nil {
+			t.Fatalf("%s connect: %v", id, err)
+		}
+		connected, err := readConfigFile(client.ConfigFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.HasPrefix(connected, existing) || strings.Count(connected, "[mcp_servers.emisar]") != 1 {
+			t.Fatalf("%s connect changed another server or missed its own entry:\n%s", id, connected)
+		}
+		if err := client.remove(); err != nil {
+			t.Fatalf("%s remove: %v", id, err)
+		}
+		removed, err := readConfigFile(client.ConfigFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, table := range tables {
+			if strings.Count(removed, table) != 1 {
+				t.Errorf("%s remove lost %s:\n%s", id, table, removed)
+			}
+		}
+		if strings.Contains(removed, "[mcp_servers.emisar]") || client.configured(client.ConfigFile) {
+			t.Errorf("%s remove left the emisar entry:\n%s", id, removed)
 		}
 	}
 }

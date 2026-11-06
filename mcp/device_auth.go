@@ -110,13 +110,6 @@ func loginCLIAuth(
 				"For a self-hosted server, upgrade it and make sure `/api/mcp/device_authorization` is routed.",
 				"Or set EMISAR_URL and EMISAR_API_KEY together for direct commands.",
 			)
-		case errors.Is(err, context.Canceled):
-			return cliCommandError(
-				stderr,
-				"Browser sign-in was cancelled",
-				[]string{"No credential was saved."},
-				"Run `emisar-mcp auth` when you are ready to try again.",
-			)
 		case strings.Contains(err.Error(), "denied"):
 			return cliCommandError(
 				stderr,

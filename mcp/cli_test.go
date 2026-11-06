@@ -1024,7 +1024,7 @@ func TestCLIRejectsDuplicateToolDescriptors(t *testing.T) {
 }
 
 func TestCLIToolHelpUsesExactEscapeForReservedNames(t *testing.T) {
-	for _, name := range []string{"accounts", "auth", "help", "list_tools"} {
+	for _, name := range []string{"accounts", "auth", "connect", "disconnect", "help", "list_tools"} {
 		descriptor := cliToolDescriptor{
 			Name:        name,
 			Title:       "Server tool",

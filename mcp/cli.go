@@ -730,8 +730,8 @@ func cliToolInvocationForOS(name, account, goos string) string {
 	if account != "" {
 		prefix += "--account " + shellQuoteForOS(terminalSafeText(account), goos) + " "
 	}
-	if name == "accounts" || name == "auth" || name == "help" ||
-		name == "list_tools" || strings.HasPrefix(name, "-") {
+	if name == "accounts" || name == "auth" || name == "connect" || name == "disconnect" ||
+		name == "help" || name == "list_tools" || strings.HasPrefix(name, "-") {
 		prefix += "-- "
 	}
 	return prefix + safeName

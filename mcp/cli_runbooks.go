@@ -60,7 +60,6 @@ type cliRunbookCount struct {
 
 type cliRunbookDefinition struct {
 	Inputs []struct {
-		Name        string `json:"name"`
 		ID          string `json:"id"`
 		Type        string `json:"type"`
 		Required    bool   `json:"required"`
@@ -316,15 +315,11 @@ func writeCLIRunbookDefinition(out *strings.Builder, w io.Writer, raw json.RawMe
 	if len(definition.Inputs) > 0 {
 		out.WriteString("\nInputs\n")
 		for _, input := range definition.Inputs[:min(len(definition.Inputs), maxCLIResultItems)] {
-			name := input.Name
-			if name == "" {
-				name = input.ID
-			}
 			status := "optional"
 			if input.Required {
 				status = "required"
 			}
-			fmt.Fprintf(out, "  %s — %s, %s\n", cliResultText(name, 160), cliResultText(input.Type, 80), status)
+			fmt.Fprintf(out, "  %s — %s, %s\n", cliResultText(input.ID, 160), cliResultText(input.Type, 80), status)
 			if input.Description != "" {
 				fmt.Fprintf(out, "    %s\n", cliResultText(input.Description, maxCLIHumanStringRunes))
 			}
@@ -769,8 +764,8 @@ func writeCLIRunbookResult(
 	out.WriteByte('\n')
 	if item.Error != nil && item.Error.Message != "" {
 		fmt.Fprintf(out, "    %s  %s\n", cliStyledText(w, "31", "Error"), cliResultText(item.Error.Message, maxCLIHumanStringRunes))
-	} else if hasRun && run.ErrorMessage != "" {
-		fmt.Fprintf(out, "    %s  %s\n", cliStyledText(w, "31", "Error"), cliResultText(run.ErrorMessage, maxCLIHumanStringRunes))
+	} else if hasRun && run.FailureCode != "" {
+		fmt.Fprintf(out, "    %s  %s\n", cliStyledText(w, "31", "Failure"), cliResultText(run.FailureCode, 60))
 	}
 	if !hasRun {
 		out.WriteString("    Output\n      No action attempt was recorded.\n")

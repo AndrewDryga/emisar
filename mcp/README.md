@@ -64,7 +64,10 @@ their client configs, except for VS Code. Its key goes into an owner-only
 environment file that the user-level `mcp.json` references, because editor
 settings may sync. No key passes through the clipboard. `connect` edits each
 config in place, so existing client settings, other MCP servers, comments, and
-key order all survive.
+key order all survive. Under `sudo`, that handoff runs without the
+`XDG_CONFIG_HOME` (Linux), `HERMES_HOME`, and `GOOSE_PATH_ROOT` your shell sets,
+because sudo normally clears them. If you use one, run `emisar-mcp connect`
+again in your own shell, without sudo.
 
 ## Connect a client
 
@@ -90,7 +93,8 @@ tool?" prompt for the emisar server alone. It is opt-in and never implied by
 `--all`. Emisar decides every action server-side, so the client's
 prompt adds nothing for Emisar's tools, but it is your setting in your file.
 Only Claude Code, Gemini CLI, Codex CLI, and Grok CLI scope that setting to one
-server; the rest are left alone.
+server; the rest are left alone. A later `connect --client <id>` refresh keeps
+the setting.
 
 To authenticate only the direct CLI, without touching any client config:
 
@@ -331,9 +335,9 @@ Ctrl-C stops observation without cancelling the runbook. The command exits 1
 when the execution is `halted` or `cancelled`. With `--json`, the command
 follows nothing and returns the original call's exact `structuredContent`.
 
-The local `auth`, `accounts`, `help`, and `list_tools` names are conveniences,
-not reserved MCP tool names. Use `--` before an exact tool name when it conflicts
-with a local command or begins with a hyphen:
+The local `auth`, `accounts`, `connect`, `disconnect`, `help`, and `list_tools`
+names are conveniences, not reserved MCP tool names. Use `--` before an exact
+tool name when it conflicts with a local command or begins with a hyphen:
 
 ```sh
 emisar-mcp -- help '{}'

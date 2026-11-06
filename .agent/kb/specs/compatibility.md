@@ -862,7 +862,8 @@ credentials, and delegates the connection phase to the same `connect` and
 **`emisar-mcp connect` / `disconnect`.** `connect` accepts `--url <origin>`,
 `--all`, `--client <id>` (repeatable), and `--auto-permit`;
 `disconnect` accepts `--all`, `--client <id>`, `--yes`, and `--forget` (also
-delete every stored direct-CLI account and the bridge's rotation state). Both
+delete every stored direct-CLI account and, unless `--client` names the clients
+to disconnect, the bridge's rotation state). Both
 ignore `EMISAR_URL` and `EMISAR_API_KEY` for credential decisions, because they
 operate on per-account stored state rather than an ambient key. `connect`
 requests a dedicated `emisar-mcp-cli` key plus one key per selected client from

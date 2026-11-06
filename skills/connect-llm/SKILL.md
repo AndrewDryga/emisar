@@ -33,8 +33,8 @@ Verify commands before running them:
   make that choice silently, and name the path taken in the report.
 - After installation, use `emisar-mcp --help` as the installed-version
   contract.
-- Use the signed-in **Agents** page for current client configuration and the
-  cloud-connector name and URL.
+- Use the signed-in **AI agents** page for current client configuration and
+  the cloud-connector name and URL.
 - Use `https://emisar.dev/docs/connect-claude-ai` or
   `https://emisar.dev/docs/connect-chatgpt` for a cloud connector,
   `https://emisar.dev/docs/connect-cli-agent` for a local or CLI client, and
@@ -92,7 +92,7 @@ Establish, asking only for what cannot be discovered safely:
 ## 2. Cloud client: wire the connector
 
 For Claude.ai or ChatGPT, there is nothing to install. From the signed-in
-**Agents** page, take the connector name and the remote MCP server URL. Add
+**AI agents** page, take the connector name and the remote MCP server URL. Add
 the connector in the client's own settings and complete the OAuth consent,
 choosing the intended account on the consent screen. Then continue at step 4.
 
@@ -195,8 +195,8 @@ rotation survives restarts; containerized clients must persist `/config`.
 
 If the installer ran without its prompts (`--yes`) or stopped at "already
 current", finish with `emisar-mcp connect`. When a browser is genuinely
-unavailable, fall back to the **Agents** page's manual per-client snippet. Keep
-the key out of shell history and command arguments.
+unavailable, fall back to the **AI agents** page's manual per-client snippet.
+Keep the key out of shell history and command arguments.
 
 Restart or reload the actual client afterward.
 

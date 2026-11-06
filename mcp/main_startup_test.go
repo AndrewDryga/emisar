@@ -249,7 +249,7 @@ func TestHelpTextHasConsistentSectionsAndClientSetup(t *testing.T) {
 		}
 	}
 
-	if !strings.Contains(helpText, "https://emisar.dev/docs/connect-a-cli-client") {
+	if !strings.Contains(helpText, "https://emisar.dev/docs/connect-cli-agent") {
 		t.Error("help does not link to manual client setup documentation")
 	}
 	for _, removed := range []string{

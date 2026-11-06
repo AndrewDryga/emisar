@@ -227,6 +227,39 @@ function Save-WebFile([string]$Url, [string]$Path) {
     }
 }
 
+# Retries one release download twice, as install-mcp.sh's curl --retry 2 does.
+# A refusal this installer raised itself is final. Save-WebFile has already
+# removed any partial file before the next attempt.
+function Save-ReleaseFile([string]$Url, [string]$Path) {
+    for ($attempt = 1; $true; $attempt++) {
+        try {
+            Save-WebFile $Url $Path
+            return
+        } catch {
+            if ($attempt -ge 3 -or $_.Exception.Message.StartsWith("[install-mcp] ")) { throw }
+            Start-Sleep -Seconds $attempt
+        }
+    }
+}
+
+# Downloads the named release files into one directory. When the Emisar mirror
+# fails, the same tag is re-resolved on the GitHub release mirror once and every
+# file is fetched again from there, as install-mcp.sh does. Returns the release
+# the files came from; the checksum and signature checks are unchanged.
+function Save-ReleaseDownloads($Release, [string[]]$Names, [string]$Directory) {
+    try {
+        foreach ($name in $Names) { Save-ReleaseFile "$($Release.Base)/$name" (Join-Path $Directory $name) }
+        return $Release
+    } catch {
+        if ($Release.Source -ne "Emisar release mirror") { throw }
+        Write-WarningLine "Emisar release download failed; falling back to the GitHub release mirror"
+        foreach ($name in $Names) { Remove-Item -LiteralPath (Join-Path $Directory $name) -Force -ErrorAction SilentlyContinue }
+        $fallback = Get-GitHubRelease $Release.Tag
+        foreach ($name in $Names) { Save-ReleaseFile "$($fallback.Base)/$name" (Join-Path $Directory $name) }
+        return $fallback
+    }
+}
+
 function Get-GitHubHeaders {
     $headers = @{ Accept = "application/vnd.github+json" }
     if ($env:EMISAR_GITHUB_TOKEN) {
@@ -616,11 +649,11 @@ try {
     $checksumBundlePath = Join-Path $temporaryRoot "SHA256SUMS-MCP.sigstore.jsonl"
     Confirm-MissingVerifier ([bool]$release.Test)
     Write-Info "downloading $archiveName"
-    Save-WebFile "$($release.Base)/$archiveName" $archivePath
-    Save-WebFile "$($release.Base)/SHA256SUMS-MCP" $checksumsPath
+    $downloads = @($archiveName, "SHA256SUMS-MCP")
     if (-not $release.Test -and $script:AttestationWorkflow -and -not $script:VerifierMissing) {
-        Save-WebFile "$($release.Base)/SHA256SUMS-MCP.sigstore.jsonl" $checksumBundlePath
+        $downloads += "SHA256SUMS-MCP.sigstore.jsonl"
     }
+    $release = Save-ReleaseDownloads $release $downloads $temporaryRoot
     if ($script:VerifierMissing) {
         Write-WarningLine "checksum signature not checked: GitHub CLI is not installed"
     } else {
