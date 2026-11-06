@@ -386,6 +386,51 @@ function Set-PrivateDirectoryACL([string]$Path) {
     Set-Acl -LiteralPath $Path -AclObject $acl
 }
 
+# Whether an access mask lets its holder change a folder or what it holds:
+# write or create (on a folder WriteData is CreateFiles and AppendData is
+# CreateDirectories), delete, re-permission, or take ownership. Write, Modify,
+# and FullControl all carry WriteData. Get-Acl can return an inherited entry's
+# generic bits unmapped, so GENERIC_ALL and GENERIC_WRITE count too. The mask
+# arrives as [int] because PowerShell refuses to cast those bits to the enum.
+function Test-WriteRight([int]$Rights) {
+    $write = [int][Security.AccessControl.FileSystemRights]"WriteData, AppendData, WriteAttributes, WriteExtendedAttributes, Delete, DeleteSubdirectoriesAndFiles, ChangePermissions, TakeOwnership"
+    $genericAllOrWrite = 0x10000000 -bor 0x40000000
+    return ($Rights -band ($write -bor $genericAllOrWrite)) -ne 0
+}
+
+# An operator's existing -InstallDir keeps its ACL, so the installer uses it
+# only when nobody else could replace the binary that runs with their API key.
+# Its owner, who can always rewrite the DACL, and every principal an Allow
+# entry gives a write right must be this user, SYSTEM, Administrators, or
+# TrustedInstaller. A Deny entry grants nothing.
+function Assert-TrustedDirectory([string]$Path) {
+    Assert-NoReparsePoint $Path "directory"
+    $trusted = @(
+        [Security.Principal.WindowsIdentity]::GetCurrent().User.Value,
+        "S-1-5-18",
+        "S-1-5-32-544",
+        "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464"
+    )
+    $acl = Get-Acl -LiteralPath $Path
+    $principals = @($acl.GetOwner([Security.Principal.SecurityIdentifier]))
+    # CREATOR OWNER and CREATOR GROUP are placeholders no access token holds: they
+    # grant nothing on this folder and only seed the rights of a child's creator.
+    $placeholders = @("S-1-3-0", "S-1-3-1")
+    foreach ($rule in $acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])) {
+        if ($placeholders -contains $rule.IdentityReference.Value) { continue }
+        if ($rule.AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow -and (Test-WriteRight $rule.FileSystemRights)) {
+            $principals += $rule.IdentityReference
+        }
+    }
+    foreach ($principal in $principals) {
+        if ($trusted -notcontains $principal.Value) {
+            $name = $principal.Value
+            try { $name = "$($principal.Translate([Security.Principal.NTAccount]).Value) ($name)" } catch { }
+            Stop-Install "refusing -InstallDir: $name can change $Path and could replace emisar-mcp.exe in it; choose a folder only you and administrators can change, or omit -InstallDir to use the per-user default"
+        }
+    }
+}
+
 function Set-PrivateFileACL([string]$Path) {
     Assert-NoReparsePoint $Path "file"
     $acl = New-Object Security.AccessControl.FileSecurity
@@ -499,12 +544,21 @@ function Confirm-Install([string]$Prompt) {
     return $answer -match '^(?i:y|yes)$'
 }
 
-function Install-Bridge([string]$Destination, [string]$Source, [string]$ExpectedHash) {
+function Install-Bridge([string]$Destination, [string]$Source, [string]$ExpectedHash, [bool]$CustomDirectory) {
     $directory = Split-Path -Parent $Destination
+    # Only a folder the installer owns is made private: its default per-user
+    # folder, or one it creates here. An operator's existing folder keeps its
+    # ACL and must already be one nobody else can change.
+    $owned = -not $CustomDirectory
     if (-not (Test-Path -LiteralPath $directory)) {
         [void](New-Item -ItemType Directory -Path $directory -Force)
+        $owned = $true
     }
-    Set-PrivateDirectoryACL $directory
+    if ($owned) {
+        Set-PrivateDirectoryACL $directory
+    } else {
+        Assert-TrustedDirectory $directory
+    }
     Assert-NoReparsePoint $Destination "existing emisar-mcp executable"
     $suffix = [Guid]::NewGuid().ToString("N")
     $staged = Join-Path $directory ".emisar-mcp.new.$suffix.exe"
@@ -523,6 +577,9 @@ function Install-Bridge([string]$Destination, [string]$Source, [string]$Expected
         } catch {
             Stop-Install "could not replace $Destination; close every MCP client using emisar-mcp and retry"
         }
+        # The binary is private wherever it lands: an operator's folder keeps
+        # its own inheritable ACL, and Replace keeps the replaced file's DACL.
+        Set-PrivateFileACL $Destination
         if ((Get-FileHash -Algorithm SHA256 -LiteralPath $Destination).Hash -ine $ExpectedHash) {
             if (Test-Path -LiteralPath $backup) {
                 [IO.File]::Replace($backup, $Destination, $null, $true)
@@ -596,6 +653,9 @@ if (-not (Test-SafePortalOrigin $script:PortalOrigin)) { Stop-Install "EMISAR_UR
 
 $appDataDirectory = $env:APPDATA
 $localAppDataDirectory = $env:LOCALAPPDATA
+# The default per-user folder is the installer's own; a folder the operator
+# names keeps its ACL unless the installer has to create it.
+$customInstallDir = [bool]$InstallDir
 if (-not $InstallDir) { $InstallDir = Join-Path $localAppDataDirectory "Programs\Emisar\bin" }
 $InstallDir = [IO.Path]::GetFullPath($InstallDir)
 $executable = Join-Path $InstallDir "emisar-mcp.exe"
@@ -605,6 +665,10 @@ if ($Uninstall) {
     Uninstall-Bridge $executable $appDataDirectory
     return
 }
+
+# Refuse an unsafe existing folder before anything is downloaded, written, or
+# run from it. Install-Bridge checks again where it writes.
+if ($customInstallDir -and (Test-Path -LiteralPath $InstallDir)) { Assert-TrustedDirectory $InstallDir }
 
 if ($Version) { $Version = Normalize-Version $Version }
 $release = Resolve-Release $Version
@@ -674,7 +738,7 @@ try {
         Stop-Install "downloaded executable reported an unexpected version"
     }
     $sourceHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $sourceExecutable).Hash
-    Install-Bridge $executable $sourceExecutable $sourceHash
+    Install-Bridge $executable $sourceExecutable $sourceHash $customInstallDir
 } finally {
     if (Test-Path -LiteralPath $temporaryRoot) { Remove-Item -LiteralPath $temporaryRoot -Recurse -Force }
 }

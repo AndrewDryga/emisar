@@ -861,8 +861,13 @@ harness sets real variables and PATH shims. It installs the native
 `windows-amd64` or `windows-arm64` zip per user. It authenticates
 `SHA256SUMS-MCP` from its downloaded Sigstore bundle without a GitHub login,
 then checks the archive digest. It
-uses protected Windows DACLs for the binary directory and direct-CLI
-credentials, and delegates the connection phase to the same `connect` and
+uses protected Windows DACLs for the installed binary, the direct-CLI
+credentials, and the binary directory when that is its default per-user
+directory or one it creates. An existing `-InstallDir` keeps its ACL: the
+installer refuses it, before downloading or writing anything, when its owner
+or any principal an Allow entry gives a write, delete, or permission-change
+right is someone other than the user, SYSTEM, Administrators, or
+TrustedInstaller. It delegates the connection phase to the same `connect` and
 `disconnect` commands.
 
 **`emisar-mcp connect` / `disconnect`.** `connect` accepts `--url <origin>`,

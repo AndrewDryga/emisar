@@ -123,6 +123,9 @@ func testWindowsMCPInstaller(root, shell string) error {
 	if err := testWindowsDownloadFallback(root, shell, temp); err != nil {
 		return err
 	}
+	if err := testWindowsWriteRights(root, shell, temp); err != nil {
+		return err
+	}
 
 	releaseDir := filepath.Join(temp, "release")
 	archiveRoot := "emisar-mcp-" + windowsMCPVersion + "-windows-" + runtime.GOARCH
@@ -327,6 +330,9 @@ func testWindowsMCPInstaller(root, shell string) error {
 	serverMu.Lock()
 	servedChecksums = checksums
 	serverMu.Unlock()
+	if err := testWindowsCustomInstallDirs(shell, installer, temp, server.URL, environmentWithout(env, "EMISAR_URL", "EMISAR_API_KEY")); err != nil {
+		return err
+	}
 
 	output, err := runPowerShellInstaller(
 		shell,
@@ -913,6 +919,136 @@ if (-not $refused) { throw "a source other than the Emisar mirror fell back to G
 	}
 	if got := atomic.LoadInt32(&flaky); got != 2 {
 		return fmt.Errorf("flaky archive requests = %d, want one failure and one retry", got)
+	}
+	return nil
+}
+
+// Test-WriteRight decides whether an existing -InstallDir is refused, so every
+// right that writes, deletes, or re-permissions a folder is pinned, with the
+// generic bits Get-Acl can leave unmapped on an inherited entry, and so are the
+// read rights an operator's shared folder may give other users.
+func testWindowsWriteRights(root, shell, temp string) error {
+	function, err := powershellFunction(filepath.Join(root, "install-mcp.ps1"), "Test-WriteRight")
+	if err != nil {
+		return err
+	}
+	script := function + `
+$rights = [Security.AccessControl.FileSystemRights]
+foreach ($name in @("WriteData", "CreateFiles", "AppendData", "CreateDirectories", "WriteAttributes", "WriteExtendedAttributes", "Delete", "DeleteSubdirectoriesAndFiles", "ChangePermissions", "TakeOwnership", "Write", "Modify", "FullControl")) {
+    if (-not (Test-WriteRight ([Enum]::Parse($rights, $name)))) { throw "write right not flagged: $name" }
+}
+foreach ($bits in @(0x40000000, 0x10000000)) {
+    if (-not (Test-WriteRight ([Enum]::ToObject($rights, $bits)))) { throw "generic write right not flagged: $bits" }
+}
+foreach ($name in @("ReadAndExecute", "ListDirectory", "Read", "ReadPermissions", "Synchronize")) {
+    if (Test-WriteRight ([Enum]::Parse($rights, $name))) { throw "read right flagged: $name" }
+}
+if (Test-WriteRight ([Enum]::ToObject($rights, [int]::MinValue -bor 0x20000000))) { throw "GENERIC_READ and GENERIC_EXECUTE flagged" }
+`
+	path := filepath.Join(temp, "write-rights.ps1")
+	if err := os.WriteFile(path, []byte(script), 0o600); err != nil {
+		return err
+	}
+	output, err := runPowerShellInstaller(shell, path, environment(nil))
+	if err != nil {
+		return fmt.Errorf("write rights: %w\n%s", err, output)
+	}
+	return nil
+}
+
+// An operator's existing -InstallDir keeps the ACL it has. One another
+// principal can change is refused before anything is downloaded or written to
+// it, and one only this user, SYSTEM, and Administrators can change takes the
+// bridge with its security descriptor byte-for-byte intact. A folder the
+// installer creates still gets the private DACL, and the binary is private in
+// either kind of folder.
+func testWindowsCustomInstallDirs(shell, installer, temp, portal string, env []string) error {
+	shared := filepath.Join(temp, "custom-shared")
+	trusted := filepath.Join(temp, "custom-trusted")
+	created := filepath.Join(temp, "custom-created")
+	runScript := func(name, script string) (string, error) {
+		path := filepath.Join(temp, name)
+		if err := os.WriteFile(path, []byte(script), 0o600); err != nil {
+			return "", err
+		}
+		output, err := runPowerShellInstaller(shell, path, environment(nil))
+		if err != nil {
+			return "", fmt.Errorf("%s: %w\n%s", name, err, output)
+		}
+		return string(output), nil
+	}
+	printSDDL := fmt.Sprintf("foreach ($path in @(%s, %s)) { (Get-Acl -LiteralPath $path).Sddl }\n",
+		powershellLiteral(shared), powershellLiteral(trusted))
+
+	// Users may read and run what both folders hold, the shared jump-box
+	// shape; only the first also gives them Modify. The second carries the
+	// CREATOR OWNER entry a hand-made folder under Program Files inherits,
+	// which grants no one anything on the folder itself.
+	before, err := runScript("custom-install-dirs.ps1", fmt.Sprintf(`
+$me = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+function New-Folder([string]$Path, [string]$Extra) {
+    [void](New-Item -ItemType Directory -Path $Path)
+    $acl = New-Object Security.AccessControl.DirectorySecurity
+    $acl.SetSecurityDescriptorSddlForm("D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;$me)(A;OICI;0x1200a9;;;S-1-5-32-545)$Extra", "Access")
+    Set-Acl -LiteralPath $Path -AclObject $acl
+}
+New-Folder %[1]s "(A;OICI;0x1301bf;;;S-1-5-32-545)"
+New-Folder %[2]s "(A;OICIIO;FA;;;CO)"
+[IO.File]::WriteAllText((Join-Path %[1]s "other-tool.txt"), "keep")
+`, powershellLiteral(shared), powershellLiteral(trusted))+printSDDL)
+	if err != nil {
+		return err
+	}
+
+	output, err := runPowerShellInstaller(shell, installer, env, "-PortalOrigin", portal, "-InstallDir", shared, "-Yes")
+	if err == nil || !bytes.Contains(output, []byte("refusing -InstallDir: ")) ||
+		!bytes.Contains(output, []byte("S-1-5-32-545")) || bytes.Contains(output, []byte("install target:")) {
+		return fmt.Errorf("an -InstallDir Users can modify was not refused before the install began: %v\n%s", err, output)
+	}
+	entries, err := os.ReadDir(shared)
+	if err != nil {
+		return err
+	}
+	names := []string{}
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+	if !slices.Equal(names, []string{"other-tool.txt"}) {
+		return fmt.Errorf("the refused -InstallDir was written to: %v", names)
+	}
+
+	// Each install adds its folder to the real user PATH; take both entries
+	// back out even when a check below fails.
+	removeUserPath, err := powershellFunction(installer, "Remove-UserPath")
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_, _ = runScript("custom-install-dirs-cleanup.ps1", removeUserPath+fmt.Sprintf(
+			"Remove-UserPath %s\nRemove-UserPath %s\n", powershellLiteral(trusted), powershellLiteral(created)))
+	}()
+	for _, dir := range []string{trusted, created} {
+		output, err := runPowerShellInstaller(shell, installer, env, "-PortalOrigin", portal, "-InstallDir", dir, "-Yes")
+		if err != nil || !bytes.Contains(output, []byte("emisar-mcp "+windowsMCPVersion+" installed")) {
+			return fmt.Errorf("install into %s: %v\n%s", dir, err, output)
+		}
+	}
+	after, err := runScript("custom-install-dirs-after.ps1", fmt.Sprintf(`
+$me = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+function Assert-Private([string]$Path, [string]$Inheritance) {
+    $acl = Get-Acl -LiteralPath $Path
+    $grants = @($acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]) | ForEach-Object { "$($_.IdentityReference.Value) $($_.AccessControlType) $($_.FileSystemRights) $($_.InheritanceFlags)" })
+    $want = @($me, "S-1-5-18", "S-1-5-32-544" | ForEach-Object { "$_ Allow FullControl $Inheritance" })
+    if (-not $acl.AreAccessRulesProtected -or (Compare-Object $grants $want)) { throw "$Path is not private: $($acl.Sddl)" }
+}
+Assert-Private %s "ContainerInherit, ObjectInherit"
+Assert-Private %s "None"
+`, powershellLiteral(created), powershellLiteral(filepath.Join(trusted, "emisar-mcp.exe")))+printSDDL)
+	if err != nil {
+		return err
+	}
+	if after != before {
+		return fmt.Errorf("installing changed an existing -InstallDir's security descriptor:\nbefore:\n%s\nafter:\n%s", before, after)
 	}
 	return nil
 }
