@@ -31,10 +31,10 @@ func main() {
 		Short: "Build and publish pack registries — emisar's public one, or your own",
 		Long: `packctl builds and publishes versioned pack registries.
 
-Author packs, then 'catalog build --base-url <where you host>' and put the
-tree on any static HTTPS host (natively on GCS via 'catalog publish'; S3 /
-MinIO / nginx by syncing the files). Runners install the exact immutable
-tarball URL from v1/catalog.json. The name-based '--registry' install flow
+Author packs, then 'catalog build --base-url <where you host> --repo-url
+<your source repository>' and put the tree on any static HTTPS host
+(natively on GCS via 'catalog publish'; S3 / MinIO / nginx by syncing the
+files). Runners install the exact immutable tarball URL from v1/catalog.json. The name-based '--registry' install flow
 uses a different URL layout that packctl does not build.
 Guide: https://emisar.dev/docs/pack-registry
 
@@ -51,7 +51,8 @@ pins nothing:
   cd emisar-src/runner && go build -o ~/.local/bin/packctl ./cmd/packctl`,
 		Example: `  # Build a registry for your own host, preserving published history
   packctl catalog build --packs ./packs --out ./dist \
-    --base-url https://packs.acme.internal --previous ./current-catalog.json
+    --base-url https://packs.acme.internal --repo-url https://github.com/acme/ops-packs \
+    --previous ./current-catalog.json
 
   # Publish to your GCS bucket (or sync ./dist to S3/anything instead)
   GOOGLE_OAUTH_ACCESS_TOKEN=$(gcloud auth print-access-token) \

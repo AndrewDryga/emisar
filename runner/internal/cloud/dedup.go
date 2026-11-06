@@ -414,9 +414,8 @@ type DispatchLogReport struct {
 
 // InspectDispatchLog reports the durable dispatch log's health without
 // touching it — the current store when present, otherwise the pre-v0.12
-// legacy location. Used by doctor and `emisar state check-dispatch-log` so
-// an unloadable log is diagnosable (and installer-checkable) before it makes
-// connect refuse to start.
+// legacy location. Used by doctor so an unloadable log is diagnosable before
+// it makes connect refuse to start.
 func InspectDispatchLog(dataDir string) DispatchLogReport {
 	path := DispatchLogPath(dataDir)
 	entries, sawLegacy, err := readDispatchLog(path)

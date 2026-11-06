@@ -482,7 +482,7 @@ func TestCLI_ZeroArgLeavesRejectSurplusOperands(t *testing.T) {
 		{"pack list", []string{"--config", "/nope/missing.yaml", "pack", "list", "surplus"}, "emisar pack list"},
 		{"events cat", []string{"--config", "/nope/missing.yaml", "events", "cat", "surplus"}, "emisar events cat"},
 		{"signing new-ca", []string{"signing", "new-ca", "surplus"}, "emisar signing new-ca"},
-		{"state check-dispatch-log", []string{"--config", "/nope/missing.yaml", "state", "check-dispatch-log", "surplus"}, "emisar state check-dispatch-log"},
+		{"state", []string{"--config", "/nope/missing.yaml", "state", "surplus"}, "emisar state"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

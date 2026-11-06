@@ -20,7 +20,8 @@ portal's `runner_action` column matches whatever a runner advertised, and the
 MCP projection accepts suffixes; only the catalog build is strict.
 
 **The artifact.** Fetch `https://registry.emisar.dev/v1/catalog.json`, run
-`packctl catalog build --packs ./packs --out ./dist/packs --previous <that file>`,
+`packctl catalog build --packs ./packs --out ./dist/packs --repo-url
+https://github.com/andrewdryga/emisar --previous <that file>`,
 copy the built `catalog.json` over `portal/apps/emisar/priv/packs/catalog.json`,
 and run `mix test test/emisar/catalog/pack_baseline_test.exs
 test/emisar/catalog/published_registry/cache_test.exs` from `apps/emisar`. The

@@ -4,6 +4,15 @@ All notable changes to the emisar Cursor plugin are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the plugin
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] — 2026-11-06
+
+### Changed
+
+- `author-pack` builds a private registry with `--repo-url`, which
+  `packctl catalog build` now requires, and has every pack declare `vendor`.
+  The build no longer credits a pack to Emisar or links it at Emisar's
+  repository by default.
+
 ## [0.2.2] — 2026-10-06
 
 ### Changed

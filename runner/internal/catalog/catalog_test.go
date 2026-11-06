@@ -17,7 +17,7 @@ import (
 
 func packYAML(id, version string, extra string) string {
 	return "schema_version: 1\nid: " + id + "\nname: " + strings.ToUpper(id) +
-		"\nversion: " + version + "\ndescription: the  " + id + "   pack\n" + extra +
+		"\nversion: " + version + "\ndescription: the  " + id + "   pack\nvendor: acme\n" + extra +
 		"actions:\n  - actions/a.yaml\n"
 }
 
@@ -90,13 +90,16 @@ func threePackRoot(t *testing.T) string {
 	return root
 }
 
-const testBaseURL = "https://cdn.example/registry"
+const (
+	testBaseURL = "https://cdn.example/registry"
+	testRepoURL = "https://git.example/acme/packs"
+)
 
 // --- tests ------------------------------------------------------------
 
 func TestBuild(t *testing.T) {
 	reg := loadReg(t, threePackRoot(t))
-	cat, err := Build(reg, BuildOptions{BaseURL: testBaseURL + "/"})
+	cat, err := Build(reg, BuildOptions{BaseURL: testBaseURL + "/", RepoURL: testRepoURL + "/"})
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -117,13 +120,14 @@ func TestBuild(t *testing.T) {
 	if alpha.ContentHash != wantHash {
 		t.Errorf("content_hash = %s, want %s (must match loader)", alpha.ContentHash, wantHash)
 	}
-	if alpha.Vendor != "emisar" {
-		t.Errorf("vendor = %q, want default emisar", alpha.Vendor)
+	if alpha.Vendor != "acme" {
+		t.Errorf("vendor = %q, want the declared acme", alpha.Vendor)
 	}
-	if alpha.Homepage != DefaultRepoURL {
-		t.Errorf("homepage = %q, want default repo", alpha.Homepage)
+	// RepoURL trailing slash trimmed; it stands in for an undeclared homepage.
+	if alpha.Homepage != testRepoURL {
+		t.Errorf("homepage = %q, want the source repository %q", alpha.Homepage, testRepoURL)
 	}
-	if alpha.SourceURL != DefaultRepoURL+"/tree/main/packs/alpha" {
+	if alpha.SourceURL != testRepoURL+"/tree/main/packs/alpha" {
 		t.Errorf("source_url = %q", alpha.SourceURL)
 	}
 	if alpha.Description != "the alpha pack" {
@@ -154,9 +158,49 @@ func TestBuild(t *testing.T) {
 
 func TestBuild_MissingBaseURL(t *testing.T) {
 	reg := loadReg(t, threePackRoot(t))
-	if _, err := Build(reg, BuildOptions{}); err == nil {
+	if _, err := Build(reg, BuildOptions{RepoURL: testRepoURL}); err == nil {
 		t.Fatal("expected error when BaseURL is empty")
 	}
+}
+
+// A catalog states who authored each pack and where its source lives, and a
+// private registry's packs are not emisar's. The build used to default both,
+// so every pack in a customer's registry was credited to emisar and linked at
+// a path in emisar's repository that does not exist.
+func TestBuild_RequiresDeclaredAuthorship(t *testing.T) {
+	t.Run("a source repository is required", func(t *testing.T) {
+		_, err := Build(loadReg(t, threePackRoot(t)), BuildOptions{BaseURL: testBaseURL, RepoURL: ""})
+		if err == nil || !strings.Contains(err.Error(), "RepoURL is required") {
+			t.Fatalf("expected a missing-RepoURL error, got %v", err)
+		}
+	})
+
+	t.Run("a pack without a vendor fails the build by name", func(t *testing.T) {
+		root := threePackRoot(t)
+		for _, id := range []string{"beta", "remote"} {
+			writePack(t, root, id, map[string]string{
+				"pack.yaml": strings.Replace(packYAML(id, "1.0.0", ""), "vendor: acme\n", "", 1),
+			})
+		}
+		_, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, RepoURL: testRepoURL})
+		if err == nil || !strings.Contains(err.Error(), "missing in beta, remote") {
+			t.Fatalf("expected an error naming beta and remote, got %v", err)
+		}
+	})
+
+	t.Run("a declared homepage wins over the repository", func(t *testing.T) {
+		root := threePackRoot(t)
+		writePack(t, root, "beta", map[string]string{
+			"pack.yaml": packYAML("beta", "2.1.0", "homepage: https://acme.example/beta\n"),
+		})
+		cat, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, RepoURL: testRepoURL})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if beta := cat.Packs[1]; beta.Homepage != "https://acme.example/beta" {
+			t.Errorf("homepage = %q, want the declared one", beta.Homepage)
+		}
+	})
 }
 
 func TestCatalogActionCarriesCompleteReviewedContract(t *testing.T) {
@@ -235,7 +279,7 @@ func TestCatalogActionRequiresBoundedSummaryAndDescriptor(t *testing.T) {
 // nature, so filtering them out here made the baseline unrecommendable.
 func TestSuggest_ListsEveryPackWithOnlyAuthoredEvidence(t *testing.T) {
 	reg := loadReg(t, threePackRoot(t))
-	cat, err := Build(reg, BuildOptions{BaseURL: testBaseURL})
+	cat, err := Build(reg, BuildOptions{BaseURL: testBaseURL, RepoURL: testRepoURL})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,13 +328,13 @@ func TestDeriveDetect_UsesOnlyExplicitSignals(t *testing.T) {
 
 func TestBuild_DriftCheck(t *testing.T) {
 	root := threePackRoot(t)
-	base, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL})
+	base, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, RepoURL: testRepoURL})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	t.Run("same bytes same version passes", func(t *testing.T) {
-		if _, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, Previous: base}); err != nil {
+		if _, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, RepoURL: testRepoURL, Previous: base}); err != nil {
 			t.Errorf("republish of identical packs should pass: %v", err)
 		}
 	})
@@ -300,7 +344,7 @@ func TestBuild_DriftCheck(t *testing.T) {
 		writePack(t, root, "alpha", map[string]string{
 			"actions/a.yaml": strings.Replace(execAction("alpha"), "reads", "reads more", 1),
 		})
-		_, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, Previous: base})
+		_, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, RepoURL: testRepoURL, Previous: base})
 		if err == nil {
 			t.Fatal("expected drift error for changed bytes at same version")
 		}
@@ -314,7 +358,7 @@ func TestBuild_DriftCheck(t *testing.T) {
 			"pack.yaml":      packYAML("alpha", "1.0.1", "requires:\n  os: [linux]\n  binaries: [curl, alpha-tool]\n"),
 			"actions/a.yaml": strings.Replace(execAction("alpha"), "reads", "reads more", 1),
 		})
-		if _, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, Previous: base}); err != nil {
+		if _, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, RepoURL: testRepoURL, Previous: base}); err != nil {
 			t.Errorf("changed bytes at a new version should pass: %v", err)
 		}
 	})
@@ -367,7 +411,7 @@ func TestBuild_CarryForwardWindow(t *testing.T) {
 	// Publish 1.0.0 → 1.0.4 in sequence, each carrying the last from --previous.
 	for _, v := range []string{"1.0.0", "1.0.1", "1.0.2", "1.0.3", "1.0.4"} {
 		writeSolo(t, root, v)
-		cat, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, Previous: prev})
+		cat, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, RepoURL: testRepoURL, Previous: prev})
 		if err != nil {
 			t.Fatalf("build %s: %v", v, err)
 		}
@@ -418,12 +462,12 @@ func TestBuild_CarryForwardRehomesTarballURLs(t *testing.T) {
 
 	// Two publishes on the original base fill the history with old-base URLs.
 	writeSolo(t, root, "1.0.0")
-	first, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL})
+	first, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, RepoURL: testRepoURL})
 	if err != nil {
 		t.Fatalf("build 1.0.0: %v", err)
 	}
 	writeSolo(t, root, "1.0.1")
-	second, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, Previous: first})
+	second, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, RepoURL: testRepoURL, Previous: first})
 	if err != nil {
 		t.Fatalf("build 1.0.1: %v", err)
 	}
@@ -433,7 +477,7 @@ func TestBuild_CarryForwardRehomesTarballURLs(t *testing.T) {
 	// mix hosts and trip the portal's tarball-base pin.
 	newBase := "https://registry.example"
 	writeSolo(t, root, "1.0.2")
-	moved, err := Build(loadReg(t, root), BuildOptions{BaseURL: newBase, Previous: second})
+	moved, err := Build(loadReg(t, root), BuildOptions{BaseURL: newBase, RepoURL: testRepoURL, Previous: second})
 	if err != nil {
 		t.Fatalf("build 1.0.2 on new base: %v", err)
 	}
@@ -459,7 +503,7 @@ func TestBuild_RetiredBelowFromPackSetsWatermarkAndPrunes(t *testing.T) {
 	var prev *Catalog
 	for _, v := range []string{"1.0.0", "1.0.1", "1.0.2"} {
 		writeSolo(t, root, v)
-		cat, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, Previous: prev})
+		cat, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, RepoURL: testRepoURL, Previous: prev})
 		if err != nil {
 			t.Fatalf("build %s: %v", v, err)
 		}
@@ -469,7 +513,7 @@ func TestBuild_RetiredBelowFromPackSetsWatermarkAndPrunes(t *testing.T) {
 	// retired_below 1.0.3, so the catalog's floor becomes 1.0.3 and history below
 	// it is pruned.
 	writeSoloRetiring(t, root, "1.0.3", "1.0.3")
-	retired, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, Previous: prev})
+	retired, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, RepoURL: testRepoURL, Previous: prev})
 	if err != nil {
 		t.Fatalf("retire build: %v", err)
 	}
@@ -485,7 +529,7 @@ func TestBuild_RetiredBelowFromPackSetsWatermarkAndPrunes(t *testing.T) {
 	// keeps declaring 1.0.3, and 1.0.4 carries 1.0.3 as its history head without
 	// resurrecting the pruned 1.0.0/1.0.1/1.0.2.
 	writeSoloRetiring(t, root, "1.0.4", "1.0.3")
-	next, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, Previous: retired})
+	next, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, RepoURL: testRepoURL, Previous: retired})
 	if err != nil {
 		t.Fatalf("post-retire build: %v", err)
 	}
@@ -508,7 +552,7 @@ func TestBuild_RetiredBelowGuards(t *testing.T) {
 			{ID: "solo", Version: "9.9.8", ContentHash: dummyHash, RetiredBelow: "2.0.0"},
 		}}
 		// Declaring 1.5.0 would lower the published floor from 2.0.0 → 1.5.0.
-		_, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, Previous: prev})
+		_, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, RepoURL: testRepoURL, Previous: prev})
 		if err == nil || !strings.Contains(err.Error(), "regress") {
 			t.Fatalf("expected floor regression error, got %v", err)
 		}
@@ -520,7 +564,7 @@ func TestBuild_RetiredBelowGuards(t *testing.T) {
 		prev := &Catalog{SchemaVersion: SchemaVersion, Packs: []Pack{
 			{ID: "solo", Version: "9.9.8", ContentHash: dummyHash, RetiredBelow: "2.0.0"},
 		}}
-		_, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, Previous: prev})
+		_, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, RepoURL: testRepoURL, Previous: prev})
 		if err == nil || !strings.Contains(err.Error(), "may not be dropped") {
 			t.Fatalf("expected floor-dropped error, got %v", err)
 		}
@@ -529,7 +573,7 @@ func TestBuild_RetiredBelowGuards(t *testing.T) {
 	t.Run("current may not be below the floor", func(t *testing.T) {
 		root := t.TempDir()
 		writeSoloRetiring(t, root, "1.5.0", "2.0.0")
-		_, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL})
+		_, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, RepoURL: testRepoURL})
 		if err == nil || !strings.Contains(err.Error(), "below retired_below") {
 			t.Fatalf("expected current-below-floor error, got %v", err)
 		}
@@ -539,7 +583,7 @@ func TestBuild_RetiredBelowGuards(t *testing.T) {
 func TestBuild_UnparseableVersionFailsBuild(t *testing.T) {
 	root := t.TempDir()
 	writeSolo(t, root, "1.2.x")
-	_, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL})
+	_, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, RepoURL: testRepoURL})
 	if err == nil || !strings.Contains(err.Error(), "1.2.x") {
 		t.Fatalf("expected unparseable-version build error, got %v", err)
 	}
@@ -555,7 +599,7 @@ func TestBuild_DriftAcrossHistory(t *testing.T) {
 		{ID: "solo", Version: "2.0.0", ContentHash: "sha256:" + strings.Repeat("c", 64),
 			PreviousVersions: []PreviousVersion{{Version: "1.0.0", ContentHash: wrongHash, TarballURL: "https://x/old"}}},
 	}}
-	_, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, Previous: prev})
+	_, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, RepoURL: testRepoURL, Previous: prev})
 	if err == nil || !strings.Contains(err.Error(), "1.0.0") || !strings.Contains(err.Error(), "bump the version") {
 		t.Fatalf("expected drift error against a historical version, got %v", err)
 	}

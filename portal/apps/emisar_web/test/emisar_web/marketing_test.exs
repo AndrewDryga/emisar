@@ -1916,6 +1916,8 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "packctl catalog build"
       assert html =~ "packctl catalog publish"
       assert html =~ "--base-url"
+      # The build requires the source repository, so a private catalog never links at emisar's.
+      assert html =~ "--repo-url https://github.com/acme/ops-packs"
       assert html =~ "--previous"
       assert html =~ "/v1/packs/"
       assert html =~ "packs/suggest.json"

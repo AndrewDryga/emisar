@@ -1,4 +1,7 @@
 // Package packspec defines the on-disk schema for an emisar action pack.
+//
+// It is internal to emisar despite being importable: it may change in any
+// release. The compatibility contract is the pack YAML, not this Go API.
 package packspec
 
 import (

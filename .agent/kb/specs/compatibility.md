@@ -1,7 +1,7 @@
 ---
 name: compatibility
 sources: [runner/pkg/packspec, runner/pkg/actionspec, runner/testdata/cli_surface.golden, portal/apps/emisar_web/priv/mcp/api-schemas.json, portal/apps/emisar/lib/emisar/canonical_json.ex, install.sh, install-mcp.sh, runner/release/container-packs.txt]
-updated: 2026-11-05
+updated: 2026-11-06
 ---
 
 # Compatibility and deprecation policy
@@ -40,6 +40,10 @@ The 1.0 freeze is a freeze on contract shape and compatibility behavior, not a
 freeze on every pack, policy, or implementation detail. New packs and actions
 can still be published. New fields, commands, and endpoints need to remain
 additive or follow the deprecation path.
+
+No Go package is a compatibility surface. `runner/pkg/actionspec` and
+`runner/pkg/packspec` can be imported, but they are internal to emisar and may
+change in any release; what freezes is the pack and action YAML they decode.
 
 ## Compatibility surfaces frozen at 1.0
 
@@ -432,7 +436,7 @@ doctor
 status
 events tail|cat|grep
 signing init|new-ca|new-cert
-state [check-dispatch-log]
+state
 update
 version
 completion
@@ -586,8 +590,8 @@ as permission to rename the ones it forgot. `action run --arg/--reason/
 --timeout/--stream`, `pack install --hash/--dest/--force`, `pack uninstall --dest/--yes`, `pack suggest
 --catalog/--names-only`, `pack update --dry-run`, `pack diff
 --to/--stat/--registry`, `pack verify --arg`, `audit verify --all`, `events
-tail --lines/-f`, `events grep --action/--type/--event-id/--request-id`, `state
-check-dispatch-log --data-dir`, `signing init --ca-name/--scope/--ttl/--key`,
+tail --lines/-f`, `events grep --action/--type/--event-id/--request-id`,
+`signing init --ca-name/--scope/--ttl/--key`,
 `signing new-ca --ca-name/--ttl/--key`, and `signing new-cert --ca-key-file/--ca-key/--ca-cert/--key-name/--scope/--ttl/--key` are all inside the freeze.
 These command names and flags, including the documented aliases, are public
 inputs. The complete tree is pinned mechanically:
@@ -715,9 +719,12 @@ The attestation identifier `emisar-attestation-v5` and the dispatch certificate
 profile `emisar-x509-profile-v1` are also frozen security formats.
 `packctl` is mostly maintainer tooling, with one customer-facing subset the
 private-registry feature requires and 1.0 therefore freezes: `packctl catalog
-build` (`--packs`, `--out`, `--base-url`, `--previous`), `packctl catalog
-publish` (`--dir`, `--bucket`, `--dry-run`), the global `--json`, and the
-static `v1/` artifact tree `build` emits (the registry layout below).
+build` (`--packs`, `--out`, `--base-url`, `--previous`, and the required
+`--repo-url`), `packctl catalog publish` (`--dir`, `--bucket`, `--dry-run`), the
+global `--json`, and the static `v1/` artifact tree `build` emits (the registry
+layout below). `build` credits each pack to the `vendor` its `pack.yaml`
+declares and links its source under `--repo-url`; it assumes neither and fails
+on a pack without a vendor.
 Customers run these in their own CI to host private registries (the
 private-registry guide documents exactly this flow), so this subset follows
 the same deprecation path as the runner CLI. Every other `packctl` verb and
@@ -752,8 +759,8 @@ never the whole runner.
 
 **What happens on skew.** The runner reads the atomic dispatch snapshot written
 by earlier releases and migrates the old `dedup.jsonl` path when needed. A file
-it cannot read refuses `connect`; `emisar doctor` and
-`emisar state check-dispatch-log` report the same problem offline.
+it cannot read refuses `connect`; `emisar doctor` reports the same problem
+offline.
 
 A broken installed pack loads as degraded (`packs.degraded` log line, doctor
 failure naming the directory) while every healthy pack keeps serving.

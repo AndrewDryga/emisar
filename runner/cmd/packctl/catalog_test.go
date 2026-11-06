@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/andrewdryga/emisar/runner/internal/catalog"
@@ -21,7 +22,7 @@ func TestPackCatalogBuildCmd(t *testing.T) {
 	stdout := captureStdout(t, func() {
 		cmd := packCatalogBuildCmd()
 		cmd.SilenceUsage, cmd.SilenceErrors = true, true
-		cmd.SetArgs([]string{"--packs", packsDir, "--out", out, "--base-url", "https://cdn.example"})
+		cmd.SetArgs([]string{"--packs", packsDir, "--out", out, "--base-url", "https://cdn.example", "--repo-url", testRepoURL})
 		execErr = cmd.Execute()
 	})
 	if execErr != nil {
@@ -47,46 +48,62 @@ func TestPackCatalogBuildCmd(t *testing.T) {
 	}
 }
 
-// The catalog schema requires source_url and homepage, and both are frozen at
-// 1.0. A self-hosted registry must be able to set them: without --repo-url
-// every pack in a third-party catalog links at emisar's GitHub repo, at a path
-// that does not exist there.
-func TestPackCatalogBuildCmd_RepoURLSetsSourceLinks(t *testing.T) {
+const testRepoURL = "https://git.example/infra/packs"
+
+// A private registry's catalog names only the authorship its publisher
+// declared. The build used to default the source repository and vendor to
+// emisar's, so the guide's command credited every customer pack to emisar and
+// linked it at a path in emisar's repository that does not exist.
+func TestPackCatalogBuildCmd_CreditsOnlyDeclaredAuthorship(t *testing.T) {
 	packsDir := t.TempDir()
 	writeValidPack(t, packsDir, "redis")
-	out := filepath.Join(t.TempDir(), "dist")
-	withJSONOut(t, true)
 
-	cmd := packCatalogBuildCmd()
-	cmd.SilenceUsage, cmd.SilenceErrors = true, true
-	cmd.SetArgs([]string{
-		"--packs", packsDir, "--out", out,
-		"--base-url", "https://cdn.example", "--repo-url", "https://git.example/infra/packs",
+	t.Run("--repo-url is required", func(t *testing.T) {
+		cmd := packCatalogBuildCmd()
+		cmd.SilenceUsage, cmd.SilenceErrors = true, true
+		cmd.SetArgs([]string{"--packs", packsDir, "--out", filepath.Join(t.TempDir(), "dist"), "--base-url", "https://cdn.example"})
+		if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), `"repo-url"`) {
+			t.Fatalf("expected a missing --repo-url error, got %v", err)
+		}
 	})
-	var execErr error
-	captureStdout(t, func() { execErr = cmd.Execute() })
-	if execErr != nil {
-		t.Fatalf("catalog build: %v", execErr)
-	}
 
-	body, err := os.ReadFile(filepath.Join(out, "v1/catalog.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var cat catalog.Catalog
-	if err := json.Unmarshal(body, &cat); err != nil {
-		t.Fatalf("catalog JSON: %v", err)
-	}
-	if len(cat.Packs) != 1 {
-		t.Fatalf("packs = %d, want 1", len(cat.Packs))
-	}
-	got := cat.Packs[0]
-	if want := "https://git.example/infra/packs/tree/main/packs/redis"; got.SourceURL != want {
-		t.Errorf("source_url = %q, want %q", got.SourceURL, want)
-	}
-	if want := "https://git.example/infra/packs"; got.Homepage != want {
-		t.Errorf("homepage = %q, want %q", got.Homepage, want)
-	}
+	t.Run("the catalog links the declared repository and vendor", func(t *testing.T) {
+		out := filepath.Join(t.TempDir(), "dist")
+		withJSONOut(t, true)
+		cmd := packCatalogBuildCmd()
+		cmd.SilenceUsage, cmd.SilenceErrors = true, true
+		cmd.SetArgs([]string{"--packs", packsDir, "--out", out, "--base-url", "https://cdn.example", "--repo-url", testRepoURL})
+		var execErr error
+		captureStdout(t, func() { execErr = cmd.Execute() })
+		if execErr != nil {
+			t.Fatalf("catalog build: %v", execErr)
+		}
+
+		body, err := os.ReadFile(filepath.Join(out, "v1/catalog.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(body), "andrewdryga") {
+			t.Errorf("a private catalog links at emisar's repository:\n%s", body)
+		}
+		var cat catalog.Catalog
+		if err := json.Unmarshal(body, &cat); err != nil {
+			t.Fatalf("catalog JSON: %v", err)
+		}
+		if len(cat.Packs) != 1 {
+			t.Fatalf("packs = %d, want 1", len(cat.Packs))
+		}
+		got := cat.Packs[0]
+		if want := testRepoURL + "/tree/main/packs/redis"; got.SourceURL != want {
+			t.Errorf("source_url = %q, want %q", got.SourceURL, want)
+		}
+		if got.Homepage != testRepoURL {
+			t.Errorf("homepage = %q, want %q", got.Homepage, testRepoURL)
+		}
+		if got.Vendor != "acme" {
+			t.Errorf("vendor = %q, want the declared acme", got.Vendor)
+		}
+	})
 }
 
 // `catalog build` errors clearly when the packs dir has no packs.
@@ -94,9 +111,9 @@ func TestPackCatalogBuildCmd_NoPacks(t *testing.T) {
 	empty := t.TempDir()
 	cmd := packCatalogBuildCmd()
 	cmd.SilenceUsage, cmd.SilenceErrors = true, true
-	cmd.SetArgs([]string{"--packs", empty, "--out", filepath.Join(t.TempDir(), "d")})
-	if err := cmd.Execute(); err == nil {
-		t.Fatal("expected error for an empty packs dir")
+	cmd.SetArgs([]string{"--packs", empty, "--out", filepath.Join(t.TempDir(), "d"), "--repo-url", testRepoURL})
+	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "no packs found") {
+		t.Fatalf("expected a no-packs error for an empty packs dir, got %v", err)
 	}
 }
 
@@ -108,7 +125,7 @@ func TestPackCatalogPublishCmd_DryRun(t *testing.T) {
 
 	build := packCatalogBuildCmd()
 	build.SilenceUsage, build.SilenceErrors = true, true
-	build.SetArgs([]string{"--packs", packsDir, "--out", dist, "--base-url", "https://cdn.example"})
+	build.SetArgs([]string{"--packs", packsDir, "--out", dist, "--base-url", "https://cdn.example", "--repo-url", testRepoURL})
 	if err := build.Execute(); err != nil {
 		t.Fatalf("build: %v", err)
 	}

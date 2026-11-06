@@ -279,11 +279,15 @@ still decides trust per account (step 6).
    confirms the checkout before you build if you have the maintainer's public signing key. Requires
    a Go toolchain; check `packctl --version`.
 2. From your pack repository, build the tree. `--packs` names the directory
-   containing your pack directories; `--base-url` is wherever you will host it:
+   containing your pack directories; `--base-url` is wherever you will host it;
+   `--repo-url` is the repository holding the pack source, which each pack links
+   to as `<repo-url>/tree/main/packs/<id>`. Every `pack.yaml` must set `vendor`,
+   or the build fails naming the pack:
 
    ```sh
    packctl catalog build --packs ./packs --out ./dist \
-     --base-url https://packs.acme.internal
+     --base-url https://packs.acme.internal \
+     --repo-url https://github.com/acme/ops-packs
    ```
 
 3. Host it. GCS is native. Immutable objects are precondition-protected and
@@ -328,7 +332,8 @@ rebuild without `--previous` silently starts history from empty:
 ```sh
 curl -fsS https://packs.acme.internal/v1/catalog.json -o current.json
 packctl catalog build --packs ./packs --out ./dist \
-  --base-url https://packs.acme.internal --previous current.json
+  --base-url https://packs.acme.internal \
+  --repo-url https://github.com/acme/ops-packs --previous current.json
 ```
 
 ## 6. Trust it, then certify end to end

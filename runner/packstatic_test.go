@@ -24,7 +24,7 @@ func staticRegistry(t *testing.T, source string) (baseURL, tarballPath string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cat, err := catalog.Build(reg, catalog.BuildOptions{BaseURL: srv.URL})
+	cat, err := catalog.Build(reg, catalog.BuildOptions{BaseURL: srv.URL, RepoURL: "https://git.example/acme/packs"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +38,8 @@ func staticRegistry(t *testing.T, source string) (baseURL, tarballPath string) {
 func staticPack(t *testing.T, version, risk string) string {
 	t.Helper()
 	return writePackTree(t, map[string]string{
-		"pack.yaml":      diffPackYAML(version, "actions/a.yaml"),
+		// A published catalog names the vendor; the build never assumes one.
+		"pack.yaml":      diffPackYAML(version, "actions/a.yaml") + "vendor: acme\n",
 		"actions/a.yaml": diffActionYAML("redis.a", risk, ""),
 	})
 }

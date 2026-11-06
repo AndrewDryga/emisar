@@ -80,7 +80,7 @@ func tarballEntryNames(t *testing.T, tb []byte) map[string]bool {
 func buildFixtureCatalog(t *testing.T) (*packs.Registry, *Catalog) {
 	t.Helper()
 	reg := loadReg(t, threePackRoot(t))
-	cat, err := Build(reg, BuildOptions{BaseURL: testBaseURL})
+	cat, err := Build(reg, BuildOptions{BaseURL: testBaseURL, RepoURL: testRepoURL})
 	if err != nil {
 		t.Fatal(err)
 	}

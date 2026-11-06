@@ -39,10 +39,6 @@ const DefaultPreviousKept = 3
 // will expose as one indivisible object.
 const MaxActionBytes = 32 * 1024
 
-// DefaultRepoURL is the public source repository the catalog links back to
-// for pack and action source. Overridable via BuildOptions.
-const DefaultRepoURL = "https://github.com/andrewdryga/emisar"
-
 // Catalog is the full published catalog.json document.
 type Catalog struct {
 	SchemaVersion int    `json:"schema_version"`
@@ -131,8 +127,9 @@ type BuildOptions struct {
 	// BaseURL is the public HTTPS base the tarball URLs join onto, e.g.
 	// https://registry.emisar.dev. Required.
 	BaseURL string
-	// RepoURL is the source repo for source_url links. Defaults to
-	// DefaultRepoURL when empty.
+	// RepoURL is the source repository each pack's source_url joins onto
+	// (<RepoURL>/tree/main/packs/<id>) and the homepage of a pack that declares
+	// none. Required: a catalog never guesses where a pack's source lives.
 	RepoURL string
 	// Previous, when non-nil, is the currently-published catalog. Build
 	// fails if any pack changed bytes for an already-published id+version
@@ -148,11 +145,24 @@ func Build(reg *packs.Registry, opts BuildOptions) (*Catalog, error) {
 	if opts.BaseURL == "" {
 		return nil, fmt.Errorf("catalog: BaseURL is required")
 	}
-	repoURL := opts.RepoURL
-	if repoURL == "" {
-		repoURL = DefaultRepoURL
+	if opts.RepoURL == "" {
+		return nil, fmt.Errorf("catalog: RepoURL is required")
 	}
+	repoURL := strings.TrimRight(opts.RepoURL, "/")
 	base := strings.TrimRight(opts.BaseURL, "/")
+
+	// The catalog names who authored each pack, so the author has to say it: a
+	// default would credit every pack in a private registry to emisar.
+	var unattributed []string
+	for _, p := range reg.Packs() {
+		if strings.TrimSpace(p.Vendor) == "" {
+			unattributed = append(unattributed, p.ID)
+		}
+	}
+	if len(unattributed) > 0 {
+		return nil, fmt.Errorf("catalog: every pack must declare vendor in its pack.yaml; missing in %s",
+			strings.Join(unattributed, ", "))
+	}
 
 	actionsByPack := map[string][]Action{}
 	for _, a := range reg.Actions() {
@@ -184,7 +194,7 @@ func Build(reg *packs.Registry, opts BuildOptions) (*Catalog, error) {
 			Name:         p.Name,
 			Version:      p.Version,
 			Description:  normalizeDescription(p.Description),
-			Vendor:       vendorOr(p.Vendor),
+			Vendor:       p.Vendor,
 			Homepage:     homepageOr(p.Homepage, repoURL),
 			SourceURL:    repoURL + "/tree/main/packs/" + p.ID,
 			ContentHash:  hash,
@@ -523,13 +533,6 @@ func normalizeSetup(s packspec.Setup) packspec.Setup {
 		out.HostAccess = append(out.HostAccess, normalized)
 	}
 	return out
-}
-
-func vendorOr(v string) string {
-	if v == "" {
-		return "emisar"
-	}
-	return v
 }
 
 func homepageOr(v, repoURL string) string {

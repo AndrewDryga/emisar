@@ -132,7 +132,8 @@ the catalog:
 
 ```sh
 curl -fsS https://registry.emisar.dev/v1/catalog.json -o /tmp/live.json
-packctl catalog build --packs ./packs --out /tmp/dist --previous /tmp/live.json
+packctl catalog build --packs ./packs --out /tmp/dist \
+  --repo-url https://github.com/andrewdryga/emisar --previous /tmp/live.json
 (cd tools && go run ./cmd/mcpeval \
    -mint-partition /path/to/intents.json \
    -mint-catalog /tmp/dist/v1/catalog.json \

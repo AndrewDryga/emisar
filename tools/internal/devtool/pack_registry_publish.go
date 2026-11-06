@@ -15,6 +15,10 @@ import (
 // serving domain, the same document `pack sync` regenerates against.
 const packRegistryCatalogURL = "https://registry.emisar.dev/v1/catalog.json"
 
+// packSourceRepoURL is the repository the official catalog links each pack's
+// source at. packctl requires it explicitly, as it does of every registry.
+const packSourceRepoURL = "https://github.com/andrewdryga/emisar"
+
 // maxPublishedPackCatalogBytes bounds the read of that catalog. The document is
 // a few megabytes; the bound only keeps a wrong response from being read
 // without limit.
@@ -66,7 +70,8 @@ func (a *App) checkPackRegistryPublish(ctx context.Context) error {
 
 	output := filepath.Join(work, "dist")
 	if err := a.run(ctx, a.Root, nil, packctl,
-		"catalog", "build", "--packs", filepath.Join(a.Root, "packs"), "--out", output, "--previous", previous); err != nil {
+		"catalog", "build", "--packs", filepath.Join(a.Root, "packs"), "--out", output,
+		"--repo-url", packSourceRepoURL, "--previous", previous); err != nil {
 		return err
 	}
 	generated, err := os.ReadFile(filepath.Join(output, "v1", "catalog.json"))

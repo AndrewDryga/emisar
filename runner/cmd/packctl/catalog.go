@@ -75,6 +75,11 @@ publishable artifact tree to --out:
   v1/packs/<id>/<version>/<sha256>/pack.tar.gz     immutable pack tarball
   manifest.json                                    upload plan (not published)
 
+The catalog credits each pack to the vendor its pack.yaml declares, links its
+source at <repo-url>/tree/main/packs/<id>, and uses --repo-url as the homepage
+of a pack that declares none. Nothing is assumed: --repo-url is required, and
+the build fails naming every pack without a vendor.
+
 Pass --previous <catalog.json> (the currently-published catalog) to enforce
 the "preserve every version/hash" guarantee: the build fails if any pack
 changed bytes for an already-published id+version — bump the version instead.
@@ -83,8 +88,11 @@ window (previous_versions) and enforces its retirement floor (retired_below):
 that floor is authored in the pack.yaml itself, and the build refuses to lower
 or drop an already-published one.
 
-  packctl catalog build --packs ./packs --out ./dist
-  packctl catalog build --packs ./packs --out ./dist --previous ./current-catalog.json`,
+  packctl catalog build --packs ./packs --out ./dist \
+    --base-url https://packs.acme.internal --repo-url https://github.com/acme/ops-packs
+  packctl catalog build --packs ./packs --out ./dist \
+    --base-url https://packs.acme.internal --repo-url https://github.com/acme/ops-packs \
+    --previous ./current-catalog.json`,
 		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			reg, err := packs.LoadAll([]string{packsDir}, packs.LoadOptions{})
@@ -124,8 +132,9 @@ or drop an already-published one.
 	cmd.Flags().StringVar(&packsDir, "packs", "packs", "packs directory to build from")
 	cmd.Flags().StringVar(&outDir, "out", "dist", "output directory for the artifact tree")
 	cmd.Flags().StringVar(&baseURL, "base-url", defaultRegistryBaseURL, "public base URL tarball URLs join onto")
-	cmd.Flags().StringVar(&repoURL, "repo-url", "", "source repository each pack's source_url and default homepage link at (default: emisar's)")
+	cmd.Flags().StringVar(&repoURL, "repo-url", "", "source repository each pack's source_url and default homepage link at (required)")
 	cmd.Flags().StringVar(&previous, "previous", "", "currently-published catalog.json to check version/hash drift against and carry version history forward from")
+	_ = cmd.MarkFlagRequired("repo-url")
 	return cmd
 }
 

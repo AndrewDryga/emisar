@@ -48,8 +48,9 @@ func withJSONOut(t *testing.T, v bool) {
 }
 
 // writeValidPack drops a minimal, loadable pack into a fresh dir under tmp
-// and returns its root. The pack is the smallest shape LoadOne accepts, so
-// PackHash returns a real content hash the catalog build keys off.
+// and returns its root. The pack is the smallest shape LoadOne accepts, plus
+// the vendor a catalog build requires, so PackHash returns a real content hash
+// the catalog build keys off.
 func writeValidPack(t *testing.T, tmp, id string) string {
 	t.Helper()
 	root := filepath.Join(tmp, id)
@@ -64,6 +65,7 @@ id: `+id+`
 name: t
 version: 0.0.1
 description: t
+vendor: acme
 actions:
   - actions/a.yaml
 `), 0o644))

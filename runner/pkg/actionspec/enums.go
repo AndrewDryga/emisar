@@ -1,5 +1,8 @@
 // Package actionspec defines the schema for actions — primitive LLM-callable
 // capabilities loaded from action packs.
+//
+// It is internal to emisar despite being importable: it may change in any
+// release. The compatibility contract is the action YAML, not this Go API.
 package actionspec
 
 import "fmt"

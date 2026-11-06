@@ -330,6 +330,7 @@ jobs:
           /tmp/packctl catalog build \
             --packs packs \
             --out dist/packs \
+            --repo-url https://github.com/andrewdryga/emisar \
             --previous /tmp/previous.json
 
       # CI proved build(packs, previous=COMMITTED) == committed. This builds

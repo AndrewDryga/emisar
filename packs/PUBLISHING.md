@@ -47,14 +47,17 @@ configured catalog does not by itself make those bytes trusted.
 ## Build
 
 ```bash
-# Build the artifact tree from the repo packs dir.
-packctl catalog build --packs ./packs --out ./dist/packs
+# Build the artifact tree from the repo packs dir. --repo-url is required: the
+# catalog links each pack's source there and never assumes a repository.
+packctl catalog build --packs ./packs --out ./dist/packs \
+  --repo-url https://github.com/andrewdryga/emisar
 
 # Enforce the "preserve every version/hash" guarantee: fetch the currently
 # published catalog first and pass it as --previous. The build FAILS if any
 # pack changed bytes for an already-published id+version — bump the version.
 curl -fsS https://registry.emisar.dev/v1/catalog.json -o ./current-catalog.json
-packctl catalog build --packs ./packs --out ./dist/packs --previous ./current-catalog.json
+packctl catalog build --packs ./packs --out ./dist/packs \
+  --repo-url https://github.com/andrewdryga/emisar --previous ./current-catalog.json
 ```
 
 The build is deterministic: identical packs produce an identical catalog hash
@@ -201,7 +204,8 @@ retired_below: 0.2.4   # 0.2.3 and earlier are now retired
 #    publish. Old tarballs stay installable — retirement blocks dispatch, not
 #    installation.
 curl -fsS https://registry.emisar.dev/v1/catalog.json -o ./current-catalog.json
-packctl catalog build --packs ./packs --out ./dist/packs --previous ./current-catalog.json
+packctl catalog build --packs ./packs --out ./dist/packs \
+  --repo-url https://github.com/andrewdryga/emisar --previous ./current-catalog.json
 packctl catalog publish --dir ./dist/packs --bucket emisar-pack-registry
 
 # 3. Regenerate the BUNDLED catalog in the SAME commit as the pack edit — it is

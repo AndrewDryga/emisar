@@ -11,7 +11,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="pack-registry"
-      updated="September 22, 2026"
+      updated="November 6, 2026"
       toc={[
         {"get-packctl", "1. Get packctl"},
         {"build", "2. Build the registry tree"},
@@ -93,10 +93,16 @@ cd emisar-src/runner && go build -o ~/.local/bin/packctl ./cmd/packctl</.docs_co
       <.docs_h2 id="build">2. Build the registry tree</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <code>--base-url</code>
-        is wherever you will host it. Tarball URLs in the catalog are built on it:
+        is wherever you will host it. Tarball URLs in the catalog are built on it.
+        <code>--repo-url</code>
+        is the repository that holds your pack source. Each pack links to <code>&lt;repo-url&gt;/tree/main/packs/&lt;id&gt;</code>, and to the repository
+        itself when its <code>pack.yaml</code>
+        sets no <code>homepage</code>. Every pack must set <code>vendor</code>, the author
+        the catalog credits. The build fails naming any pack that does not:
       </p>
       <.docs_code phx-no-format label="shell">packctl catalog build --packs ./packs --out ./dist \
-  --base-url https://packs.acme.internal</.docs_code>
+  --base-url https://packs.acme.internal \
+  --repo-url https://github.com/acme/ops-packs</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The output is the whole registry: immutable versioned and content-addressed
         artifacts, plus four mutable pointer objects. The facade aliases let the
@@ -164,7 +170,8 @@ aws s3 cp ./dist/v1/catalog.json s3://acme-pack-registry/v1/catalog.json</.docs_
       </p>
       <.docs_code phx-no-format label="shell">curl -fsS https://packs.acme.internal/v1/catalog.json -o current.json
 packctl catalog build --packs ./packs --out ./dist \
-  --base-url https://packs.acme.internal --previous current.json</.docs_code>
+  --base-url https://packs.acme.internal \
+  --repo-url https://github.com/acme/ops-packs --previous current.json</.docs_code>
 
       <%!-- What it does / does not change --%>
       <.docs_h2 id="tradeoffs">What your registry changes</.docs_h2>

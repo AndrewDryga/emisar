@@ -599,7 +599,8 @@ func (a *App) checkCatalogReproduction(ctx context.Context) error {
 	defer os.RemoveAll(output)
 	committed := filepath.Join(a.Portal, "apps", "emisar", "priv", "packs", "catalog.json")
 	if err := a.run(ctx, a.Root, nil, filepath.Join(a.Root, "bin", "packctl"),
-		"catalog", "build", "--packs", filepath.Join(a.Root, "packs"), "--out", output, "--previous", committed); err != nil {
+		"catalog", "build", "--packs", filepath.Join(a.Root, "packs"), "--out", output,
+		"--repo-url", packSourceRepoURL, "--previous", committed); err != nil {
 		return err
 	}
 	if err := checkPackRegistryPointerContract(a.Root, filepath.Join(output, "manifest.json")); err != nil {

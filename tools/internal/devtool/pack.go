@@ -61,7 +61,7 @@ func (a *App) packSync(ctx context.Context, name string) error {
 	if err := os.RemoveAll(output); err != nil {
 		return err
 	}
-	if err := a.run(ctx, a.Root, nil, filepath.Join(a.Root, "bin", "packctl"), "catalog", "build", "--packs", filepath.Join(a.Root, "packs"), "--out", output, "--previous", previous.Name()); err != nil {
+	if err := a.run(ctx, a.Root, nil, filepath.Join(a.Root, "bin", "packctl"), "catalog", "build", "--packs", filepath.Join(a.Root, "packs"), "--out", output, "--repo-url", packSourceRepoURL, "--previous", previous.Name()); err != nil {
 		return err
 	}
 	catalog, err := os.ReadFile(filepath.Join(output, "v1", "catalog.json"))
