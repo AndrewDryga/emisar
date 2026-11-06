@@ -35,7 +35,14 @@ defmodule EmisarWeb.SSOController do
   alias EmisarWeb.{MarketingAttribution, OIDCIdentityHandoff, RequestContext, UserAuth}
   require Logger
 
-  plug :put_layout, [html: {EmisarWeb.Layouts, :app}] when action in [:begin_identity_link]
+  plug :put_layout,
+       [html: {EmisarWeb.Layouts, :app}]
+       when action in [
+              :begin_invitation,
+              :begin_mfa_enrollment,
+              :begin_member_mfa_reset,
+              :begin_identity_link
+            ]
 
   # The IP boundary runs before lookup on every route that can start OIDC work.
   # Provider work is capped separately, on the canonical loaded provider id, in
@@ -162,8 +169,7 @@ defmodule EmisarWeb.SSOController do
       conn
       |> MarketingAttribution.drop()
       |> put_session(@invitation_stash_key, stash(begun, redirect_uri))
-      |> put_resp_header("cache-control", "no-store")
-      |> redirect(external: begun.authorize_url)
+      |> render_provider_handoff(begun.authorize_url)
     else
       reason ->
         log_failure("invitation_sso_begin_failed", reason)
@@ -190,8 +196,7 @@ defmodule EmisarWeb.SSOController do
          :ok <- validate_authorize_url(begun.authorize_url) do
       conn
       |> put_session(@mfa_enrollment_stash_key, stash(begun, redirect_uri))
-      |> put_resp_header("cache-control", "no-store")
-      |> redirect(external: begun.authorize_url)
+      |> render_provider_handoff(begun.authorize_url)
     else
       reason ->
         log_failure("mfa_enrollment_sso_begin_failed", reason)
@@ -226,7 +231,7 @@ defmodule EmisarWeb.SSOController do
 
       conn
       |> put_session(@member_mfa_reset_stash_key, stash)
-      |> redirect(external: begun.authorize_url)
+      |> render_provider_handoff(begun.authorize_url)
     else
       other ->
         log_failure("member_mfa_reset_sso_begin_failed", other)
@@ -261,14 +266,23 @@ defmodule EmisarWeb.SSOController do
          :ok <- validate_authorize_url(begun.authorize_url) do
       conn
       |> put_session(@identity_link_stash_key, stash(begun, redirect_uri))
-      |> put_resp_header("cache-control", "no-store")
-      |> assign(:page_title, "Opening provider sign-in")
-      |> assign(:authorize_url, begun.authorize_url)
-      |> render(:identity_redirect)
+      |> render_provider_handoff(begun.authorize_url)
     else
       reason ->
         identity_link_begin_error(conn, reason, return_path)
     end
+  end
+
+  # A ceremony that a form POST starts leaves for the IdP through this nonce'd
+  # page, never a 302. Browsers apply `form-action 'self'` to the redirect that
+  # follows a form submission, so a Location at the IdP is refused (Chromium)
+  # and the button appears to do nothing. form-action stays `'self'`.
+  defp render_provider_handoff(conn, authorize_url) do
+    conn
+    |> put_resp_header("cache-control", "no-store")
+    |> assign(:page_title, "Opening provider sign-in")
+    |> assign(:authorize_url, authorize_url)
+    |> render(:identity_redirect)
   end
 
   defp identity_handoff_payload(

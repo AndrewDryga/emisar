@@ -35,6 +35,8 @@ defmodule EmisarWeb.TeamLive do
      |> assign(:member_facts, [])
      |> assign(:security_facts, unavailable_security_facts())
      |> assign(:pending_requests, [])
+     |> assign(:pending_requests_metadata, empty_pending_metadata())
+     |> assign(:can_approve_requests?, false)
      |> assign(:provider_facts, [])
      |> assign(:expanded_scopes, MapSet.new())
      |> assign(:editing_id, nil)
@@ -511,10 +513,12 @@ defmodule EmisarWeb.TeamLive do
     )
   end
 
+  # Turning a request away is cleanup, so it needs the permission alone: a
+  # downgraded plan can no longer approve, but must still empty its queue.
   def handle_event("dismiss_request", %{"id" => id}, socket) do
     Permissions.gated(
       socket,
-      SSO.subject_can_configure_sso?(socket.assigns.current_subject),
+      SSO.subject_can_manage_sso?(socket.assigns.current_subject),
       &do_dismiss_request(&1, id)
     )
   end
@@ -1764,11 +1768,13 @@ defmodule EmisarWeb.TeamLive do
         {advertisements, pack_load_error?} =
           RunnerScope.account_pack_advertisements(socket.assigns.current_subject)
 
+        # The params land before the stance reads: the request queue pages on
+        # its own cursor in them.
         socket
         |> assign(:member_facts, member_facts)
         |> assign(:metadata, meta)
-        |> assign_team_stance()
         |> assign(:filter_params, params)
+        |> assign_team_stance()
         |> assign(:directory_by_membership_id, directory_by_membership_id)
         |> assign(:runners, runners)
         |> assign(:runners_by_id, runners_by_id)
@@ -1802,6 +1808,7 @@ defmodule EmisarWeb.TeamLive do
         |> assign(:enabled_sso_provider_count, 0)
         |> assign(:sso_load_error?, true)
         |> assign(:pending_requests, [])
+        |> assign(:pending_requests_metadata, empty_pending_metadata())
         |> assign(:pending_requests_error?, sso_admin?(socket))
         |> assign(:sync_stats, %{})
         |> assign(:sync_stats_error?, sso_admin?(socket))
@@ -1907,13 +1914,19 @@ defmodule EmisarWeb.TeamLive do
 
     # Manual-provisioning requests waiting on an admin, across every connection —
     # the SSO hub now lives on Team, so its needs-attention queue does too. Gated
-    # (manage_sso + Team plan) inside the read, so a non-SSO-admin just gets [].
+    # on manage_sso alone inside the read (a downgraded plan still dismisses
+    # them), so a non-SSO-admin just gets []. Approving also needs the plan.
     # For an admin, a failed read hides people locked out waiting on them, so it
     # keeps the section and reports the failure.
-    {pending_requests, pending_requests_error?} =
-      case SSO.list_pending_link_request_facts(subject) do
-        {:ok, facts, _meta} -> {facts, false}
-        _ -> {[], sso_admin?}
+    # The queue pages on its own `pending_` cursor, so the roster's filters and
+    # page survive paging it (and vice versa).
+    pending_opts =
+      LiveTable.params_to_opts(socket.assigns[:filter_params] || %{}, [], prefix: "pending_")
+
+    {pending_requests, pending_requests_metadata, pending_requests_error?} =
+      case SSO.list_pending_link_request_facts(subject, pending_opts) do
+        {:ok, facts, metadata} -> {facts, metadata, false}
+        _ -> {[], empty_pending_metadata(), sso_admin?}
       end
 
     # Per-connection directory-sync counts (users + distinct groups), so a synced
@@ -1931,7 +1944,9 @@ defmodule EmisarWeb.TeamLive do
     |> assign(:require_sso_available?, count > 0)
     |> assign(:sso_load_error?, providers_failed? or posture_failed?)
     |> assign(:pending_requests, pending_requests)
+    |> assign(:pending_requests_metadata, pending_requests_metadata)
     |> assign(:pending_requests_error?, pending_requests_error?)
+    |> assign(:can_approve_requests?, SSO.subject_can_configure_sso?(subject))
     |> maybe_assign_approval_access(pending_requests, pending_requests_error?)
     |> assign(:sync_stats, sync_stats)
     |> assign(:sync_stats_error?, sync_stats_error?)
@@ -1941,6 +1956,8 @@ defmodule EmisarWeb.TeamLive do
   # who simply lacks the permission gets the quiet nothing they already got; a
   # failed read is only reported to someone the section is actually for.
   defp sso_admin?(socket), do: SSO.subject_can_manage_sso?(socket.assigns.current_subject)
+
+  defp empty_pending_metadata, do: %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0}
 
   defp maybe_assign_approval_access(socket, _requests, true), do: socket
 
@@ -1992,8 +2009,9 @@ defmodule EmisarWeb.TeamLive do
     do: Map.new(access_by_id, fn {id, access} -> {id, fun.(access)} end)
 
   # -- Pending SSO access requests (manual provisioning) ----------------
-  # People blocked at sign-in until an admin approves. Gated on configure_sso;
-  # each acts on a request from the loaded list, then refreshes the SSO state.
+  # People blocked at sign-in until an admin approves. Approving is gated on
+  # configure_sso, dismissing on manage_sso; each acts on a request from the
+  # loaded list, then refreshes the SSO state.
 
   # Runners AND every pack the account carries — deliberately wider than the
   # picker, which only offers the packs the CHOSEN runners advertise: a grant may
@@ -2063,11 +2081,13 @@ defmodule EmisarWeb.TeamLive do
 
   defp approve_request_with_access(socket, request, access) do
     case SSO.approve_link_request(request, access, socket.assigns.current_subject) do
+      # Approval creates or links a member without a team broadcast, so the
+      # roster reloads here; the reload refreshes the request queue too.
       {:ok, _result} ->
         {:noreply,
          socket
          |> put_flash(:info, approval_success_message(request))
-         |> assign_sso_state()}
+         |> reload()}
 
       {:error, :scim_identity_unmatched} ->
         {:noreply,
@@ -2440,13 +2460,18 @@ defmodule EmisarWeb.TeamLive do
             </.empty_state>
           </section>
 
+          <%!-- A positive total with an empty page is a page emptied under the
+               operator: the section stays so its pager can lead back. --%>
           <section
-            :if={@live_action == :index and not @pending_requests_error? and @pending_requests != []}
+            :if={
+              @live_action == :index and not @pending_requests_error? and
+                (@pending_requests != [] or (@pending_requests_metadata.count || 0) > 0)
+            }
             id="pending-access-requests"
           >
             <.section_header
               title="Pending access requests"
-              count={length(@pending_requests)}
+              count={@pending_requests_metadata.count}
               count_tone={:amber}
             />
             <ul class="divide-y divide-zinc-800/70">
@@ -2493,8 +2518,32 @@ defmodule EmisarWeb.TeamLive do
                       Approve
                     </.button>
                   </.tooltip>
+                  <%!-- A downgraded plan keeps the queue so it can be dismissed;
+                       approving would add members through SSO, so it locks. --%>
+                  <.tooltip
+                    :if={
+                      not unmatched_directory_request?(request_facts) and not @can_approve_requests?
+                    }
+                    id={"review-access-request-#{request_facts.request.id}-plan"}
+                    text="Single sign-on requires the Team plan or above."
+                    placement={:bottom}
+                    class="shrink-0"
+                  >
+                    <.button
+                      id={"review-access-request-#{request_facts.request.id}"}
+                      type="button"
+                      variant={:secondary}
+                      tone={:amber}
+                      size={:sm}
+                      icon="state.locked"
+                      disabled
+                      aria-describedby={"review-access-request-#{request_facts.request.id}-plan"}
+                    >
+                      {approval_action_label(request_facts)}
+                    </.button>
+                  </.tooltip>
                   <.button
-                    :if={not unmatched_directory_request?(request_facts)}
+                    :if={not unmatched_directory_request?(request_facts) and @can_approve_requests?}
                     id={"review-access-request-#{request_facts.request.id}"}
                     type="button"
                     variant={:secondary}
@@ -2522,11 +2571,21 @@ defmodule EmisarWeb.TeamLive do
               </.list_row>
             </ul>
 
+            <LiveTable.paginator
+              id="pending-access-requests"
+              path={~p"/app/#{@current_account}/settings/team"}
+              metadata={@pending_requests_metadata}
+              filter_params={@filter_params}
+              prefix="pending_"
+              page_count={length(@pending_requests)}
+              class="mt-3"
+            />
+
             <%= for request_facts <- @pending_requests do %>
               <% request = request_facts.request %>
               <% approval_dialog_id = "approve-request-dialog-#{request.id}" %>
               <.confirm_dialog
-                :if={not unmatched_directory_request?(request_facts)}
+                :if={not unmatched_directory_request?(request_facts) and @can_approve_requests?}
                 id={approval_dialog_id}
                 title={approval_title(request_facts)}
                 confirm_label={approval_confirm_label(request_facts)}

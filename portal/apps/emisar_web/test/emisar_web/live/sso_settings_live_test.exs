@@ -131,6 +131,56 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       refute has_element?(lv, "#scim-token-#{provider.id}")
     end
 
+    test "member and directory-sync actions keep an open mapping draft and access editor", %{
+      conn: conn,
+      account: account,
+      provider: provider
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+      render_click(lv, "enable_scim", %{"id" => provider.id})
+      provider = Repo.reload!(provider)
+      chosen = sync_group(provider, "chosen", "Chosen group")
+      edited = sync_group(provider, "edited", "Edited group")
+
+      {:ok, %{membership: membership}} =
+        SSO.scim_provision_user(provider, %{
+          external_id: "directory-member",
+          email: "directory-member@example.com",
+          full_name: "Directory Member"
+        })
+
+      refresh_directory(lv)
+      render_click(lv, "add_mapping_form", %{})
+      render_click(lv, "select_group", %{"scope" => "role", "group_id" => chosen.id})
+
+      lv
+      |> form("#create-mapping-#{provider.id}", %{"mapping" => %{"role" => "operator"}})
+      |> render_change()
+
+      render_click(lv, "edit_group_access", %{"group_id" => edited.id})
+
+      lv
+      |> form("#edit-group-access-#{edited.id}", %{
+        "runner_access_mapping" => %{"runner_access_mode" => "all"}
+      })
+      |> render_change()
+
+      before = :sys.get_state(lv.pid).socket.assigns
+
+      assert render_click(lv, "suspend_member", %{"membership_id" => membership.id}) =~
+               "Member suspended."
+
+      assert render_click(lv, "rotate_scim", %{"id" => provider.id}) =~ "SCIM token rotated."
+
+      after_actions = :sys.get_state(lv.pid).socket.assigns
+      assert after_actions.adding_mapping
+      assert after_actions.mapping_form.params == before.mapping_form.params
+      assert after_actions.group_pickers == before.group_pickers
+      assert after_actions.group_access_editor.group_id == edited.id
+      assert has_element?(lv, "#create-mapping-#{provider.id}")
+      assert has_element?(lv, "#edit-group-access-#{edited.id} input[value='all'][checked]")
+    end
+
     test "external enable, disable, and re-enable seed usable forms", %{
       conn: conn,
       account: account,
@@ -1898,6 +1948,47 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       disabled = render_click(lv, "disable_scim", %{"id" => provider.id})
       assert disabled =~ "Directory sync disabled."
       refute Repo.reload!(provider).scim_enabled
+    end
+
+    test "a Team account can disable sync left on by Enterprise and keep its sign-in", %{
+      conn: conn,
+      account: account,
+      provider: provider,
+      user: user
+    } do
+      {:ok, provider, _raw} = SSO.enable_scim(provider, Fixtures.Subjects.subject_for(user))
+
+      {_deleted, _} =
+        Emisar.Billing.Subscription.Query.all()
+        |> Emisar.Billing.Subscription.Query.by_account_id(account.id)
+        |> Repo.delete_all()
+
+      Fixtures.Accounts.create_subscription(account, "team")
+
+      assert Emisar.Billing.sso_available?(account)
+      refute Emisar.Billing.directory_sync_available?(account)
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      refute html =~ "This connection is dormant"
+      refute has_element?(lv, "#directory-sync-#{provider.id}")
+      assert has_element?(lv, "#connection-provisioning", "Directory sync is still on")
+      assert has_element?(lv, "#connection-danger-zone", "Disable directory sync")
+      assert has_element?(lv, "#connection-danger-zone", "Delete this connection")
+
+      lv
+      |> element("#connection-danger-zone #disable-scim-#{provider.id}-confirm")
+      |> render_click()
+
+      assert render(lv) =~ "Directory sync disabled."
+      reloaded = Repo.reload!(provider)
+      refute reloaded.scim_enabled
+      assert is_nil(reloaded.scim_token_hash)
+      assert reloaded.enabled
+      assert is_nil(reloaded.deleted_at)
+      refute has_element?(lv, "#connection-danger-zone", "Disable directory sync")
+      assert has_element?(lv, "#connection-danger-zone", "Delete this connection")
+      assert has_element?(lv, "#connection-provisioning", "Sync members and groups")
     end
 
     test "the token is never rendered back after dismissal / reload", %{

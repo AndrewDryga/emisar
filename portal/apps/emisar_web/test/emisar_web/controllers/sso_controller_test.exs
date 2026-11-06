@@ -16,6 +16,23 @@ defmodule EmisarWeb.SSOControllerTest do
   @identity_link_stash_key "sso_identity_link"
   @code_link ~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})"
 
+  # A ceremony a form POST starts reaches the IdP through the nonce'd handoff
+  # page. A 302 there is refused by browsers that apply `form-action 'self'`
+  # to the redirect after a form submission, so no Location may be sent, and
+  # form-action must stay exactly 'self'.
+  defp assert_provider_handoff(conn) do
+    body = html_response(conn, 200)
+    assert body =~ ~s(data-authorize-url="https://idp.test/auth")
+    assert body =~ "window.location.replace(target)"
+    assert get_resp_header(conn, "location") == []
+    assert get_resp_header(conn, "cache-control") == ["no-store"]
+    assert [csp] = get_resp_header(conn, "content-security-policy")
+    assert csp =~ "; form-action 'self'; "
+    assert [nonce] = Regex.run(~r/'nonce-([^']+)'/, csp, capture: :all_but_first)
+    assert body =~ ~s(<script nonce="#{nonce}">)
+    conn
+  end
+
   defmodule StubOIDC do
     @behaviour Emisar.SSO.OIDC
 
@@ -486,7 +503,7 @@ defmodule EmisarWeb.SSOControllerTest do
           ~p"/app/#{reset.account}/settings/team/#{reset.target.id}/reset_mfa/sso"
         )
 
-      assert redirected_to(conn) == "https://idp.test/auth"
+      assert_provider_handoff(conn)
 
       stash = get_session(conn, @member_mfa_reset_stash_key)
       assert stash.actor_membership_id == reset.actor.id
@@ -533,7 +550,7 @@ defmodule EmisarWeb.SSOControllerTest do
         |> Plug.Conn.put_private(:plug_skip_csrf_protection, false)
         |> post(path, %{"_csrf_token" => csrf_token})
 
-      assert redirected_to(allowed) == "https://idp.test/auth"
+      assert_provider_handoff(allowed)
     end
 
     test "the callback resets the target without replacing or re-minting the actor session", %{
@@ -683,7 +700,7 @@ defmodule EmisarWeb.SSOControllerTest do
       target = enrolled_target(account)
 
       begun = post(conn, ~p"/app/#{account}/settings/team/#{target.id}/reset_mfa/sso")
-      assert redirected_to(begun) == "https://idp.test/auth"
+      assert_provider_handoff(begun)
 
       completed =
         begun
@@ -1023,7 +1040,7 @@ defmodule EmisarWeb.SSOControllerTest do
         |> recycle()
         |> post(~p"/sign_in/sso/invitation", %{"provider_id" => fixture.provider.id})
 
-      assert redirected_to(begun) == "https://idp.test/auth"
+      assert_provider_handoff(begun)
       assert get_session(begun, "invitation_sso")
       refute get_session(begun, @stash_key)
 
@@ -1120,7 +1137,7 @@ defmodule EmisarWeb.SSOControllerTest do
         |> recycle()
         |> post(~p"/sign_in/sso/invitation", %{"provider_id" => provider.id})
 
-      assert redirected_to(begun) == "https://idp.test/auth"
+      assert_provider_handoff(begun)
       assert byte_size(begun.resp_cookies["_emisar_web_key"].value) < 4096
 
       completed = begun |> recycle() |> invitee_callback(%{email: email})
@@ -1259,7 +1276,7 @@ defmodule EmisarWeb.SSOControllerTest do
       fixture = sso_only_member(conn)
 
       begun = post(fixture.conn, ~p"/app/#{fixture.account}/mfa_setup/sso")
-      assert redirected_to(begun) == "https://idp.test/auth"
+      assert_provider_handoff(begun)
       assert get_session(begun, "mfa_enrollment_sso")
 
       completed =

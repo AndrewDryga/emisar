@@ -197,7 +197,6 @@ defmodule EmisarWeb.SSOSettingsLive do
         |> assign(:scim_token, current_scim_token(socket.assigns.scim_token, provider))
         |> assign(:mapping_filter_params, Map.drop(params, ["id"]))
         |> assign(:adding_mapping, false)
-        |> assign(:adding_runner_access_mapping, false)
         |> load_group_mappings(provider, params)
         |> load_synced_members(provider, params)
         |> load_refused_changes(provider)
@@ -346,7 +345,8 @@ defmodule EmisarWeb.SSOSettingsLive do
   defp schedule_directory_refresh(socket), do: socket
 
   # Only read projections refresh. Drafts, selected groups and one-time secrets
-  # belong to the operator's interaction and are never reseeded by this timer.
+  # belong to the operator's interaction and are never reseeded by this timer
+  # or by the post-mutation `reload/1` that shares it.
   defp refresh_directory(socket) do
     subject = socket.assigns.current_subject
 
@@ -1374,22 +1374,14 @@ defmodule EmisarWeb.SSOSettingsLive do
     end
   end
 
-  # A full reload after a provider mutation: re-fetch the one connection :show
-  # is on (its row may have changed — SCIM toggled, edited) with its group→role
-  # mappings and pending manual-link requests, so enabling directory sync
-  # (re)seeds the panels and approving/dismissing a request drops it from the
-  # list. If the connection vanished (deleted), load_show falls back to the
-  # overview.
-  defp reload(socket) do
-    case socket.assigns.provider do
-      nil ->
-        socket
-
-      provider ->
-        params = Map.put(socket.assigns.mapping_filter_params, "id", provider.id)
-        load_show(socket, params)
-    end
-  end
+  # The refresh after a mutation on this page (a member's role or suspension,
+  # enabling the connection, SCIM enable/rotate/disable). It re-reads the same
+  # projections the directory timer does, so enabling directory sync seeds the
+  # panels and disabling it clears them, while an open role composer or group
+  # access editor keeps the operator's draft. A vanished connection falls back
+  # to the overview.
+  defp reload(%{assigns: %{provider: nil}} = socket), do: socket
+  defp reload(socket), do: refresh_directory(socket)
 
   # Refresh the connection's mapping list after a mapping CRUD, leaving the rest
   # of the page's loaded state untouched.
@@ -2069,7 +2061,12 @@ defmodule EmisarWeb.SSOSettingsLive do
                   :if={!@can_configure_directory_sync? and SSO.supports_scim?(@provider.kind)}
                   class="max-w-prose text-sm leading-relaxed text-zinc-400"
                 >
-                  Sync members and groups from your identity provider with the Enterprise plan.
+                  <%= if @provider.scim_enabled do %>
+                    Directory sync is still on, but its token is refused until the Enterprise plan
+                    returns.
+                  <% else %>
+                    Sync members and groups from your identity provider with the Enterprise plan.
+                  <% end %>
                   <.link
                     navigate={~p"/pricing"}
                     class="font-medium text-brand-400 underline decoration-zinc-700 underline-offset-4 hover:text-brand-300"
@@ -2130,6 +2127,12 @@ defmodule EmisarWeb.SSOSettingsLive do
             <section id="connection-danger-zone" class="min-w-0 xl:col-start-1">
               <.section_header title="Danger zone" />
               <div class="divide-y divide-zinc-800/70">
+                <%!-- The full provisioning controls need the Enterprise plan;
+                     retiring a token that is still stored never does. --%>
+                <.disable_directory_sync_zone
+                  :if={@provider.scim_enabled and not @can_configure_directory_sync?}
+                  provider={@provider}
+                />
                 <.confirm_zone
                   title="Delete this connection"
                   phx-click={show_confirm_dialog("delete-provider-#{@provider.id}")}
@@ -2174,6 +2177,44 @@ defmodule EmisarWeb.SSOSettingsLive do
     """
   end
 
+  # Containing a leaked directory token must not cost the operator their working
+  # sign-in. Offering only "delete the connection" made it, so every plan that
+  # can no longer configure directory sync (Team, or no paid plan) keeps this
+  # permission-only cleanup row.
+  attr :provider, :map, required: true
+
+  defp disable_directory_sync_zone(assigns) do
+    ~H"""
+    <.confirm_zone
+      title="Disable directory sync"
+      phx-click={open_confirm("disable-scim-#{@provider.id}")}
+    >
+      <:body>
+        Clears this connection's directory token, so your identity provider stops pushing
+        members and the token stops working. Sign-in through this connection is
+        unaffected. Members keep the roles the directory last gave them.
+      </:body>
+      Disable directory sync
+    </.confirm_zone>
+
+    <.confirm_dialog
+      id={"disable-scim-#{@provider.id}"}
+      title="Disable directory sync"
+      confirm_label="Disable sync"
+      pending_label="Disabling…"
+      on_confirm={
+        JS.push("disable_scim", value: %{id: @provider.id})
+        |> close_confirm("disable-scim-#{@provider.id}")
+      }
+    >
+      <:body>
+        The directory token stops working immediately. Members keep their current roles. From
+        now on, you manage members here.
+      </:body>
+    </.confirm_dialog>
+    """
+  end
+
   # A dormant connection remains visible so an owner can retire configuration
   # and tokens without paying to regain the cleanup controls.
   attr :provider, :map, required: true
@@ -2189,37 +2230,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         action needs a plan.
       </p>
       <div class="mt-4 divide-y divide-zinc-800/70">
-        <%!-- Containing a leaked directory token must not cost the operator their
-             working sign-in. Offering only "delete the connection" made it. --%>
-        <.confirm_zone
-          :if={@provider.scim_enabled}
-          title="Disable directory sync"
-          phx-click={open_confirm("disable-scim-#{@provider.id}")}
-        >
-          <:body>
-            Clears this connection's directory token, so your identity provider stops pushing
-            members and the token stops working. Sign-in through this connection is
-            unaffected. Members keep the roles the directory last gave them.
-          </:body>
-          Disable directory sync
-        </.confirm_zone>
-
-        <.confirm_dialog
-          :if={@provider.scim_enabled}
-          id={"disable-scim-#{@provider.id}"}
-          title="Disable directory sync"
-          confirm_label="Disable sync"
-          pending_label="Disabling…"
-          on_confirm={
-            JS.push("disable_scim", value: %{id: @provider.id})
-            |> close_confirm("disable-scim-#{@provider.id}")
-          }
-        >
-          <:body>
-            The directory token stops working immediately. Members keep their current roles. From
-            now on, you manage members here.
-          </:body>
-        </.confirm_dialog>
+        <.disable_directory_sync_zone :if={@provider.scim_enabled} provider={@provider} />
 
         <.confirm_zone
           title="Delete this connection"

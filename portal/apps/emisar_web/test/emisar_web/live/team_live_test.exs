@@ -414,6 +414,95 @@ defmodule EmisarWeb.TeamLiveTest do
       assert Emisar.Repo.reload(request) == nil
     end
 
+    test "a downgraded plan still dismisses access requests and locks approval", %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+      Fixtures.Accounts.create_subscription(account, "team", status: "canceled")
+      refute Emisar.Billing.sso_available?(account)
+
+      provider =
+        Fixtures.SSO.create_identity_provider(account_id: account.id, name: "Okta workforce")
+
+      request = Fixtures.SSO.create_link_request(provider: provider, full_name: "Dana Ops")
+
+      other_account = Fixtures.Accounts.create_account(name: "Other Workspace")
+      other_provider = Fixtures.SSO.create_identity_provider(account_id: other_account.id)
+      foreign = Fixtures.SSO.create_link_request(provider: other_provider, full_name: "Foreign")
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+      review = "#pending-access-request-#{request.id} #review-access-request-#{request.id}"
+
+      assert has_element?(lv, "#{review}[disabled]", "Approve")
+
+      assert has_element?(
+               lv,
+               "#review-access-request-#{request.id}-plan",
+               "Single sign-on requires the Team plan or above."
+             )
+
+      refute has_element?(lv, "#approve-request-dialog-#{request.id}")
+
+      assert render_click(lv, "approve_request", %{"id" => request.id}) =~
+               "You don&#39;t have permission to do that."
+
+      assert Emisar.Repo.reload(request)
+
+      render_click(lv, "dismiss_request", %{"id" => foreign.id})
+      assert Emisar.Repo.reload(foreign)
+
+      lv |> element("#dismiss-request-#{request.id}-confirm") |> render_click()
+
+      assert render(lv) =~ "Access request dismissed."
+      assert Emisar.Repo.reload(request) == nil
+      refute has_element?(lv, "#pending-access-requests")
+    end
+
+    test "approving an access request adds the new member to the roster", %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn, %{account: %{plan: "team"}})
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+
+      # Provisioning names the member from the captured IdP claims.
+      request =
+        Fixtures.SSO.create_link_request(
+          provider: provider,
+          full_name: "Dana Ops",
+          email: "dana@corp.test",
+          claims: %{"name" => "Dana Ops"}
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+      refute has_element?(lv, "#members-section", "Dana Ops")
+
+      lv |> element("#approve-request-dialog-#{request.id}-confirm") |> render_click()
+
+      assert render(lv) =~ "Dana Ops is approved and can sign in now."
+      assert has_element?(lv, "#members-section", "Dana Ops")
+      refute has_element?(lv, "#pending-access-requests")
+    end
+
+    test "pending access requests page past the first 20 and count them all", %{conn: conn} do
+      {conn, owner, account} = register_and_log_in(conn, %{account: %{plan: "team"}})
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+
+      requests =
+        for n <- 1..21,
+            do: Fixtures.SSO.create_link_request(provider: provider, full_name: "Pending #{n}")
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+
+      assert has_element?(lv, "#pending-access-requests header", "21")
+      assert has_element?(lv, "#pending-access-requests-pager", "20 / 21")
+      first_page = Enum.filter(requests, &has_element?(lv, "#pending-access-request-#{&1.id}"))
+      assert length(first_page) == 20
+
+      lv |> element("#pending-access-requests-pager a", "Next") |> render_click()
+
+      assert [last] = requests -- first_page
+      assert has_element?(lv, "#pending-access-request-#{last.id}")
+      refute has_element?(lv, "#pending-access-request-#{hd(first_page).id}")
+      assert has_element?(lv, "#pending-access-requests header", "21")
+      assert has_element?(lv, "#member-row-#{owner.id}")
+    end
+
     test "directory-unmatched requests light Team navigation and cannot be approved", %{
       conn: conn
     } do
@@ -1804,6 +1893,19 @@ defmodule EmisarWeb.TeamLiveTest do
 
       assert html =~ "Only owners and admins can manage members."
       assert Emisar.Repo.reload!(target_membership).role == :operator
+    end
+
+    test "dismissing an SSO access request is refused and the request stays", %{
+      lv: lv,
+      account: account
+    } do
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+      request = Fixtures.SSO.create_link_request(provider: provider, full_name: "Dana Ops")
+
+      assert render_click(lv, "dismiss_request", %{"id" => request.id}) =~
+               "You don&#39;t have permission to do that."
+
+      assert Emisar.Repo.reload(request)
     end
 
     test "remove is refused and the membership survives", %{

@@ -3114,7 +3114,10 @@ defmodule Emisar.SSO do
     end
   end
 
-  @doc "Disable directory sync: clear the SCIM token + `scim_enabled: false`. `manage_sso` + enterprise."
+  @doc """
+  Disable directory sync: clear the SCIM token + `scim_enabled: false`. `manage_sso` only,
+  on any plan, so a downgraded account can still retire its directory token.
+  """
   def disable_scim(%IdentityProvider{id: id}, %Subject{} = subject) do
     with :ok <- ensure_can_manage_sso(subject) do
       IdentityProvider.Query.not_deleted()
@@ -3722,8 +3725,9 @@ defmodule Emisar.SSO do
   The connection is joined in the SAME paginated read, so a request whose
   provider was deleted is simply not listed — it can never be offered with a
   silently defaulted `RunnerAccess.none()` behind it. A DISABLED connection keeps
-  its defaults; only deletion removes the request. `manage_sso` + Team or
-  Enterprise; account-scoped. Returns `{:ok, [facts], %Paginator.Metadata{}}`.
+  its defaults; only deletion removes the request. `manage_sso` on any plan, so a
+  downgraded account still sees the requests it can dismiss; account-scoped.
+  Returns `{:ok, [facts], %Paginator.Metadata{}}`.
   """
   def list_pending_link_request_facts(%Subject{} = subject, opts \\ []) do
     with :ok <- ensure_can_manage_sso(subject),
@@ -3964,7 +3968,10 @@ defmodule Emisar.SSO do
 
   defp ensure_approval_runner_access_allowed(%LinkRequest{}, _access, %Subject{}), do: :ok
 
-  @doc "Dismiss a pending manual-link request without provisioning. `manage_sso` + Team or Enterprise; account-scoped. `{:ok, request}`."
+  @doc """
+  Dismiss a pending manual-link request without provisioning. `manage_sso` on any plan,
+  so a downgraded account can still turn requests away; account-scoped. `{:ok, request}`.
+  """
   def dismiss_link_request(%LinkRequest{id: id}, %Subject{} = subject) do
     with :ok <- ensure_can_manage_sso(subject),
          {:ok, request} <- fetch_link_request(id, subject) do
