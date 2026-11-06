@@ -3,8 +3,14 @@ import Config
 # config/runtime.exs runs every boot, including releases. Put env-driven
 # secrets here so the container can be rebuilt without leaking values.
 #
+# Database (prod needs one of the two paths; boot raises if neither is set):
+#   DATABASE_URL           — ecto://user:pass@host/db, the direct/local path
+#                            (compose, CI); production does not set it
+#   DATABASE_HOST, DATABASE_USER, DATABASE_NAME — the passwordless Cloud SQL
+#                            Auth Proxy path production uses when DATABASE_URL is
+#                            absent (see the optional DATABASE_* vars below)
+#
 # Required prod env vars (boot raises if missing):
-#   DATABASE_URL           — ecto://user:pass@host/db (direct/local database path)
 #   SECRET_KEY_BASE        — `mix phx.gen.secret`
 #   PADDLE_API_KEY         — OR set EMISAR_DISABLE_BILLING=1 to use stub
 #   PADDLE_WEBHOOK_SECRET  — required when PADDLE_API_KEY is set
@@ -28,9 +34,6 @@ import Config
 #                            For plain TLS with the system trust store, put
 #                            `?ssl=true` in DATABASE_URL — Ecto parses it and it
 #                            overrides the default here.
-#   DATABASE_HOST          — host for passwordless proxy connections
-#   DATABASE_USER          — user for passwordless proxy connections
-#   DATABASE_NAME          — database for passwordless proxy connections
 #   DATABASE_PORT          — proxy port (default 5432)
 #   DATABASE_ROLE          — PostgreSQL role assumed at connection startup
 #   POSTMARK_API_TOKEN     — mailer adapter (Postmark); OR set EMISAR_DISABLE_MAIL=1
@@ -424,9 +427,10 @@ sso_allowed_idp_hosts =
 
 config :emisar, :sso_allowed_idp_hosts, sso_allowed_idp_hosts
 
-# Always use the stub Paddle client in dev / test unless a real key was set
-# (the sandbox e2e harness exports one via `./run e2e billing`).
-if config_env() in [:dev, :test] do
+# Use the stub Paddle client in dev unless a real key was set (the sandbox e2e
+# harness exports one via `./run e2e billing`, which runs the dev server). Tests
+# keep test.exs's stub even when a shell exports a key, so they never call Paddle.
+if config_env() == :dev do
   if dev_paddle_api_key = env.("PADDLE_API_KEY") do
     config :emisar,
       paddle_client: Emisar.Billing.PaddleClient.Live,
@@ -440,7 +444,10 @@ end
 
 # Version enforcement is the deliberate operator flip `compatibility.md`
 # describes: the thresholds stay in config.exs, and a peer below the minimum is
-# only warned about until the matching switch is set on the deployment.
-config :emisar, Emisar.Compat,
-  runner_enforce: env.("EMISAR_ENFORCE_RUNNER_VERSION") == "true",
-  mcp_enforce: env.("EMISAR_ENFORCE_MCP_VERSION") == "true"
+# only warned about until the matching switch is set on the deployment. Tests
+# keep test.exs's flags, so a shell export can't flip enforcement in the suite.
+if config_env() != :test do
+  config :emisar, Emisar.Compat,
+    runner_enforce: env.("EMISAR_ENFORCE_RUNNER_VERSION") == "true",
+    mcp_enforce: env.("EMISAR_ENFORCE_MCP_VERSION") == "true"
+end

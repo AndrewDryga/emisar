@@ -12,7 +12,6 @@ import Config
 # Configure Mix tasks and generators
 config :emisar,
   ecto_repos: [Emisar.Repo],
-  paddle_client: Emisar.Billing.PaddleClient.Live,
   # Web-side handler `Emisar.Auth` calls when it needs to disconnect
   # active LiveView sockets (the broadcast struct itself lives in the
   # `phoenix` package, which emisar deliberately doesn't depend on).
@@ -50,11 +49,9 @@ config :emisar, Emisar.Compat,
   runner_minimum: ">= 0.10.0",
   runner_recommended: ">= 0.31.1",
   runner_current: "0.31.1",
-  runner_enforce: false,
   mcp_minimum: ">= 0.3.0",
   mcp_recommended: ">= 0.17.1",
-  mcp_current: "0.17.1",
-  mcp_enforce: false
+  mcp_current: "0.17.1"
 
 # Configures the mailer
 #

@@ -366,12 +366,12 @@ defmodule EmisarWeb.ApprovalDetailLive do
              |> assign_decisions(request)
              |> put_flash(:info, "Runbook approved. Eligible actions are being dispatched.")}
 
-          {:ok, {request, %_{} = _run}} ->
+          {:ok, {request, %_{} = run}} ->
             {:noreply,
              socket
              |> assign_request(request)
              |> assign_decisions(request)
-             |> put_flash(:info, approval_flash(params))}
+             |> put_flash(:info, approval_flash(params, run))}
 
           # Recorded but below the distinct-approver threshold — still pending.
           {:ok, {request, :pending}} ->
@@ -754,10 +754,15 @@ defmodule EmisarWeb.ApprovalDetailLive do
   # these same params, so the match cannot fail and the confirmation reads the
   # typed choices back out of the context's own contract rather than re-reading
   # the operator's strings.
-  defp approval_flash(params) do
+  # Only an agent-key run mints a standing grant (Approvals skips keyless runs), so
+  # any other approval reads back as single-use whatever the form carried.
+  defp approval_flash(params, run) do
     {:ok, input} = Approvals.decision_input(params)
-    grant_flash(input)
+    if grant_eligible?(run), do: grant_flash(input), else: grant_flash(%{duration: :once})
   end
+
+  defp grant_eligible?(%{api_key_id: api_key_id}) when is_binary(api_key_id), do: true
+  defp grant_eligible?(_run), do: false
 
   defp grant_flash(%{duration: :once}), do: "Approved for this run only."
 
@@ -1261,6 +1266,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
               execution_request?={@execution_request?}
               execution_kind={@request.context["execution_kind"]}
               self_blocked?={@self_blocked?}
+              grant_eligible?={grant_eligible?(@run)}
               already_decided?={@already_decided?}
               approved_count={@approved_count}
               decisions_error?={@decisions_error?}
@@ -1313,6 +1319,8 @@ defmodule EmisarWeb.ApprovalDetailLive do
   # requester and self-approval is forbidden; already_decided? hides both forms
   # once they've voted. The CONTEXT re-checks both (IL-15) — these are cosmetic.
   attr :self_blocked?, :boolean, default: false
+  # Only an agent-key run can mint a standing grant, so only it offers reuse.
+  attr :grant_eligible?, :boolean, default: false
   attr :already_decided?, :boolean, default: false
   attr :approved_count, :integer, default: 0
   attr :decisions_error?, :boolean, default: false
@@ -1483,7 +1491,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                  affordance is gone. --%>
             <p
               :if={
-                not @execution_request? and not @self_blocked? and
+                not @execution_request? and not @self_blocked? and @grant_eligible? and
                   is_nil(@approval_block) and length(@grant_duration_options) <= 1
               }
               class="text-[11px] leading-relaxed text-zinc-400"
@@ -1492,7 +1500,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
             </p>
             <.disclosure
               :if={
-                not @execution_request? and not @self_blocked? and
+                not @execution_request? and not @self_blocked? and @grant_eligible? and
                   is_nil(@approval_block) and length(@grant_duration_options) > 1
               }
               id="grant-reuse"

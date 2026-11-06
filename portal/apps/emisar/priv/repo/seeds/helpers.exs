@@ -175,11 +175,12 @@ defmodule Emisar.Seeds.Helpers do
   # has its subscription DELETED — so a reseed onto an account that was paid in a
   # prior run doesn't leave a stale row that misreports the plan.
   def seed_subscription(%Account{} = account, plan) do
-    if plan == "free" do
-      Repo.delete_all(Subscription.Query.by_account_id(Subscription.Query.all(), account.id))
-    else
-      {:ok, _} =
-        Billing.upsert_subscription(account.id, %{plan: plan, status: "active"}, manual: true)
+    # Seed rows are never Paddle's, so drop whatever an earlier run wrote and
+    # grant a paid tier the complimentary way staff support uses.
+    Repo.delete_all(Subscription.Query.by_account_id(Subscription.Query.all(), account.id))
+
+    if plan != "free" do
+      {:ok, _} = Billing.grant_complimentary_plan(account, plan)
     end
 
     account

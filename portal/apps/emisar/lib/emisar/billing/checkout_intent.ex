@@ -28,8 +28,7 @@ defmodule Emisar.Billing.CheckoutIntent do
       values: [
         :provider_unavailable,
         :invalid_provider_data,
-        :ambiguous_create,
-        :persistence_failed
+        :ambiguous_create
       ]
 
     timestamps()

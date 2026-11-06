@@ -164,7 +164,8 @@ func (a *App) waitForDependencies(ctx context.Context, workspace Workspace) erro
 }
 
 // upForDatabase is the route every test and gate phase takes: the Portal test
-// environment reads DATABASE_URL and nothing else, so these phases require and
+// environment reads only PGHOST, PGPORT and MIX_TEST_PARTITION (config/test.exs;
+// runtime.exs reads DATABASE_URL in prod only), so these phases require and
 // wait for Postgres alone. They used to demand a Keycloak URL they never
 // contacted, and to wait for nothing at all — an absent database surfaced as a
 // Postgrex failure partway through `ecto.create`.

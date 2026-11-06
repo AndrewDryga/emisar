@@ -54,7 +54,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
         reason: "needs review",
         args: %{},
         initiating_membership_id: requested_by.id,
-        api_key_id: opts[:api_key_id],
+        api_key_id: request_api_key_id(requested_by, opts),
         pack_ref: Fixtures.Catalog.default_pack_ref(),
         expected_pack_hash: Fixtures.Catalog.default_pack_hash(),
         status: :pending_approval
@@ -67,6 +67,19 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
       )
 
     Repo.reload!(request)
+  end
+
+  # An agent key asking is the ordinary case and the only one that can mint a
+  # standing grant; `api_key_id: nil` models an operator dispatching from the console.
+  defp request_api_key_id(requested_by, opts) do
+    case Keyword.fetch(opts, :api_key_id) do
+      {:ok, api_key_id} ->
+        api_key_id
+
+      :error ->
+        {_raw, key} = Fixtures.ApiKeys.create_api_key(created_by_membership_id: requested_by.id)
+        key.id
+    end
   end
 
   defp pending_execution_request(account, requested_by) do
@@ -682,6 +695,27 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     # tracks it as @grant_duration), and the scope picker appears.
     assert changed =~ ~r/<option(?=[^>]*\bvalue="one_day")(?=[^>]*\bselected)[^>]*>/
     assert changed =~ ~s(name="scope")
+  end
+
+  test "an operator-dispatched run offers no reuse and approves for this run only", %{
+    conn: conn
+  } do
+    # Approvals mints a standing grant only for an agent-key run, so a console run
+    # must neither offer reuse nor claim a grant, even if a window is posted.
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_request(account, owner, api_key_id: nil)
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+    refute has_element?(lv, "#grant-reuse")
+    refute html =~ "Standing grants are disabled"
+
+    html =
+      lv
+      |> form("#approval-decision-form")
+      |> render_submit(%{"decision" => "approve", "duration" => "one_day"})
+
+    assert html =~ "Approved for this run only."
+    refute html =~ "Standing grant active"
   end
 
   test "the reuse disclosure stays open while the decision form is edited", %{conn: conn} do

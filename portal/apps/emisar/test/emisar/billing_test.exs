@@ -759,6 +759,24 @@ defmodule Emisar.BillingTest do
   end
 
   describe "grant_complimentary_plan/2" do
+    test "mix emisar.set_plan writes the complimentary row a staff grant can change" do
+      account = Fixtures.Accounts.create_account()
+      Mix.shell(Mix.Shell.Process)
+      on_exit(fn -> Mix.shell(Mix.Shell.IO) end)
+
+      Mix.Tasks.Emisar.SetPlan.run([account.slug, "enterprise"])
+
+      assert %Subscription{plan: "enterprise", status: "complimentary"} =
+               Repo.one(Subscription)
+
+      # The staff support action can now change and revoke it.
+      assert {:ok, %Subscription{plan: "team"}} =
+               Billing.grant_complimentary_plan(account, "team")
+
+      Mix.Tasks.Emisar.SetPlan.run([account.slug, "free"])
+      assert Repo.one(Subscription) == nil
+    end
+
     test "grants and replaces the existing subscription row" do
       account = Fixtures.Accounts.create_account()
 

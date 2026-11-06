@@ -4,11 +4,13 @@ defmodule Mix.Tasks.Emisar.SetPlan do
   Flip an account onto a plan WITHOUT a Paddle subscription — for a
   support-managed enterprise or custom deal that's invoiced outside self-serve.
 
-  It writes a manual `subscriptions` row (no `paddle_subscription_id`), which is
-  exactly how the demo account is enterprise: the billing page then shows the
+  It writes a complimentary `subscriptions` row (no `paddle_subscription_id`)
+  through `Billing.grant_complimentary_plan/2`, the path the
+  `emisar.admin.plan.grant` support action uses, which is how the demo account is
+  enterprise: the billing page then shows the
   "handled with our team" note, offers no self-serve portal, and the plan's
   entitlements (SCIM, limits, audit retention) apply. The change is audited
-  (`Billing.upsert_subscription` logs the plan transition).
+  (the grant records the entitlement change).
 
       mix emisar.set_plan acme enterprise
       mix emisar.set_plan 019f3582-... team
@@ -44,15 +46,26 @@ defmodule Mix.Tasks.Emisar.SetPlan do
           )
         end
 
-        {:ok, _sub} =
-          Emisar.Billing.upsert_subscription(account.id, %{plan: plan, status: "active"},
-            manual: true
-          )
+        # The same complimentary-plan path the emisar.admin.plan.grant support action
+        # uses, so a later staff grant or revoke can still change this row.
+        result =
+          if plan == "free",
+            do: Emisar.Billing.revoke_complimentary_plan(account),
+            else: Emisar.Billing.grant_complimentary_plan(account, plan)
 
-        Mix.shell().info(
-          "✓ #{account.name} (#{account.slug}) is now on the #{plan} plan " <>
-            "— support-managed, no Paddle subscription."
-        )
+        case result do
+          {:ok, _} ->
+            Mix.shell().info(
+              "✓ #{account.name} (#{account.slug}) is now on the #{plan} plan " <>
+                "— support-managed, no Paddle subscription."
+            )
+
+          {:error, reason} ->
+            Mix.raise(
+              "#{account.slug} kept its plan: #{inspect(reason)}. A Paddle or older " <>
+                "support-managed row is in the way; convert it before granting."
+            )
+        end
 
       {:error, _} ->
         Mix.raise("No account matches #{inspect(id_or_slug)}")
