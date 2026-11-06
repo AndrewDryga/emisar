@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="connect-multiple-accounts"
-      updated="August 22, 2026"
+      updated="November 6, 2026"
       toc={[
         {"binding", "One connection, one account"},
         {"servers", "One MCP server entry per account"},
@@ -71,6 +71,22 @@
   }
 })}</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
+        Codex CLI and Grok CLI use TOML, where each entry is a table:
+      </p>
+      <.docs_code phx-no-format label="config.toml — one table per account">[mcp_servers.emisar-prod]
+command = "emisar-mcp"
+
+[mcp_servers.emisar-prod.env]
+EMISAR_URL = "https://emisar.dev"
+EMISAR_API_KEY = "emk-…the prod account's key…"
+
+[mcp_servers.emisar-staging]
+command = "emisar-mcp"
+
+[mcp_servers.emisar-staging.env]
+EMISAR_URL = "https://emisar.dev"
+EMISAR_API_KEY = "emk-…the staging account's key…"</.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         The snippet shape and each client's config location are in <.link
           navigate={~p"/docs/connect-cli-agent"}
           class="text-brand-400 hover:text-brand-300"
@@ -78,7 +94,12 @@
         The console generates a ready snippet per client, and a
         client registered with
         <.docs_inline_code>claude mcp add</.docs_inline_code>
+        or
+        <.docs_inline_code>grok mcp add</.docs_inline_code>
         needs a second registration under the other name.
+        <.docs_inline_code>emisar-mcp connect</.docs_inline_code>
+        writes only the entry named <.docs_inline_code>emisar</.docs_inline_code>, so it leaves per-account entries like
+        these alone.
       </p>
 
       <.docs_h2 id="cli">The CLI: stored accounts</.docs_h2>
