@@ -376,12 +376,69 @@ cases:
       alignment_seconds: 300
       aligner: ALIGN_MEAN
       page_size: 25
-      page_cursor: cursor-in
     expect:
       stdout_contains:
         - compute.googleapis.com/instance/cpu/utilization
         - harness-vm
         - "0.42"
+  - name: gcp.metric_query-follows-anchored-cursor-after-clock-advance
+    action: gcp.metric_query
+    env: *logging-clock
+    args: &metric-query
+      project: example-prod
+      metric_type: compute.googleapis.com/instance/cpu/utilization
+      resource_filter: 'resource.type = "gce_instance"'
+      window_minutes: 60
+      alignment_seconds: 300
+      aligner: ALIGN_MEAN
+      page_size: 1
+    resolve_args: &metric-first-page
+      page_cursor:
+        argv: [/bin/sh, /packs/gcp-monitoring/test/fixtures/metric-first-page.sh, example-prod, compute.googleapis.com/instance/cpu/utilization, 'resource.type = "gce_instance"', "60", "300", ALIGN_MEAN, "1"]
+    expect:
+      json:
+        /timeSeries/0/resource/labels/instance_id: "1002"
+        /timeSeries/0/points/0/value/doubleValue: 0.84
+      stdout_not_contains: [nextPageToken]
+    probes:
+      - name: the original interval and provider cursor reached Monitoring unchanged
+        argv: [curl, -fsS, --cacert, /packs/gcp-monitoring/test/fixtures/server.crt, https://gcp-api:8443/probe/state]
+        expect:
+          stdout_contains: ['"pageToken": "metric.next+/_=-~"', '"interval.endTime": "2023-11-14T22:13:20Z"']
+          stdout_not_contains: ['2023-11-14T22:15:20Z']
+  - name: gcp.metric_query-follows-max-provider-cursor
+    action: gcp.metric_query
+    env: *logging-clock
+    args: {<<: *metric-query, resource_filter: 'resource.type = "gce_instance" AND resource.labels.instance_id = "max_cursor"'}
+    resolve_args:
+      page_cursor:
+        argv: [/bin/sh, /packs/gcp-monitoring/test/fixtures/metric-first-page.sh, example-prod, compute.googleapis.com/instance/cpu/utilization, 'resource.type = "gce_instance" AND resource.labels.instance_id = "max_cursor"', "60", "300", ALIGN_MEAN, "1"]
+    expect:
+      json: {/timeSeries/0/resource/labels/instance_id: "1002"}
+  - name: gcp.metric_query-rejects-changed-query-locally
+    action: gcp.metric_query
+    env: *logging-clock
+    args: {<<: *metric-query, project: another-prod, resource_filter: 'resource.type = "gce_instance" AND resource.labels.instance_id = "1002"'}
+    resolve_args: *metric-first-page
+    expect: {status: failure, exit: [2], stderr_contains: [Invalid Cloud Monitoring continuation]}
+    probes:
+      - name: only the original query reached the provider
+        argv: [curl, -fsS, --cacert, /packs/gcp-monitoring/test/fixtures/server.crt, https://gcp-api:8443/probe/state]
+        expect:
+          stdout_contains: ['"interval.endTime": "2023-11-14T22:13:20Z"']
+          stdout_not_contains: [pageToken, 'instance_id =']
+  - name: gcp.metric_query-rejects-future-cursor
+    action: gcp.metric_query
+    env: *logging-clock
+    args: *metric-query
+    resolve_args:
+      page_cursor:
+        argv: [/bin/sh, /packs/gcp-monitoring/test/fixtures/metric-future-cursor.sh, example-prod, compute.googleapis.com/instance/cpu/utilization, 'resource.type = "gce_instance"', "60", "300", ALIGN_MEAN, "1"]
+    expect: {status: failure, exit: [2], stderr_contains: [Invalid Cloud Monitoring continuation]}
+  - name: gcp.metric_query-rejects-unanchored-provider-cursor
+    action: gcp.metric_query
+    args: {<<: *metric-query, page_cursor: metric.next+/_=-~}
+    expect: {status: failure, exit: [2], stderr_contains: [Invalid Cloud Monitoring continuation]}
   # The full retention window at weekly alignment is the advertised maximum;
   # the probe proves the script turned it into a 730-day interval and passed
   # the aligner, alignment period, and page size through to the API.

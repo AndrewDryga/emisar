@@ -245,17 +245,39 @@ class Handler(BaseHTTPRequestHandler):
                 }
             )
             return
-        if path == f"/api/0/projects/{ORG}/{PROJECT}/rules/":
+        if path == f"/api/0/organizations/{ORG}/workflows/":
+            if "project" not in query or "per_page" not in query:
+                self.send_json({"detail": "project and per_page are required"}, 400)
+                return
+            if query["project"] == ["forbidden"]:
+                self.send_json({"detail": "You do not have permission to perform this action."}, 403)
+                return
+            if query["project"] == ["empty"]:
+                self.send_json([], link=self.link_header(path, "0:0:0", False))
+                return
+            if query["project"] != [PROJECT]:
+                self.send_json({"detail": "The requested project does not exist"}, 404)
+                return
+            alerts = [
+                {
+                    "id": "9001",
+                    "name": "High volume",
+                    "enabled": True,
+                    "triggers": {"logicType": "any-short", "conditions": [{"type": "event_frequency_count", "comparison": 100}]},
+                    "actionFilters": [{"logicType": "all", "conditions": [], "actions": [{"type": "email", "config": {"targetType": "team", "targetIdentifier": "12"}}]}],
+                    "config": {"frequency": 30},
+                    "detectorIds": ["7001"],
+                },
+                {"id": "9002", "name": "New high-priority issue", "enabled": False, "triggers": {"conditions": []}, "actionFilters": [], "config": {"frequency": 60}, "detectorIds": ["7001"]},
+            ]
+            limit = int(query["per_page"][0])
+            if not 1 <= limit <= 100:
+                self.send_json({"detail": "Invalid per_page"}, 400)
+                return
+            offset = 1 if query.get("cursor") == [NEXT_CURSOR] else 0
             self.send_json(
-                [
-                    {
-                        "id": "9001",
-                        "name": "High volume",
-                        "conditions": [{"id": "sentry.rules.conditions.event_frequency.EventFrequencyCondition", "value": 100}],
-                        "actions": [{"id": "sentry.mail.actions.NotifyEmailAction", "targetType": "Team"}],
-                        "frequency": 30,
-                    }
-                ]
+                alerts[offset:offset + limit],
+                link=self.link_header(path, NEXT_CURSOR, offset + limit < len(alerts)),
             )
             return
 

@@ -131,8 +131,47 @@ cases:
     args: {organization: acme, project: backend}
     expect:
       json:
-        /0/name: High volume
-        /0/frequency: 30
+        /results/0/name: High volume
+        /results/0/config/frequency: 30
+        /results/0/triggers/conditions/0/type: event_frequency_count
+        /results/0/actionFilters/0/actions/0/type: email
+        /pagination/has_more: false
+
+  - name: sentry.list_alert_rules-pages-with-a-cursor
+    action: sentry.list_alert_rules
+    args: {organization: acme, project: backend, limit: 1}
+    expect:
+      json:
+        /results/0/id: "9001"
+        /pagination/has_more: true
+        /pagination/next_page_cursor: "1700000000000:1:0"
+
+  - name: sentry.list_alert_rules-follows-the-cursor
+    action: sentry.list_alert_rules
+    args: {organization: acme, project: backend, limit: 1, page_cursor: "1700000000000:1:0"}
+    expect:
+      json:
+        /results/0/id: "9002"
+        /results/0/enabled: false
+        /pagination/has_more: false
+
+  - name: sentry.list_alert_rules-empty-project
+    action: sentry.list_alert_rules
+    args: {organization: acme, project: empty}
+    expect:
+      json:
+        /results: []
+        /pagination/has_more: false
+
+  - name: sentry.list_alert_rules-preserves-provider-denial
+    action: sentry.list_alert_rules
+    args: {organization: acme, project: forbidden}
+    expect:
+      status: failure
+      exit: [22]
+      reason_contains: [process exited with code 22]
+      stdout_not_contains: ["You do not have permission to perform this action."]
+      stderr_contains: ["You do not have permission to perform this action."]
 
   - action: sentry.set_issue_status
     args: {organization: acme, issue_id: "1234567890", status: resolved}

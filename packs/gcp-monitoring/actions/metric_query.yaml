@@ -6,7 +6,8 @@ risk: low
 description: >
   Query one metric type over a trailing window ending now, optionally
   narrowing by a Monitoring resource filter. Returns FULL time-series data and
-  a next_page_cursor when another page exists. The window reaches 730 days,
+  a query-bound next_page_cursor when another page exists. Continuations keep
+  the first page's time interval even when executed later. The window reaches 730 days,
   Google's retention for Compute Engine, GKE, Cloud Storage, BigQuery, Cloud
   SQL, load balancer, custom, agent and Prometheus metrics (full resolution
   for six weeks, 10-minute points after that); every other family, including
@@ -82,10 +83,10 @@ args:
     type: string
     required: false
     default: ""
-    description: Opaque continuation cursor from the previous result. Pass the token that result returned, with the other arguments unchanged.
+    description: Opaque query-bound continuation from the previous result, with all other arguments unchanged. The 2127-character bound includes an anchored timestamp and fingerprint plus up to 2048 supported provider-cursor characters.
     validation:
       pattern: "^[A-Za-z0-9._~+/=-]*$"
-      max_length: 2048
+      max_length: 2127
 execution:
   script:
     path: scripts/monitoring_api.sh
