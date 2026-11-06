@@ -163,15 +163,15 @@ func TestAdminContainerLogViewBoundary(t *testing.T) {
 	}
 }
 
-// Qualified from the registry's immutable 0.3.11 artifact, independently loaded
+// Qualified from the registry's immutable 0.3.13 artifact, independently loaded
 // and validated at its exact pack hash. These are NOT regenerated from HEAD.
 // Retaining that identity is safe for this regression only while BOTH Logging
 // files remain byte-identical; any Logging change needs a qualified new pin.
-const qualifiedLoggingPin = "gcp-monitoring=0.3.11|sha256:ba5d8317195c40d7d3cc8740d73cd20b8bc7060ae3580129fe8b00ec0293bef9"
+const qualifiedLoggingPin = "gcp-monitoring=0.3.13|sha256:e4edd4210cbe3b050e6b9c96d934a66f22eaa13eeed924af0e4d9c485ce96aef"
 
 var qualifiedLoggingFiles = map[string]string{
-	"actions/log_entries.yaml": "687220bf98f2ffb4fbed75bed47eb263e77b7c978c5550cdcc9af06bd3f17b19",
-	"scripts/logging_api.sh":   "2a279467db499f2aacde30da7fa59ae657a92dafb3c05e360b8c426da4504edd",
+	"actions/log_entries.yaml": "c1f44e8bd2a46dbba9cc48e182a76088cb5c67a0fd43621df200e3ca089275a0",
+	"scripts/logging_api.sh":   "a183a8ab5afd0467a032f97a017687c6ffe3c83923688e60cddf48f6d99332b6",
 }
 
 func adminLoggingPinMatches(currentPin, pin, packDir string, files map[string]string) error {
@@ -217,7 +217,7 @@ func TestAdminLoggingPinRequiresExactQualifiedContract(t *testing.T) {
 		{name: "script changed", pin: qualifiedLoggingPin, changed: "scripts/logging_api.sh"},
 		{name: "action missing", pin: qualifiedLoggingPin, missing: "actions/log_entries.yaml"},
 		{name: "script missing", pin: qualifiedLoggingPin, missing: "scripts/logging_api.sh"},
-		{name: "wrong retained version", pin: strings.Replace(qualifiedLoggingPin, "0.3.11", "0.3.10", 1)},
+		{name: "wrong retained version", pin: "gcp-monitoring=0.0.1|" + strings.SplitN(qualifiedLoggingPin, "|", 2)[1]},
 		{name: "wrong retained hash", pin: qualifiedLoggingPin + "0"},
 		{name: "unqualified retained identity", pin: "gcp-monitoring=0.3.10|sha256:02240406a1fe11a6f0c3210eab444090643fa6f41134b8fb7c56c4af2f93cafa"},
 	} {
