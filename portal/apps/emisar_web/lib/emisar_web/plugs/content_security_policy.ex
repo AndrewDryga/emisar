@@ -1,18 +1,21 @@
 defmodule EmisarWeb.Plugs.ContentSecurityPolicy do
   @moduledoc """
   Sends a hardened `Content-Security-Policy` header on every HTML
-  response. Layered on top of Phoenix's `put_secure_browser_headers`
-  (which only sets the bare minimum X-Frame-Options / X-XSS-Protection
-  / referrer-policy defaults).
+  response. Layered on top of Phoenix's `put_secure_browser_headers`,
+  which sets `referrer-policy`, `x-content-type-options`,
+  `x-permitted-cross-domain-policies` and a base `content-security-policy`
+  (`base-uri 'self'; frame-ancestors 'self';`) that this plug replaces at
+  send time.
 
   Defaults are deliberately strict — anything we don't actively need is
   blocked. Today we load:
 
-    * scripts: same-origin (our `app.js`) plus a per-request `'nonce-…'`
-      stamped onto the only inline `<script>` we emit (the per-page
-      JSON-LD block in `root.html.heex`). `'unsafe-inline'` and
+    * scripts: same-origin (our `app.js` or `marketing.js` bundle) plus a
+      per-request `'nonce-…'` stamped onto each inline `<script>` we emit
+      (the per-page JSON-LD block in `root.html.heex`, the checkout page's
+      Paddle init and the SSO identity redirect). `'unsafe-inline'` and
       `'unsafe-eval'` are never allowed — the nonce is assigned to
-      `conn.assigns.csp_nonce` for the layout to read.
+      `conn.assigns.csp_nonce` for templates to read.
     * styles: same-origin and `'unsafe-inline'` — Phoenix LiveView's
       colocated `<style>` blocks rely on inline styles. (See
       hexdocs.pm/phoenix_live_view/colocated_hook for the relevant
@@ -95,9 +98,9 @@ defmodule EmisarWeb.Plugs.ContentSecurityPolicy do
   end
 
   # Per-request directives. `script-src` carries the nonce so the only
-  # inline scripts we emit — the per-page JSON-LD in root.html.heex and the
-  # checkout page's Paddle init — run without ever opening the door to
-  # `'unsafe-inline'`.
+  # inline scripts we emit — the per-page JSON-LD in root.html.heex, the
+  # checkout page's Paddle init and the SSO identity redirect — run without
+  # ever opening the door to `'unsafe-inline'`.
   defp directives(nonce, frame_ancestors) do
     [
       {"default-src", ["'self'"]},

@@ -7,8 +7,8 @@ defmodule EmisarWeb.AccountRedirectController do
   `/app/runners/keys/new`, `/app/runs`, `/app/approvals`, `/app/runbooks`,
   `/app/runbooks/new`, `/app/runbooks/import`, `/app/policies`, `/app/packs`,
   `/app/audit`, `/app/audit/export`, `/app/agents`, `/app/agents/connect`,
-  `/app/team`, `/app/team/invite`, `/app/sso`, `/app/sso/new`, `/app/billing`,
-  `/activate`).
+  `/app/team`, `/app/team/invite`, `/app/service-accounts`, `/app/sso`,
+  `/app/sso/new`, `/app/billing`, `/activate`).
 
   `require_signed_in` has already resolved the cookie's live sessions (or sent
   a browser with none to `/sign_in`). One signed-in workspace forwards straight

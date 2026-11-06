@@ -569,9 +569,12 @@ defmodule Emisar.OAuth do
   Internal — the MCP `:authenticate` plug (pre-auth; the bearer access
   token is the credential, resolved into the Subject downstream). Resolve a
   presented access token to its backing API key + account for `resource`.
-  Validates the token is live, not revoked, carries the `mcp` scope, and is
-  audience-bound to that resource before loading the backing key (which carries
-  attribution). Returns `{:error, :invalid}` for anything off.
+  Validates the token is live, not revoked, and audience-bound to that resource
+  before loading the backing key (which carries attribution); the key must still
+  be usable and the account active. The `mcp` scope needs no check: every token
+  has it by construction, because consent narrows the requested scope through
+  `narrow_scope/1` and exchange and refresh copy it. Returns `{:error, :invalid}`
+  for anything off.
   """
   @spec resolve_access_token(String.t(), String.t()) ::
           {:ok, %{api_key: term(), account: term(), token: Token.t()}} | {:error, :invalid}

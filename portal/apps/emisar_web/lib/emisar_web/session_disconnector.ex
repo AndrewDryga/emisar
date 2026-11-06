@@ -1,9 +1,9 @@
 defmodule EmisarWeb.SessionDisconnector do
   @moduledoc """
-  Web-side broadcaster called by `Emisar.Auth` when a "kill this user's
-  live sessions" event needs to land on every open LiveView socket
-  (suspend membership, force password reset, password change "log out
-  other devices", admin "end all sessions").
+  Web-side broadcaster called by `Emisar.Auth` (and `Emisar.Admin`, for staff
+  sessions) when ended or changed sessions need to land on every open
+  LiveView socket (a sign-out or revoked session; a Member's suspension,
+  removal or role change; an MFA reset; an admin's "end all sessions").
 
   Lives in `emisar_web` because the broadcast message has to be a
   `%Phoenix.Socket.Broadcast{}` struct (that's what `Phoenix.LiveView.Channel`

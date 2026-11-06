@@ -1,9 +1,10 @@
 defmodule EmisarWeb.NotFoundError do
   @moduledoc """
-  Raised when a slugged tenant route (`/app/:account_id_or_slug/…`) resolves to
-  no membership the requester holds. Carries `plug_status: 404` so Phoenix renders
-  the 404 page — a non-member slug is indistinguishable from a nonexistent one
-  (404, never 403, no tenant-existence leak; see `Accounts.fetch_membership_by_account_id_or_slug/2`).
+  Raised for a tenant-scope miss under `/app/:account_id_or_slug/…`: an id or
+  slug that names no workspace, a workspace and session that don't agree, or a
+  page target the subject can't reach. Carries `plug_status: 404` so Phoenix
+  renders the 404 page. A known workspace this browser has no session for is
+  not a miss: `EmisarWeb.UserAuth` sends the request to that workspace's sign-in.
   """
   defexception message: "Not Found", plug_status: 404
 end

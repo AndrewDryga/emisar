@@ -81,9 +81,10 @@ defmodule EmisarWeb.SCIM.GroupController do
   def update(conn, _params),
     do: bad_request(conn, "invalidSyntax", "PATCH requires a SCIM PatchOp with `Operations`.")
 
-  # DELETE /scim/v2/Groups/:id — emptying the group's membership + recomputing
-  # the affected members' roles (a group delete is "nobody is in it anymore").
-  # 204 No Content; the upsert always succeeds (see the moduledoc).
+  # DELETE /scim/v2/Groups/:id — retire the group and its memberships, then
+  # recompute the affected members' roles (a group delete is "nobody is in it
+  # anymore"). 204 No Content; an unknown id is a 404, and any other refusal
+  # renders its SCIM error.
   def delete(conn, %{"id" => id}) do
     case SSO.scim_delete_group(conn.assigns.scim_provider, id) do
       {:ok, _summary} -> send_resp(conn, :no_content, "")
