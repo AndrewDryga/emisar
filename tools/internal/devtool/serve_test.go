@@ -158,3 +158,16 @@ func TestServeReportsAnAlreadyRunningServerWithoutEveryDependency(t *testing.T) 
 		t.Fatalf("output = %q", out)
 	}
 }
+
+// The dev Keycloak listens on loopback, which the portal's IdP address guard
+// refuses unless it is listed, so serve must name it or no SSO ceremony starts.
+func TestDevSSOAllowedIDPHostsNamesTheWorkspaceKeycloak(t *testing.T) {
+	for keycloakURL, want := range map[string]string{
+		"https://localhost:30344": "localhost:30344",
+		"":                        "",
+	} {
+		if got := devSSOAllowedIDPHosts(keycloakURL); got != want {
+			t.Errorf("devSSOAllowedIDPHosts(%q) = %q, want %q", keycloakURL, got, want)
+		}
+	}
+}

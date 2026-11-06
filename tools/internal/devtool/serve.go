@@ -349,6 +349,18 @@ func (a *App) servePID(port int) (int, error) {
 	return pid, nil
 }
 
+// devSSOAllowedIDPHosts names the workspace's Keycloak for the portal's IdP
+// address guard. The dev Keycloak listens on loopback, which the guard refuses
+// unless EMISAR_SSO_ALLOWED_IDP_HOSTS lists it, so without this no SSO
+// ceremony can start under ./run serve; docker-compose.yml lists it the same way.
+func devSSOAllowedIDPHosts(keycloakURL string) string {
+	parsed, err := url.Parse(keycloakURL)
+	if keycloakURL == "" || err != nil {
+		return ""
+	}
+	return parsed.Host
+}
+
 func serveInvocation(interactive bool) (string, []string) {
 	if interactive {
 		return "iex", []string{"-S", "mix", "phx.server"}
@@ -436,6 +448,9 @@ func (a *App) serve(ctx context.Context, interactive bool) error {
 		"EMISAR_LISTEN_PORT="+strconv.Itoa(listenPort),
 		"EMISAR_LISTEN_IP="+listenIP,
 	)
+	if allowed := devSSOAllowedIDPHosts(workspace.KeycloakURL); allowed != "" && os.Getenv("EMISAR_SSO_ALLOWED_IDP_HOSTS") == "" {
+		command.Env = append(command.Env, "EMISAR_SSO_ALLOWED_IDP_HOSTS="+allowed)
+	}
 	command.Stdin, command.Stdout, command.Stderr = a.In, a.Out, a.Err
 	configureProcessGroup(command)
 	if err := command.Start(); err != nil {
