@@ -241,8 +241,34 @@ func (a *App) ensurePortalTestDatabase(ctx context.Context, env map[string]strin
 	return nil
 }
 
+// changedPortalBase is the commit the changed-only checks diff against. Coop names
+// a task's base in COOP_REVIEW_BASE, so a worker who has already committed still
+// has those changes checked; without it this is a pre-commit check against HEAD.
+func (a *App) changedPortalBase(ctx context.Context) string {
+	if base := strings.TrimSpace(os.Getenv("COOP_REVIEW_BASE")); base != "" {
+		if _, err := a.output(ctx, a.Root, nil, "git", "rev-parse", "--verify", "--quiet", base+"^{commit}"); err == nil {
+			return base
+		}
+	}
+	return "HEAD"
+}
+
+// noChangedPortalFiles says what an empty selection did and did not check, so a
+// clean tree after a commit is never mistaken for a passing check of that commit.
+func (a *App) noChangedPortalFiles(base string) {
+	if base == "HEAD" {
+		fmt.Fprintln(a.Out, "no changed Portal files (the working tree matches HEAD; committed changes were not checked, run ./run gate portal for them)")
+		return
+	}
+	fmt.Fprintf(a.Out, "no changed Portal files since %s\n", base)
+}
+
 func (a *App) changedPortalFiles(ctx context.Context) ([]string, error) {
-	changed, err := a.output(ctx, a.Root, nil, "git", "diff", "--name-only", "-z", "--diff-filter=ACMRD", "HEAD", "--", "portal")
+	base := a.changedPortalBase(ctx)
+	if base != "HEAD" {
+		fmt.Fprintf(a.Out, "checking Portal files changed since %s\n", base)
+	}
+	changed, err := a.output(ctx, a.Root, nil, "git", "diff", "--name-only", "-z", "--diff-filter=ACMRD", base, "--", "portal")
 	if err != nil {
 		return nil, err
 	}
@@ -268,7 +294,7 @@ func (a *App) changedPortalCheck(ctx context.Context) error {
 		return err
 	}
 	if len(paths) == 0 {
-		fmt.Fprintln(a.Out, "no changed Portal files")
+		a.noChangedPortalFiles(a.changedPortalBase(ctx))
 		return nil
 	}
 	return a.checkChangedPortalPaths(ctx, paths)
@@ -327,7 +353,7 @@ func (a *App) changedPortalGate(ctx context.Context) error {
 		return err
 	}
 	if len(paths) == 0 {
-		fmt.Fprintln(a.Out, "no changed Portal files")
+		a.noChangedPortalFiles(a.changedPortalBase(ctx))
 		return nil
 	}
 	if err := a.checkChangedPortalPaths(ctx, paths); err != nil {

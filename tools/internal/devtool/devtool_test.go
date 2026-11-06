@@ -244,6 +244,60 @@ func TestChangedPortalFilesIncludesUntrackedSource(t *testing.T) {
 	}
 }
 
+func TestChangedPortalFilesCoverCommittedChangesSinceTheCoopBase(t *testing.T) {
+	root := t.TempDir()
+	git := func(args ...string) string {
+		t.Helper()
+		command := exec.Command("git", args...)
+		command.Dir = root
+		output, err := command.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, output)
+		}
+		return strings.TrimSpace(string(output))
+	}
+	git("init", "-q")
+	git("config", "user.email", "test@example.com")
+	git("config", "user.name", "Test")
+	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("test\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git("add", "README.md")
+	git("commit", "-qm", "initial")
+	base := git("rev-parse", "HEAD")
+	path := filepath.Join(root, "portal", "apps", "emisar", "lib", "probe.ex")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("defmodule Probe do\nend\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git("add", "portal")
+	git("commit", "-qm", "task")
+
+	// Without a Coop base the check is pre-commit: the committed change is not selected.
+	t.Setenv("COOP_REVIEW_BASE", "")
+	app := New(root, bytes.NewBuffer(nil), &bytes.Buffer{}, &bytes.Buffer{})
+	if paths, err := app.changedPortalFiles(context.Background()); err != nil || len(paths) != 0 {
+		t.Fatalf("paths without a base = %v, %v", paths, err)
+	}
+
+	// With the task's base, the committed change is checked.
+	t.Setenv("COOP_REVIEW_BASE", base)
+	out := &bytes.Buffer{}
+	app = New(root, bytes.NewBuffer(nil), out, &bytes.Buffer{})
+	paths, err := app.changedPortalFiles(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != 1 || paths[0] != "portal/apps/emisar/lib/probe.ex" {
+		t.Fatalf("paths since base = %v", paths)
+	}
+	if !strings.Contains(out.String(), "checking Portal files changed since "+base) {
+		t.Fatalf("output = %q, want it to name the base", out.String())
+	}
+}
+
 func TestPortalTestInvocationRoutesFocusedPaths(t *testing.T) {
 	portal := t.TempDir()
 	tests := []struct {
