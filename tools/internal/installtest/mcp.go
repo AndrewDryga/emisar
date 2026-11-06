@@ -38,6 +38,7 @@ func MCP(root string, out io.Writer) error {
 		{"latest release resolution", mcpLatestRelease},
 		{"version spellings from flag and environment", mcpVersionSpellings},
 		{"per-destination upgrade selection", mcpUpgradeSelection},
+		{"already-current rerun names the connect step", mcpAlreadyCurrent},
 		{"installation and rollback", mcpInstallRollback},
 		{"temporary directory privilege boundary", mcpTempDirectoryPrivilegeBoundary},
 		{"staging integrity", mcpStagingIntegrity},
@@ -457,6 +458,70 @@ activate_installations
 				return fmt.Errorf("%s: unselected destination changed: %s (%v)", test.name, path, err)
 			}
 		}
+	}
+	return nil
+}
+
+// mcpAlreadyCurrent reruns the whole script where the bridge is already the
+// latest release, which is how adding a second client or repairing one starts.
+// The run must stop before any download, name `emisar-mcp connect` as the next
+// step, and exit 0. The fake curl answers only the release mirror's
+// latest.json, and both fakes record what they were asked for, so a download
+// or a connect that the exit should have prevented fails the check.
+func mcpAlreadyCurrent(h *harness) error {
+	root := h.path("already-current")
+	fakeBin := filepath.Join(root, "fake-bin")
+	bin := filepath.Join(root, "bin")
+	if err := h.mkdir(fakeBin, bin); err != nil {
+		return err
+	}
+	fetched := filepath.Join(root, "fetched")
+	invoked := filepath.Join(root, "invoked")
+	if err := fakeExecutable(filepath.Join(fakeBin, "curl"), fmt.Sprintf(`
+printf '%%s\n' "${!#}" >>%q
+case "${!#}" in
+  */latest.json) printf '%%s' "$MANIFEST" ;;
+  *) exit 22 ;;
+esac
+`, fetched)); err != nil {
+		return err
+	}
+	bridge := filepath.Join(bin, "emisar-mcp")
+	if err := fakeExecutable(bridge, fmt.Sprintf(`
+printf '%%s\n' "$*" >>%q
+if [ "${1:-}" = "--version" ]; then
+  printf 'emisar-mcp 1.0.0\n'
+fi
+`, invoked)); err != nil {
+		return err
+	}
+	output, err := h.successful(h.root, map[string]string{
+		"PATH":       fakeBin + string(os.PathListSeparator) + os.Getenv("PATH"),
+		"HOME":       filepath.Join(root, "home"),
+		"EMISAR_URL": "https://control.example",
+		"VERSION":    "",
+		"MANIFEST": `{"schema_version":1,"component":"mcp","tag":"mcp-v1.0.0","version":"1.0.0",` +
+			`"source_revision":"` + strings.Repeat("a", 40) + `"}`,
+	}, "bash", h.repoPath("install-mcp.sh"), "--yes", "--install-dir", bin)
+	if err != nil {
+		return err
+	}
+	for _, want := range []string{
+		bridge + " 1.0.0 is already current\n",
+		"Connect a client with the installed bridge: emisar-mcp connect\n",
+	} {
+		if !strings.Contains(string(output), want) {
+			return fmt.Errorf("already-current output lacks %q:\n%s", want, output)
+		}
+	}
+	if !strings.HasSuffix(string(output), "Manual client snippets: https://control.example/app/agents/connect\n") {
+		return fmt.Errorf("already-current output does not end at the manual snippets line:\n%s", output)
+	}
+	if err := exactFile(fetched, "https://emisar.dev/releases/mcp/latest.json\n"); err != nil {
+		return fmt.Errorf("an already-current rerun fetched more than the latest release pointer: %w", err)
+	}
+	if err := exactFile(invoked, "--version\n"); err != nil {
+		return fmt.Errorf("an already-current rerun ran the bridge for more than its version: %w", err)
 	}
 	return nil
 }
