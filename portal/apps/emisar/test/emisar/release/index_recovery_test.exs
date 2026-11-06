@@ -1,5 +1,11 @@
 defmodule Emisar.Release.IndexRecoveryTest do
   use ExUnit.Case, async: false
+
+  # Each replay test migrates a fresh schema once per operation prefix: real DDL
+  # work that takes tens of seconds on its own and well past ExUnit's 60 s default
+  # when the database shares a busy machine.
+  @moduletag timeout: 300_000
+
   alias Emisar.Fixtures.Release, as: Fixture
   alias Emisar.Release.IndexRecovery
   alias Emisar.Repo
