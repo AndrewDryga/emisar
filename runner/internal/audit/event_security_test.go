@@ -19,8 +19,21 @@ func TestJSONLSink_PermsNeverDowngraded(t *testing.T) {
 	}
 	// Nest one level so OpenJSONL's MkdirAll(dir, 0o750) — not t.TempDir's
 	// 0o700 — is the directory under test.
-	dir := filepath.Join(t.TempDir(), "audit")
+	root := t.TempDir()
+	dir := filepath.Join(root, "audit")
 	path := filepath.Join(dir, "events.jsonl")
+
+	// A strict process umask (027, 077) may narrow the fresh dir below 0o750;
+	// a plain Mkdir with the same request shows what the umask allows.
+	probe := filepath.Join(root, "probe")
+	if err := os.Mkdir(probe, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	pi, err := os.Stat(probe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantDir := pi.Mode().Perm()
 
 	// Tiny threshold + several events so rotation reopens the active file.
 	s, err := OpenJSONL(path, JSONLOptions{MaxSizeBytes: 200, MaxBackups: 3})
@@ -41,8 +54,8 @@ func TestJSONLSink_PermsNeverDowngraded(t *testing.T) {
 
 	if di, err := os.Stat(dir); err != nil {
 		t.Fatal(err)
-	} else if got := di.Mode().Perm(); got != 0o750 {
-		t.Fatalf("audit dir perm = %#o, want 0o750", got)
+	} else if got := di.Mode().Perm(); got != wantDir {
+		t.Fatalf("audit dir perm = %#o, want %#o", got, wantDir)
 	}
 
 	// The active file plus every rotated sibling must all be 0o600.

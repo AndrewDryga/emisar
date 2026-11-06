@@ -50,6 +50,9 @@ func TestJSONL_RefusesUnsafeFiles(t *testing.T) {
 				if err := os.WriteFile(target, []byte("keep me"), 0o644); err != nil {
 					t.Fatal(err)
 				}
+				if err := os.Chmod(target, 0o644); err != nil { // defeat the umask
+					t.Fatal(err)
+				}
 				var err error
 				if kind == "symlink" {
 					err = os.Symlink(target, path+suffix)

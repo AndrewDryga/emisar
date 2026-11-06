@@ -169,11 +169,14 @@ func TestClient_ClearsTerminalShutdownStateAfterConnect(t *testing.T) {
 		<-done
 	})
 
-	waitUntil(t, time.Second, func() bool {
-		return len(conn.sentByType(MsgRunnerState)) == 1
+	// The state is cleared after the runner_state send, so wait for the removal
+	// itself rather than racing the send.
+	waitUntil(t, 5*time.Second, func() bool {
+		_, err := os.Stat(statePath)
+		return errors.Is(err, os.ErrNotExist)
 	})
-	if _, err := os.Stat(statePath); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("terminal shutdown state after successful connect: stat error=%v", err)
+	if got := len(conn.sentByType(MsgRunnerState)); got != 1 {
+		t.Fatalf("runner_state sends = %d, want 1", got)
 	}
 }
 

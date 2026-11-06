@@ -17,7 +17,9 @@ import (
 // those bits even though the runner writes 0600 secret files (token, audit,
 // nonce store) into it. We clear any bit looser than perm — for the usual
 // 0o750 that's group-write plus all of world (0o027) — but NEVER add bits, so
-// an operator's stricter 0700 is preserved.
+// an operator's stricter 0700 is preserved. For the same reason the process
+// umask may narrow a freshly created dir below perm (a CIS-hardened 027 or 077
+// host yields 0750 &^ umask); the dir is never widened to match perm.
 //
 // Tightening is best-effort: the secret files are 0600 regardless, so a dir the
 // runner can't chmod (it isn't the owner — e.g. a root-owned, group-shared data

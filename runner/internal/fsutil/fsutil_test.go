@@ -16,7 +16,6 @@ func TestSecureMkdirAll(t *testing.T) {
 		request os.FileMode
 		want    os.FileMode
 	}{
-		{name: "creates a fresh dir with the requested perm", pre: 0, request: 0o750, want: 0o750},
 		{name: "tightens a pre-existing world-readable dir", pre: 0o777, request: 0o750, want: 0o750},
 		{name: "clears group-write and world bits", pre: 0o775, request: 0o750, want: 0o750},
 		{name: "never loosens a stricter pre-existing dir", pre: 0o700, request: 0o750, want: 0o700},
