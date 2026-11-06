@@ -633,8 +633,7 @@ defmodule EmisarWeb.DocsComponents do
 
     # The runner ships no Windows archive. The tab stays so the page-wide OS choice never
     # leaves this block with nothing showing.
-    windows_unavailable =
-      "# No Windows archive ships for this component; verify on Linux or macOS."
+    windows_unavailable = "# No Windows archive ships for this component"
 
     windows_checksum_command = """
     $archive = '#{windows_tarball}'
