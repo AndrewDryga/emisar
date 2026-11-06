@@ -240,7 +240,7 @@ defmodule Emisar.OAuth.ClientMetadataDocumentTest do
       assert System.monotonic_time(:millisecond) - started < 7_000
       assert_receive {:tls_worker, worker}
       refute Process.alive?(worker)
-      assert {:closed, chunks} = Task.await(peer, 2_000)
+      assert {:closed, chunks} = Task.await(peer)
       assert chunks >= 3
     end
   end

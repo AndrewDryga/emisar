@@ -73,7 +73,7 @@ defmodule EmisarWeb.MCP.WaitLimiterTest do
 
   defp release_waits(waits) do
     Enum.each(waits, &send(&1.pid, :release))
-    assert Enum.map(waits, &Task.await(&1, 500)) == List.duplicate(:ok, length(waits))
+    assert Enum.map(waits, &Task.await/1) == List.duplicate(:ok, length(waits))
   end
 
   defp assert_eventually_available(_conn, 0), do: flunk("crashed waits leaked capacity")

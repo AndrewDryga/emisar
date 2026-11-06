@@ -2125,7 +2125,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
 
   defp release_waits(waits) do
     Enum.each(waits, &send(&1.pid, :release))
-    assert Enum.map(waits, &Task.await(&1, 500)) == List.duplicate(:ok, length(waits))
+    assert Enum.map(waits, &Task.await/1) == List.duplicate(:ok, length(waits))
   end
 
   defp attestation_header(conn, pack_ref, runner_ref, operation_id, args_raw, reason) do

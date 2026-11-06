@@ -1995,7 +1995,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
     end)
 
     render(lv)
-    render_async(lv, 2_000)
+    render_async(lv)
 
     if previews_settled?(lv),
       do: render(lv),

@@ -33,7 +33,7 @@ defmodule EmisarWeb.PerSessionRevocationDisconnectTest do
 
     assert Auth.revoke_session(revoked.id, subject) == :ok
 
-    {to, _flash} = assert_redirect(lv_a, 1_000)
+    {to, _flash} = assert_redirect(lv_a)
     assert URI.parse(to).path == ~p"/app/#{account_a}"
     assert render(lv_b) =~ account_b.name
     assert Auth.fetch_session_by_token(token_a, account_a.id) == {:error, :not_found}

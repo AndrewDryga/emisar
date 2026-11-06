@@ -306,9 +306,9 @@ defmodule EmisarWeb.WorkspaceSessionsTest do
       assert [%Event{actor_id: actor_b}] = audit_rows(account_b, "user.signed_out")
       assert actor_b == owner_b.id
 
-      {to_a, _flash} = assert_redirect(lv_a, 1_000)
+      {to_a, _flash} = assert_redirect(lv_a)
       assert URI.parse(to_a).path == ~p"/app/#{account_a}"
-      {to_b, _flash} = assert_redirect(lv_b, 1_000)
+      {to_b, _flash} = assert_redirect(lv_b)
       assert URI.parse(to_b).path == ~p"/app/#{account_b}"
 
       # The cookie the browser held before signing out reaches nothing now.
@@ -460,7 +460,7 @@ defmodule EmisarWeb.WorkspaceSessionsTest do
 
       assert :ok = Auth.revoke_session_tokens([token], :dead_entry, %RequestContext{})
 
-      {to, _flash} = assert_redirect(lv, 1_000)
+      {to, _flash} = assert_redirect(lv)
       assert URI.parse(to).path == ~p"/app/#{account}"
     end
   end

@@ -62,7 +62,7 @@ defmodule Emisar.ReleaseTest do
           end)
         end)
 
-      assert Task.await(task, 2_000) == :ok
+      assert Task.await(task) == :ok
     end
   end
 

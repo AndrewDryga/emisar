@@ -143,7 +143,7 @@ defmodule EmisarWeb.RequireSSOTest do
       render_click(team, "toggle_require_sso", %{})
       assert Repo.reload!(account).settings.require_sso
 
-      {to, _flash} = assert_redirect(email_lv, 1_000)
+      {to, _flash} = assert_redirect(email_lv)
       assert URI.parse(to).path == ~p"/app/#{account}/runners"
 
       for {owner_or_teammate, conn} <- [{owner, owner_conn}, {teammate, browser}] do

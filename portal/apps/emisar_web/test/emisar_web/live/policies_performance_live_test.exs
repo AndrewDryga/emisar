@@ -531,7 +531,7 @@ defmodule EmisarWeb.PoliciesPerformanceLiveTest do
 
   defp settle(lv, rounds) do
     for editor <- [assigns(lv).account | assigns(lv).rulesets], do: flush_timer(lv, editor.uid)
-    render_async(lv, 2_000)
+    render_async(lv)
     if settled?(assigns(lv)), do: render(lv), else: settle(lv, rounds - 1)
   end
 
