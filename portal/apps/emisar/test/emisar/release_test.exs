@@ -22,13 +22,13 @@ defmodule Emisar.ReleaseTest do
           Sandbox.unboxed_run(Repo, fn ->
             Emisar.Release.with_migration_lock(Repo, fn ->
               send(test_pid, :holding)
-              assert_receive :release, 2_000
+              assert_receive :release
               :first
             end)
           end)
         end)
 
-      assert_receive :holding, 2_000
+      assert_receive :holding
 
       waiter =
         Task.async(fn ->

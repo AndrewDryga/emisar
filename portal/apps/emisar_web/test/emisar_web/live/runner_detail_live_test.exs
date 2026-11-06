@@ -566,7 +566,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     end
 
     pid = lv.pid
-    assert_receive {:trace, ^pid, :receive, :refresh_runner}, 1500
+    assert_receive {:trace, ^pid, :receive, :refresh_runner}
     refute_receive {:trace, ^pid, :receive, :refresh_runner}, 700
     assert render(lv) =~ "linux.freshly_installed"
   end

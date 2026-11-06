@@ -414,7 +414,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       # The scheduled timer, not the test, delivers :reload_agents — once.
       pid = lv.pid
-      assert_receive {:trace, ^pid, :receive, :reload_agents}, 1500
+      assert_receive {:trace, ^pid, :receive, :reload_agents}
       refute_receive {:trace, ^pid, :receive, :reload_agents}, 700
       assert render(lv) =~ "burst-key"
       refute :sys.get_state(lv.pid).socket.assigns.reload_scheduled?
@@ -1559,7 +1559,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "other-operator-bot"}, subject)
       key_id = key.id
 
-      assert_receive {:list_changed, :api_key, "api_key.created", ^key_id}, 500
+      assert_receive {:list_changed, :api_key, "api_key.created", ^key_id}
       flush_key_broadcast(lv)
       assert render(lv) =~ "other-operator-bot"
       assert has_element?(lv, ~s(#api_key_form input[value="draft-bot"]))

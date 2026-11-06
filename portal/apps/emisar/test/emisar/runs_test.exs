@@ -1735,7 +1735,7 @@ defmodule Emisar.RunsTest do
 
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
 
-      assert_receive {:run_updated, id}, 500
+      assert_receive {:run_updated, id}
       assert id == run.id
     end
   end
@@ -1760,8 +1760,7 @@ defmodule Emisar.RunsTest do
 
       # Cloud-to-runner envelope was delivered.
       assert_receive {:cloud_to_runner, _generation,
-                      %{"type" => "run_action", "action_id" => "linux.uptime"}},
-                     500
+                      %{"type" => "run_action", "action_id" => "linux.uptime"}}
     end
 
     test "snapshots whether the trusted action requires structured output" do
@@ -2057,7 +2056,7 @@ defmodule Emisar.RunsTest do
                  subject
                )
 
-      assert_receive {:cloud_to_runner, _generation, payload}, 500
+      assert_receive {:cloud_to_runner, _generation, payload}
       assert payload["expected_pack_hash"] == Fixtures.Catalog.pack_hash("CLOUD_TRUSTED")
     end
 
@@ -2432,7 +2431,7 @@ defmodule Emisar.RunsTest do
       attrs = base_attrs(account.id, runner.id, %{opts: opts})
       assert {:ok, :running, run} = Runs.dispatch_run(attrs, subject)
       assert run.opts == opts
-      assert_receive {:cloud_to_runner, _generation, payload}, 500
+      assert_receive {:cloud_to_runner, _generation, payload}
       assert payload["opts"] == opts
     end
 
@@ -2463,7 +2462,7 @@ defmodule Emisar.RunsTest do
       # The exact encoded arguments are the only persisted representation.
       assert Repo.reload!(run).args_raw |> Jason.decode!() == rich_args
       # The wire encoder inserts those same bytes without another conversion.
-      assert_receive {:cloud_to_runner, _generation, payload}, 500
+      assert_receive {:cloud_to_runner, _generation, payload}
       assert payload |> Jason.encode!() |> Jason.decode!() |> Map.fetch!("args") == rich_args
     end
 
@@ -2477,7 +2476,7 @@ defmodule Emisar.RunsTest do
       Emisar.Runners.subscribe_runner_transport(runner)
 
       assert {:ok, :running, _run} = Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
-      assert_receive {:cloud_to_runner, _generation, payload}, 500
+      assert_receive {:cloud_to_runner, _generation, payload}
       refute Map.has_key?(payload, "attestation")
     end
 
@@ -2853,7 +2852,7 @@ defmodule Emisar.RunsTest do
       :ok = Runs.subscribe_account_runs(runner.account_id)
 
       assert Runs.after_composed_dispatches_committed(changes) == :ok
-      assert_receive {:run_updated, run_id}, 500
+      assert_receive {:run_updated, run_id}
       assert run_id == changes[{:composed_run, :post_commit_contract, 0}].id
 
       assert_receive {:cloud_to_runner, _generation,
@@ -2861,8 +2860,7 @@ defmodule Emisar.RunsTest do
                         "type" => "run_action",
                         "pack_ref" => @mcp_pack_ref,
                         "operation_id" => "op_334NN9NMDZ1T76NARWCKM5A0D6"
-                      }},
-                     500
+                      }}
     end
   end
 
@@ -2907,7 +2905,7 @@ defmodule Emisar.RunsTest do
       facts = mcp_action_facts("op_034NN9NMDZ1T76NARWCKM5A0D6", [runner])
 
       assert {:ok, :created, [run]} = Runs.dispatch_mcp_action(facts, subject)
-      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}
       readvertise_mcp_action(runner, %{"primary_executable_available" => false})
 
       assert {:ok, :replay, [replayed]} = Runs.dispatch_mcp_action(facts, subject)
@@ -3040,8 +3038,8 @@ defmodule Emisar.RunsTest do
       assert Enum.uniq_by(runs, & &1.mcp_operation_record_id) |> length() == 1
       assert Enum.all?(runs, &(&1.status == :sent))
 
-      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
-      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}
 
       original_ids = Enum.map(runs, & &1.id)
       assert {:ok, :replay, replayed} = Runs.dispatch_mcp_action(facts, subject)
@@ -3058,7 +3056,7 @@ defmodule Emisar.RunsTest do
       facts = mcp_action_facts("op_734NN9NMDZ1T76NARWCKM5A0D6", [runner])
 
       assert {:ok, :created, [run]} = Runs.dispatch_mcp_action(facts, subject)
-      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}
 
       {:ok, action} =
         Catalog.fetch_action_for_account("linux.uptime", runner.id, subject.account.id)
@@ -3076,7 +3074,7 @@ defmodule Emisar.RunsTest do
       facts = mcp_action_facts("op_744NN9NMDZ1T76NARWCKM5A0D6", [runner])
 
       assert {:ok, :created, _runs} = Runs.dispatch_mcp_action(facts, subject)
-      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}
 
       changed = [
         %{facts | reason: "something else"},
@@ -3129,8 +3127,8 @@ defmodule Emisar.RunsTest do
 
       assert target_sets |> Enum.uniq() |> length() == 1
 
-      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
-      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}
       refute_receive {:cloud_to_runner, _generation, _}, 100
 
       assert Repo.aggregate(MCPOperations.Operation, :count) == 1
@@ -3209,7 +3207,7 @@ defmodule Emisar.RunsTest do
       assert Enum.sort(Enum.map(runs, & &1.status)) == [:pending_approval, :sent]
       assert Enum.uniq_by(runs, & &1.mcp_operation_record_id) |> length() == 1
 
-      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}
       refute_receive {:cloud_to_runner, _generation, _}, 100
 
       assert {:ok, [request], _meta} =
@@ -3358,7 +3356,7 @@ defmodule Emisar.RunsTest do
                Runs.dispatch_mcp_action(signed_mcp_facts(facts, signed.header), subject)
 
       assert run.attestation == signed.envelope
-      assert_receive {:cloud_to_runner, _generation, payload}, 500
+      assert_receive {:cloud_to_runner, _generation, payload}
       assert payload["attestation"] == signed.envelope
     end
 
@@ -3594,7 +3592,7 @@ defmodule Emisar.RunsTest do
                Runs.dispatch_run_for_account(attrs, account.id)
 
       assert run.account_id == account.id
-      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}
     end
 
     test "still enforces the reason / action / runner gates", %{
@@ -4236,7 +4234,7 @@ defmodule Emisar.RunsTest do
 
       assert Runs.dispatch_queued_for_runner(runner.id) == :ok
 
-      assert_receive {:cloud_to_runner, _generation, %{"request_id" => request_id}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"request_id" => request_id}}
       assert request_id == pending.request_id
       refute_receive {:cloud_to_runner, _generation, _}, 100
 
@@ -4265,7 +4263,7 @@ defmodule Emisar.RunsTest do
       assert Runs.dispatch_queued_for_runner(runner.id) == :ok
 
       request_id = next.request_id
-      assert_receive {:cloud_to_runner, _generation, %{"request_id" => ^request_id}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"request_id" => ^request_id}}
       refute_receive {:cloud_to_runner, _generation, _}, 100
       assert Runs.peek_run_by_id(next.id).status == :sent
 
@@ -4329,7 +4327,7 @@ defmodule Emisar.RunsTest do
       assert Runs.dispatch_queued_for_runner(runner.id) == :ok
 
       request_id = run.request_id
-      assert_receive {:cloud_to_runner, _generation, %{"request_id" => ^request_id}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"request_id" => ^request_id}}
       assert Runs.peek_run_by_id(run.id).status == :sent
     end
   end
@@ -4358,15 +4356,13 @@ defmodule Emisar.RunsTest do
 
       assert Runs.dispatch_to_runner(run) == :ok
 
-      assert_receive {:cloud_to_runner, first_generation, %{"type" => "run_action"} = original},
-                     500
+      assert_receive {:cloud_to_runner, first_generation, %{"type" => "run_action"} = original}
 
       successor = reconnect_runner(runner)
       assert Runs.resume_runs_for_runner(runner.id) == :ok
 
       assert_receive {:cloud_to_runner, successor_generation,
-                      %{"type" => "run_action"} = recovered},
-                     500
+                      %{"type" => "run_action"} = recovered}
 
       assert first_generation == runner.connection_generation
       assert successor_generation == successor.connection_generation
@@ -4381,7 +4377,7 @@ defmodule Emisar.RunsTest do
     } do
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
       assert Runs.dispatch_to_runner(run) == :ok
-      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}
 
       run
       |> Ecto.Changeset.change(status: :cancelling, reason_text: "operator requested stop")
@@ -4393,12 +4389,10 @@ defmodule Emisar.RunsTest do
       assert Runs.resume_runs_for_runner(runner.id) == :ok
 
       assert_receive {:cloud_to_runner, generation,
-                      %{"type" => "run_action", "request_id" => request_id}},
-                     500
+                      %{"type" => "run_action", "request_id" => request_id}}
 
       assert_receive {:cloud_to_runner, ^generation,
-                      %{"type" => "cancel", "request_id" => ^request_id} = frame},
-                     500
+                      %{"type" => "cancel", "request_id" => ^request_id} = frame}
 
       refute Map.has_key?(frame, "reason")
 
@@ -4425,7 +4419,7 @@ defmodule Emisar.RunsTest do
 
       {:ok, inflight} = Runs.create_run(base_attrs(account.id, runner.id, snapshot))
       assert Runs.dispatch_to_runner(inflight) == :ok
-      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}
 
       {:ok, stale} = Runs.create_run(base_attrs(account.id, runner.id, withdrawn))
       {:ok, successor} = Runs.create_run(base_attrs(account.id, runner.id, snapshot))
@@ -4442,7 +4436,7 @@ defmodule Emisar.RunsTest do
 
       assert Runs.resume_runs_for_runner(runner.id) == :ok
       inflight_request_id = inflight.request_id
-      assert_receive {:cloud_to_runner, _generation, %{"request_id" => ^inflight_request_id}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"request_id" => ^inflight_request_id}}
 
       settled = Runs.peek_run_by_id(stale.id)
       assert settled.status == :unknown_action
@@ -4455,7 +4449,7 @@ defmodule Emisar.RunsTest do
       assert Runs.peek_run_by_id(foreign_run.id).status == :pending
 
       assert Runs.resume_runs_for_runner(runner.id) == :ok
-      assert_receive {:cloud_to_runner, _generation, %{"request_id" => ^inflight_request_id}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"request_id" => ^inflight_request_id}}
       assert Runs.peek_run_by_id(stale.id) == settled
 
       assert [%Audit.Event{payload: %{"run_id" => settled_run_id}}] =
@@ -4469,8 +4463,7 @@ defmodule Emisar.RunsTest do
       assert Runs.dispatch_queued_for_runner(runner.id) == :ok
       successor_request_id = successor.request_id
 
-      assert_receive {:cloud_to_runner, _generation, %{"request_id" => ^successor_request_id}},
-                     500
+      assert_receive {:cloud_to_runner, _generation, %{"request_id" => ^successor_request_id}}
     end
   end
 
@@ -4481,7 +4474,7 @@ defmodule Emisar.RunsTest do
       Emisar.Runners.subscribe_runner_transport(runner)
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
       assert Runs.dispatch_to_runner(run) == :ok
-      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}
 
       assert {:ok, started} =
                Runs.mark_started_from_connection(
@@ -4510,7 +4503,7 @@ defmodule Emisar.RunsTest do
       Emisar.Runners.subscribe_runner_transport(runner)
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
       assert Runs.dispatch_to_runner(run) == :ok
-      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}
 
       reconnect_runner(runner)
 
@@ -4636,7 +4629,7 @@ defmodule Emisar.RunsTest do
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
 
       assert Runs.dispatch_to_runner(run) == :ok
-      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}
       assert Runs.peek_run_by_id(run.id).status == :sent
     end
 
@@ -4803,8 +4796,7 @@ defmodule Emisar.RunsTest do
       refused_hash = Fixtures.Catalog.pack_hash("NOPE")
       assert Runs.peek_run_by_id(run.id).expected_pack_hash == refused_hash
 
-      assert_receive {:cloud_to_runner, _generation, %{"expected_pack_hash" => ^refused_hash}},
-                     500
+      assert_receive {:cloud_to_runner, _generation, %{"expected_pack_hash" => ^refused_hash}}
 
       # The pack drifts to a NEW hash AND is re-trusted (trusted hash now TAMPERED).
       {:ok, _} =
@@ -4940,8 +4932,7 @@ defmodule Emisar.RunsTest do
       # discards anything beyond it. The reason stays on the run record, which
       # is asserted above.
       assert_receive {:cloud_to_runner, _generation,
-                      %{"type" => "cancel", "request_id" => request_id} = frame},
-                     500
+                      %{"type" => "cancel", "request_id" => request_id} = frame}
 
       refute Map.has_key?(frame, "reason")
 
@@ -4950,8 +4941,7 @@ defmodule Emisar.RunsTest do
 
       # The exact run topic carries a render-ready struct.
       assert_receive {:run_updated,
-                      %ActionRun{status: :cancelling, runner: %Emisar.Runners.Runner{}}},
-                     500
+                      %ActionRun{status: :cancelling, runner: %Emisar.Runners.Runner{}}}
 
       assert {:ok, %ActionRun{status: :success}} =
                Runs.finalize_from_connection(
@@ -4985,7 +4975,7 @@ defmodule Emisar.RunsTest do
       assert {:ok, %ActionRun{status: :cancelling} = cancelling} =
                Runs.cancel_run(run, subject, "stop")
 
-      assert_receive {:cloud_to_runner, first_generation, %{"type" => "cancel"}}, 500
+      assert_receive {:cloud_to_runner, first_generation, %{"type" => "cancel"}}
       assert first_generation == runner.connection_generation
 
       successor = reconnect_runner(runner)
@@ -4993,7 +4983,7 @@ defmodule Emisar.RunsTest do
       assert {:ok, %ActionRun{status: :cancelling}} =
                Runs.cancel_run(cancelling, subject, "stop")
 
-      assert_receive {:cloud_to_runner, successor_generation, %{"type" => "cancel"}}, 500
+      assert_receive {:cloud_to_runner, successor_generation, %{"type" => "cancel"}}
       assert successor_generation == successor.connection_generation
 
       assert {:ok, %ActionRun{status: :cancelled, cancelled_at: %DateTime{}}} =
@@ -5266,7 +5256,7 @@ defmodule Emisar.RunsTest do
       run = run |> Ecto.Changeset.change(queued_at: old_queued_at) |> Repo.update!()
 
       assert Runs.dispatch_to_runner(run) == :ok
-      assert_receive {:cloud_to_runner, _generation, %{"request_id" => request_id}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"request_id" => request_id}}
       assert request_id == run.request_id
 
       sent = Runs.peek_run_by_id(run.id)
@@ -5294,7 +5284,7 @@ defmodule Emisar.RunsTest do
       assert event.payload["request_id"] == run.request_id
 
       assert Runs.dispatch_queued_for_runner(runner.id) == :ok
-      assert_receive {:cloud_to_runner, _generation, %{"request_id" => ^request_id}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"request_id" => ^request_id}}
 
       redelivered = Runs.peek_run_by_id(run.id)
       assert redelivered.status == :sent
@@ -5642,7 +5632,7 @@ defmodule Emisar.RunsTest do
       assert {:ok, %RunEvent{seq: 1, kind: :progress}} =
                Runs.append_event(run, %{seq: 1, kind: "progress", payload: %{"line" => "hi"}})
 
-      assert_receive {:run_event, %RunEvent{seq: 1}}, 500
+      assert_receive {:run_event, %RunEvent{seq: 1}}
     end
 
     test "a re-sent (run_id, seq) is classified :duplicate_event, not a changeset", %{
@@ -6915,7 +6905,7 @@ defmodule Emisar.RunsTest do
       assert Runs.subscribe_account_runs(account.id) == :ok
 
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
-      assert_receive {:run_updated, id}, 500
+      assert_receive {:run_updated, id}
       assert id == run.id
     end
 
@@ -6941,7 +6931,7 @@ defmodule Emisar.RunsTest do
 
       assert Runs.subscribe_account_runs(account.id) == :ok
       {:ok, run} = Runs.create_run(base_attrs(account.id, web_runner.id))
-      assert_receive {:run_updated, run_id}, 500
+      assert_receive {:run_updated, run_id}
       assert run_id == run.id
       assert {:ok, fetched} = Runs.fetch_run_by_id(run_id, restricted_subject)
       assert fetched.id == run.id
@@ -6958,10 +6948,10 @@ defmodule Emisar.RunsTest do
       assert Runs.subscribe_run(run.account_id, run.id) == :ok
 
       {:ok, _} = Runs.append_event(run, %{seq: 1, kind: "progress", payload: %{"line" => "x"}})
-      assert_receive {:run_event, %RunEvent{seq: 1}}, 500
+      assert_receive {:run_event, %RunEvent{seq: 1}}
 
       assert Runs.dispatch_to_runner(run) == :ok
-      assert_receive {:run_updated, %ActionRun{status: :sent}}, 500
+      assert_receive {:run_updated, %ActionRun{status: :sent}}
     end
 
     test "a subscriber to one run does not receive another run's updates (per-run topic)" do
@@ -7002,7 +6992,7 @@ defmodule Emisar.RunsTest do
 
       assert Runs.broadcast_cancelled_run({:cancelled, run}) == :ok
 
-      assert_receive {:run_updated, %ActionRun{id: id, runner: %Emisar.Runners.Runner{}}}, 500
+      assert_receive {:run_updated, %ActionRun{id: id, runner: %Emisar.Runners.Runner{}}}
       assert id == run.id
     end
 

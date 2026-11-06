@@ -17,7 +17,7 @@ defmodule Emisar.RunsDispatchAuthorityTest do
     assert {:ok, :running, run} = Runs.dispatch_run(attrs, subject)
     assert run.pack_ref == Fixtures.Catalog.default_pack_ref()
     assert Repo.reload!(run).pack_ref == run.pack_ref
-    assert_receive {:cloud_to_runner, _generation, payload}, 500
+    assert_receive {:cloud_to_runner, _generation, payload}
     assert payload["pack_ref"] == run.pack_ref
     refute Map.has_key?(payload, "attestation")
   end

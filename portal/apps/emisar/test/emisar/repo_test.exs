@@ -81,7 +81,7 @@ defmodule Emisar.RepoTest do
 
       assert {:ok, %{noop: :done}} = Repo.commit_multi(multi, after_commit: after_commit)
 
-      assert_receive :fired, 500
+      assert_receive :fired
     end
   end
 end

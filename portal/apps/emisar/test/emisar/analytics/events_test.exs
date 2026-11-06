@@ -17,8 +17,7 @@ defmodule Emisar.Analytics.EventsTest do
     })
 
     assert_receive {:mixpanel_track,
-                    [%{"event" => "subscription_changed", "properties" => props}]},
-                   500
+                    [%{"event" => "subscription_changed", "properties" => props}]}
 
     assert props["distinct_id"] == "account:acc-1"
     assert props["plan"] == "team"
@@ -35,7 +34,7 @@ defmodule Emisar.Analytics.EventsTest do
       status: "active"
     })
 
-    assert_receive {:mixpanel_groups, [group]}, 500
+    assert_receive {:mixpanel_groups, [group]}
     assert group["$group_key"] == "account_id"
     assert group["$group_id"] == "acc-1"
     assert group["$set"] == %{"plan" => "team", "status" => "active"}

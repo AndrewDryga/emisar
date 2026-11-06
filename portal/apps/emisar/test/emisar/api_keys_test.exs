@@ -1950,7 +1950,7 @@ defmodule Emisar.ApiKeysTest do
       # Minting a key publishes `api_key.created` on the topic just joined.
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "agent"}, subject)
 
-      assert_receive {:list_changed, :api_key, "api_key.created", key_id}, 500
+      assert_receive {:list_changed, :api_key, "api_key.created", key_id}
       assert key_id == key.id
     end
 
@@ -1979,7 +1979,7 @@ defmodule Emisar.ApiKeysTest do
       :ok = ApiKeys.subscribe_account_api_keys(account.id)
       assert ApiKeys.broadcast_backing_key_created(key) == :ok
 
-      assert_receive {:list_changed, :api_key, "api_key.created", key_id}, 500
+      assert_receive {:list_changed, :api_key, "api_key.created", key_id}
       assert key_id == key.id
     end
   end
@@ -1995,7 +1995,7 @@ defmodule Emisar.ApiKeysTest do
       :ok = ApiKeys.subscribe_account_api_keys(account.id)
       assert ApiKeys.broadcast_backing_key_revoked(key) == :ok
 
-      assert_receive {:list_changed, :api_key, "api_key.revoked", key_id}, 500
+      assert_receive {:list_changed, :api_key, "api_key.revoked", key_id}
       assert key_id == key.id
     end
   end
@@ -2712,7 +2712,7 @@ defmodule Emisar.ApiKeysTest do
       ApiKeys.subscribe_account_api_keys(account.id)
 
       assert %ApiKey{} = ApiKeys.peek_api_key_by_secret(raw)
-      assert_receive {:list_changed, :api_key, "api_key.first_used", id}, 500
+      assert_receive {:list_changed, :api_key, "api_key.first_used", id}
       assert id == key.id
 
       # A later call bumps last_used_at but is no longer a first call — no storm.
@@ -2970,7 +2970,7 @@ defmodule Emisar.ApiKeysTest do
       # First OAuth call: last_used_at is set and the list reflows off "never used".
       assert %ApiKey{last_used_at: %DateTime{}} = ApiKeys.record_backing_key_usage(key)
       assert %DateTime{} = Repo.reload!(key).last_used_at
-      assert_receive {:list_changed, :api_key, "api_key.first_used", key_id}, 500
+      assert_receive {:list_changed, :api_key, "api_key.first_used", key_id}
       assert key_id == key.id
 
       # A later call re-bumps last_used_at but no longer announces a first use.

@@ -79,7 +79,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     }
 
     assert {:ok, :running, _} = Runs.dispatch_run(attrs, subject)
-    assert_receive {:cloud_to_runner, _, %{"action_id" => "tfc.run_details"}}, 500
+    assert_receive {:cloud_to_runner, _, %{"action_id" => "tfc.run_details"}}
 
     for id <- denied do
       unavailable = call(conn, "get_action", %{"action_id" => id, "pack_ref" => pack_ref})
@@ -958,7 +958,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
       )
 
     assert response["ok"]
-    assert_receive {:cloud_to_runner, _generation, _payload}, 500
+    assert_receive {:cloud_to_runner, _generation, _payload}
   end
 
   test "API-key action scope narrows eligibility while inventory remains account-wide", %{
@@ -1378,7 +1378,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     assert response["operation_id"] == operation_id
     assert [%{"run_id" => run_id, "runner_ref" => ^runner_ref}] = response["runs"]
 
-    assert_receive {:cloud_to_runner, _generation, payload}, 500
+    assert_receive {:cloud_to_runner, _generation, payload}
     wire = payload |> Map.put("protocol_version", 1) |> Jason.encode!()
     assert wire =~ ~s("args":#{args_raw})
     assert payload["pack_ref"] == pack_ref
@@ -1475,7 +1475,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
 
     response = raw_action(conn, body)
     assert response["ok"]
-    assert_receive {:cloud_to_runner, _generation, payload}, 500
+    assert_receive {:cloud_to_runner, _generation, payload}
     assert Jason.encode!(payload) =~ ~s("delay":"#{duration}")
   end
 
@@ -1510,7 +1510,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     first = raw_action(conn, body)
     assert first["ok"]
     assert first["operation_id"] =~ ~r/\Aop_[0-7][0-9A-HJKMNP-TV-Z]{25}\z/
-    assert_receive {:cloud_to_runner, _generation, _payload}, 500
+    assert_receive {:cloud_to_runner, _generation, _payload}
 
     replay = raw_action(conn, body)
     assert replay["operation_id"] == first["operation_id"]
@@ -1557,7 +1557,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
       response = raw_action(conn, body, operation_id)
       assert response["ok"]
       assert [%{"run_id" => run_id}] = response["runs"]
-      assert_receive {:cloud_to_runner, _generation, _payload}, 500
+      assert_receive {:cloud_to_runner, _generation, _payload}
 
       replay = raw_action(conn, body, operation_id)
       assert get_in(replay, ["runs", Access.at(0), "run_id"]) == run_id
@@ -1592,7 +1592,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
         ExUnit.CaptureLog.with_log([level: :info], fn -> raw_action(conn, body, operation_id) end)
       end)
 
-    assert_receive {:cloud_to_runner, _generation, payload}, 2_000
+    assert_receive {:cloud_to_runner, _generation, payload}
     assert payload["operation_id"] == operation_id
     assert {:ok, _revoked} = ApiKeys.revoke_api_key(key, subject)
     send(request.pid, :recheck)
@@ -1661,7 +1661,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
 
     header = attestation_header(conn, pack_ref, runner_ref, operation_id, args_raw, reason)
     assert raw_action(conn, body, operation_id, header)["ok"]
-    assert_receive {:cloud_to_runner, _generation, _payload}, 500
+    assert_receive {:cloud_to_runner, _generation, _payload}
 
     changed_args = ~s({"job_id":9007199254740994})
     changed_body = run_action_body(pack_ref, runner_ref, changed_args, reason, "0")
@@ -2119,7 +2119,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
         end)
       end)
 
-    Enum.each(waits, fn _task -> assert_receive :wait_acquired, 500 end)
+    Enum.each(waits, fn _task -> assert_receive :wait_acquired end)
     waits
   end
 

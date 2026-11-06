@@ -64,7 +64,7 @@ defmodule EmisarWeb.PerSessionRevocationDisconnectTest do
 
       assert Auth.revoke_session(revoked_session.id, subject) == :ok
 
-      assert_receive %Phoenix.Socket.Broadcast{topic: ^revoked_topic, event: "disconnect"}, 500
+      assert_receive %Phoenix.Socket.Broadcast{topic: ^revoked_topic, event: "disconnect"}
       refute_receive %Phoenix.Socket.Broadcast{topic: ^survivor_topic, event: "disconnect"}, 100
       assert Auth.fetch_session_by_token(revoked, account.id) == {:error, :not_found}
       assert {:ok, %{membership_id: owner_id}} = Auth.fetch_session_by_token(survivor, account.id)

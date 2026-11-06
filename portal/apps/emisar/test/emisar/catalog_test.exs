@@ -347,7 +347,7 @@ defmodule Emisar.CatalogTest do
       assert Enum.map(actions, & &1.action_id) == ["linux.uptime"]
 
       # And the drop is reported rather than swallowed.
-      assert_receive {:rejected, %{count: 1}}, 500
+      assert_receive {:rejected, %{count: 1}}
     end
 
     test "missing required descriptor fields drop the actions AND say so", %{
@@ -380,7 +380,7 @@ defmodule Emisar.CatalogTest do
 
       assert {:ok, _runner} = Catalog.observe_state(runner, state_payload(actions: actions))
       assert {:ok, [], _metadata} = Catalog.list_actions_for_runner(runner.id, subject)
-      assert_receive {:rejected, %{count: 3}}, 500
+      assert_receive {:rejected, %{count: 3}}
     end
 
     test "upserts runner_actions", %{runner: runner, subject: subject} do

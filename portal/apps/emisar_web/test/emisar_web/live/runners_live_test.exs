@@ -147,7 +147,7 @@ defmodule EmisarWeb.RunnersLiveTest do
 
       # The lifecycle broadcast, not the test, schedules the debounced reload.
       pid = lv.pid
-      assert_receive {:trace, ^pid, :receive, :reload_runners}, 1500
+      assert_receive {:trace, ^pid, :receive, :reload_runners}
       html = render(lv)
       assert html =~ "kept-runner"
       refute html =~ "removed-runner"

@@ -58,7 +58,7 @@ defmodule EmisarWeb.SSOMFADowngradeDisconnectTest do
     assert {:ok, downgraded} = SSO.update_provider(provider, %{satisfies_mfa: false}, subject)
 
     refute downgraded.satisfies_mfa
-    assert_receive %Phoenix.Socket.Broadcast{topic: ^provider_topic, event: "disconnect"}, 500
+    assert_receive %Phoenix.Socket.Broadcast{topic: ^provider_topic, event: "disconnect"}
     refute_receive %Phoenix.Socket.Broadcast{topic: ^magic_topic, event: "disconnect"}, 100
     refute_receive %Phoenix.Socket.Broadcast{topic: ^sibling_topic, event: "disconnect"}, 100
     assert Auth.fetch_session_by_token(provider_token, account.id) == {:error, :not_found}

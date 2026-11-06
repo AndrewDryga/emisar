@@ -158,7 +158,7 @@ defmodule Emisar.ApprovalsConcurrencyTest do
                  false
              end) == 1
 
-      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 1_000
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}
       refute_receive {:cloud_to_runner, _generation, _message}, 100
 
       assert %Approvals.Request{status: :approved} = Repo.reload!(request)

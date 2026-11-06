@@ -300,7 +300,7 @@ defmodule EmisarWeb.PoliciesPerformanceLiveTest do
     hold_next_preview(account.id)
     render_click(lv, "retry_preview", %{"editor" => first.id})
     flush_timer(lv, first.id)
-    assert_receive {:held_preview, task}, 2_000
+    assert_receive {:held_preview, task}
     render_click(lv, "retry_preview", %{"editor" => second.id})
     flush_timer(lv, second.id)
     assert assigns(lv).preview_queue == [second.id]
@@ -322,7 +322,7 @@ defmodule EmisarWeb.PoliciesPerformanceLiveTest do
     settle(lv)
     hold_next_preview(account.id)
     render_click(lv, "retry_preview", %{"editor" => "account"})
-    assert_receive {:held_preview, task}, 2_000
+    assert_receive {:held_preview, task}
 
     render_hook(lv, "form_change", %{
       "editor" => "account",
@@ -424,7 +424,7 @@ defmodule EmisarWeb.PoliciesPerformanceLiveTest do
       hold_next_preview(account.id)
       render_click(lv, "retry_preview", %{"editor" => policy.id})
       flush_timer(lv, policy.id)
-      assert_receive {:held_preview, task}, 2_000
+      assert_receive {:held_preview, task}
 
       case unquote(invalidation) do
         :action_scope ->

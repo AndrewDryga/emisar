@@ -18,7 +18,7 @@ defmodule Emisar.PubSubTest do
 
     {:ok, event_a} = Audit.log(account_a.id, "scope.test", actor_kind: "system")
     Audit.broadcast_event(event_a)
-    assert_receive {:audit_event, received}, 500
+    assert_receive {:audit_event, received}
     assert received.id == event_a.id
   end
 end

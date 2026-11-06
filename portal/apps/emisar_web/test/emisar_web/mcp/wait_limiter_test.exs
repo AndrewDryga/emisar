@@ -37,9 +37,9 @@ defmodule EmisarWeb.MCP.WaitLimiterTest do
           end)
         end)
 
-      assert_receive :wait_acquired, 500
+      assert_receive :wait_acquired
       Process.exit(pid, :kill)
-      assert_receive {:DOWN, ^monitor, :process, ^pid, :killed}, 500
+      assert_receive {:DOWN, ^monitor, :process, ^pid, :killed}
     end
 
     assert_eventually_available(conn(lineage), 20)
@@ -67,7 +67,7 @@ defmodule EmisarWeb.MCP.WaitLimiterTest do
         end)
       end)
 
-    Enum.each(waits, fn _task -> assert_receive {:wait_acquired, _pid}, 500 end)
+    Enum.each(waits, fn _task -> assert_receive {:wait_acquired, _pid} end)
     waits
   end
 
@@ -86,7 +86,7 @@ defmodule EmisarWeb.MCP.WaitLimiterTest do
       {:error, :wait_saturated} ->
         tick = make_ref()
         Process.send_after(self(), {:lease_cleanup_tick, tick}, 5)
-        assert_receive {:lease_cleanup_tick, ^tick}, 50
+        assert_receive {:lease_cleanup_tick, ^tick}
         assert_eventually_available(conn, attempts - 1)
     end
   end

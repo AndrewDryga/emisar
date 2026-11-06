@@ -357,7 +357,7 @@ defmodule Emisar.OAuthTest do
       _code = issue!(subject, client, challenge)
 
       # Consent commits the backing key → an open agents list reflows live.
-      assert_receive {:list_changed, :api_key, "api_key.created", _key_id}, 500
+      assert_receive {:list_changed, :api_key, "api_key.created", _key_id}
     end
 
     test "a read-only viewer cannot consent — the OAuth flow can't mint an execute token they couldn't issue manually" do
@@ -1364,7 +1364,7 @@ defmodule Emisar.OAuthTest do
 
       assert %ApiKey{revoked_at: %DateTime{}} = Repo.reload!(key)
       assert OAuth.resolve_access_token(fresh.access_token, @resource) == {:error, :invalid}
-      assert_receive {:list_changed, :api_key, "api_key.revoked", key_id}, 500
+      assert_receive {:list_changed, :api_key, "api_key.revoked", key_id}
       assert key_id == key.id
 
       assert Enum.all?(

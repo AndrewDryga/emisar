@@ -44,7 +44,7 @@ defmodule EmisarWeb.EndAllSessionsDisconnectTest do
 
     for token <- tokens do
       topic = Auth.live_socket_topic(Crypto.hash(token))
-      assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}, 500
+      assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}
       assert Auth.fetch_session_by_token(token, membership.account_id) == {:error, :not_found}
     end
 

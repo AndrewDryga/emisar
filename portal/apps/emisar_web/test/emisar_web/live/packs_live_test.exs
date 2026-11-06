@@ -167,11 +167,12 @@ defmodule EmisarWeb.PacksLiveTest do
       subject = Fixtures.Subjects.subject_for(user)
       {:ok, [version], _} = Emisar.Catalog.list_pack_versions(subject)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/packs")
+      pid = lv.pid
+      :erlang.trace(pid, true, [:receive, tracer: self()])
       render_click(lv, "filter", %{"name" => "tfc.apply_run"})
       assert has_element?(lv, ~s(li[data-action-id="tfc.apply_run"]), "unavailable")
       advertise_hcp(runner, [])
-      assert :sys.get_state(lv.pid).socket.assigns.refresh_queued?
-      send(lv.pid, :refresh_packs)
+      assert_receive {:trace, ^pid, :receive, :refresh_packs}
       assert has_element?(lv, ~s(li[data-action-id="tfc.apply_run"]), "available")
       assert has_element?(lv, ~s(button[aria-expanded="true"]))
       assert :sys.get_state(lv.pid).socket.assigns.name_filter == "tfc.apply_run"
@@ -424,8 +425,8 @@ defmodule EmisarWeb.PacksLiveTest do
       Fixtures.Subjects.subject_for(user)
     end
 
-    defp observe_pending_pack!(account) do
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
+    defp observe_pending_pack!(account, runner_attrs \\ []) do
+      runner = Fixtures.Runners.create_runner([account_id: account.id] ++ runner_attrs)
 
       {:ok, _runner} =
         Emisar.Catalog.observe_state(runner, %{
@@ -2187,16 +2188,17 @@ defmodule EmisarWeb.PacksLiveTest do
     } do
       {:ok, lv, _dead_html} = live(conn, ~p"/app/#{account}/packs")
       refute render(lv) =~ "acme-tools"
+      pid = lv.pid
+      :erlang.trace(pid, true, [:receive, tracer: self()])
 
-      _pack_version = observe_pending_pack!(account)
+      # Disconnected, so no presence join queues a reload of its own that could
+      # run before the observe commits.
+      _pack_version = observe_pending_pack!(account, connected?: false)
 
       # The observe broadcast reaches this page's own handler — the shell hook
       # that keeps the sidebar badge current forwards it instead of swallowing
-      # it — and queues one coalesced reload. Reading the queued flag syncs on
-      # that message; the timer is then fired directly (the runners-page
-      # :reveal_troubleshooting precedent) instead of sleeping the debounce out.
-      assert :sys.get_state(lv.pid).socket.assigns.refresh_queued?
-      send(lv.pid, :refresh_packs)
+      # it — and queues one coalesced reload, which runs on the debounce tick.
+      assert_receive {:trace, ^pid, :receive, :refresh_packs}
 
       assert render(lv) =~ "acme-tools"
     end

@@ -18,7 +18,7 @@ defmodule Emisar.TelemetryTest do
 
     try do
       fun.()
-      assert_receive {:captured, measurements, meta}, 500
+      assert_receive {:captured, measurements, meta}
       {measurements, meta}
     after
       :telemetry.detach(handler_id)

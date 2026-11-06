@@ -21,7 +21,7 @@ defmodule EmisarWeb.RunnerSocketDrainTest do
     # the documented flush window, not a test smell.
     assert RunnerSocketDrain.terminate(:shutdown, %{}) == :ok
 
-    assert_receive :runner_socket_drain, 500
+    assert_receive :runner_socket_drain
   end
 
   test "terminate drains this node's subscribers only, never the cluster adapter" do
@@ -40,7 +40,7 @@ defmodule EmisarWeb.RunnerSocketDrainTest do
     # Sanity: a cluster broadcast is visible to the trace, so the refute
     # below cannot pass vacuously.
     :ok = Emisar.PubSub.broadcast("trace_probe", :probe)
-    assert_receive {:trace, _, :call, {Phoenix.PubSub.PG2, :broadcast, [_ | _]}}, 500
+    assert_receive {:trace, _, :call, {Phoenix.PubSub.PG2, :broadcast, [_ | _]}}
 
     assert RunnerSocketDrain.terminate(:shutdown, %{}) == :ok
 

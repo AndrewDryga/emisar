@@ -502,7 +502,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
       )
 
     execute_operation = execution["operation_id"]
-    assert_receive {:cloud_to_runner, _generation, _payload}, 500
+    assert_receive {:cloud_to_runner, _generation, _payload}
     execution_id = execution["execution"]["runbook_execution_id"]
 
     assert execution["execution"]["kind"] == "published"
@@ -940,7 +940,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert tested["execution"]["definition_sha256"] == draft_hash
     # A draft never became a release, so the slug alone names what ran.
     assert tested["execution"]["runbook_ref"] == "cache-health"
-    assert_receive {:cloud_to_runner, _generation, _payload}, 500
+    assert_receive {:cloud_to_runner, _generation, _payload}
 
     replayed = call(conn, "execute_runbook", args)
     assert replayed["execution"]["runbook_execution_id"] == execution_id
@@ -1083,7 +1083,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
 
     assert live_execution["execution"]["kind"] == "published"
     assert live_execution["execution"]["definition_sha256"] == live_hash
-    assert_receive {:cloud_to_runner, _generation, _payload}, 500
+    assert_receive {:cloud_to_runner, _generation, _payload}
 
     test_args = %{
       "slug" => "database-health",
@@ -1098,7 +1098,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     execution_id = tested["execution"]["runbook_execution_id"]
     assert tested["execution"]["kind"] == "draft_test"
     assert tested["execution"]["definition_sha256"] == draft_hash
-    assert_receive {:cloud_to_runner, _generation, _payload}, 500
+    assert_receive {:cloud_to_runner, _generation, _payload}
 
     replayed =
       call(conn, "execute_runbook", test_args, "op_724NN9NMDZ1T76NARWCKM5A0D6")
@@ -1196,7 +1196,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     executed = call(conn, "execute_runbook", args, operation_id)
     execution_id = executed["execution"]["runbook_execution_id"]
     refute Jason.encode!(executed) =~ secret
-    assert_receive {:cloud_to_runner, _generation, _payload}, 500
+    assert_receive {:cloud_to_runner, _generation, _payload}
 
     replayed = call(conn, "execute_runbook", args, operation_id)
     assert replayed["execution"]["runbook_execution_id"] == execution_id
@@ -1262,7 +1262,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
       )
 
     execution_id = executed["execution"]["runbook_execution_id"]
-    assert_receive {:cloud_to_runner, _generation, _payload}, 500
+    assert_receive {:cloud_to_runner, _generation, _payload}
     assert {:ok, [run]} = Runs.list_runs_by_runbook_execution(execution_id, subject)
 
     assert {:ok, _finished} =
@@ -2245,7 +2245,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
         "op_524NN9NMDZ1T76NARWCKM5A0D6"
       )
 
-    assert_receive {:cloud_to_runner, _generation, _payload}, 500
+    assert_receive {:cloud_to_runner, _generation, _payload}
     execution_id = execution["execution"]["runbook_execution_id"]
     {:ok, [run]} = Runs.list_runs_by_runbook_execution(execution_id, subject)
     test_pid = self()
@@ -2725,7 +2725,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
         "op_624NN9NMDZ1T76NARWCKM5A0D6"
       )
 
-    assert_receive {:cloud_to_runner, _generation, _payload}, 500
+    assert_receive {:cloud_to_runner, _generation, _payload}
     assert [summary] = dispatched["runs"]
     cursor = get_in(summary, ["next", "arguments", "cursor"])
 

@@ -3563,12 +3563,9 @@ defmodule Emisar.RunnersTest do
 
       # Tracking a runner pushes a presence_diff on the topic just joined.
       # Phoenix.Presence broadcasts that diff asynchronously through a single
-      # shared tracker and exposes no synchronous "diff delivered" hook, so under
-      # parallel load it can land later than assert_receive's 100ms default —
-      # this was the flake. assert_receive returns the instant the diff arrives,
-      # so the wider bound only rules out the false failure; it is not a sleep.
+      # shared tracker and exposes no synchronous "diff delivered" hook.
       _ = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
-      assert_receive %Phoenix.Socket.Broadcast{event: "presence_diff"}, 2_000
+      assert_receive %Phoenix.Socket.Broadcast{event: "presence_diff"}
     end
 
     test "a subscriber to account A does not receive account B's presence diffs" do

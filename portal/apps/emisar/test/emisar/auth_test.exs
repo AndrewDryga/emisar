@@ -486,10 +486,10 @@ defmodule Emisar.AuthTest do
       assert {:ok, %{delivery: {:ok, :queued}}} =
                Auth.request_magic_link(account, member.email, %RequestContext{})
 
-      assert_receive {:sending, sender}, 2_000
+      assert_receive {:sending, sender}
       refute_received {:email, _sent}
       send(sender, :release)
-      assert_receive {:email, %{to: [{"", address}]}}, 2_000
+      assert_receive {:email, %{to: [{"", address}]}}
       assert address == member.email
     end
 
@@ -511,9 +511,9 @@ defmodule Emisar.AuthTest do
           assert {:ok, %{token_id: token_id}} =
                    Auth.request_magic_link(account, member.email, %RequestContext{})
 
-          assert_receive {:sending, sender}, 2_000
+          assert_receive {:sending, sender}
           ref = Process.monitor(sender)
-          assert_receive {:DOWN, ^ref, :process, ^sender, _reason}, 2_000
+          assert_receive {:DOWN, ^ref, :process, ^sender, _reason}
           send(parent, {:token_id, token_id})
         end)
 

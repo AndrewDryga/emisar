@@ -362,8 +362,7 @@ defmodule EmisarWeb.RunnerSocketTest do
         Runs.dispatch_run(dispatch_attrs(account, runner), subject)
 
       assert_receive {:cloud_to_runner, _generation,
-                      %{"type" => "run_action", "request_id" => req_id}},
-                     1_000
+                      %{"type" => "run_action", "request_id" => req_id}}
 
       assert req_id == run.request_id
 
@@ -381,7 +380,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       {:ok, :running, run} =
         Runs.dispatch_run(dispatch_attrs(account, runner), subject)
 
-      assert_receive {:cloud_to_runner, _generation, _}, 1_000
+      assert_receive {:cloud_to_runner, _generation, _}
 
       # Socket drops — terminate releases the durable lease and Presence
       # clears when the connection process dies.
@@ -407,8 +406,7 @@ defmodule EmisarWeb.RunnerSocketTest do
         Runs.dispatch_run(dispatch_attrs(account, runner), subject)
 
       assert_receive {:cloud_to_runner, _generation,
-                      %{"type" => "run_action", "request_id" => request_id} = original_action},
-                     1_000
+                      %{"type" => "run_action", "request_id" => request_id} = original_action}
 
       assert request_id == run.request_id
       assert RunnerSocket.terminate(:remote, first_state) == :ok
@@ -418,12 +416,11 @@ defmodule EmisarWeb.RunnerSocketTest do
 
       runner_state = runner_frame(%{"type" => "runner_state", "packs" => %{}, "actions" => []})
       assert {:ok, refreshed_state} = RunnerSocket.handle_in({runner_state, text()}, second_state)
-      assert_receive :resume_runs, 500
+      assert_receive :resume_runs
       assert {:ok, ^refreshed_state} = RunnerSocket.handle_info(:resume_runs, refreshed_state)
 
       assert_receive {:cloud_to_runner, successor_generation,
-                      %{"type" => "run_action"} = recovered_action},
-                     1_000
+                      %{"type" => "run_action"} = recovered_action}
 
       assert successor_generation == refreshed_state.connection_generation
       assert recovered_action == original_action
@@ -470,14 +467,13 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert {:ok, refreshed_state} =
                RunnerSocket.handle_in({fixture_runner_state(), text()}, state)
 
-      assert_receive :resume_runs, 500
+      assert_receive :resume_runs
 
       assert {:ok, ^refreshed_state} =
                RunnerSocket.handle_info(:resume_runs, refreshed_state)
 
       assert_receive {:cloud_to_runner, _generation,
-                      %{"type" => "run_action", "request_id" => request_id}},
-                     1_000
+                      %{"type" => "run_action", "request_id" => request_id}}
 
       assert request_id == run.request_id
       assert Repo.get!(ActionRun, run.id).status == :sent
@@ -492,8 +488,8 @@ defmodule EmisarWeb.RunnerSocketTest do
         Runs.dispatch_run(%{dispatch_attrs(account, runner) | action_id: "linux.load"}, subject)
 
       {:ok, :running, successor} = Runs.dispatch_run(dispatch_attrs(account, runner), subject)
-      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 1_000
-      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 1_000
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}
 
       # The runner is at its concurrency cap, so both dispatches return to the queue.
       for run <- [stale, successor] do
@@ -513,14 +509,13 @@ defmodule EmisarWeb.RunnerSocketTest do
       # A reload re-advertises the pack without linux.load, so the catalog sync
       # prunes it before the socket resumes the runner's queue.
       assert {:ok, state} = RunnerSocket.handle_in({fixture_runner_state(), text()}, state)
-      assert_receive :resume_runs, 500
+      assert_receive :resume_runs
       assert {:ok, ^state} = RunnerSocket.handle_info(:resume_runs, state)
 
       successor_request_id = successor.request_id
 
       assert_receive {:cloud_to_runner, _generation,
-                      %{"type" => "run_action", "request_id" => ^successor_request_id}},
-                     1_000
+                      %{"type" => "run_action", "request_id" => ^successor_request_id}}
 
       assert Repo.get!(ActionRun, successor.id).status == :sent
 
@@ -985,7 +980,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert %{"type" => "shutdown", "reason" => "cloud_shutdown"} = decode(frame)
 
       # The stop is deferred behind the frame (this process IS the socket).
-      assert_receive :stop_after_drain, 500
+      assert_receive :stop_after_drain
       assert {:stop, :normal, ^state} = RunnerSocket.handle_info(:stop_after_drain, state)
     end
 
@@ -999,7 +994,7 @@ defmodule EmisarWeb.RunnerSocketTest do
                "type" => "shutdown"
              }
 
-      assert_receive :stop_after_drain, 500
+      assert_receive :stop_after_drain
     end
 
     test "account disable pushes its distinct retryable shutdown", %{state: state} do
@@ -1014,7 +1009,7 @@ defmodule EmisarWeb.RunnerSocketTest do
                "type" => "shutdown"
              }
 
-      assert_receive :stop_after_drain, 500
+      assert_receive :stop_after_drain
     end
 
     test "removal pushes a terminal revoked envelope first, then stops", %{state: state} do
@@ -1027,7 +1022,7 @@ defmodule EmisarWeb.RunnerSocketTest do
                "type" => "shutdown"
              }
 
-      assert_receive :stop_after_drain, 500
+      assert_receive :stop_after_drain
     end
 
     test "an unexpected message is logged and ignored", %{state: state} do
@@ -1868,7 +1863,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       # shutdown — a drain broadcast.
       assert {:push, shut, ^state} = RunnerSocket.handle_info(:runner_socket_drain, state)
       assert %{"type" => "shutdown", "protocol_version" => 1} = decode(shut)
-      assert_receive :stop_after_drain, 500
+      assert_receive :stop_after_drain
     end
   end
 
@@ -1901,7 +1896,7 @@ defmodule EmisarWeb.RunnerSocketTest do
   # calls aren't confused by it. Leaves the run in "sent".
   defp dispatched_run(%{account: account, runner: runner, subject: subject}) do
     {:ok, :running, run} = Runs.dispatch_run(dispatch_attrs(account, runner), subject)
-    assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 1_000
+    assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}
     %{run: run}
   end
 

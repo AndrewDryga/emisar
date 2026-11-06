@@ -856,7 +856,7 @@ defmodule Emisar.AuthAuditTest do
 
       # The audit row inserted in the same Multi as the account update
       # is broadcast verbatim — assert the event_type matches.
-      assert_receive {:audit_event, %Emisar.Audit.Event{event_type: "account.updated"}}, 1_000
+      assert_receive {:audit_event, %Emisar.Audit.Event{event_type: "account.updated"}}
     end
 
     test "broadcast does NOT fire when the transaction rolls back", %{

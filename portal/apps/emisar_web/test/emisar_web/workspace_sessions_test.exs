@@ -261,7 +261,7 @@ defmodule EmisarWeb.WorkspaceSessionsTest do
             topic = Auth.live_socket_topic(Crypto.hash(token))
             EmisarWeb.Endpoint.subscribe(topic)
             assert {:ok, _suspended} = Emisar.Accounts.suspend_membership(member, owner_subject)
-            assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}, 500
+            assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}
 
           :identity_retired ->
             Fixtures.SSO.retire_identity(identity)
@@ -406,17 +406,21 @@ defmodule EmisarWeb.WorkspaceSessionsTest do
       %{conn: conn, owner: owner, account: account, token: token, row: session_row(token)}
     end
 
-    test "leaves when its session expires", %{conn: conn, account: account, token: token} do
-      # Minted almost sixty days ago: it expires while the page is open. The
-      # margin lets the mount finish first on a loaded machine.
-      minted_at =
-        DateTime.utc_now() |> DateTime.add(-60, :day) |> DateTime.add(1_500, :millisecond)
-
-      :ok = Fixtures.Auth.backdate_session_token!(token, minted_at)
-
+    test "leaves when its session expires", %{
+      conn: conn,
+      account: account,
+      token: token,
+      row: row
+    } do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}")
 
-      {to, _flash} = assert_redirect(lv, 5_000)
+      # The check is judged at the instant it names, here the session's expiry.
+      # The row is expired too, so the full page load re-decides from the database.
+      minted_at = DateTime.add(DateTime.utc_now(), -61, :day)
+      :ok = Fixtures.Auth.backdate_session_token!(token, minted_at)
+      send(lv.pid, {:workspace_session_expiry, row.id, Auth.session_expires_at(row)})
+
+      {to, _flash} = assert_redirect(lv)
       assert URI.parse(to).path == ~p"/app/#{account}"
       assert redirected_to(get(conn, ~p"/app/#{account}")) == ~p"/app/#{account}/sign_in"
     end

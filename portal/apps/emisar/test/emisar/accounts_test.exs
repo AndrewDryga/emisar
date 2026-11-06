@@ -3966,7 +3966,7 @@ defmodule Emisar.AccountsTest do
 
       # A team mutation publishes on the topic the subscriber just joined.
       assert {:ok, _} = Accounts.suspend_membership(target, owner_subject)
-      assert_receive {:list_changed, :team, "membership.suspended", membership_id}, 500
+      assert_receive {:list_changed, :team, "membership.suspended", membership_id}
       assert membership_id == target.id
     end
 
@@ -4399,7 +4399,7 @@ defmodule Emisar.AccountsTest do
       refute Membership.disabled?(reinstated)
       assert is_nil(Repo.reload!(target).disabled_at)
 
-      assert_receive {:list_changed, :team, "membership.reinstated", membership_id}, 500
+      assert_receive {:list_changed, :team, "membership.reinstated", membership_id}
       assert membership_id == target.id
     end
 
@@ -7925,7 +7925,7 @@ defmodule Emisar.AccountsTest do
 
       assert {:ok, _} = Accounts.suspend_membership(target, subject)
 
-      assert_receive {:list_changed, :team, "membership.suspended", membership_id}, 500
+      assert_receive {:list_changed, :team, "membership.suspended", membership_id}
       assert membership_id == target.id
     end
 
@@ -7938,7 +7938,7 @@ defmodule Emisar.AccountsTest do
 
       assert {:ok, _} = Accounts.delete_membership(target, subject)
 
-      assert_receive {:list_changed, :team, "membership.removed", membership_id}, 500
+      assert_receive {:list_changed, :team, "membership.removed", membership_id}
       assert membership_id == target.id
     end
   end

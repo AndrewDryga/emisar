@@ -3,8 +3,6 @@ defmodule Emisar.Jobs.Executors.GloballyUniqueTest do
   import ExUnit.CaptureLog
   alias Emisar.Jobs.Executors.GloballyUnique
 
-  @wait 2_000
-
   defmodule DeclaredJob do
     use Emisar.Jobs.Job,
       otp_app: :emisar,
@@ -59,7 +57,7 @@ defmodule Emisar.Jobs.Executors.GloballyUniqueTest do
       {GloballyUnique, {ExecutingJob, :timer.hours(1), initial_delay: 0, test_pid: self()}}
     )
 
-    assert_receive :executed, @wait
+    assert_receive :executed
   end
 
   test "a disabled job is not started" do
@@ -73,7 +71,7 @@ defmodule Emisar.Jobs.Executors.GloballyUniqueTest do
       {GloballyUnique, {ReclaimingJob, :timer.hours(1), initial_delay: 0, test_pid: self()}}
     )
 
-    assert_receive :executed, @wait
+    assert_receive :executed
     leader = :global.whereis_name({GloballyUnique, ReclaimingJob})
     %{role: :leader, tick_ref: leader_ref} = :sys.get_state(leader)
     assert is_integer(Process.read_timer(leader_ref))
@@ -83,7 +81,7 @@ defmodule Emisar.Jobs.Executors.GloballyUniqueTest do
     :global.unregister_name({GloballyUnique, ReclaimingJob})
     send(leader, :claim)
 
-    assert_receive :executed, @wait
+    assert_receive :executed
     %{role: :leader, tick_ref: reclaimed_ref} = :sys.get_state(leader)
 
     # One chain, not two: the pre-flap timer is cancelled rather than left
@@ -100,7 +98,7 @@ defmodule Emisar.Jobs.Executors.GloballyUniqueTest do
     log =
       capture_log(fn ->
         {:ok, pid} = GloballyUnique.start_link({FailingJob, :timer.hours(1), initial_delay: 0})
-        assert_receive {:EXIT, ^pid, {%RuntimeError{}, _stacktrace}}, @wait
+        assert_receive {:EXIT, ^pid, {%RuntimeError{}, _stacktrace}}
       end)
 
     assert log =~ "recurrent_job.failed"

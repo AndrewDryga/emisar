@@ -617,7 +617,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
                )
 
       execution_id = result.execution_id
-      assert_receive {:cloud_to_runner, _generation, _payload}, 500
+      assert_receive {:cloud_to_runner, _generation, _payload}
 
       {:ok, lv, html} =
         live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/runs/#{execution_id}")
@@ -1043,7 +1043,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
                  "structured_output" => %{"ready" => true}
                })
 
-      assert_receive {:runbook_execution_updated, ^execution_id}, 500
+      assert_receive {:runbook_execution_updated, ^execution_id}
       html = flush_execution_reload(lv)
       assert html =~ "1 of 1 succeeded"
       assert has_element?(lv, "[id$='-progress']", "1 of 1 succeeded")
@@ -1120,7 +1120,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       :ok = Runbooks.subscribe_execution(account.id, execution_id)
       assert {:ok, _run} = Fixtures.Runs.finish(run, %{"status" => "failed", "exit_code" => 1})
 
-      assert_receive {:runbook_execution_updated, ^execution_id}, 500
+      assert_receive {:runbook_execution_updated, ^execution_id}
       html = flush_execution_reload(lv)
       assert html =~ "Execution halted"
       # Machine codes stay out of the page — the halt block carries the message.
@@ -1151,7 +1151,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
                  "structured_output" => %{"ready" => false}
                })
 
-      assert_receive {:runbook_execution_updated, ^execution_id}, 500
+      assert_receive {:runbook_execution_updated, ^execution_id}
       html = flush_execution_reload(lv)
       assert html =~ "waiting"
       assert html =~ "not met"
@@ -1260,7 +1260,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
                })
 
       Runbooks.broadcast_execution_updated(account.id, execution_id)
-      assert_receive {:runbook_execution_updated, ^execution_id}, 500
+      assert_receive {:runbook_execution_updated, ^execution_id}
       render(lv)
       assert {token, timer} = :sys.get_state(lv.pid).socket.assigns.execution_reload_timer
       Process.cancel_timer(timer)
@@ -1269,7 +1269,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
         capture_queries(lv.pid, fn ->
           for _index <- 1..50 do
             Runbooks.broadcast_execution_updated(account.id, execution_id)
-            assert_receive {:runbook_execution_updated, ^execution_id}, 500
+            assert_receive {:runbook_execution_updated, ^execution_id}
           end
 
           render(lv)
@@ -1284,7 +1284,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
                  "structured_output" => %{"ready" => true}
                })
 
-      assert_receive {:runbook_execution_updated, ^execution_id}, 500
+      assert_receive {:runbook_execution_updated, ^execution_id}
 
       reload_queries =
         capture_queries(lv.pid, fn ->
@@ -1421,7 +1421,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
                    "structured_output" => %{"ready" => true}
                  })
 
-        assert_receive {:runbook_execution_updated, ^execution_id}, 500
+        assert_receive {:runbook_execution_updated, ^execution_id}
       end
 
       runs = Runs.list_runs_for_runbook_execution(account.id, execution_id)

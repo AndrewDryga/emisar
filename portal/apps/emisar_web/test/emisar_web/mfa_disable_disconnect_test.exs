@@ -31,7 +31,7 @@ defmodule EmisarWeb.MfaDisableDisconnectTest do
     assert {:ok, disabled} = Auth.disable_mfa(recovery_code, subject)
     refute disabled.mfa_enabled_at
 
-    assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}, 500
+    assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}
     assert {:ok, _session} = Auth.fetch_session_by_token(token, account.id)
   end
 end

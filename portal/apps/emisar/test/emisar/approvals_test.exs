@@ -134,7 +134,7 @@ defmodule Emisar.ApprovalsTest do
                Approvals.approve_request(request, subject, "Reviewed")
 
       assert decided.decided_by_membership_id == subject.membership_id
-      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}
     end
 
     test "offboarding retires the old vote and rejoining creates a distinct voter" do
@@ -3936,7 +3936,7 @@ defmodule Emisar.ApprovalsTest do
       assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
                Approvals.approve_request(request, b, "lgtm-2")
 
-      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}
       assert approved_count(request.id) == 2
     end
 
@@ -3947,7 +3947,7 @@ defmodule Emisar.ApprovalsTest do
       assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
                Approvals.approve_request(request, operator, "ok")
 
-      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}
     end
 
     test "ABUSE: a single operator approving twice counts once — second is :already_decided, not dispatched" do
@@ -3981,7 +3981,7 @@ defmodule Emisar.ApprovalsTest do
                |> Repo.one()
 
       assert payload["self_approval_waived"] == true
-      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}
     end
 
     test "an admin releases below quorum with one distinct audit receipt and no extra vote" do
@@ -4018,7 +4018,7 @@ defmodule Emisar.ApprovalsTest do
       assert overridden.decision_reason == "Production recovery cannot wait"
       assert overridden.overridden
       assert approved_count(request.id) == 1
-      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}
       assert %ActionRun{status: :sent} = Repo.reload!(run)
 
       {:ok, events, _metadata} = Audit.list_events(admin_subject, page: [limit: 50])
@@ -4333,7 +4333,7 @@ defmodule Emisar.ApprovalsTest do
       assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
                Approvals.approve_request(request, other, "ok")
 
-      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}
     end
 
     test "a permissive request lets its requester self-approve (self-approval allowed)", %{
@@ -4349,7 +4349,7 @@ defmodule Emisar.ApprovalsTest do
       assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
                Approvals.approve_request(request, subject, "approving my own")
 
-      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}
     end
 
     test "an absent legacy User requester cannot bypass exact Member self denial or quorum" do
@@ -4399,7 +4399,7 @@ defmodule Emisar.ApprovalsTest do
       assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
                Approvals.approve_request(request, b, "lgtm-2")
 
-      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}
     end
 
     test "an erased requester is vacuously non-self; min_approvals still requires N distinct" do
@@ -4483,7 +4483,7 @@ defmodule Emisar.ApprovalsTest do
       assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
                Approvals.approve_request(request, other, "ok")
 
-      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}
     end
 
     test "ABUSE: whoever issued a service account's key can't approve what it requests" do
@@ -4499,7 +4499,7 @@ defmodule Emisar.ApprovalsTest do
       assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
                Approvals.approve_request(request, distinct_operator(account), "ok")
 
-      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}
     end
   end
 
@@ -4691,7 +4691,7 @@ defmodule Emisar.ApprovalsTest do
                  "self, but snapshot allows it"
                )
 
-      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}
     end
   end
 
@@ -5621,7 +5621,7 @@ defmodule Emisar.ApprovalsTest do
           scope: :any_args
         )
 
-      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}
 
       assert {:ok, :running, run2} = Runs.dispatch_run(attrs, mcp_subject)
       assert run2.id != run1.id
@@ -5631,7 +5631,7 @@ defmodule Emisar.ApprovalsTest do
                  "A standing grant satisfied that requirement."
 
       refute Request.Query.all() |> Request.Query.by_run_id(run2.id) |> Repo.peek()
-      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}
 
       [grant] = Fixtures.Approvals.grants_for_api_key(key.id)
       # Two executions under this grant: the approved first call (its

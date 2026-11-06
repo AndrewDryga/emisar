@@ -769,14 +769,20 @@ defmodule EmisarWeb.UserAuth do
 
   defp handle_session_revoked(_message, socket), do: {:cont, socket}
 
-  defp handle_session_expiry({:workspace_session_expiry, session_id}, socket) do
+  # The armed timer names no instant, so the real clock judges it. A check that
+  # names one is judged at that instant: the seam a test uses to expire a session
+  # without waiting for it. Before the expiry, a check only re-arms the timer.
+  defp handle_session_expiry({:workspace_session_expiry, session_id}, socket),
+    do: handle_session_expiry({:workspace_session_expiry, session_id, DateTime.utc_now()}, socket)
+
+  defp handle_session_expiry({:workspace_session_expiry, session_id, %DateTime{} = now}, socket) do
     %Auth.UserToken{} = auth = socket.assigns.current_auth
 
     cond do
       session_id != auth.id ->
         {:halt, socket}
 
-      DateTime.after?(Auth.session_expires_at(auth), DateTime.utc_now()) ->
+      DateTime.after?(Auth.session_expires_at(auth), now) ->
         :ok = schedule_session_expiry(auth)
         {:halt, socket}
 

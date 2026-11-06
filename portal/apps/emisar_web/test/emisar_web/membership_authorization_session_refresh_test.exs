@@ -58,7 +58,7 @@ defmodule EmisarWeb.MembershipAuthorizationSessionRefreshTest do
       assert {:ok, _membership} =
                Accounts.update_membership_role(membership, :admin, owner_subject)
 
-      assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}, 500
+      assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}
       refute_receive %Phoenix.Socket.Broadcast{topic: ^other_topic, event: "disconnect"}, 100
       assert {:ok, %{membership_id: member_id}} = Auth.fetch_session_by_token(token, account.id)
       assert member_id == membership.id
@@ -73,7 +73,7 @@ defmodule EmisarWeb.MembershipAuthorizationSessionRefreshTest do
       assert {:ok, _membership} =
                Accounts.update_membership_role(membership, :viewer, owner_subject)
 
-      assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}, 500
+      assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}
       refute_receive %Phoenix.Socket.Broadcast{topic: ^other_topic, event: "disconnect"}, 100
     end
 
@@ -190,7 +190,7 @@ defmodule EmisarWeb.MembershipAuthorizationSessionRefreshTest do
                  provider
                )
 
-      assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}, 500
+      assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}
       refute_receive %Phoenix.Socket.Broadcast{topic: ^other_topic, event: "disconnect"}, 100
       refute_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}, 100
 
@@ -241,7 +241,7 @@ defmodule EmisarWeb.MembershipAuthorizationSessionRefreshTest do
                )
 
       assert_receive {:list_changed, :team, "membership.role_changed", ^membership_id}
-      assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}, 500
+      assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}
       refute_receive %Phoenix.Socket.Broadcast{topic: ^other_topic, event: "disconnect"}, 100
     end
   end
@@ -307,7 +307,7 @@ defmodule EmisarWeb.MembershipAuthorizationSessionRefreshTest do
                  )
 
         topic = context.topic
-        assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}, 500
+        assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}
       end
 
       case @operation do
@@ -335,7 +335,7 @@ defmodule EmisarWeb.MembershipAuthorizationSessionRefreshTest do
   defp assert_local_retirement(context) do
     %{topic: topic, other_topic: other_topic, account: account, sibling: sibling} = context
 
-    assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}, 500
+    assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}
     refute_receive %Phoenix.Socket.Broadcast{topic: ^other_topic, event: "disconnect"}, 100
     assert Auth.fetch_current_subject([], context.held) == {:error, :unauthorized}
     assert Auth.fetch_session_by_token(context.token, account.id) == {:error, :not_found}

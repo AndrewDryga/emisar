@@ -347,7 +347,7 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
     assert DispatchTimeout.execute(batch_size: 2) == :ok
     assert Runs.peek_run_by_id(oldest.id).status == :sent
     assert Enum.all?(Enum.drop(runs, -1), &(Runs.peek_run_by_id(&1.id).status == :pending))
-    assert_receive {:cloud_to_runner, _generation, %{"request_id" => request_id}}, 500
+    assert_receive {:cloud_to_runner, _generation, %{"request_id" => request_id}}
     assert request_id == oldest.request_id
     refute_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 50
   end
@@ -432,7 +432,7 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
 
     assert Runs.peek_run_by_id(sent.id).status == :error
     assert Runs.peek_run_by_id(pending.id).status == :sent
-    assert_receive {:cloud_to_runner, _generation, %{"request_id" => request_id}}, 500
+    assert_receive {:cloud_to_runner, _generation, %{"request_id" => request_id}}
     assert request_id == pending.request_id
   end
 
