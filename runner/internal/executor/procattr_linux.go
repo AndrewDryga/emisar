@@ -17,12 +17,9 @@ import (
 // than referenced and silently failing to build the primary release target.
 const prSetNoNewPrivs = 0x26
 
-// prSetDumpable and prGetDumpable are PR_SET_DUMPABLE / PR_GET_DUMPABLE from
-// linux/prctl.h, spelled out for the same reason.
-const (
-	prSetDumpable = 0x4
-	prGetDumpable = 0x3
-)
+// prSetDumpable is PR_SET_DUMPABLE from linux/prctl.h, spelled out for the same
+// reason.
+const prSetDumpable = 0x4
 
 // ProtectProcess marks the runner non-dumpable, so the kernel's own copies of
 // its secrets stop being readable by the actions it runs. /proc/<pid>/environ
@@ -47,15 +44,6 @@ func ProtectProcess() error {
 		return fmt.Errorf("set dumpable=0: %w", errno)
 	}
 	return nil
-}
-
-// processDumpable reports the calling process's dumpable attribute.
-func processDumpable() (int, error) {
-	value, _, errno := syscall.RawSyscall6(syscall.SYS_PRCTL, prGetDumpable, 0, 0, 0, 0, 0)
-	if errno != 0 {
-		return 0, fmt.Errorf("get dumpable: %w", errno)
-	}
-	return int(value), nil
 }
 
 // applyProcAttr sets process attributes that protect against orphaned

@@ -6,8 +6,21 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"syscall"
 	"testing"
 )
+
+// prGetDumpable is PR_GET_DUMPABLE from linux/prctl.h.
+const prGetDumpable = 0x3
+
+// processDumpable reports the calling process's dumpable attribute.
+func processDumpable() (int, error) {
+	value, _, errno := syscall.RawSyscall6(syscall.SYS_PRCTL, prGetDumpable, 0, 0, 0, 0, 0)
+	if errno != 0 {
+		return 0, fmt.Errorf("get dumpable: %w", errno)
+	}
+	return int(value), nil
+}
 
 // The kernel keeps its own copy of the runner's environment under
 // /proc/<pid>/environ — runner.env, with the enrollment key and every pack
