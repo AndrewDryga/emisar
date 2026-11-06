@@ -6,16 +6,22 @@ kind: exec
 risk: high
 
 description: >
-  Dump every per-user crontab AND the system cron dirs (/etc/crontab,
-  /etc/cron.d/, /etc/cron.{hourly,daily,weekly,monthly}/). Use to
-  answer "what's scheduled on this host?" Read-only. Cron command lines
-  routinely carry inline credentials (a `curl` bearer token, a `mysql
-  -p<pw>`), so this can surface secrets. The runner's redaction is a
-  fail-closed backstop, not a guarantee — it is pattern-bound and can
-  miss a bespoke secret whose name and value match no rule.
+  Dump the crontab of every account `getent passwd` lists, nologin
+  service accounts such as `www-data` included (cron runs their jobs
+  whatever the login shell), then /etc/crontab, the job lines of every
+  file in /etc/cron.d/, and the script listings of
+  /etc/cron.{hourly,daily,weekly,monthly}/. Use to answer "what's
+  scheduled on this host?" Read-only. An account with no crontab gets no
+  section. Output stops at 128 KiB, and a longer schedule comes back
+  marked truncated. Cron command lines routinely carry inline
+  credentials (a `curl` bearer token, a `mysql -p<pw>`), so this can
+  surface secrets. The runner's redaction is a fail-closed backstop, not
+  a guarantee — it is pattern-bound and can miss a bespoke secret whose
+  name and value match no rule.
 
 side_effects:
-  - Iterates user crontabs + reads /etc/cron.*.
+  - Reads every account's crontab, /etc/crontab and each /etc/cron.d/ file,
+    and lists /etc/cron.{hourly,daily,weekly,monthly}/.
   - Read-only, but requires root and exposes cron command lines (may include
     inline secrets).
 
@@ -38,7 +44,31 @@ execution:
       # rather than crontab's exit status: cronie exits 1 both for "no crontab
       # for this user" and for "must be privileged to use -u", so the status
       # cannot tell an honest empty answer from a refused one.
-      - "[ \"$(id -u)\" = 0 ] || { echo 'reading every user crontab requires root; this runner identity would report an incomplete schedule' >&2; exit 1; }; for u in $(getent passwd | awk -F: '$7 !~ /nologin|false/ {print $1}'); do echo \"--- crontab -u $u ---\"; crontab -l -u \"$u\" 2>/dev/null; done; echo '--- /etc/crontab ---'; cat /etc/crontab 2>/dev/null; echo '--- /etc/cron.d/ ---'; ls -la /etc/cron.d/ 2>/dev/null; for d in hourly daily weekly monthly; do echo \"--- /etc/cron.$d/ ---\"; ls -la \"/etc/cron.$d/\" 2>/dev/null; done"
+      #
+      # Every passwd account is read, because cron runs a crontab with /bin/sh
+      # whatever the account's login shell: a nologin `www-data` is where app
+      # schedulers live. A failed getent fails the action rather than reading
+      # as "no user crontabs". /etc/cron.d holds crontab-format job lines, so
+      # each file is printed rather than listed.
+      - |
+        [ "$(id -u)" = 0 ] || { echo 'reading every user crontab requires root; this runner identity would report an incomplete schedule' >&2; exit 1; }
+        passwd=$(getent passwd) || { echo 'getent passwd failed, so the user crontabs cannot be enumerated' >&2; exit 1; }
+        printf '%s\n' "$passwd" | cut -d: -f1 | while IFS= read -r u; do
+          tab=$(crontab -l -u "$u" 2>/dev/null) || continue
+          echo "--- crontab -u $u ---"
+          printf '%s\n' "$tab"
+        done
+        echo '--- /etc/crontab ---'
+        cat /etc/crontab 2>/dev/null
+        for f in /etc/cron.d/*; do
+          [ -f "$f" ] || continue
+          echo "--- $f ---"
+          cat "$f"
+        done
+        for d in hourly daily weekly monthly; do
+          echo "--- /etc/cron.$d/ ---"
+          ls -la "/etc/cron.$d/" 2>/dev/null
+        done
   timeout: 15s
 
 output:

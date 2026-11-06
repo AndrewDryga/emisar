@@ -1,4 +1,4 @@
-services: [memcached]
+services: [memcached, memcached-noflush]
 versions:
   - version: "1.6.45"
     digest: "@sha256:dc561d52bb8ad3c038867123ed2dc8357c4c128f047cdbd526cd65cf39408cbd"
@@ -22,6 +22,21 @@ cases:
           stdout_contains: [absent]
     cleanup:
       - argv: [/bin/sh, -c, 'printf "delete harness\r\nquit\r\n" | nc -w 5 "$MEMCACHED_HOST" "$MEMCACHED_PORT" >/dev/null']
+  # memcached -F refuses the flush with CLIENT_ERROR while nc still exits 0;
+  # the run must fail with that reply and the key must survive.
+  - name: mc.flush_all-fails-when-the-server-refuses-it
+    action: mc.flush_all
+    env: {MEMCACHED_HOST: memcached-noflush}
+    arrange:
+      - argv: [/bin/sh, -c, 'printf "set harness 0 0 5\r\nvalue\r\nquit\r\n" | nc -w 5 "$MEMCACHED_HOST" "$MEMCACHED_PORT" | grep -q STORED']
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["memcached did not accept flush_all: CLIENT_ERROR flush_all not allowed"]
+    probes:
+      - argv: [/bin/sh, -c, 'printf "get harness\r\nquit\r\n" | nc -w 5 "$MEMCACHED_HOST" "$MEMCACHED_PORT" | grep -q VALUE && printf present']
+        expect:
+          stdout_contains: [present]
   - action: mc.stats
     expect:
       stdout_contains: [STAT version, STAT uptime, END]

@@ -23,10 +23,14 @@ args:
     type: integer
     required: false
     default: 0
-    description: Logical database index.
+    description: >-
+      Logical database index. The server's `databases` setting (16 by default) is
+      the real limit; Redis refuses an index it does not have.
     validation:
       min: 0
-      max: 15
+      # Redis caps `databases` at INT_MAX, so INT_MAX - 1 is the highest
+      # index any server can have.
+      max: 2147483646
 
 execution:
   script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}

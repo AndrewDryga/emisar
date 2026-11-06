@@ -157,7 +157,12 @@ case "$mode" in
       recent_filter="$recent_filter AND logName = \"projects/$project/logs/$log_id\""
     fi
     if [ -n "$json_message" ]; then
-      recent_filter="$recent_filter AND jsonPayload.message = \"$json_message\""
+      # An event line is the bare name or the name and its context
+      # (`sweep.row_failed row=<id>`), so match the whole message or its first
+      # word. The argument admits only [A-Za-z0-9._-]; `.` is the one RE2
+      # metacharacter among them, and `[.]` spells it without an escape.
+      message_regex=$(printf '%s\n' "$json_message" | sed 's/[.]/[.]/g')
+      recent_filter="$recent_filter AND (jsonPayload.message = \"$json_message\" OR jsonPayload.message =~ \"^$message_regex \")"
     fi
     resource="projects/$project"
     if [ -n "$view_id" ]; then

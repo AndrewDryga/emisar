@@ -3,7 +3,13 @@ id: git.remote_list
 title: git remote -v
 kind: exec
 risk: low
-description: List the remote URLs (fetch + push).
+description: >
+  List the remote URLs (fetch + push). The user-info part of every
+  `scheme://` URL (`user:password@`, a `token@` login, an `ssh://` user
+  name) prints as `[REDACTED]@`, so a credential embedded in a remote URL
+  does not leave the host; an scp-style remote (`git@host:org/repo.git`)
+  prints as configured. A GIT_REPO that is not a git checkout fails with
+  git's own error.
 side_effects:
   - One git remote.
   - Read-only.
@@ -13,7 +19,19 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "cd \"$GIT_REPO\" && git remote -v"
+      # Remote URLs are operator-authored and often carry a token as the URL
+      # user name (`https://<PAT>@dev.azure.com/...`), which the runner's
+      # `user:pass@` redaction rule does not match, so the program drops every
+      # URL's user-info itself. The greedy match runs to the last `@` before
+      # the path, so a raw `@` inside a password cannot leave a tail behind.
+      # git's status is captured rather than piped, so a failed `git remote`
+      # still fails the action instead of reporting an empty remote list.
+      - |
+        cd "$GIT_REPO" || exit
+        status=0
+        remotes=$(git remote -v) || status=$?
+        [ -z "$remotes" ] || printf '%s\n' "$remotes" | sed -E 's#://[^/[:space:]]*@#://[REDACTED]@#g'
+        exit $status
   timeout: 15s
 output:
   parser: text

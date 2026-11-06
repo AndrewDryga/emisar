@@ -2,8 +2,10 @@ schema_version: 1
 
 id: nodejs-pm2
 name: Node.js / PM2 operations
-version: 0.1.17
-retired_below: 0.1.13
+version: 0.1.18
+# 0.1.17 and below rated flush_logs `medium`, so under the default policy an
+# irreversible wipe of an app's logs ran without approval.
+retired_below: 0.1.18
 description: >
   PM2 process inventory + logs + per-app introspection, plus narrow
   mutators (restart, reload, stop, scale). Requires the runner to be the
@@ -27,7 +29,7 @@ setup:
   summary: >
     Drives the local pm2 CLI on the runner host — no credentials needed.
   notes:
-    - "pm2 talks to a per-user daemon, so the runner must run as the same user that owns the target pm2 processes; running as a different uid (or root) sees a different, usually empty, process list."
+    - "pm2 talks to a per-user daemon, so the runner must run as the same user that owns the target pm2 processes; running as a different uid (or root) sees a different, usually empty, process list, and pm2 spawns a new daemon for that uid on first contact."
     - "If the apps run under a daemon at a non-default location, set PM2_HOME to that directory (and add it to the runner's `inherit_env`)."
   verify: pm2.list
 

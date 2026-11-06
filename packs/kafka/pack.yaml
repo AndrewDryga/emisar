@@ -2,7 +2,7 @@ schema_version: 1
 
 id: kafka
 name: Kafka cluster operations
-version: 0.1.13
+version: 0.1.14
 description: >
   Topic introspection, consumer-group lag, broker config, ACLs, and narrow
   mutators (reset_offsets, alter_topic_retention, delete_consumer_group,
@@ -16,6 +16,12 @@ requires:
     - linux
   binaries:
     - kafka-topics.sh
+    - kafka-acls.sh
+    - kafka-broker-api-versions.sh
+    - kafka-configs.sh
+    - kafka-consumer-groups.sh
+    - kafka-leader-election.sh
+    - kafka-reassign-partitions.sh
 
 detect:
   binaries:

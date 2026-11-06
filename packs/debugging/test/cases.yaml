@@ -314,6 +314,33 @@ cases:
       reason_contains: [process exited with code 1]
       stderr_contains: [PID 4194304 does not exist]
 
+  - action: debugging.pid_cwd
+    arrange:
+      - argv: [/bin/sh, -c, "/bin/sh -c 'cd /tmp; exec sleep 600' </dev/null >/dev/null 2>&1 & echo $! > /tmp/packtest-cwd.pid"]
+    resolve_args:
+      pid:
+        argv: [/bin/sh, -c, "cat /tmp/packtest-cwd.pid"]
+    expect:
+      stdout_contains: ["cwd=/tmp\n", "exe=/usr/bin/sleep\n"]
+    cleanup:
+      - argv: [/bin/sh, -c, "kill $(cat /tmp/packtest-cwd.pid) 2>/dev/null || true"]
+
+  - name: debugging.pid-cwd-missing-process
+    action: debugging.pid_cwd
+    args: {pid: 4194304}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [PID 4194304 does not exist]
+
+  # PID 1 is the SUT's root-owned init; the non-root runner may see it but
+  # not read its links, which used to come back as empty values.
+  - name: debugging.pid-cwd-unreadable-process
+    action: debugging.pid_cwd
+    args: {pid: 1}
+    expect:
+      stdout_contains: ["cwd=[unavailable]", "exe=[unavailable]"]
+
   - action: debugging.pid_env_keys
     arrange:
       - argv: [/bin/sh, -c, "CONSUL_HTTP_TOKEN=packtest-consul-secret NOMAD_ADDR=http://nomad.invalid PACKTEST_MULTILINE=$(printf 'first\\nsecond-secret') sleep 600 </dev/null >/dev/null 2>&1 & echo $! > /tmp/packtest-env.pid"]

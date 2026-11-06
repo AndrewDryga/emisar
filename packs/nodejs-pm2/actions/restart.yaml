@@ -3,15 +3,21 @@ id: pm2.restart
 title: pm2 restart <name>
 kind: exec
 risk: high
-description: Hard-restart one process (kill + spawn). Drops in-flight requests.
+description: >
+  Hard-restart (kill + spawn) the processes `name` selects: one id, every
+  instance carrying a name, `all` (every app the runner's PM2 daemon
+  manages), or, when no process has that name, every process in the
+  namespace it names. Drops in-flight requests.
 side_effects:
-  - Process is killed and respawned.
+  - Each selected process is killed and respawned.
   - Open sockets close; in-flight requests drop.
 args:
   - name: name
     type: string
     required: true
-    description: Process name or id.
+    description: >-
+      Process id or name, `all`, or a namespace. A name matches every instance
+      that carries it; `all` and a namespace act on every matching process.
     validation:
       pattern: "^[a-zA-Z0-9_.][a-zA-Z0-9_.\\-]{0,63}$"
 execution:

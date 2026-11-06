@@ -2,8 +2,12 @@ schema_version: 1
 
 id: cloud-init
 name: cloud-init operations
-version: 0.1.19
-retired_below: 0.1.11
+version: 0.1.20
+# 0.1.19 and below ran `cloud-init clean --logs` as the medium clean_logs,
+# which also deletes /var/lib/cloud, so with no approval the next boot
+# provisioned the host as a new instance; and collect_logs left its bundle,
+# which can hold user-data, in /tmp at the umask's mode.
+retired_below: 0.1.20
 description: >
   cloud-init introspection + boot diagnostics + stage re-runs. Use when
   an EC2/GCE/Azure VM finishes booting but the workload didn't come up

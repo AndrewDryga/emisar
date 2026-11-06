@@ -6,7 +6,8 @@ risk: medium
 description: >
   Query up to five recent Cloud Logging entries in a Google Cloud project or a
   named view in its global _Default bucket, optionally narrowed by minimum
-  severity, resource type, exact log ID, and exact jsonPayload.message.
+  severity, resource type, exact log ID, and a jsonPayload.message event name,
+  matched as the whole message or its first word.
   Returns fixed, clipped diagnostic fields including jsonPayload.job and error,
   plus a continuation cursor; log content is arbitrary application
   output, so redaction is best-effort and the result should be treated as
@@ -60,7 +61,10 @@ args:
     type: string
     required: false
     default: ""
-    description: Optional exact jsonPayload.message value, such as recurrent_job.failed.
+    description: >-
+      Optional event name matched as the whole jsonPayload.message or its first
+      word, such as recurrent_job.failed, or sweep.row_failed for its
+      `sweep.row_failed row=<id>` lines.
     validation:
       pattern: "^([A-Za-z0-9._-]{1,128})?$"
       max_length: 128

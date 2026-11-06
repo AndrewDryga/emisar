@@ -65,7 +65,7 @@ resource "google_monitoring_alert_policy" "recurrent_job_failures" {
   combiner     = "OR"
 
   documentation {
-    content   = "A supervised recurrent job crashed at the executor boundary (`recurrent_job.failed`), or a sweep skipped a row that raised (`sweep.row_failed row=<id>`). Both lines name the `job` and the exception type in `error`. These sweeps drive dispatch timeouts, billing reconciliation, event/run retention, and the fleet-observability signal, so a crash-looping job silently stops that housekeeping, and a skipped row is left unprocessed: a stuck run is not timed out, or an account's Paddle quantity stops converging. Check the failing job's error, the row it names, and whether it is a one-off or looping, plus any recent deploy touching that context's jobs/."
+    content   = "A supervised recurrent job crashed at the executor boundary (`recurrent_job.failed`), or a sweep skipped a row that raised (`sweep.row_failed row=<id>`). Both lines name the `job` and the exception type in `error`; from the admin runner, `gcp.log_entries` with `view_id: emisar-vm-containers`, `resource_type: gce_instance`, `log_id: cos_containers`, and `json_message: sweep.row_failed` (or `recurrent_job.failed`) returns them. These sweeps drive dispatch timeouts, billing reconciliation, event/run retention, and the fleet-observability signal, so a crash-looping job silently stops that housekeeping, and a skipped row is left unprocessed: a stuck run is not timed out, or an account's Paddle quantity stops converging. Check the failing job's error, the row it names, and whether it is a one-off or looping, plus any recent deploy touching that context's jobs/."
     mime_type = "text/markdown"
   }
 

@@ -4,21 +4,47 @@ title: cloud-init collect-logs
 kind: exec
 risk: medium
 description: >
-  Bundle /var/log/cloud-init* + journals + config into a tarball
-  under /tmp/cloud-init.tar.gz. Use when you need to share state with
-  cloud-init upstream or attach to a support ticket.
+  Bundle the cloud-init logs, /etc/cloud, cloud-init's instance and run
+  state, and the boot journal into a root-only tarball at
+  /var/lib/cloud/collect-logs.tar.gz (mode 0600), for cloud-init
+  upstream or a support ticket. Returns cloud-init's report and the
+  bundle's `ls -l` line, never its contents. On cloud-init 24.3 and
+  later the bundle is built with `--redact-sensitive`, which leaves out
+  root-only files such as user-data and instance-data-sensitive.json,
+  and dmesg. Older releases have no such flag and, run as root, still
+  copy /run/cloud-init/instance-data-sensitive.json. On every release
+  the journal and logs are raw host text that can carry secrets. Fails
+  when /var/lib/cloud does not exist.
 side_effects:
-  - Writes /tmp/cloud-init.tar.gz (overwrites if present).
+  - Replaces /var/lib/cloud/collect-logs.tar.gz with a new bundle readable only by root.
   - May briefly stress disk + tar throughput.
 args: []
 execution:
   command:
-    binary: cloud-init
-    # --tarfile is explicit because its default is the RELATIVE name
-    # cloud-init.tar.gz and the runner runs every action child with cwd "/",
-    # so the bundle would land at /cloud-init.tar.gz — not where side_effects
-    # says to look for it.
-    argv: ["collect-logs", "--tarfile", "/tmp/cloud-init.tar.gz"]
+    binary: /bin/sh
+    argv:
+      - "-c"
+      # The bundle used to land in /tmp at the umask's 0644, readable by every
+      # local account although it can hold user-data. /var/lib/cloud is
+      # root-owned, so no other account can plant a file or symlink at the
+      # name; the previous bundle is removed rather than overwritten, because
+      # tar keeps an existing file's mode; umask 077 makes the new one 0600.
+      # --tarfile is absolute because its default is relative and the runner
+      # runs every action child with cwd "/". --redact-sensitive only exists
+      # from cloud-init 24.3, so the installed CLI is asked before it is used.
+      - |
+        umask 077
+        out=/var/lib/cloud/collect-logs.tar.gz
+        [ -d /var/lib/cloud ] || { echo '/var/lib/cloud does not exist, so there is no root-only place for the bundle' >&2; exit 1; }
+        rm -f "$out" || exit
+        status=0
+        help=$(cloud-init collect-logs --help 2>&1) || status=$?
+        [ "$status" = 0 ] || { printf '%s\n' "$help" >&2; exit "$status"; }
+        case "$help" in
+          *--redact-sensitive*) cloud-init collect-logs --redact-sensitive --tarfile "$out" || exit ;;
+          *) cloud-init collect-logs --tarfile "$out" || exit ;;
+        esac
+        ls -l "$out"
   timeout: 2m
 output:
   parser: text

@@ -219,6 +219,22 @@ cases:
       json: {"": 1}
     cleanup:
       - argv: [redis-cli, DEL, packtest:ready]
+  # The SUT runs with `databases 32`: index 20 is past the default 16 but
+  # exists, and 32 is one past the server's last database.
+  - name: redis.dbsize-reaches-an-index-above-the-default-sixteen
+    action: redis.dbsize
+    args: {db: 20}
+    arrange:
+      - argv: [redis-cli, -n, "20", SET, "packtest:db20", present]
+    expect:
+      json: {"": 1}
+  - name: redis.dbsize-refuses-an-index-the-server-lacks
+    action: redis.dbsize
+    args: {db: 32}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [DB index is out of range]
   - action: redis.info
     args: {section: server}
     expect:
@@ -502,5 +518,15 @@ cases:
       - argv: [redis-cli, -n, "1", SET, packtest:db, one]
     probes:
       - argv: [/bin/sh, -c, 'test "$(redis-cli GET packtest:db)" = one -a "$(redis-cli -n 1 GET packtest:db)" = zero && echo swapped']
+        expect:
+          stdout_contains: [swapped]
+  - name: redis.swapdb-reaches-an-index-above-the-default-sixteen
+    action: redis.swapdb
+    args: {i: 0, j: 31}
+    arrange:
+      - argv: [redis-cli, SET, packtest:db, zero]
+      - argv: [redis-cli, -n, "31", SET, packtest:db, thirty-one]
+    probes:
+      - argv: [/bin/sh, -c, 'test "$(redis-cli GET packtest:db)" = thirty-one -a "$(redis-cli -n 31 GET packtest:db)" = zero && echo swapped']
         expect:
           stdout_contains: [swapped]

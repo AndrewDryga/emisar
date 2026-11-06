@@ -3,11 +3,15 @@ id: zfs.pool_iostat
 title: zpool iostat (5s sample)
 kind: exec
 risk: low
-description: Show one 5-second iostat sample per pool.
+description: >
+  Show one 5-second iostat sample per pool and vdev: the I/O of the next five
+  seconds, not the since-boot averages zpool prints first by default.
 side_effects: ["Reads pool metrics.", "Read-only."]
 args: []
 execution:
-  command: {binary: zpool, argv: ["iostat", "-v", "5", "1"]}
+  # Without -y the one report `5 1` prints is the since-boot average
+  # (zpool-iostat(8)), which averages a current spike away.
+  command: {binary: zpool, argv: ["iostat", "-y", "-v", "5", "1"]}
   timeout: 30s
 output:
   parser: text

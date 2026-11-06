@@ -8,12 +8,14 @@ risk: medium
 description: >
   Grep an extended regex (POSIX -E) against a log file under /var/log.
   Read-only. Returns matching lines with line numbers (-n) up to
-  max_lines. Use to find recent occurrences of a specific identifier
-  (request ID, user ID, IP) or to spot error patterns without dumping
-  the whole file. Output is run through the runner's redactor before
-  it leaves the host. On journald-only hosts (no rsyslog) the system log
-  isn't a file under /var/log — use linux.journalctl for syslog/messages;
-  this reads on-disk files (app, nginx, …).
+  max_lines. Succeeds with no output when no line matches (grep exits 1);
+  a missing or unreadable file still fails (grep exits 2). Use to find
+  recent occurrences of a specific identifier (request ID, user ID, IP)
+  or to spot error patterns without dumping the whole file. Output is
+  run through the runner's redactor before it leaves the host. On
+  journald-only hosts (no rsyslog) the system log isn't a file under
+  /var/log — use linux.journalctl for syslog/messages; this reads
+  on-disk files (app, nginx, …).
 
 side_effects:
   - Reads a log file under /var/log.
@@ -72,6 +74,9 @@ execution:
   timeout_min: 1s
   timeout_max: 5m
   cwd: /
+  # grep exits 1 for "no line matched", the good answer for an error search.
+  # A missing or unreadable file, or a bad pattern, exits 2 and still fails.
+  success_exit_codes: [1]
 
 output:
   parser: text

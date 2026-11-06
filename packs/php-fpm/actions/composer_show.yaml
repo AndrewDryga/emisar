@@ -3,15 +3,23 @@ id: phpfpm.composer_show
 title: composer show (in $COMPOSER_DIR)
 kind: exec
 risk: low
-description: List installed Composer packages with versions.
+description: >
+  List installed Composer packages with versions. Runs `composer show` with
+  `--no-plugins --no-scripts`, so no plugin or script from the project
+  executes, including as root under the pack's root recipe. Needs Composer
+  2.2 or later, where `--no-scripts` became a global option.
 side_effects: ["Reads composer.lock + vendor/.", "Read-only."]
 args: []
 execution:
   command:
     binary: /bin/sh
+    # Composer loads every plugin in the project's vendor/ unless told not to,
+    # and turns plugins off for root by itself only from 2.4.2, and never in a
+    # container it detects. stderr stays visible, so a missing composer or
+    # lock file comes back with its message.
     argv:
       - "-c"
-      - "cd \"${COMPOSER_DIR:-/var/www/html}\" && composer show --format=json --no-interaction 2>/dev/null"
+      - "cd \"${COMPOSER_DIR:-/var/www/html}\" && exec composer show --format=json --no-interaction --no-plugins --no-scripts"
   timeout: 60s
 output:
   parser: json

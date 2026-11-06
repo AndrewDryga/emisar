@@ -50,6 +50,15 @@ RUN printf '0123456789abcdef0123456789abcdef\n' > /etc/machine-id
 # machine and prove nothing.
 RUN useradd --create-home --shell /bin/sh deploy \
     && printf '17 3 * * * /usr/local/bin/packtest-nightly\n' | crontab -u deploy -
+# cron runs a nologin service account's crontab too, which is where an app
+# scheduler lives, and /etc/cron.d holds job lines rather than names; one of
+# each proves the read shows them.
+RUN printf '* * * * * /usr/local/bin/packtest-app-scheduler\n' | crontab -u www-data - \
+    && printf '41 4 * * * root /usr/local/bin/packtest-cron-d-cleanup\n' > /etc/cron.d/packtest-app \
+    && chmod 0644 /etc/cron.d/packtest-app
+# grep_log searches a file under /var/log on the machine the action runs on;
+# one known line lets a case tell a match from grep's clean-log exit 1.
+RUN printf 'packtest boot ok\npacktest worker started\n' > /var/log/packtest-app.log
 # Arrange and probe steps run as the image's own user, not as the case's
 # runner_user, so the journal reads they do to set up and verify need this
 # group — the action itself already runs as root.

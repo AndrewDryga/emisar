@@ -16,7 +16,10 @@ args:
     required: true
     description: Pool name.
     validation:
-      pattern: "^[a-zA-Z0-9_][a-zA-Z0-9_\\-]{0,63}$"
+      # OpenZFS pool_namecheck: a leading letter, then letters, digits, `_`,
+      # `-`, `.`, `:` or space, under 240 bytes. The same pattern guards every
+      # pool argument in this pack.
+      pattern: "^[A-Za-z][A-Za-z0-9_.:\\- ]{0,238}$"
 execution:
   command:
     binary: zpool

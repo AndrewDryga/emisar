@@ -44,6 +44,7 @@ bytes=$(wc -c <"$scratch/whois")
 if ((statuses[0] == 0 && statuses[1] == 0 && bytes > 0 && bytes <= max_response_bytes)); then
   # Match whole public labels; Registrar Abuse Contact and unrelated remarks do
   # not qualify. Never replay raw WHOIS output or a failed partial response.
+  # jq 1.6 rejects a keyword as a variable name, so the label is $field.
   jq -Rrs '
     def space_trim:
       explode | . as $cs |
@@ -51,13 +52,13 @@ if ((statuses[0] == 0 && statuses[1] == 0 && bytes > 0 && bytes <= max_response_
       if ($ix|length) == 0 then "" else $cs[$ix[0]:($ix[-1]+1)] | implode end;
     def display: explode | map(if . >= 127 and . <= 159 then 32 else . end) | implode | @json;
     split("\n")[] | rtrimstr("\r") | split(":") |
-    select(length >= 2) | (.[0] | space_trim | ascii_downcase) as $label |
+    select(length >= 2) | (.[0] | space_trim | ascii_downcase) as $field |
     select(["domain name", "registrar", "registrar iana id", "creation date",
       "created", "updated date", "last modified", "registry expiry date",
       "registrar registration expiration date", "expiration date", "expiry date",
-      "name server", "nserver", "domain status", "status"] | index($label)) |
+      "name server", "nserver", "domain status", "status"] | index($field)) |
     (.[1:] | join(":") | space_trim) as $value | select($value != "") |
-    "\($label): \($value | display)"
+    "\($field): \($value | display)"
   ' <"$scratch/whois" >"$scratch/summary" 2>/dev/null || fail 'WHOIS summary could not be parsed'
   if [[ -s "$scratch/summary" ]]; then
     source=WHOIS

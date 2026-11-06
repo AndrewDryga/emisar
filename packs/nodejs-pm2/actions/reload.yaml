@@ -3,7 +3,12 @@ id: pm2.reload
 title: pm2 reload <name>
 kind: exec
 risk: high
-description: Zero-downtime reload — only safe for cluster-mode apps. For fork-mode, behaves like restart.
+description: >
+  Zero-downtime reload of the processes `name` selects: one id, every
+  instance carrying a name, `all` (every app the runner's PM2 daemon
+  manages), or, when no process has that name, every process in the
+  namespace it names. Only safe for cluster-mode apps; for fork-mode,
+  behaves like restart.
 side_effects:
   - "Cluster mode: rolling worker swap, no dropped requests."
   - "Fork mode: equivalent to restart — drops in-flight requests."
@@ -11,7 +16,9 @@ args:
   - name: name
     type: string
     required: true
-    description: Process name or id.
+    description: >-
+      Process id or name, `all`, or a namespace. A name matches every instance
+      that carries it; `all` and a namespace act on every matching process.
     validation:
       pattern: "^[a-zA-Z0-9_.][a-zA-Z0-9_.\\-]{0,63}$"
 execution:

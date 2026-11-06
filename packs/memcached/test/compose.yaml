@@ -8,3 +8,14 @@ services:
       start_period: 30s
       start_interval: 1s
       retries: 10
+
+  # flush_all's refusal path: -F disables the command on this server only.
+  memcached-noflush:
+    image: memcached:${PACKTEST_VERSION:-1.6.45}${PACKTEST_DIGEST-}
+    command: ["-F"]
+    healthcheck:
+      test: ["CMD", "pidof", "memcached"]
+      interval: 5s
+      start_period: 30s
+      start_interval: 1s
+      retries: 10

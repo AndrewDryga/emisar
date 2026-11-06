@@ -8,7 +8,10 @@ risk: low
 description: >
   Return the working directory and executable path of a PID. Use
   before drawing conclusions from a process name — `nginx` could be
-  any of several binaries depending on PATH order.
+  any of several binaries depending on PATH order. A link the runner
+  cannot read (another user's process without the host access grant,
+  or a kernel thread's executable) reads `[unavailable]`; a PID that
+  does not exist fails.
 
 side_effects:
   - Two /proc readlink calls.
@@ -32,7 +35,21 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "echo cwd=$(readlink /proc/{{ args.pid }}/cwd); echo exe=$(readlink /proc/{{ args.pid }}/exe)"
+      - |
+        proc=/proc/{{ args.pid }}
+        if [ ! -d "$proc" ]; then
+          printf 'debugging: PID %s does not exist\n' {{ args.pid }} >&2
+          exit 1
+        fi
+        # As scripts/pid_context.sh does: readlink is silent on failure, so an
+        # unreadable or missing link says [unavailable] instead of "".
+        for link in cwd exe; do
+          if value=$(readlink "$proc/$link" 2>/dev/null); then
+            printf '%s=%s\n' "$link" "$value"
+          else
+            printf '%s=[unavailable]\n' "$link"
+          fi
+        done
   timeout: 5s
 
 output:

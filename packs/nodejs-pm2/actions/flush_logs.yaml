@@ -2,10 +2,15 @@ schema_version: 1
 id: pm2.flush_logs
 title: pm2 flush <name>
 kind: exec
-risk: medium
-description: Empty PM2 log files for one process. Existing log content is lost.
+# high like every other irreversible log wipe (systemd.vacuum_journal,
+# ipmi.sel_clear): the erased lines are incident evidence with no undo.
+risk: high
+description: >
+  Empty PM2 log files for one process. Existing log content is lost and
+  cannot be recovered.
 side_effects:
-  - Truncates the stdout + stderr log files for the named process.
+  - Truncates the stdout + stderr log files for the named process; the erased
+    lines cannot be recovered.
   - Log file inodes are reused; tailers may need to re-open.
 args:
   - name: name

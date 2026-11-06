@@ -3,7 +3,11 @@ id: mc.flush_all
 title: flush_all
 kind: exec
 risk: critical
-description: Invalidate every key. Cold cache → origin load spike.
+description: >
+  Invalidate every key. Cold cache → origin load spike. Succeeds only when
+  memcached answers `OK`; a server started with `-F` (flush_all disabled) or
+  one that requires authentication answers with an error, and the action
+  fails with that reply.
 side_effects:
   - Every key becomes invalid immediately.
   - First miss hits origin for every cached value.
@@ -11,9 +15,20 @@ args: []
 execution:
   command:
     binary: /bin/sh
+    # Delivering the command is not the server accepting it: memcached -F
+    # answers `CLIENT_ERROR flush_all not allowed` and an unauthenticated
+    # client gets an error, while nc still exits 0. Only an exact OK succeeds.
     argv:
       - "-c"
-      - "printf 'flush_all\\nquit\\n' | nc -w 5 \"${MEMCACHED_HOST:-127.0.0.1}\" \"${MEMCACHED_PORT:-11211}\""
+      - |
+        raw=$(printf 'flush_all\nquit\n' | nc -w 5 "${MEMCACHED_HOST:-127.0.0.1}" "${MEMCACHED_PORT:-11211}") || exit $?
+        reply=$(printf '%s' "$raw" | tr -d '\r')
+        if [ "$reply" = OK ]; then
+          printf '%s\n' "$reply"
+          exit 0
+        fi
+        printf 'memcached did not accept flush_all: %s\n' "${reply:-no reply}" >&2
+        exit 1
   timeout: 15s
 output:
   parser: text

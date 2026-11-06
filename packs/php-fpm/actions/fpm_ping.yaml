@@ -3,7 +3,10 @@ id: phpfpm.fpm_ping
 title: GET /ping (FPM)
 kind: exec
 risk: low
-description: Check FPM ping endpoint (returns 'pong' if responsive).
+description: >
+  Check the FPM ping endpoint at PHP_FPM_PING_URL (default
+  http://127.0.0.1/fpm-ping, the pool's `ping.path`); returns 'pong' if
+  responsive.
 side_effects: ["One HTTP GET.", "Read-only."]
 args: []
 execution:

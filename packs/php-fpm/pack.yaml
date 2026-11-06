@@ -2,10 +2,12 @@ schema_version: 1
 
 id: php-fpm
 name: PHP-FPM
-version: 0.1.16
+version: 0.1.17
 # 0.1.13 and below rated fpm_status_full `low`, so per-worker request URIs —
 # live client request data, query strings included — carried a pure-read label.
-retired_below: 0.1.14
+# 0.1.16 and below ran composer_show with plugins enabled, so under the root
+# recipe a plugin dropped into vendor/ by the web user ran as root.
+retired_below: 0.1.17
 description: >
   PHP runtime + FPM pool introspection — version, modules, ini, pool
   status (via fpm_status endpoint), error + slow logs, OPcache state,
@@ -19,6 +21,8 @@ requires:
     - linux
   binaries:
     - php
+    - curl
+    - composer
 
 detect:
   processes:
@@ -30,8 +34,14 @@ setup:
     (php -v / --ini, logs, OPcache, Composer) — no credentials needed.
   env:
     - name: PHP_FPM_STATUS_URL
-      description: URL of the FPM pool status page, used by the fpm_status/fpm_status_full/fpm_ping actions. Optional; defaults to http://127.0.0.1/fpm-status. Add it to the runner's `inherit_env` if you override it.
+      description: URL of the FPM pool status page (`pm.status_path`), used by the fpm_status/fpm_status_full actions. Optional; defaults to http://127.0.0.1/fpm-status. Add it to the runner's `inherit_env` if you override it.
       default: "http://127.0.0.1/fpm-status"
+    - name: PHP_FPM_PING_URL
+      description: URL of the FPM pool ping page (`ping.path`), used by the fpm_ping action. Optional; defaults to http://127.0.0.1/fpm-ping. Add it to the runner's `inherit_env` if you override it.
+      default: "http://127.0.0.1/fpm-ping"
+    - name: PHP_OPCACHE_URL
+      description: URL of a page that reports `opcache_get_status()`, used by the opcache_status action. Optional; defaults to http://127.0.0.1/opcache-status.php. Add it to the runner's `inherit_env` if you override it.
+      default: "http://127.0.0.1/opcache-status.php"
     - name: PHP_FPM_ERROR_LOG
       description: Path to the PHP-FPM error log. Add it to the runner's `inherit_env` if you override it.
       default: /var/log/php-fpm/error.log
@@ -42,7 +52,7 @@ setup:
       description: Composer project directory inspected by composer_show. Add it to the runner's `inherit_env` if you override it.
       default: /var/www/html
   notes:
-    - "The status page must be enabled in the pool config (pm.status_path) and reachable from the runner host for the fpm_status actions to return data."
+    - "The status page (`pm.status_path`) and ping page (`ping.path`) must be enabled in the pool config and reachable from the runner host for the fpm_status and fpm_ping actions to return data."
     - "Debian/Ubuntu log paths vary by installed PHP version. Set and allowlist `PHP_FPM_ERROR_LOG` and `PHP_FPM_SLOW_LOG`, then grant persistent read access through that deployment's log group or rotation policy."
   host_access:
     - actions:
@@ -65,6 +75,8 @@ setup:
           impact: >
             Every Emisar action on this runner executes as root. PHP-FPM logs can contain request
             details and stack traces, while the application tree can contain source and secrets.
+            composer_show runs Composer with plugins and scripts disabled, so no code from the
+            project's vendor/ executes as root.
   verify: phpfpm.version
 
 actions:

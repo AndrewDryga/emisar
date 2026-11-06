@@ -1,20 +1,53 @@
 schema_version: 1
 id: cloud-init.clean_logs
-title: cloud-init clean --logs
+title: Truncate the cloud-init logs
 kind: exec
-risk: medium
+risk: high
 description: >
-  Truncate cloud-init logs without resetting instance state. Use to
-  clear noisy stale errors before re-running a stage to confirm a
-  fix worked.
+  Truncate /var/log/cloud-init.log and /var/log/cloud-init-output.log in
+  place, leaving instance state, module-run records and rotated copies
+  alone. Use to clear stale errors before re-running a stage to confirm
+  a fix worked. The cleared lines cannot be recovered, and they are the
+  record of what first boot did and what user-data scripts printed, so
+  this is high. It does not run
+  `cloud-init clean --logs`, which also deletes /var/lib/cloud and makes
+  the next boot provision the host as a new instance; that reset is
+  `cloud-init.clean`. A missing log is reported and skipped, the action
+  fails when neither log exists, and a log that is a symlink or not a
+  regular file is refused before anything is truncated.
 side_effects:
-  - /var/log/cloud-init.log + /var/log/cloud-init-output.log truncated.
-  - instance-id + module-run state preserved (use `clean` to also reset those).
+  - Empties /var/log/cloud-init.log and /var/log/cloud-init-output.log; their content is lost.
+  - Instance id, /var/lib/cloud and module-run state are untouched (`cloud-init.clean` resets those).
 args: []
 execution:
   command:
-    binary: cloud-init
-    argv: ["clean", "--logs"]
+    binary: /bin/sh
+    argv:
+      - "-c"
+      # `cloud-init clean --logs` is a full clean plus log deletion: it removes
+      # everything under /var/lib/cloud except the seed, so it cannot be the
+      # logs-only action. Truncating in place keeps each file's owner, mode and
+      # any open append handle. Every path is checked before the first one is
+      # touched, and a symlink is refused rather than followed, because root
+      # truncates through whatever the name points at.
+      - |
+        for f in /var/log/cloud-init.log /var/log/cloud-init-output.log; do
+          if [ -L "$f" ] || { [ -e "$f" ] && [ ! -f "$f" ]; }; then
+            echo "refusing to truncate $f: it is a symlink or not a regular file" >&2
+            exit 1
+          fi
+        done
+        found=0
+        for f in /var/log/cloud-init.log /var/log/cloud-init-output.log; do
+          if [ ! -e "$f" ]; then
+            echo "absent: $f"
+            continue
+          fi
+          : > "$f" || exit
+          echo "truncated: $f"
+          found=1
+        done
+        [ "$found" = 1 ] || { echo 'no cloud-init log at /var/log/cloud-init.log or /var/log/cloud-init-output.log' >&2; exit 1; }
   timeout: 30s
 output:
   parser: text

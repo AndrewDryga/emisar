@@ -2,12 +2,21 @@ schema_version: 1
 id: gh.workflow_rerun
 title: gh run rerun <run-id>
 kind: exec
-risk: medium
+# high, like gh.workflow_dispatch: any run id is admitted, so the worst target
+# is a deploy workflow, and rerunning it redeploys the run's original commit.
+risk: high
 description: >
-  Re-run one workflow run. Useful after fixing a transient
-  infrastructure issue. With --failed, only re-runs failed jobs.
+  Re-run one workflow run, up to 30 days after it first ran. Useful after
+  fixing a transient infrastructure issue. With --failed, only re-runs
+  failed jobs. A re-run uses the original run's commit (`GITHUB_SHA`) and
+  ref and the privileges of the actor who first triggered it, so rerunning
+  a deploy or release workflow deploys that run's commit again, which can
+  roll production back to an older commit.
 side_effects:
-  - Workflow run starts again.
+  - Workflow run starts again with its original commit, ref, and triggering
+    actor's privileges.
+  - A deploy or release job in that run deploys its original, possibly
+    older, commit again.
   - Compute consumed.
   - Notifications fire.
 search_terms:

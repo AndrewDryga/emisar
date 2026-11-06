@@ -31,7 +31,9 @@ services:
         ) &
         # Re-enter the image entrypoint for each server so it drops from root
         # to the image's redis user after the root-only fixture setup.
-        /usr/local/bin/docker-entrypoint.sh redis-server --appendonly yes --requirepass "$$REDISCLI_AUTH" &
+        # `--databases 32` lets the database-index cases reach past the
+        # default 16 and still name an index the server does not have.
+        /usr/local/bin/docker-entrypoint.sh redis-server --appendonly yes --databases 32 --requirepass "$$REDISCLI_AUTH" &
         exec /usr/local/bin/docker-entrypoint.sh redis-server /packtest-sentinel/sentinel.conf --sentinel
     environment:
       REDISCLI_AUTH: packtest-canary-redis-c08d17

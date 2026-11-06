@@ -5,9 +5,9 @@ kind: exec
 risk: high
 description: >
   Remove packages installed as dependencies that are no longer
-  required by any installed package. Useful for /var/cache cleanup
-  after a large rollback. Read the dry-run before approving (the
-  list can be long).
+  required by any installed package. It removes packages, not cached
+  files under /var/cache. The action output lists each package
+  removed, and `rpm.dnf_history` records the transaction afterwards.
 side_effects:
   - Multiple packages removed.
   - Disk reclaimed.

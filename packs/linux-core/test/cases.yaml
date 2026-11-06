@@ -244,11 +244,54 @@ cases:
         expect:
           stdout_contains: [disabled, probed]
 
-  # The image plants a crontab for a real login user, so this asserts the
-  # enumeration found it rather than that the command exited cleanly.
+  - action: linux.grep_log
+    args: {file: /var/log/packtest-app.log, pattern: worker started}
+    expect:
+      stdout_contains: ["2:packtest worker started"]
+    probes:
+      - name: the log still holds the one matching line
+        argv: [grep, -c, worker started, /var/log/packtest-app.log]
+        expect:
+          stdout_contains: ["1"]
+
+  # grep exits 1 when no line matches, which for an error search is the good
+  # answer: a clean log must come back as a successful, empty read.
+  - name: linux.grep_log-clean-log-succeeds-empty
+    action: linux.grep_log
+    args: {file: /var/log/packtest-app.log, pattern: Out of memory}
+    expect:
+      exit: [1]
+      stdout_not_contains: [packtest]
+    probes:
+      - name: the empty answer came from a present, clean log
+        argv: [/bin/sh, -c, "test -s /var/log/packtest-app.log && ! grep -q 'Out of memory' /var/log/packtest-app.log && echo present-and-clean"]
+        expect:
+          stdout_contains: [present-and-clean]
+
+  # A missing or unreadable file is grep's exit 2, which stays a failure.
+  - name: linux.grep_log-missing-file-fails
+    action: linux.grep_log
+    args: {file: /var/log/packtest-missing.log, pattern: Out of memory}
+    expect:
+      status: failure
+      exit: [2]
+      stderr_contains: [No such file or directory]
+
+  # The image plants a crontab for a real login user, one for the nologin
+  # www-data service account, and a job file in /etc/cron.d, so this asserts
+  # the enumeration found each of them rather than that the command exited
+  # cleanly. The read used to skip nologin accounts and list /etc/cron.d by
+  # file name, leaving out exactly the scheduler and package jobs.
   - action: linux.crontab_all
     expect:
-      stdout_contains: ["crontab -u deploy", packtest-nightly, "/etc/crontab"]
+      stdout_contains:
+        - "crontab -u deploy"
+        - packtest-nightly
+        - "crontab -u www-data"
+        - packtest-app-scheduler
+        - "--- /etc/cron.d/packtest-app ---"
+        - "41 4 * * * root /usr/local/bin/packtest-cron-d-cleanup"
+        - "/etc/crontab"
 
   # The false all-clear this guard closes: reading another user's crontab is
   # root-reserved, and the enumeration used to discard every refusal — so an

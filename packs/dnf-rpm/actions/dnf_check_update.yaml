@@ -3,12 +3,18 @@ id: rpm.dnf_check_update
 title: dnf check-update
 kind: exec
 risk: low
-description: List available updates. Exits 100 if updates available — non-zero IS the success signal.
+description: >
+  List available updates. dnf exits 100 when updates are available, which
+  succeeds with the list as output; exit 0 means there are none. An error
+  (exit 1, or dnf5's exit 2) still fails.
 side_effects: ["Refreshes metadata cache from configured repos.", "Read-only — no install."]
 args: []
 execution:
   command: {binary: dnf, argv: ["check-update"]}
   timeout: 5m
+  # `dnf check-update` exits 100 when updates are available (dnf4 and dnf5), 0
+  # when there are none, and 1 (dnf5: 2 for a bad argument) on an error.
+  success_exit_codes: [100]
 output:
   parser: text
   max_stdout_bytes: 524288

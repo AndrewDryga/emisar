@@ -102,6 +102,26 @@ cases:
             - '"resourceNames": ["projects/example-prod/locations/global/buckets/_Default/views/emisar-vm-containers"]'
             - 'jsonPayload.message = \"recurrent_job.failed\"'
             - '"pageToken": "log-entries-next"'
+  # A sweep's rescued-row line carries the row id after the event name, so an
+  # exact message match never finds it; the event also matches the first word.
+  - name: gcp.log_entries-matches-an-event-name-as-the-first-word
+    action: gcp.log_entries
+    args:
+      project: example-prod
+      view_id: emisar-vm-containers
+      resource_type: gce_instance
+      log_id: cos_containers
+      json_message: sweep.row_failed
+    expect:
+      json:
+        /entries/0/resource_type: gce_instance
+    probes:
+      - name: the filter matches the whole message or its first word
+        argv: [curl, -fsS, --cacert, /packs/gcp-monitoring/test/fixtures/server.crt, https://gcp-api:8443/probe/state]
+        expect:
+          stdout_contains:
+            - '(jsonPayload.message = \"sweep.row_failed\" OR jsonPayload.message =~ \"^sweep[.]row_failed \")'
+            - 'logName = \"projects/example-prod/logs/cos_containers\"'
   - name: gcp.log_entries-accepts-the-longest-bucket-retention
     action: gcp.log_entries
     args:

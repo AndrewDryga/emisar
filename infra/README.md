@@ -155,8 +155,11 @@ remains the only deploy gate, and no runner can reach it.
 
 For container diagnostics, use `gcp.log_entries` with the deployment's
 `project`, `view_id: emisar-vm-containers`, `resource_type: gce_instance`, and
-`log_id: cos_containers`. Add `minimum_severity: ERROR` for errors or
-`json_message: recurrent_job.failed` for recurrent-job failures. Follow
+`log_id: cos_containers`. Add `minimum_severity: ERROR` for errors, or
+`json_message: recurrent_job.failed` for recurrent-job failures and
+`json_message: sweep.row_failed` for rescued sweep rows; an event name matches
+the whole message or its first word, so the latter finds
+`sweep.row_failed row=<id>` lines. Follow
 `next_page_cursor` with every other argument unchanged. Omitting the view
 requests project-wide logs and is intentionally denied. The view excludes
 audit, SQL, and network logs; no broader Logging reader role is needed.
