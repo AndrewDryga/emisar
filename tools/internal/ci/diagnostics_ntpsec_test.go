@@ -98,7 +98,11 @@ func TestDiagnosticsScanAssessesOnlyTheNTPQueryClientPayload(t *testing.T) {
 	if !bytes.Equal(raw, before) || !bytes.Equal(assessed[0].Finding, input.Results[0].Vulnerabilities[0]) || !bytes.Equal(assessed[1].Finding, input.Results[0].Vulnerabilities[1]) {
 		t.Fatal("raw NTPsec findings changed")
 	}
-	assessed, _, blocking, err = classifyDiagnosticsScan(bundle, sbom, raw, time.Date(2026, 11, 8, 0, 0, 0, 0, time.UTC))
+	expiry, err := time.Parse(time.DateOnly, diagnosticsAssessmentExpiry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assessed, _, blocking, err = classifyDiagnosticsScan(bundle, sbom, raw, expiry)
 	if err != nil || len(assessed) != 0 || len(blocking) != 2 {
 		t.Fatalf("NTPsec assessment outlived expiry: assessed=%d blocking=%d err=%v", len(assessed), len(blocking), err)
 	}

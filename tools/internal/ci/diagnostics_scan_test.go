@@ -148,6 +148,10 @@ func TestDiagnosticsScanFailsClosedForMissingOrChangedEvidence(t *testing.T) {
 }
 
 func TestDiagnosticsScanBlocksUnknownExpiredAndLanguageFindings(t *testing.T) {
+	expiry, err := time.Parse(time.DateOnly, diagnosticsAssessmentExpiry)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, kind := range []string{"unknown", "expired", "language"} {
 		t.Run(kind, func(t *testing.T) {
 			bundle, sbom, report := scanFixture(t)
@@ -158,7 +162,7 @@ func TestDiagnosticsScanBlocksUnknownExpiredAndLanguageFindings(t *testing.T) {
 			case "unknown":
 				finding.VulnerabilityID = "CVE-2099-1234"
 			case "expired":
-				now = time.Date(2026, 11, 8, 0, 0, 0, 0, time.UTC)
+				now = expiry
 			case "language":
 				pkg := report.Results[1].Packages[0]
 				finding.PkgName, finding.PkgID, finding.InstalledVersion, finding.PkgIdentifier = pkg.Name, pkg.ID, pkg.Version, pkg.Identifier
@@ -180,6 +184,10 @@ func TestDiagnosticsScanBlocksUnknownExpiredAndLanguageFindings(t *testing.T) {
 }
 
 func TestDiagnosticsScanRecordsOwnerAcceptedRiskApartFromProof(t *testing.T) {
+	expiry, err := time.Parse(time.DateOnly, diagnosticsAssessmentExpiry)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, tc := range []struct {
 		name     string
 		now      time.Time
@@ -187,7 +195,7 @@ func TestDiagnosticsScanRecordsOwnerAcceptedRiskApartFromProof(t *testing.T) {
 		accepted bool
 	}{
 		{"accepted before expiry", time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC), "5+deb12u3", true},
-		{"expires with the assessments", time.Date(2026, 11, 8, 0, 0, 0, 0, time.UTC), "5+deb12u3", false},
+		{"expires with the assessments", expiry, "5+deb12u3", false},
 		{"changed source build", time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC), "5+deb12u4", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -248,6 +256,27 @@ func TestFindmntAssessmentRejectsUnreviewedBytes(t *testing.T) {
 	writeFixture(t, bundle, "libexec/findmnt", "unreviewed replacement")
 	if err := proveReadOnlyFindmnt(bundle, nil); err == nil || !strings.Contains(err.Error(), "exact authenticated") {
 		t.Fatalf("unreviewed libmount consumer accepted: %v", err)
+	}
+}
+
+func TestZlibWriterAssessmentRejectsAnyGzipFileWriter(t *testing.T) {
+	for _, tc := range []struct {
+		symbol string
+		proved bool
+	}{{"inflate", true}, {"gzread", true}, {"gzwrite", false}, {"gzputs", false}, {"z_gzprintf", false}} {
+		t.Run(tc.symbol, func(t *testing.T) {
+			bundle := t.TempDir()
+			// libz itself exports the writers; only another file's reference blocks.
+			scanELFFixture(t, filepath.Join(bundle, "lib/libz.so.1"), "gzwrite", elf.ELFCLASS64)
+			scanELFFixture(t, filepath.Join(bundle, "libexec/python3"), tc.symbol, elf.ELFCLASS64)
+			writeFixture(t, bundle, "file-origins.tsv",
+				"./lib/libz.so.1\tdebian\t/usr/lib/x86_64-linux-gnu/libz.so.1.2.13\tzlib1g\t1:1.2.13.dfsg-1\tamd64\tzlib\t1:1.2.13.dfsg-1\n"+
+					"./libexec/python3\tdebian-source\t/python-source/private-python\tpython3.11-minimal\t3.11.2-6+deb12u9\tamd64\tpython3.11\t3.11.2-6+deb12u9\n")
+			err := proveDiagnosticsNonaffected(bundle, diagnosticsNonaffected["CVE-2026-76844"])
+			if (err == nil) != tc.proved {
+				t.Fatalf("gzFile writer reference %s: %v", tc.symbol, err)
+			}
+		})
 	}
 }
 

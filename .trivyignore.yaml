@@ -7,36 +7,33 @@
 # batches of three or four keep re-triage a task rather than an incident. Give a
 # renewed entry a date in the least-crowded batch.
 vulnerabilities:
-  - id: CVE-2026-54369
-    statement: the running portal does not invoke ACL utilities or accept ACL input.
-    expired_at: 2026-11-11
-  - id: CVE-2026-9538
-    statement: the running portal does not execute Perl; Debian has deferred a package fix.
-    expired_at: 2026-11-11
-  - id: CVE-2026-41992
-    statement: gzip is present, but the portal never invokes external commands or feeds attacker-supplied archives to gzip.
-    expired_at: 2026-11-11
   - id: CVE-2026-53615
     statement: the portal runs as nobody with all capabilities dropped and no-new-privileges, cannot read block devices, and never invokes external commands, so libblkid's DOS partition parser is unreachable. Upstream fixed it in 2.41.4; Debian has no bookworm fix yet.
     expired_at: 2026-11-25
   - id: CVE-2025-69720
     statement: infocmp is present, but the portal never invokes external commands or processes attacker-supplied terminal descriptions; Debian rates it a minor CLI issue with no bookworm fix planned (no-dsa).
     expired_at: 2026-11-25
+  - id: CVE-2026-76844
+    statement: only dpkg-deb and libapt-pkg (left without a consumer once apt is purged) call zlib's gzFile write API; the portal never runs dpkg, and the BEAM links no system zlib because ERTS embeds zlib's stream code without gzwrite.c. Debian has no bookworm fix yet (fixed in sid).
+    expired_at: 2026-11-25
+  - id: CVE-2026-85091
+    statement: bookworm's zlib 1.2.13 predates the vulnerable gz_vacate(), added in 1.3.1.2; as for CVE-2026-76844, only dpkg-deb and the unused libapt-pkg call the gzFile write API, and the portal runs neither.
+    expired_at: 2026-11-25
+  - id: CVE-2026-54369
+    statement: the running portal does not invoke ACL utilities or accept ACL input.
+    expired_at: 2026-12-09
+  - id: CVE-2026-9538
+    statement: the running portal does not execute Perl; Debian has deferred a package fix.
+    expired_at: 2026-12-09
+  - id: CVE-2026-41992
+    statement: gzip is present, but the portal never invokes external commands or feeds attacker-supplied archives to gzip.
+    expired_at: 2026-12-09
   - id: CVE-2026-53613
     statement: the non-root portal cannot gain mount's SUID privileges under no-new-privileges, drops all capabilities, and has no user-mount fstab entry.
     expired_at: 2027-01-06
   - id: CVE-2026-16742
     statement: systemd-homed is absent from the image; the portal runs as nobody, not as a local homed-managed login.
     expired_at: 2027-01-06
-  - id: CVE-2026-76642
-    statement: the portal has no user-mount fstab entry and runs with all capabilities dropped and no-new-privileges, so mount cannot run privileged post-hooks.
-    expired_at: 2027-01-06
-  - id: CVE-2026-78408
-    statement: the portal never invokes nsenter and runs with all capabilities dropped and no-new-privileges, so it cannot open cgroup.procs as root.
-    expired_at: 2027-02-03
-  - id: CVE-2026-78409
-    statement: the portal has no user-mount fstab entry and runs with all capabilities dropped and no-new-privileges, so X-mount.subdir is unreachable.
-    expired_at: 2027-02-03
   - id: CVE-2026-78410
     statement: the portal has no user-mount fstab entry and runs with all capabilities dropped and no-new-privileges, so restricted bind mounts are unreachable.
     expired_at: 2027-02-03

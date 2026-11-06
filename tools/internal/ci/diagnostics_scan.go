@@ -49,19 +49,19 @@ type nonaffectedRule struct {
 // the exact signed source/binary identity AND proof from the final bundle. New
 // advisories, package updates and expired assessments block publication.
 var diagnosticsNonaffected = map[string]nonaffectedRule{
-	// The fix changes ntpd/nts_extens.c::extens_server_recv. This exact Debian
-	// subset ships the Python query client and its separate libntpc, not ntpd.
+	// Both fixes change only ntpd/nts_extens.c::extens_server_recv. This exact
+	// Debian subset ships the Python query client and its separate libntpc, not ntpd.
 	"CVE-2026-102486": {"ntpsec", "1.2.2+dfsg1-1+deb12u1", "ntpq-no-nts-daemon", "https://github.com/ntpsec/ntpsec/commit/7cc079387a0c8f94a4a82ebd0fc3cbe32f705557", []string{"ntpsec", "python3-ntp"}},
+	"CVE-2026-102483": {"ntpsec", "1.2.2+dfsg1-1+deb12u1", "ntpq-no-nts-daemon", "https://github.com/ntpsec/ntpsec/commit/df83f3c4f8a515970e33db0af7d3a50c8d6319b3", []string{"ntpsec", "python3-ntp"}},
 	"CVE-2023-33204":  {"sysstat", "12.6.1-1", "sysstat-elf64", "https://security-tracker.debian.org/tracker/CVE-2023-33204", []string{"sysstat"}},
 	"CVE-2023-45853":  {"zlib", "1:1.2.13.dfsg-1", "no-minizip", "https://security-tracker.debian.org/tracker/CVE-2023-45853", []string{"zlib1g"}},
+	"CVE-2026-76844":  {"zlib", "1:1.2.13.dfsg-1", "no-gzfile-writer", "https://github.com/madler/zlib/commit/df84af25dc1942490e1d1c899a07619152a46148", []string{"zlib1g"}},
+	"CVE-2026-85091":  {"zlib", "1:1.2.13.dfsg-1", "no-gzfile-writer", "https://github.com/madler/zlib/commit/df84af25dc1942490e1d1c899a07619152a46148", []string{"zlib1g"}},
 	"CVE-2025-69720":  {"ncurses", "6.4-4", "no-infocmp", "https://security-tracker.debian.org/tracker/CVE-2025-69720", []string{"libncursesw6", "libtinfo6"}},
 	"CVE-2026-16742":  {"systemd", "252.39-1~deb12u2", "no-homed", "https://github.com/systemd/systemd/security/advisories/GHSA-jm29-p7hh-vjhv", []string{"libsystemd0", "libudev1"}},
 	"CVE-2026-11940":  {"python3.11", "3.11.2-6+deb12u9", "no-tarfile", "https://github.com/python/cpython/commit/be13e86f6b9788a6f4d0419dffef72cbae5865c9", []string{"libpython3.11-minimal", "libpython3.11-stdlib", "python3.11-minimal"}},
 	"CVE-2026-7210":   {"python3.11", "3.11.2-6+deb12u9", "no-expat", "https://mail.python.org/archives/list/security-announce@python.org/message/PNY5OMBDPM2FRUZTWFFPJ6LISWKV627K/", []string{"libpython3.11-minimal", "libpython3.11-stdlib", "python3.11-minimal"}},
 	"CVE-2026-53613":  {"util-linux", "2.38.1-5+deb12u3", "findmnt-read-only", "https://github.com/util-linux/util-linux/security/advisories/GHSA-8gj5-72r3-428g", []string{"bsdutils", "libblkid1", "libmount1", "libsmartcols1", "libuuid1", "util-linux", "util-linux-extra"}},
-	"CVE-2026-76642":  {"util-linux", "2.38.1-5+deb12u3", "findmnt-read-only", "https://github.com/util-linux/util-linux/security/advisories/GHSA-m25x-3hj9-m26f", []string{"bsdutils", "libblkid1", "libmount1", "libsmartcols1", "libuuid1", "util-linux", "util-linux-extra"}},
-	"CVE-2026-78408":  {"util-linux", "2.38.1-5+deb12u3", "findmnt-read-only", "https://github.com/util-linux/util-linux/security/advisories/GHSA-55fx-f4gg-cfhj", []string{"bsdutils", "libblkid1", "libmount1", "libsmartcols1", "libuuid1", "util-linux", "util-linux-extra"}},
-	"CVE-2026-78409":  {"util-linux", "2.38.1-5+deb12u3", "findmnt-read-only", "https://github.com/util-linux/util-linux/security/advisories/GHSA-8f2p-47x3-43mv", []string{"bsdutils", "libblkid1", "libmount1", "libsmartcols1", "libuuid1", "util-linux", "util-linux-extra"}},
 	"CVE-2026-78410":  {"util-linux", "2.38.1-5+deb12u3", "findmnt-read-only", "https://github.com/util-linux/util-linux/security/advisories/GHSA-rh77-686x-2f2m", []string{"bsdutils", "libblkid1", "libmount1", "libsmartcols1", "libuuid1", "util-linux", "util-linux-extra"}},
 }
 
@@ -77,7 +77,7 @@ var diagnosticsOwnerAccepted = map[string]nonaffectedRule{
 	"CVE-2026-53615": {"util-linux", "2.38.1-5+deb12u3", "owner-accepted", "https://github.com/util-linux/util-linux/security/advisories/GHSA-h4rw-gv36-wmp5", []string{"bsdutils", "libblkid1", "libmount1", "libsmartcols1", "libuuid1", "util-linux", "util-linux-extra"}},
 }
 
-const diagnosticsAssessmentExpiry = "2026-11-08"
+const diagnosticsAssessmentExpiry = "2026-12-09"
 
 type diagnosticAssessment struct {
 	Finding json.RawMessage `json:"finding"`
@@ -405,6 +405,23 @@ func proveDiagnosticsNonaffected(bundle string, rule nonaffectedRule) error {
 	case "no-minizip":
 		if err := allowOnly("./lib/libz.so.1"); err != nil {
 			return err
+		}
+	case "no-gzfile-writer":
+		if err := allowOnly("./lib/libz.so.1"); err != nil {
+			return err
+		}
+		// Both CVEs share one fix, in gzwrite.c::gz_write (1.2.13 has no
+		// gz_vacate). Its only callers are gzwrite, gzfwrite, gzputc and gzputs;
+		// gzwrite.c's other exports reuse the stale input pointer a failed write
+		// leaves. gzFile reads and deflate/inflate streams are unaffected. Any
+		// other import, or an embedded or Z_PREFIX copy, blocks.
+		writers := []string{"gzwrite", "gzfwrite", "gzputc", "gzputs", "gzprintf", "gzvprintf", "gzflush", "gzsetparams", "gzclose_w"}
+		for path, file := range elfs {
+			for _, symbol := range file.Symbols {
+				if path != "./lib/libz.so.1" && slices.Contains(writers, strings.TrimPrefix(symbol.Name, "z_")) {
+					return fmt.Errorf("gzFile writer in %s: %s", path, symbol.Name)
+				}
+			}
 		}
 	case "no-infocmp":
 		if err := allowOnly("./lib/libncursesw.so.6", "./lib/libpanelw.so.6", "./lib/libtinfo.so.6"); err != nil {
