@@ -1831,7 +1831,10 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "EMISAR_SIGNING_KEY"
       assert html =~ "EMISAR_SIGNING_CERT"
       assert html =~ "max_attestation_age"
-      assert html =~ "--ca-key"
+      # The rotation copy button reads the CA key from a file, never from argv.
+      assert html =~
+               ~s(data-copy-text="emisar signing new-cert --ca-key-file &quot;$CA_KEY_FILE&quot;)
+
       assert html =~ "--ca-cert"
       assert html =~ "--key-name"
       refute html =~ "--ca-id"
@@ -2280,7 +2283,7 @@ defmodule EmisarWeb.MarketingTest do
     test "authentication docs expose review dates without a dead edit action", %{conn: conn} do
       review_dates = [
         {"/docs/authentication", "October 4, 2026"},
-        {"/docs/teams-and-access", "October 4, 2026"},
+        {"/docs/teams-and-access", "November 6, 2026"},
         {"/docs/sso", "November 2, 2026"},
         {"/docs/scim", "November 2, 2026"}
       ]

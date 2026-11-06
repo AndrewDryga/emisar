@@ -17,7 +17,7 @@ test (`test/emisar/runs_test.exs`, `policies_test.exs`) and match it.
 
 - Domain: `use Emisar.DataCase, async: true`. Web: `use EmisarWeb.ConnCase`.
 - Fixtures: the per-domain `Fixtures.*` modules under `test/support/fixtures/`;
-  `Fixtures.Subjects.owner_subject/1` and `subject_for/3` build a **real
+  `Fixtures.Subjects.owner_subject/1` and `subject_for/2` build a **real
   `%Subject{}`**, not a stub. Add a fixture there if the context needs one; don't
   inline ad-hoc setup that duplicates an existing fixture.
 

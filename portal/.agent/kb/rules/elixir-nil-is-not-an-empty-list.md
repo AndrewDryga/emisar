@@ -51,7 +51,7 @@ end
 ```
 
 Or normalize at the source, so every consumer downstream is safe by
-construction — what `Emisar.RunbookDraft.from_definition/1` does, and why the
+construction — what `EmisarWeb.RunbookDraft.from_definition/1` does, and why the
 editor and workflow components can compare `draft["inputs"] == []` freely:
 
 ```elixir

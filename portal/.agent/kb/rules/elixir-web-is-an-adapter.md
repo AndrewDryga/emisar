@@ -3,7 +3,7 @@ name: elixir-web-is-an-adapter
 description: EmisarWeb calls top-level contexts only — no nested domain modules, no changeset construction; carriers and Auth.Subject are the named exceptions
 subsystem: portal
 sources: [portal/credo/checks/web_no_nested_domain_calls.ex, portal/credo/checks/web_no_changeset_construction.ex, portal/apps/emisar/test/emisar/web_boundary_checks_test.exs]
-updated: 2026-10-04
+updated: 2026-11-06
 ---
 
 # Rule: the web is an adapter — top-level contexts only
@@ -24,16 +24,17 @@ A nested module is a context's internal, so a call to one is domain behaviour
 executing **outside the authorization boundary**, where no context test and no
 `%Subject{}` gate covers it. The failure is quiet and cumulative:
 
-- `Ecto.Changeset.add_error/4` in `OnboardingLive` was real domain validation —
-  "a name whose derived slug is rejected must say so on `:name`" — living in a
-  LiveView. Nothing in `Emisar.Accounts`' test suite could hold that rule, and
-  the next caller of `create_account_with_owner/2` (MCP, an importer, a
-  seeding script) silently inherited the broken behaviour the LiveView had
-  patched over.
+- `Ecto.Changeset.add_error/4` in the old onboarding LiveView was real domain
+  validation — "a name whose derived slug is rejected must say so on `:name`" —
+  living in a LiveView. Nothing in `Emisar.Accounts`' test suite could hold that
+  rule, and the next caller of account creation (MCP, an importer, a seeding
+  script) silently inherited the broken behaviour the LiveView had patched
+  over. The rule now lives in `Accounts.validate_sign_up/1` (✅ Good, below).
 - Once the web reaches one level down, the next reach is cheap. A page that
   already calls `Catalog.PublishedRegistry.list/0` will just as easily call
-  `PackVersion.Query.trusted/0` — and that one leaks other tenants' rows,
-  because `Authorizer.for_subject/2` only runs inside the context.
+  `PackVersion.Query.trusted_unoverridden/0` — and that one leaks other
+  tenants' rows, because `Authorizer.for_subject/2` only runs inside the
+  context.
 - A context can never refactor its internals while the adapter names them.
   Renaming `PublishedRegistry.get/1` becomes a cross-app change instead of a
   local one.
@@ -67,7 +68,7 @@ executing **outside the authorization boundary**, where no context test and no
   whether a row counts as disabled.
 
 Give the facade a name that says what the CALLER wants
-(`Accounts.create_account_with_owner_from_name/2`,
+(`Accounts.validate_sign_up/1`,
 `Runbooks.build_definition_v1/1`), not the internal it forwards to.
 
 ## Carrier exceptions — data, not behaviour

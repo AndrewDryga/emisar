@@ -45,7 +45,7 @@ honest.
   `assign(socket, :events, big_list)` — it bloats socket memory per connection.
 - **`connected?(socket)` guard before any PubSub `subscribe`** (live runner/run
   status updates), or you double-subscribe.
-- **Never `assign_new` for per-mount values** (`current_user`, locale) — use `assign/3`.
+- **Never `assign_new` for per-mount values** (`current_subject`, `current_account`, locale) — use `assign/3`.
 - Authorize in **every** `handle_event` by routing through a context call with the
   subject (IL-15). The button being hidden is not authorization.
 

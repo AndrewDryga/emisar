@@ -45,6 +45,6 @@ grep -rnE '\.(status|role|risk|trust_state|scope_type|source|kind)\b *(==|in)[^]
 ```
 
 A **dotted access on a schema enum field** compared to a string literal is the
-bug; a bare local var (`status = string_field(run, …)` in the MCP renderer), a
-function-head pattern fed a string (`derived_status/1`), or a deliberate
-`:string` field is fine.
+bug; a bare local var (`status = to_string(assigns.status)` in
+`CoreComponents.status_badge/1`), a function-head pattern fed that string
+(`format_status/1`), or a deliberate `:string` field is fine.

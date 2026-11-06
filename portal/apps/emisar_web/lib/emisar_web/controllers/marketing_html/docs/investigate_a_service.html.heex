@@ -3,7 +3,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="investigate-a-service"
-      updated="October 28, 2026"
+      updated="November 6, 2026"
       toc={[
         {"prepare", "1. Start a test container"},
         {"policy", "2. Check the approval rule"},
@@ -69,7 +69,7 @@ sudo systemctl restart emisar</.docs_code>
 
       <.docs_h2 id="policy">2. Check the approval rule</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        In <a href={~p"/app/policies"} class="text-brand-400 hover:text-brand-300">Policies</a>,
+        In <a href={~p"/app/policies"} class="text-brand-400 hover:text-brand-300">Policy</a>,
         inspect the policy that applies to this runner. With the shipped defaults,
         <code>docker.ps</code>
         (low risk) and <code>docker.logs</code>
@@ -161,7 +161,7 @@ Wait for the result. Do not send another restart while this one is pending.</.do
         and the container's state to decide what to do next.
       </.docs_callout>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Open <a href={~p"/app/audit"} class="text-brand-400 hover:text-brand-300">Audit</a>.
+        Open <a href={~p"/app/audit"} class="text-brand-400 hover:text-brand-300">Audit log</a>.
         Newest first, it lists the second <code>docker.ps</code>, then "Run succeeded" for <code>docker.restart</code>, "Approval granted", "Approval decision recorded", and "Run
         awaiting approval", followed by the earlier reads. When you are done, remove the
         container and the runner's Docker access:

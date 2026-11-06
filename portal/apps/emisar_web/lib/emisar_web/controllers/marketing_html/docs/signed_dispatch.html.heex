@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="signed-dispatch"
-      updated="November 2, 2026"
+      updated="November 6, 2026"
       toc={[
         {"how-it-works", "How it works"},
         {"turn-on", "Turn it on"},
@@ -331,17 +331,19 @@ emisar://dispatch/v1?group=prod&amp;label.env=prod&amp;label.region=us</.docs_co
       <ol class="mt-4 space-y-3 text-base text-zinc-300 list-decimal pl-6">
         <li>
           Set
-          <.docs_inline_code>CA_KEY</.docs_inline_code>
-          to the saved private key and
+          <.docs_inline_code>CA_KEY_FILE</.docs_inline_code>
+          to the path of the file that holds the saved private key and
           <.docs_inline_code>CA_CERT</.docs_inline_code>
-          to its PEM certificate, then mint the replacement: <.docs_code
+          to its PEM certificate. Pass the key as a file, not with <.docs_inline_code>--ca-key</.docs_inline_code>:
+          a key on the command line lands in shell history, and other users on the host can
+          read it while the command runs. Then mint the replacement: <.docs_code
             phx-no-format
             label="shell"
             copy_text={
-              ~S(emisar signing new-cert --ca-key "$CA_KEY" --ca-cert "$CA_CERT" --key-name op-alice --scope group=prod --ttl 24h)
+              ~S(emisar signing new-cert --ca-key-file "$CA_KEY_FILE" --ca-cert "$CA_CERT" --key-name op-alice --scope group=prod --ttl 24h)
             }
           ><span class="text-zinc-500">$</span> emisar signing new-cert \
-    --ca-key <span class="text-brand-300">"$CA_KEY"</span> \
+    --ca-key-file <span class="text-brand-300">"$CA_KEY_FILE"</span> \
     --ca-cert <span class="text-brand-300">"$CA_CERT"</span> \
     --key-name op-alice --scope group=prod --ttl 24h</.docs_code>
         </li>

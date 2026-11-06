@@ -286,24 +286,24 @@ defmodule EmisarWeb.MarketingStructuralTest do
            {"/app/agents", "AI agents"}
          ]},
         {"/docs/connect-cli-agent",
-         [{"/app/agents/connect", "Connect an agent"}, {"/app/audit", "Audit"}]},
+         [{"/app/agents/connect", "Connect an agent"}, {"/app/audit", "Audit log"}]},
         {"/docs/connect-agent-sandboxes",
          [
            {"/app/agents/connect", "Connect an agent"},
-           {"/app/audit", "Audit"},
+           {"/app/audit", "Audit log"},
            {"/app/agents", "AI agents"}
          ]},
         {"/docs/use-a-published-pack",
          [
            {"/app/packs", "Packs"},
            {"/app/runners", "Runners"},
-           {"/app/audit", "Audit"}
+           {"/app/audit", "Audit log"}
          ]},
         {"/docs/run-an-action",
          [
            {"/app/runners", "Runners"},
            {"/app/approvals", "Approvals"},
-           {"/app/audit", "Audit"}
+           {"/app/audit", "Audit log"}
          ]},
         {"/docs/host-install",
          [
@@ -322,7 +322,8 @@ defmodule EmisarWeb.MarketingStructuralTest do
            {"/app/runners/keys/new", "Runners → Enrollment keys → New key"},
            {"/app/runners", "Runners"}
          ]},
-        {"/docs/credentials", [{"/app/agents", "Agents"}, {"/app/audit/export", "SIEM export"}]},
+        {"/docs/credentials",
+         [{"/app/agents", "AI agents"}, {"/app/audit/export", "SIEM export"}]},
         {"/docs/runner-credentials",
          [
            {"/app/runners/keys", "Runners → Enrollment keys"},
@@ -336,18 +337,19 @@ defmodule EmisarWeb.MarketingStructuralTest do
          ]},
         {"/docs/publishing-packs", [{"/app/packs", "Packs"}, {"/app/runners", "Runners"}]},
         {"/docs/pack-registry", [{"/app/packs", "Packs"}]},
-        {"/docs/pack-updates", [{"/app/packs", "Packs"}, {"/app/audit", "Audit"}]},
+        {"/docs/pack-updates", [{"/app/packs", "Packs"}, {"/app/audit", "Audit log"}]},
         {"/docs/mcp-reference", [{"/app/packs", "Packs"}, {"/app/runbooks", "Runbooks"}]},
         {"/docs/agents-and-keys", [{"/app/agents", "AI agents"}]},
-        {"/docs/billing", [{"/app/billing", "Billing"}, {"/app/billing", "Settings → Billing"}]},
+        {"/docs/billing", [{"/app/billing", "Billing"}]},
         {"/docs/teams-and-access",
          [
            {"/app/team/invite", "Team → Invite"},
            {"/app/team", "Team"}
          ]},
         {"/docs/policies-and-approvals",
-         [{"/app/policies", "Policies"}, {"/app/approvals", "Approvals"}]},
-        {"/docs/audit-and-siem", [{"/app/audit", "Audit"}, {"/app/audit/export", "SIEM export"}]},
+         [{"/app/policies", "Policy"}, {"/app/approvals", "Approvals"}]},
+        {"/docs/audit-and-siem",
+         [{"/app/audit", "Audit log"}, {"/app/audit/export", "SIEM export"}]},
         {"/docs/runbooks",
          [
            {"/app/runbooks", "Runbooks"},
@@ -359,13 +361,13 @@ defmodule EmisarWeb.MarketingStructuralTest do
         {"/docs/connect-cli-agent", [{"/app/agents", "AI agents"}]},
         {"/docs/runs", [{"/app/runs", "Runs"}]},
         {"/docs/production",
-         [{"/app/audit", "Audit"}, {"/app/audit/export", "audit-export token"}]},
+         [{"/app/audit", "Audit log"}, {"/app/audit/export", "audit-export token"}]},
         {"/docs/signed-dispatch", [{"/app/runners", "Runners"}]},
         {"/docs/runner-upgrades",
          [
            {"/app/runs", "Runs"},
            {"/app/runners", "Runners"},
-           {"/app/audit", "Audit"},
+           {"/app/audit", "Audit log"},
            {"/app/packs", "Packs"}
          ]},
         {"/docs/scim", [{"/app/sso", "Team → Single sign-on"}]},
@@ -376,7 +378,7 @@ defmodule EmisarWeb.MarketingStructuralTest do
         {"/docs/security-incidents",
          [
            {"/app/agents", "AI agents"},
-           {"/app/audit", "Audit"},
+           {"/app/audit", "Audit log"},
            {"/app/audit/export", "Audit export"},
            {"/app/runners/keys", "Runners → Enrollment keys"},
            {"/app/runners", "Runners"},

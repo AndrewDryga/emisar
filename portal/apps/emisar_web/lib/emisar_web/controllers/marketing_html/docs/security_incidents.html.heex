@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="security-incidents"
-      updated="November 2, 2026"
+      updated="November 6, 2026"
       toc={[
         {"sequence", "The sequence, every time"},
         {"evidence", "Preserve this before you clean up"},
@@ -176,8 +176,8 @@
           <a
             href={~p"/app/audit"}
             class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-          >Audit</a>
-          for the window. Audit shows dispatch gates, approval decisions, denials, and terminal
+          >Audit log</a>
+          for the window. It shows dispatch gates, approval decisions, denials, and terminal
           outcomes. MCP discovery reads are not audited, so treat discovery during the window as
           unknown. A key acting outside its owner's normal hours or runners is the signal.
         </li>
@@ -337,7 +337,7 @@
           Find every run that executed under the suspect hash in <a
             href={~p"/app/audit"}
             class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-          >Audit</a>. The audit trail keeps the pack
+          >Audit log</a>. The audit trail keeps the pack
           reference with the run, so you can tell what the suspect version actually did.
         </li>
         <li>
@@ -395,7 +395,7 @@
           <a
             href={~p"/app/audit"}
             class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-          >Audit</a>
+          >Audit log</a>
           for signed dispatches in the window, and check the runs against what
           the legitimate operator says they ran.
         </li>

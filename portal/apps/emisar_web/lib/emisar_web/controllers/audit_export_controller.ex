@@ -281,7 +281,7 @@ defmodule EmisarWeb.AuditExportController do
     |> json(%{
       error: "plan_required",
       required: "team",
-      message: "Audit export is available on the Team plan. Upgrade in Settings → Billing."
+      message: "Audit export is available on the Team plan. Upgrade on the Billing page."
     })
   end
 

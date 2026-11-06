@@ -27,8 +27,7 @@ and nearly every one is the **accepted house idiom**, not a bug:
   `Catalog.list_actions_for_runner/3`, `Approvals.list_pending_…/2`. The
   LiveView already gated `mount`, so the `{:error, :unauthorized}` arm is an
   unreachable invariant the developer correctly asserts away.
-- post-gate writes — `ApiKeys.revoke_api_key/2`, `Runners.delete_runner/2`,
-  `Accounts.record_account_switched/1`.
+- post-gate writes — `ApiKeys.revoke_api_key/2`, `Runners.delete_runner/2`.
 - the inbound SCIM controllers — `SSO.scim_upsert_group/2` etc. (already
   authenticated by the `ems-` bearer).
 - third-party / stdlib — `YamlElixir.read_from_file/1`, `Plug.Conn.read_body/2`.

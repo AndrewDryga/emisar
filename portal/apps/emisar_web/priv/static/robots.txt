@@ -4,9 +4,7 @@ Disallow: /app/
 Disallow: /sign_in
 Disallow: /sign_in/
 Disallow: /sign_up
-Disallow: /confirm/
 Disallow: /accept_invitation/
-Disallow: /onboarding
 Disallow: /oauth/
 Disallow: /admin/
 Disallow: /api/
