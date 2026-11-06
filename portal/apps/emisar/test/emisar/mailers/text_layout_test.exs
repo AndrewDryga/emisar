@@ -119,7 +119,10 @@ defmodule Emisar.Mailers.TextLayoutTest do
       {"billing link code", billing_link_code},
       {"invitation", invitation},
       {"approval request", approval_request_body(member, account)},
+      {"approval request to its requester", approval_request_body(member, account, :requester)},
       {"runbook approval request", runbook_approval_request_body(member, account)},
+      {"runbook approval request to its requester",
+       runbook_approval_request_body(member, account, :requester)},
       {"approval decision", approval_decision_body(member, account)},
       {"approval update", approval_event_body(member, account)},
       {"monthly report", monthly_report_text(member, account)}
@@ -136,9 +139,9 @@ defmodule Emisar.Mailers.TextLayoutTest do
     sent_text_body()
   end
 
-  defp approval_request_body(member, account) do
+  defp approval_request_body(member, account, audience \\ :approver) do
     subject = Fixtures.Subjects.subject_for(member)
-    runner = Fixtures.Runners.create_runner(account_id: account.id, name: "edge-1")
+    runner = Fixtures.Runners.create_runner(account_id: account.id, name: "edge-#{audience}")
 
     persisted =
       Fixtures.Runs.create_run(
@@ -159,11 +162,11 @@ defmodule Emisar.Mailers.TextLayoutTest do
     }
 
     args = Runs.project_authorized_account_args(run, account.id)
-    UserNotifier.deliver_approval_request(member, args, request, run)
+    UserNotifier.deliver_approval_request(member, args, request, run, nil, audience: audience)
     sent_text_body()
   end
 
-  defp runbook_approval_request_body(member, account) do
+  defp runbook_approval_request_body(member, account, audience \\ :approver) do
     request = %{
       id: "req-execution-1",
       reason: "apply the reviewed settings",
@@ -192,7 +195,10 @@ defmodule Emisar.Mailers.TextLayoutTest do
       }
     }
 
-    UserNotifier.deliver_runbook_execution_approval_request(member, request)
+    UserNotifier.deliver_runbook_execution_approval_request(member, request, nil,
+      audience: audience
+    )
+
     sent_text_body()
   end
 

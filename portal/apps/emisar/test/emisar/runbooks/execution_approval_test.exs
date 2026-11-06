@@ -37,7 +37,10 @@ defmodule Emisar.Runbooks.ExecutionApprovalTest do
 
     assert {:ok, result} = Runbooks.dispatch_runbook(runbook, "approve maintenance", subject)
     assert Runs.list_runs_for_runbook_execution(account.id, result.execution_id) == []
-    assert approver.actor.email in notified_recipients()
+    recipients = notified_recipients()
+    assert approver.actor.email in recipients
+    # The Member who dispatched the runbook hears it is waiting too.
+    assert subject.actor.email in recipients
 
     assert {:ok, [request], _metadata} =
              Approvals.list_pending_approval_requests(approver)

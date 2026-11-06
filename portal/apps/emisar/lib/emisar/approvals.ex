@@ -1097,7 +1097,7 @@ defmodule Emisar.Approvals do
   defp earliest_expiry(default, _requested), do: default
 
   # Post-commit side effects for a newly filed request: light up the approvals
-  # feed + email every eligible decider. Email dispatch is detached in prod so a
+  # feed + email every eligible decider and the requester. Email dispatch is detached in prod so a
   # slow SMTP call never blocks the caller's dispatch path; synchronous in tests
   # so the sandbox connection isn't released while a task still queries the DB
   # (`:notify_approvers_async?` flips this).
@@ -1173,14 +1173,18 @@ defmodule Emisar.Approvals do
     with %Runners.Runner{deleted_at: nil} = runner <- run.runner,
          true <- run.account_id == request.account_id and runner.account_id == request.account_id,
          {:ok, pack_id} <- approval_pack_id(run.pack_ref) do
+      target_access = %{runners: [runner], pack_ids: [pack_id]}
+
       notify_approvers_pages(
         request,
         {:action_run, run},
         requested_by_membership_id,
-        %{runners: [runner], pack_ids: [pack_id]},
+        target_access,
         nil,
         event
       )
+
+      notify_requester_of_pending(request, {:action_run, run}, target_access, event)
     else
       _ -> Logger.warning("action_approval_notification_scope_failed", req_id: request.id)
     end
@@ -1203,6 +1207,8 @@ defmodule Emisar.Approvals do
         nil,
         event
       )
+
+      notify_requester_of_pending(request, :runbook_execution, target_access, event)
     else
       _ ->
         Logger.warning("runbook_execution_approval_notification_scope_failed",
@@ -1237,17 +1243,19 @@ defmodule Emisar.Approvals do
 
     memberships
     |> Enum.filter(fn membership ->
-      # Only members who can decide get pinged (viewers can't); the user who
-      # triggered the request is excluded since they already saw it in the UI.
-      Accounts.membership_authorized?(membership) and membership.role in approver_roles and
-        membership.id != requested_by_membership_id and
+      # Only members who can decide this request get pinged (viewers can't).
+      # The requester is left out here: notify_requester_of_pending/4 writes to
+      # them once, with the copy that fits whether they may approve it.
+      membership.id != requested_by_membership_id and
         not MapSet.member?(already_decided, membership.id) and
-        membership_covers_targets?(
+        approval_decider?(
+          membership,
+          approver_roles,
           Map.get(access_by_membership, membership.id, Accounts.RunnerAccess.none()),
           target_access
         )
     end)
-    |> Enum.each(&deliver_approval_email(&1, request, target, event))
+    |> Enum.each(&deliver_approval_email(&1, request, target, event, :approver))
 
     if next do
       notify_approvers_pages(
@@ -1262,6 +1270,59 @@ defmodule Emisar.Approvals do
       :ok
     end
   end
+
+  # A Member who may decide this request: a current seat whose role holds the
+  # decide permission and whose runner and pack access covers every target.
+  defp approval_decider?(membership, approver_roles, access, target_access) do
+    Accounts.membership_authorized?(membership) and membership.role in approver_roles and
+      membership_covers_targets?(access, target_access)
+  end
+
+  # The Member who started the run hears once, at creation, that it is waiting.
+  # A requester who may approve their own request gets the approver's email; any
+  # other requester gets the waiting version. A service account has no inbox, and
+  # a seat that can't view approvals couldn't open the link. Later votes stay with
+  # the deciders; the outcome reaches the requester via notify_requester_of_decision.
+  defp notify_requester_of_pending(%Request{} = request, target, target_access, :requested) do
+    with %Accounts.Membership{kind: :human} = requester <-
+           Accounts.peek_active_membership(
+             request.account_id,
+             request.requested_by_membership_id
+           ),
+         true <- is_binary(requester.email),
+         true <-
+           requester.role in Auth.Permissions.roles_with_permission(
+             Authorizer.view_approvals_permission()
+           ) do
+      deliver_approval_email(
+        requester,
+        request,
+        target,
+        :requested,
+        requester_audience(request, requester, target_access)
+      )
+    else
+      _ -> :ok
+    end
+  end
+
+  defp notify_requester_of_pending(_request, _target, _target_access, _event), do: :ok
+
+  defp requester_audience(%Request{allow_self_approval: true}, requester, target_access) do
+    approver_roles =
+      Auth.Permissions.roles_with_permission(Authorizer.decide_approval_permission())
+
+    access =
+      [requester]
+      |> Accounts.runner_access_for_memberships()
+      |> Map.get(requester.id, Accounts.RunnerAccess.none())
+
+    if approval_decider?(requester, approver_roles, access, target_access),
+      do: :approver,
+      else: :requester
+  end
+
+  defp requester_audience(%Request{}, _requester, _target_access), do: :requester
 
   defp notified_decider_membership_ids(request, memberships, :requested) do
     Decision.Query.all()
@@ -1328,9 +1389,10 @@ defmodule Emisar.Approvals do
   # `RunnerAccess.pack_in_scope?/2` encodes that distinction for nil.
   defp approval_pack_id(nil), do: {:ok, nil}
 
-  defp deliver_approval_email(membership, request, {:action_run, run}, :requested) do
-    # Eligibility and scope were checked above. Mail delivery is independent of
-    # a browser session and always consumes the same redacted argument projection.
+  defp deliver_approval_email(membership, request, {:action_run, run}, :requested, audience) do
+    # Eligibility and scope were checked above: a decider, or the run's own
+    # requester. Mail delivery is independent of a browser session and always
+    # consumes the same redacted argument projection.
     args = Runs.project_authorized_account_args(run, request.account_id)
 
     deliver_approval_email_result(
@@ -1342,13 +1404,14 @@ defmodule Emisar.Approvals do
           args,
           request,
           run,
-          approval_actor_label(request.account_id, request.requested_by_membership_id)
+          approval_actor_label(request.account_id, request.requested_by_membership_id),
+          audience: audience
         )
       end
     )
   end
 
-  defp deliver_approval_email(membership, request, :runbook_execution, :requested) do
+  defp deliver_approval_email(membership, request, :runbook_execution, :requested, audience) do
     deliver_approval_email_result(
       membership,
       request,
@@ -1356,13 +1419,15 @@ defmodule Emisar.Approvals do
         Emisar.Mailers.UserNotifier.deliver_runbook_execution_approval_request(
           membership,
           request,
-          approval_actor_label(request.account_id, request.requested_by_membership_id)
+          approval_actor_label(request.account_id, request.requested_by_membership_id),
+          audience: audience
         )
       end
     )
   end
 
-  defp deliver_approval_email(membership, request, _target, event) when is_map(event) do
+  defp deliver_approval_email(membership, request, _target, event, :approver)
+       when is_map(event) do
     deliver_approval_email_result(
       membership,
       request,

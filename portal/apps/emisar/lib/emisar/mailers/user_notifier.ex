@@ -382,9 +382,10 @@ defmodule Emisar.Mailers.UserNotifier do
   end
 
   @doc """
-  Notifies an approver that a run is waiting on their decision. The
-  link lands on the approval detail page; the approver must be signed
-  in to act (MFA-enforced accounts: same flow as direct nav).
+  Notifies an approver that a run is waiting on their decision, or, with
+  `audience: :requester`, tells the run's requester that it is waiting for
+  approval. The link lands on the approval detail page; the recipient must be
+  signed in to act (MFA-enforced accounts: same flow as direct nav).
 
   The body surfaces enough context — action, runner *name* (not the
   opaque id), the operator's reason, the matched policy rules, and a
@@ -396,15 +397,17 @@ defmodule Emisar.Mailers.UserNotifier do
   browser Subject.
   """
   def deliver_approval_request(
-        %Accounts.Membership{} = approver,
+        %Accounts.Membership{} = recipient,
         args_projection,
         %{} = request,
         %Runs.ActionRun{} = run,
-        requester_name \\ nil
+        requester_name \\ nil,
+        opts \\ []
       ) do
     url = approval_url(request)
     quorum = request_quorum(request)
     label = one_line(run.action_id)
+    copy = approval_request_copy(Keyword.get(opts, :audience, :approver), "action")
 
     facts =
       [
@@ -425,7 +428,7 @@ defmodule Emisar.Mailers.UserNotifier do
 
     blocks =
       [
-        {:status, "This action ", "needs your approval", ".", :warning},
+        copy.status,
         {:facts, facts}
       ]
       |> add_quoted_block("Request reason", Map.get(request, :reason))
@@ -437,35 +440,53 @@ defmodule Emisar.Mailers.UserNotifier do
       ])
 
     deliver_transactional(
-      approver,
+      recipient,
       approval_subject(request, label),
-      "Needs approval · 0 of #{quorum} approvals received.",
+      "#{copy.preview} · 0 of #{quorum} approvals received.",
       blocks,
-      {"Review approval", url},
-      headers: approval_thread_headers(:requested, request, approver)
+      {copy.cta, url},
+      headers: approval_thread_headers(:requested, request, recipient)
     )
   end
+
+  # The approver is asked to decide; the requester is told their run is waiting.
+  defp approval_request_copy(:approver, noun),
+    do: %{
+      status: {:status, "This #{noun} ", "needs your approval", ".", :warning},
+      preview: "Needs approval",
+      cta: "Review approval"
+    }
+
+  defp approval_request_copy(:requester, noun),
+    do: %{
+      status: {:status, "Your #{noun} ", "is waiting for approval", ".", :warning},
+      preview: "Waiting for approval",
+      cta: "View request"
+    }
 
   @runbook_email_item_limit 12
 
   @doc """
   Notifies an approver about a whole runbook execution without assuming an
-  ActionRun exists. The request context is the frozen, already-redacted plan.
+  ActionRun exists, or, with `audience: :requester`, tells its requester that it
+  is waiting. The request context is the frozen, already-redacted plan.
   """
   def deliver_runbook_execution_approval_request(
-        %Accounts.Membership{} = approver,
+        %Accounts.Membership{} = recipient,
         %{} = request,
-        requester_name \\ nil
+        requester_name \\ nil,
+        opts \\ []
       ) do
     plan = request.context["plan"] || %{}
     title = runbook_approval_title(request)
     stages = plan["stages"] || []
     total = plan["total_items"] || Enum.sum(Enum.map(stages, &length(&1["items"] || [])))
     quorum = request_quorum(request)
+    copy = approval_request_copy(Keyword.get(opts, :audience, :approver), "runbook")
 
     blocks =
       [
-        {:status, "This runbook ", "needs your approval", ".", :warning},
+        copy.status,
         {:facts,
          present_facts([
            {"Workspace", account_fact(request.account)},
@@ -483,12 +504,12 @@ defmodule Emisar.Mailers.UserNotifier do
       |> Kernel.++([{:section, "Frozen execution plan"}, {:pre, format_execution_items(stages)}])
 
     deliver_transactional(
-      approver,
+      recipient,
       approval_subject(request, title),
-      "Needs approval · 0 of #{quorum} approvals received.",
+      "#{copy.preview} · 0 of #{quorum} approvals received.",
       blocks,
-      {"Review approval", approval_url(request)},
-      headers: approval_thread_headers(:requested, request, approver)
+      {copy.cta, approval_url(request)},
+      headers: approval_thread_headers(:requested, request, recipient)
     )
   end
 

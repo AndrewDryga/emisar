@@ -105,6 +105,9 @@ defmodule Emisar.ApprovalsTest do
     end
   end
 
+  defp emails_to(emails, address),
+    do: Enum.filter(emails, fn email -> Enum.any?(email.to, &match?({_name, ^address}, &1)) end)
+
   describe "exact Member attribution" do
     test "the approval requester is the run's exact initiating Member" do
       {_account, run} = run_fixture()
@@ -2359,15 +2362,80 @@ defmodule Emisar.ApprovalsTest do
       refute members["viewer"].email in recipients
     end
 
-    test "excludes the requester from their own notification", %{run: run, members: members} do
-      membership = Repo.reload!(members["owner"])
-      run = Fixtures.Runs.set_initiating_membership(run, membership)
+    test "sends a requester who may approve their own request the approval once", %{
+      run: run,
+      members: members
+    } do
+      owner = Repo.reload!(members["owner"])
+      run = Fixtures.Runs.set_initiating_membership(run, owner)
+      {:ok, _req} = Approvals.create_request(run, "needs approval")
+
+      emails = notified_emails()
+
+      assert [to_owner] = emails_to(emails, owner.email)
+      assert to_owner.text_body =~ "This action needs your approval."
+      assert [to_admin] = emails_to(emails, members["admin"].email)
+      assert to_admin.text_body =~ "This action needs your approval."
+    end
+
+    test "tells a requester who may not approve their own request that it is waiting", %{
+      run: run,
+      members: members
+    } do
+      owner = Repo.reload!(members["owner"])
+      run = Fixtures.Runs.set_initiating_membership(run, owner)
+      {:ok, _req} = Approvals.create_request(run, "needs approval", allow_self_approval: false)
+
+      emails = notified_emails()
+
+      assert [to_owner] = emails_to(emails, owner.email)
+      assert to_owner.text_body =~ "Your action is waiting for approval."
+      refute to_owner.text_body =~ "needs your approval"
+      assert [to_admin] = emails_to(emails, members["admin"].email)
+      assert to_admin.text_body =~ "This action needs your approval."
+    end
+
+    test "tells a requester outside the action's scope that it is waiting", %{
+      account: account,
+      run: run,
+      members: members
+    } do
+      {:ok, database_access} = Accounts.RunnerAccess.restricted(["database"], [])
+
+      operator =
+        members["operator"]
+        |> Repo.reload!()
+        |> Fixtures.Memberships.force_runner_access(database_access)
+
+      run = Fixtures.Runs.set_initiating_membership(run, operator)
+      assert run.account_id == account.id
+      {:ok, _req} = Approvals.create_request(run, "needs approval")
+
+      assert [to_operator] = emails_to(notified_emails(), operator.email)
+      assert to_operator.text_body =~ "Your action is waiting for approval."
+    end
+
+    test "does not email a service-account requester", %{
+      account: account,
+      run: run,
+      members: members
+    } do
+      # The setup's own requester is a decider too; once a service account asks
+      # instead, that member is simply one more approver.
+      unrelated = Repo.get!(Accounts.Membership, run.initiating_membership_id)
+      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+      run = Fixtures.Runs.set_initiating_membership(run, service_account)
       {:ok, _req} = Approvals.create_request(run, "needs approval")
 
       recipients = notified_recipients()
 
-      refute members["owner"].email in recipients
-      assert members["admin"].email in recipients
+      assert Enum.sort(recipients) ==
+               Enum.sort([
+                 members["owner"].email,
+                 members["admin"].email,
+                 members["operator"].email,
+                 unrelated.email
+               ])
     end
 
     test "does not notify an approver until their invitation is accepted", %{
@@ -2729,11 +2797,13 @@ defmodule Emisar.ApprovalsTest do
       |> Repo.insert!()
 
       assert Approvals.notify_request_created(request, run) == :ok
-      assert notified_recipients() == []
+      refute decider.email in notified_recipients()
 
       other = distinct_member(account, :admin)
       assert Approvals.notify_request_created(request, run) == :ok
-      assert notified_recipients() == [other.actor.email]
+      recipients = notified_recipients()
+      assert other.actor.email in recipients
+      refute decider.email in recipients
     end
 
     test "initial prompts check current runner membership, not a stale preload", %{
@@ -2752,7 +2822,7 @@ defmodule Emisar.ApprovalsTest do
       assert decider.email in notified_recipients()
       runner |> Ecto.Changeset.change(group: "after") |> Repo.update!()
       assert Approvals.notify_request_created(request, run) == :ok
-      assert notified_recipients() == []
+      refute decider.email in notified_recipients()
 
       Fixtures.Memberships.force_runner_access(membership, Accounts.RunnerAccess.all())
       Fixtures.Runners.mark_deleted(runner)
