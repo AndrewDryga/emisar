@@ -1,5 +1,6 @@
 # Portal rule index
 
+- **A form submit that ends at an identity provider goes through the SSO handoff page.** Under `form-action 'self'` Chromium blocks a form POST that redirects to the provider; render the handoff page and navigate from there, per [elixir-idp-form-submits-go-through-the-handoff-page.md](elixir-idp-form-submits-go-through-the-handoff-page.md).
 - **Owner is account-wide; Admin remains scopeable.** Owner grants, demotions, directory handoff and connection preservation follow [elixir-owner-access.md](elixir-owner-access.md). Normalize stored access and preserve all non-scope authorization gates.
 
 Search by the touched feature, module, component, or rule name; read matching entries and linked rules before editing.
