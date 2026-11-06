@@ -156,6 +156,48 @@ func TestValidatePackJQFilters(t *testing.T) {
 			program: "test -r \"$1\" || exit 1\njq -r '.value' \"$1\"",
 		},
 		{
+			// jq 1.6 refuses to compile this; jq 1.7+ accepts it.
+			name:       "a jq keyword bound as a variable",
+			id:         "fixture.keyword_binding",
+			program:    "jq -r '.[0] as $label | \"\\($label)\"'",
+			wantErr:    true,
+			wantErrMsg: "fixture.keyword_binding ($label)",
+		},
+		{
+			name:       "keyword parameters and destructured names",
+			id:         "fixture.keyword_params",
+			script:     "#!/bin/sh\njq -n 'def clip($end): .[:$end]; {a: 1} as {a: $if} | \"x\" | clip(1)'\n",
+			wantErr:    true,
+			wantErrMsg: "fixture.keyword_params ($end, $if)",
+		},
+		{
+			name:       "a heredoc filter binds a keyword",
+			id:         "fixture.heredoc_keyword",
+			script:     "#!/bin/sh\njq -n -f /dev/stdin <<'JQ'\n1 as $end | $end\nJQ\n",
+			wantErr:    true,
+			wantErrMsg: "fixture.heredoc_keyword ($end)",
+		},
+		{
+			name:       "binding $__loc__ is still a keyword",
+			id:         "fixture.bind_loc",
+			program:    "jq -n '1 as $__loc__ | 2'",
+			wantErr:    true,
+			wantErrMsg: "fixture.bind_loc ($__loc__)",
+		},
+		{
+			// Bare and double-quoted $end/$label are the shell's own variables.
+			name:   "shell variables named like jq keywords are not jq",
+			id:     "fixture.shell_keyword_names",
+			script: "#!/bin/bash\nend=5\nfor label in a b; do echo $label \"$end\"; done\njq -n --argjson limit \"$end\" '$limit'\n",
+		},
+		{
+			// not is a builtin, $__loc__ a valid reference, and perl's $end
+			// is perl's.
+			name:    "$not, a $__loc__ reference and a perl variable pass",
+			id:      "fixture.not_and_loc",
+			program: "perl -ne 'my $end = 1' | jq -n '1 as $not | [$not, $__loc__]'",
+		},
+		{
 			name:    "non-shell action is out of scope",
 			id:      "fixture.not_shell",
 			program: "",

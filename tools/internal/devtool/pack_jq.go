@@ -1,6 +1,7 @@
 package devtool
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -31,6 +32,35 @@ var jqOptionalBuiltins = map[string]bool{
 	"test":    true,
 }
 
+// jq 1.7 accepts a keyword as a variable name; jq 1.6, which Debian 12, Ubuntu
+// 22.04 and RHEL 9 ship, rejects one at compile time ("syntax error, unexpected
+// label, expecting IDENT"), so the action fails on those hosts while a jq 1.7+
+// workstation never notices. This is the lexer's keyword set, each rejected
+// by jq 1.6 as a binding, a destructured name, a def parameter and a
+// reference; `not` is a builtin and jq 1.6 accepts $not. $__loc__ is a valid
+// reference in every jq, so only binding it counts.
+var jqKeywords = map[string]bool{
+	"__loc__": true,
+	"and":     true,
+	"as":      true,
+	"break":   true,
+	"catch":   true,
+	"def":     true,
+	"elif":    true,
+	"else":    true,
+	"end":     true,
+	"foreach": true,
+	"if":      true,
+	"import":  true,
+	"include": true,
+	"label":   true,
+	"module":  true,
+	"or":      true,
+	"reduce":  true,
+	"then":    true,
+	"try":     true,
+}
+
 // Programs with their own match/sub/gsub, unaffected by how jq was built. One
 // is routinely quoted beside a jq filter in the same pipeline, so what is
 // skipped is the span from the command to the end of its pipeline segment
@@ -44,7 +74,7 @@ var jqForeignProgramCommands = map[string]bool{
 }
 
 func validatePackJQFilters(input packActionLintInput) error {
-	var failures []string
+	var optional, keywords []string
 	for _, path := range input.actionPaths {
 		data, err := os.ReadFile(path)
 		if err != nil {
@@ -67,17 +97,30 @@ func validatePackJQFilters(input packActionLintInput) error {
 		if !strings.Contains(source, "jq") {
 			continue
 		}
-		if used := jqOptionalBuiltinsUsed(source); len(used) > 0 {
-			failures = append(failures,
-				fmt.Sprintf("%s (%s)", action.ID, strings.Join(used, ", ")))
+		builtins, variables := jqFilterFindings(source)
+		if len(builtins) > 0 {
+			optional = append(optional,
+				fmt.Sprintf("%s (%s)", action.ID, strings.Join(builtins, ", ")))
+		}
+		if len(variables) > 0 {
+			keywords = append(keywords,
+				fmt.Sprintf("%s (%s)", action.ID, strings.Join(variables, ", ")))
 		}
 	}
-	if len(failures) > 0 {
-		return fmt.Errorf(
+	var problems []string
+	if len(optional) > 0 {
+		problems = append(problems,
 			"jq filters must use only builtins every jq build has; the regex family and split/2 "+
-				"need Oniguruma, which jq's own --with-oniguruma=no build omits: %s",
-			strings.Join(failures, ", "),
-		)
+				"need Oniguruma, which jq's own --with-oniguruma=no build omits: "+
+				strings.Join(optional, ", "))
+	}
+	if len(keywords) > 0 {
+		problems = append(problems,
+			"jq filters must compile on jq 1.6, which rejects a jq keyword as a variable name: "+
+				strings.Join(keywords, ", "))
+	}
+	if len(problems) > 0 {
+		return errors.New(strings.Join(problems, "; "))
 	}
 	return nil
 }
@@ -93,14 +136,19 @@ const (
 	jqComment
 )
 
-// jqOptionalBuiltinsUsed returns the optional builtins a shell program's jq
-// filters call, deduplicated and sorted. Comments are skipped in both
-// languages — a shell comment explaining why gsub is avoided, and a jq comment
-// inside the single-quoted program saying the same — while a `#` inside a
-// string stays part of the string, which is what keeps "x5t#S256" from
-// swallowing the rest of the filter.
-func jqOptionalBuiltinsUsed(program string) []string {
+// jqFilterFindings returns the optional builtins a shell program's jq filters
+// call and the keyword variable names they use, each deduplicated and sorted.
+// Comments are skipped in both languages — a shell comment explaining why gsub
+// is avoided, and a jq comment inside the single-quoted program saying the
+// same — while a `#` inside a string stays part of the string, which is what
+// keeps "x5t#S256" from swallowing the rest of the filter.
+//
+// A keyword variable counts anywhere in a single-quoted span, where the jq
+// program is authored, but in bare text (a heredoc filter) only right after
+// `as`: there `$end` is just as likely the shell's own variable.
+func jqFilterFindings(program string) (builtins, keywords []string) {
 	used := make(map[string]bool)
+	variables := make(map[string]bool)
 	state, resume := jqShellCode, jqShellCode
 	foreign := false
 	for index := 0; index < len(program); index++ {
@@ -137,6 +185,8 @@ func jqOptionalBuiltinsUsed(program string) []string {
 				state = jqStringLiteral
 			case character == '#' && jqStartsWord(program, index):
 				state, resume = jqComment, jqShellSingle
+			case character == '$':
+				index = jqRecordKeywordVariable(program, index, foreign, false, variables)
 			default:
 				index = jqRecordCall(program, index, foreign, used)
 			}
@@ -155,6 +205,8 @@ func jqOptionalBuiltinsUsed(program string) []string {
 				state, resume = jqComment, jqShellCode
 			case jqEndsPipelineSegment(character):
 				foreign = false
+			case character == '$':
+				index = jqRecordKeywordVariable(program, index, foreign, true, variables)
 			default:
 				// A jq program may arrive through a heredoc instead of a
 				// quoted argv span. Scan direct call spellings in bare text too;
@@ -174,12 +226,48 @@ func jqOptionalBuiltinsUsed(program string) []string {
 		}
 	}
 
-	names := make([]string, 0, len(used))
-	for name := range used {
+	return jqSortedNames(used), jqSortedNames(variables)
+}
+
+func jqSortedNames(set map[string]bool) []string {
+	names := make([]string, 0, len(set))
+	for name := range set {
 		names = append(names, name)
 	}
 	sort.Strings(names)
 	return names
+}
+
+// jqRecordKeywordVariable records the variable spelled at index, the `$` of
+// `$name`, when name is a jq keyword, and returns the last index it consumed.
+// bindingOnly limits it to `as $name`, the one spelling bare shell text never
+// means as its own variable.
+func jqRecordKeywordVariable(program string, index int, foreign, bindingOnly bool, variables map[string]bool) int {
+	start := index + 1
+	if foreign || start >= len(program) || !jqIdentifierStart(program[start]) {
+		return index
+	}
+	end := start
+	for end < len(program) && jqIdentifierByte(program[end]) {
+		end++
+	}
+	name := program[start:end]
+	bound := jqFollowsAs(program, index)
+	if jqKeywords[name] && (bound || !bindingOnly && name != "__loc__") {
+		variables["$"+name] = true
+	}
+	return end - 1
+}
+
+// jqFollowsAs reports whether the `$` at index directly follows the keyword
+// `as`, which is how jq binds a variable.
+func jqFollowsAs(program string, index int) bool {
+	end := index
+	for end > 0 && (program[end-1] == ' ' || program[end-1] == '\t' || program[end-1] == '\n') {
+		end--
+	}
+	return end >= 2 && program[end-2:end] == "as" &&
+		(end == 2 || !jqIdentifierByte(program[end-3]))
 }
 
 // jqRecordCall records the builtin called at index, if any, and returns the

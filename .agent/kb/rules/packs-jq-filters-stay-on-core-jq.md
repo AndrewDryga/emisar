@@ -8,6 +8,13 @@ jobs with core jq — `explode`/`implode` for character classes, `split/1` +
 `all` for shape checks, `ascii_downcase` + `contains`/`startswith`/`endswith`
 for case-insensitive matching, `ltrimstr`/`rtrimstr` for fixed affixes.
 
+The program also compiles on jq 1.6, the oldest jq on a supported host
+(Debian 12, Ubuntu 22.04, RHEL 9): no variable is named after a jq keyword —
+`and`, `as`, `break`, `catch`, `def`, `elif`, `else`, `end`, `foreach`, `if`,
+`import`, `include`, `label`, `module`, `or`, `reduce`, `then`, `try`,
+`__loc__` — whether it is bound with `as`, destructured, a `def` parameter, or
+an `--arg` name.
+
 **Why.** jq's own `./configure --with-oniguruma=no` is a supported build, and
 minimal images and appliance hosts use it. Such a jq does not fall back and does
 not degrade — it raises
@@ -27,6 +34,13 @@ Worse, the failure lands *after* the command has run. The projection is the last
 step of a read: HCP Terraform has been queried, the log has been fetched, and
 then jq refuses — so the operator pays for the call and gets an error whose text
 is about jq's build flags.
+
+jq 1.7 accepts `... as $label`; jq 1.6 refuses to compile it (`syntax error,
+unexpected label, expecting IDENT`, exit 3), so the action fails on every jq 1.6
+host while a jq 1.7+ workstation and CI never notice. `firewall` shipped `$end`
+and `network-tls` shipped `$label` that way. `not` is a builtin rather than a
+keyword (jq 1.6 compiles `$not`), and `$__loc__` is a valid reference; only
+binding it fails.
 
 **Good.** Collapse control runs to one space (Oniguruma's `[[:cntrl:]]` is
 exactly Unicode Cc — `U+0000`–`U+001F` and `U+007F`–`U+009F`, which is a closed
@@ -70,6 +84,7 @@ select(((.Type // "") | ascii_downcase) | contains("restart"))
 (tostring | gsub("[[:cntrl:]]+"; " ")) as $clean          # optional builtin
 if (.format_version | test("^[01]\\.[0-9]+$")) then . end  # optional builtin
 select((.Type // "") | test("Restart"; "i"))               # optional builtin
+(.[0] | ascii_downcase) as $label | "\($label)"            # jq 1.6 keyword
 ```
 
 **A rewrite is not automatically equivalent — prove it.** Two traps found while
@@ -96,12 +111,18 @@ branches it cannot execute.
 (`tools/internal/devtool/pack_jq.go`), which follows every action path declared
 by `pack.yaml` and reads each jq program the pack can actually execute — an
 action's `/bin/sh -c` argv and each packaged `scripts/*.sh` — then fails on a
-call to the regex family or `split/2`, naming the action and the builtin. It
+call to the regex family or `split/2`, naming the action and the builtin, or
+on a keyword variable, naming the action and the `$name`. It
 skips comments in both languages, strings (so a `"x5t#S256"` key stays a key),
 and the `awk`/`sed`/`perl` spans that have their own `match`/`sub`/`gsub`. That
 is what closes every executable path in the catalog, which a case cannot: the
 failure is raised when the builtin is *reached*, so a case only ever proves the
 paths it runs.
+
+A keyword variable counts anywhere in a single-quoted jq span; in bare text,
+which is how a heredoc filter arrives, only right after `as`, because there
+`$end` or `$label` is as likely the shell's own variable. Double-quoted spans
+are shell text too.
 
 A source with no `jq` spelling is not a static jq invocation. Skip it before
 interpreting call names: embedded Python has its own `match` and `scan`, and
