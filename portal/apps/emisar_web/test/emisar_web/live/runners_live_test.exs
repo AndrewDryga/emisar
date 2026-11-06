@@ -123,6 +123,36 @@ defmodule EmisarWeb.RunnersLiveTest do
       assert render(lv) =~ "autoscaled-runner"
     end
 
+    test "another admin's delete reloads the list without a presence change", %{conn: conn} do
+      {conn, owner, account} = register_and_log_in(conn)
+
+      Fixtures.Runners.create_runner(
+        account_id: account.id,
+        name: "kept-runner",
+        connected?: false
+      )
+
+      removed =
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          name: "removed-runner",
+          connected?: false
+        )
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners")
+      assert html =~ "removed-runner"
+
+      :erlang.trace(lv.pid, true, [:receive, tracer: self()])
+      {:ok, _deleted} = Runners.delete_runner(removed, Fixtures.Subjects.subject_for(owner))
+
+      # The lifecycle broadcast, not the test, schedules the debounced reload.
+      pid = lv.pid
+      assert_receive {:trace, ^pid, :receive, :reload_runners}, 1500
+      html = render(lv)
+      assert html =~ "kept-runner"
+      refute html =~ "removed-runner"
+    end
+
     test "the dead/pre-connect empty render shows a loading placeholder, not the wizard",
          %{conn: conn} do
       {conn, _owner, account} = register_and_log_in(conn)

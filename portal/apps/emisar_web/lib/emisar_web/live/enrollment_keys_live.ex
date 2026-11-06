@@ -9,8 +9,9 @@ defmodule EmisarWeb.EnrollmentKeysLive do
     # without manage lands on not-found at LOAD time, not on first submit.
     if Runners.subject_can_manage_enrollment_keys?(socket.assigns.current_subject) do
       # Subscribe to the per-account enrollment-keys topic so another operator's
-      # create / revoke (or an auto-bind from a runner registration) reflows
-      # this list without the viewer having to refresh.
+      # create or revoke, an install key minted elsewhere, a runner registering
+      # with a key, or the expired-key cleanup reflows this list without the
+      # viewer having to refresh.
       if connected?(socket),
         do: Runners.subscribe_account_enrollment_keys(socket.assigns.current_account.id)
 
@@ -35,9 +36,15 @@ defmodule EmisarWeb.EnrollmentKeysLive do
   # The issue form is refused for a runner-scoped admin at the route, not at the
   # submit: never route an operator into an action that cannot succeed. The
   # domain gate in `create_enrollment_key/2` is still the authorization.
+  #
+  # The form never shows the key list, so it keeps the dead render's empty,
+  # unread list (IL-18) instead of paying for a list query on every render.
   def handle_params(_params, _uri, %{assigns: %{live_action: :new}} = socket) do
     if Runners.subject_can_create_enrollment_keys?(socket.assigns.current_subject) do
-      {:noreply, socket |> assign(:page_title, "Create an enrollment key") |> load(%{})}
+      {:noreply,
+       socket
+       |> assign(:page_title, "Create an enrollment key")
+       |> prepare_disconnected(%{})}
     else
       {:noreply,
        socket
@@ -60,12 +67,17 @@ defmodule EmisarWeb.EnrollmentKeysLive do
     end
   end
 
-  def handle_info({:list_changed, :enrollment_key, _event_type, _id}, socket),
-    do: {:noreply, load(socket, socket.assigns[:filter_params] || %{})}
+  # Only the list reflows; the issue form (:new) has no list to refresh.
+  def handle_info(
+        {:list_changed, :enrollment_key, _event_type, _id},
+        %{assigns: %{live_action: :index}} = socket
+      ),
+      do: {:noreply, load(socket, socket.assigns[:filter_params] || %{})}
 
   def handle_info(
         {:list_changed, :team, "membership.runner_access_changed", membership_id},
-        %{assigns: %{current_subject: %{membership_id: membership_id}}} = socket
+        %{assigns: %{live_action: :index, current_subject: %{membership_id: membership_id}}} =
+          socket
       ),
       do: {:noreply, load(socket, socket.assigns[:filter_params] || %{})}
 
@@ -182,8 +194,20 @@ defmodule EmisarWeb.EnrollmentKeysLive do
 
       key ->
         case Runners.revoke_enrollment_key(key, socket.assigns.current_subject) do
-          {:ok, _} -> {:noreply, socket |> put_flash(:info, "Key revoked.") |> reload()}
-          {:error, _} -> {:noreply, socket}
+          {:ok, _} ->
+            {:noreply, socket |> put_flash(:info, "Key revoked.") |> reload()}
+
+          # Cleanup or ring eviction can remove a key after this list loaded. Say
+          # so and show the current list, instead of closing on an unchanged row.
+          {:error, :not_found} ->
+            {:noreply,
+             socket
+             |> put_flash(:error, "That key no longer exists. It may have just been removed.")
+             |> reload()}
+
+          {:error, _reason} ->
+            {:noreply,
+             socket |> put_flash(:error, "Couldn't revoke the key. Try again.") |> reload()}
         end
     end
   end

@@ -1540,7 +1540,9 @@ defmodule EmisarWeb.PacksLive do
 
           <%!-- Inline filter row (shared LiveTable field grammar: label + brand
                active-state, sm:w-48). Search spans pack AND action ids; Risk keeps
-               packs advertising an action at that tier. --%>
+               packs advertising an action at that tier. Enter goes through
+               phx-submit: a form without it falls back to a native submit that
+               reloads the page, and mount reads no URL params to restore. --%>
           <form
             :if={
               not @loading? and not @load_error? and
@@ -1548,6 +1550,7 @@ defmodule EmisarWeb.PacksLive do
             }
             id="pack-filter-form"
             phx-change="filter"
+            phx-submit="filter"
             class="mt-6 flex flex-wrap items-end gap-3"
           >
             <label class={[

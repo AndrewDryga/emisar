@@ -180,6 +180,20 @@ defmodule EmisarWeb.RunnerDetailLive do
   def handle_info({:runner_credentials_changed, id}, %{assigns: %{runner: %{id: id}}} = socket),
     do: {:noreply, refresh_current_runner(socket)}
 
+  # The shared hook forwards the account's packs topic: a runner re-advertising
+  # its catalog over the same connection (`emisar pack install`), and a pack
+  # trusted or rejected anywhere, change this page's actions, their run locks,
+  # and signature enforcement without any presence change. A burst coalesces
+  # into one re-read on the debounce tick.
+  def handle_info({:catalog_changed, _account_id}, socket),
+    do: {:noreply, LiveTable.schedule_reload(socket, :refresh_runner)}
+
+  def handle_info({:pack_trust_changed, _account_id}, socket),
+    do: {:noreply, LiveTable.schedule_reload(socket, :refresh_runner)}
+
+  def handle_info(:refresh_runner, %{assigns: %{runner: %Runners.Runner{}}} = socket),
+    do: {:noreply, socket |> LiveTable.reload_drained() |> refresh_current_runner()}
+
   def handle_info(
         {:list_changed, :team, "membership.runner_access_changed", membership_id},
         %{assigns: %{current_subject: %{membership_id: membership_id}}} = socket
@@ -229,8 +243,10 @@ defmodule EmisarWeb.RunnerDetailLive do
       Runners.subject_can_manage_runners?(socket.assigns.current_subject),
       fn socket ->
         case Runners.disable_runner(socket.assigns.runner, socket.assigns.current_subject) do
-          {:ok, runner} ->
-            {:noreply, socket |> put_flash(:info, "Runner disabled.") |> assign_runner(runner)}
+          # The returned row carries no connection key; re-read the page's own
+          # shape so the key section keeps its facts and Rotate stays usable.
+          {:ok, _runner} ->
+            {:noreply, socket |> put_flash(:info, "Runner disabled.") |> refresh_current_runner()}
 
           {:error, :not_found} ->
             {:noreply,
@@ -270,8 +286,8 @@ defmodule EmisarWeb.RunnerDetailLive do
       Runners.subject_can_manage_runners?(socket.assigns.current_subject),
       fn socket ->
         case Runners.enable_runner(socket.assigns.runner, socket.assigns.current_subject) do
-          {:ok, runner} ->
-            {:noreply, socket |> put_flash(:info, "Runner enabled.") |> assign_runner(runner)}
+          {:ok, _runner} ->
+            {:noreply, socket |> put_flash(:info, "Runner enabled.") |> refresh_current_runner()}
 
           {:error, :over_limit, _plan, limit} ->
             {:noreply,

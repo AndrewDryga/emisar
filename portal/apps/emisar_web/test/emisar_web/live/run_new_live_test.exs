@@ -617,6 +617,38 @@ defmodule EmisarWeb.RunNewLiveTest do
     assert has_element?(lv, "button", "Run on #{runner.name}")
   end
 
+  test "the offline notice follows the runner's connection without a reload", %{conn: conn} do
+    {conn, _owner, account} = register_and_log_in(conn)
+    runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+    action = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
+    assert render(lv) =~ "Runner offline"
+
+    # A diff about another runner changes nothing here.
+    send(lv.pid, %{
+      event: "presence_diff",
+      payload: %{joins: %{Ecto.UUID.generate() => %{metas: [%{}]}}, leaves: %{}}
+    })
+
+    assert render(lv) =~ "Runner offline"
+
+    send(lv.pid, %{
+      event: "presence_diff",
+      payload: %{joins: %{runner.id => %{metas: [%{}]}}, leaves: %{}}
+    })
+
+    refute render(lv) =~ "Runner offline"
+    assert has_element?(lv, "button", "Run on #{runner.name}")
+
+    send(lv.pid, %{
+      event: "presence_diff",
+      payload: %{joins: %{}, leaves: %{runner.id => %{metas: [%{}]}}}
+    })
+
+    assert render(lv) =~ "Runner offline"
+  end
+
   test "a disabled runner reports the disabled remedy, not the signed-only one", %{conn: conn} do
     {conn, owner, account} = register_and_log_in(conn)
 

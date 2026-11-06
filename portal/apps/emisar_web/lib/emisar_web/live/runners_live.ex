@@ -7,8 +7,12 @@ defmodule EmisarWeb.RunnersLive do
   alias EmisarWeb.URLHelpers
 
   def mount(_params, _session, socket) do
-    if connected?(socket),
-      do: Runners.subscribe_account_credentials(socket.assigns.current_account.id)
+    # Credentials and lifecycle (enable, disable, delete, the retention sweep)
+    # each have their own topic; presence arrives through the shared fleet hook.
+    if connected?(socket) do
+      Runners.subscribe_account_credentials(socket.assigns.current_account.id)
+      Runners.subscribe_account_inventory(socket.assigns.current_account.id)
+    end
 
     {:ok,
      socket
@@ -43,6 +47,9 @@ defmodule EmisarWeb.RunnersLive do
     do: {:noreply, socket |> LiveTable.reload_drained() |> reload()}
 
   def handle_info({:runner_credentials_changed, _id}, socket),
+    do: {:noreply, LiveTable.schedule_reload(socket, :reload_runners)}
+
+  def handle_info({:runner_inventory_changed, _account_id}, socket),
     do: {:noreply, LiveTable.schedule_reload(socket, :reload_runners)}
 
   def handle_info(

@@ -46,6 +46,39 @@ defmodule EmisarWeb.ConsoleRefreshPerformanceTest do
     assert Enum.count(queries, &(&1 =~ ~r/SELECT r0\."id".*FROM "runners"/s)) == 1
   end
 
+  test "the new enrollment key form never reads the key list it doesn't show", %{
+    conn: conn,
+    account: account
+  } do
+    key_list = ~r/FROM "runner_enrollment_keys"/
+
+    queries =
+      capture_queries(self(), fn ->
+        html = conn |> get(~p"/app/#{account}/runners/keys/new") |> html_response(200)
+        assert html =~ "Create key"
+      end)
+
+    refute Enum.any?(queries, &(&1 =~ key_list))
+
+    {:ok, view, _html} = live(conn, ~p"/app/#{account}/runners/keys/new")
+
+    # The connected params pass and a key change from elsewhere stay list-free.
+    queries =
+      capture_queries(view.pid, fn ->
+        render_patch(view, ~p"/app/#{account}/runners/keys/new")
+
+        send(
+          view.pid,
+          {:list_changed, :enrollment_key, "enrollment_key.created", Ecto.UUID.generate()}
+        )
+
+        render(view)
+      end)
+
+    refute Enum.any?(queries, &(&1 =~ key_list))
+    assert has_element?(view, "#enrollment_key_form")
+  end
+
   test "a large Runs refresh estimates totals without scanning history", %{
     conn: conn,
     account: account,

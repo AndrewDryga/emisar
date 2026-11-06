@@ -335,6 +335,24 @@ defmodule EmisarWeb.RunsLiveTest do
     refute html =~ "No runs yet"
   end
 
+  test "a filtered deep link's first paint shows loading, not the no-matches line", %{
+    conn: conn
+  } do
+    {conn, _owner, account} = register_and_log_in(conn)
+    runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+    Fixtures.Runs.create_run(account_id: account.id, runner_id: runner.id, status: :success)
+
+    # The dead render hasn't read the runs, so the filter's real match must not
+    # read as "no matches" before the socket connects.
+    html = conn |> get(~p"/app/#{account}/runs?status=success") |> html_response(200)
+    assert html =~ "Loading"
+    refute html =~ "No runs match these filters."
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs?status=success")
+    refute html =~ "No runs match these filters."
+    assert html =~ "svc.read"
+  end
+
   test "an account-runs broadcast reloads the current page", %{conn: conn} do
     {conn, _owner, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)

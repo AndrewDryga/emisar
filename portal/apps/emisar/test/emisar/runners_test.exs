@@ -3600,6 +3600,41 @@ defmodule Emisar.RunnersTest do
       {:ok, _raw, _key} = Runners.create_enrollment_key(%{reusable: true}, subject_b)
       refute_receive {:list_changed, :enrollment_key, _event, _id}
     end
+
+    test "a registration that claims a key's use announces it; its recovery retry does not" do
+      {account, member, _subject} = account_with_owner_subject()
+      {raw, key} = Fixtures.Runners.create_enrollment_key(membership: member)
+      :ok = Runners.subscribe_account_enrollment_keys(account.id)
+      attrs = %{external_id: "announced-host", hostname: "announced-host"}
+
+      assert {:ok, _runner, _token, _raw_token} = Runners.register_via_enrollment_key(raw, attrs)
+      assert_receive {:list_changed, :enrollment_key, "enrollment_key.used", key_id}
+      assert key_id == key.id
+
+      assert {:ok, _runner, _token, _raw_token} = Runners.register_via_enrollment_key(raw, attrs)
+      refute_receive {:list_changed, :enrollment_key, _event, _id}
+    end
+
+    test "an install key mint and the expired-key cleanup announce the list change" do
+      {account, member, subject} = account_with_owner_subject()
+      past = DateTime.add(DateTime.utc_now(), -60, :second)
+      Fixtures.Runners.create_install_key(membership: member, expires_at: past)
+      :ok = Runners.subscribe_account_enrollment_keys(account.id)
+
+      {:ok, _raw, key} = Runners.mint_install_key(subject)
+      assert_receive {:list_changed, :enrollment_key, "enrollment_key.created", key_id}
+      assert key_id == key.id
+
+      account_id = account.id
+      assert {:ok, 1} = Runners.delete_expired_install_keys(account_id)
+
+      assert_receive {:list_changed, :enrollment_key, "enrollment_key.expired_deleted",
+                      ^account_id}
+
+      # A sweep that removed nothing has nothing to announce.
+      assert {:ok, 0} = Runners.delete_expired_install_keys(account_id)
+      refute_receive {:list_changed, :enrollment_key, _event, _id}
+    end
   end
 
   describe "subscribe_runner_transport/1" do

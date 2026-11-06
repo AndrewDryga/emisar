@@ -172,25 +172,15 @@ defmodule EmisarWeb.RunDetailLive do
   defp plural(count, noun), do: "#{count} #{noun}s"
 
   def handle_info({:run_updated, run}, socket) do
-    # The broadcast carries a preload-less run; keep the associations loaded at
-    # mount (:runner, :api_key, :initiating_membership) so "Dispatched by" and the
-    # runner label don't degrade to "—"/"AI agent" on the first live status flip.
-    # The run's own columns (status, policy, timing, progress counts) come from
-    # the fresh struct — only the immutable dispatch-time associations are carried.
     old = socket.assigns.run
-
-    run = %{
-      run
-      | runner: old.runner,
-        api_key: old.api_key,
-        initiating_membership: old.initiating_membership
-    }
+    run = keep_dispatch_associations(run, old)
 
     # If status flips to/from pending_approval, refresh the review so the
     # banner and the ledger update without a page reload.
     {:noreply,
      socket
      |> assign(:run, run)
+     |> reload_settled_output(old)
      |> refresh_action_access()
      |> assign(:action_args, visible_action_args(run, socket.assigns.current_subject))
      |> assign_review(run)}
@@ -231,6 +221,47 @@ defmodule EmisarWeb.RunDetailLive do
   end
 
   def handle_info(_, socket), do: {:noreply, socket}
+
+  # A broadcast and a cancellation both hand back the run's bare row; keep the
+  # associations loaded at mount (:runner, :api_key, :initiating_membership) so
+  # the runner label and "Dispatched by" don't degrade to "a removed runner" and
+  # "—"/"LLM agent". The run's own columns (status, policy, timing, progress
+  # counts) come from the fresh struct; only the dispatch-time associations carry.
+  defp keep_dispatch_associations(%Runs.ActionRun{} = run, %Runs.ActionRun{} = old) do
+    %{
+      run
+      | runner: old.runner,
+        api_key: old.api_key,
+        initiating_membership: old.initiating_membership
+    }
+  end
+
+  # The live stream keeps only the newest @event_window chunks on the client, so
+  # a run that outgrew the window has shed chunks the mount-time paging anchor
+  # never saw. When the run settles, re-read the window the way mount does, so
+  # "Load earlier output" pages back from what the viewer actually holds. Only
+  # the move into a terminal status reads; later updates keep loaded pages.
+  defp reload_settled_output(%{assigns: %{run: run}} = socket, %Runs.ActionRun{} = old) do
+    if Runs.terminal_status?(run.status) and not Runs.terminal_status?(old.status) and
+         events_truncated?(run) do
+      case Runs.list_recent_events_for_run(run, event_window(), socket.assigns.current_subject) do
+        {:ok, events} ->
+          socket
+          |> assign(:output_present?, socket.assigns.output_present? or events != [])
+          |> assign(:output_state, :loaded)
+          |> assign(:oldest_seq, event_seq(List.first(events)))
+          |> assign(:more_earlier?, true)
+          |> stream(:events, events, reset: true)
+
+        # The viewer keeps what it streamed; the failure callout asks for the
+        # reload that rebuilds the window, instead of passing it off as complete.
+        {:error, _reason} ->
+          assign(socket, :output_state, :error)
+      end
+    else
+      socket
+    end
+  end
 
   defp assign_review(socket, run) do
     {review, approval_events} = load_review(socket.assigns.current_subject, run)
@@ -275,7 +306,16 @@ defmodule EmisarWeb.RunDetailLive do
                 _ -> "This run has already finished."
               end
 
-            {:noreply, socket |> assign(:run, run) |> put_flash(:info, message)}
+            old = socket.assigns.run
+            run = keep_dispatch_associations(run, old)
+
+            # A cancel that finds the run already finished settles it here, ahead
+            # of the run's own broadcast.
+            {:noreply,
+             socket
+             |> assign(:run, run)
+             |> reload_settled_output(old)
+             |> put_flash(:info, message)}
 
           _ ->
             {:noreply,

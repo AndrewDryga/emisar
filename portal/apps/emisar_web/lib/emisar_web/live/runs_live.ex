@@ -225,6 +225,11 @@ defmodule EmisarWeb.RunsLive do
                the two surfaces that produce runs). The richer state
                only shows on a brand-new account so it's not noisy. --%>
           <%= cond do %>
+            <% not connected?(@socket) -> %>
+              <%!-- Dead/pre-connect render: the list hasn't been read yet, so
+                   commit to neither "no matches" for a filtered deep link nor
+                   the onboarding pitch — a populated account would flash them. --%>
+              <.loading_state />
             <% @load_error? -> %>
               <.empty_state
                 tone={:danger}
@@ -235,11 +240,6 @@ defmodule EmisarWeb.RunsLive do
               </.empty_state>
             <% LiveTable.has_active_filters?(@filter_params, @filters) -> %>
               <span class="text-zinc-400">No runs match these filters.</span>
-            <% not connected?(@socket) -> %>
-              <%!-- Dead/pre-connect render: don't commit to the onboarding
-                   pitch before the live socket confirms the list is really
-                   empty — a populated account would otherwise flash it. --%>
-              <.loading_state />
             <% not @any_runners? and @can_install_runners? -> %>
               <%!-- Runner-less account: naming dispatch paths that don't exist
                  yet contradicts the product's own guidance — the first job is

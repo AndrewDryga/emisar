@@ -335,8 +335,26 @@ defmodule EmisarWeb.RunNewLive do
      |> refresh_action_access()}
   end
 
-  # No-op for the broadcasts the on_mount badge/fleet hooks forward (approvals,
-  # pack trust, runner presence). The hooks own those nav cues; this page ignores them.
+  # The fleet hook forwards every presence diff. Project this runner's connection
+  # from it, as the run detail page does, so the offline notice follows a
+  # reconnect or a drop; a diff about another runner leaves the page as it was.
+  def handle_info(
+        %{event: "presence_diff"} = event,
+        %{assigns: %{runner: %Runners.Runner{}}} = socket
+      ) do
+    change = Runners.normalize_connection_change(event)
+    runner = Runners.project_runner_connection(socket.assigns.runner, change)
+
+    if runner == socket.assigns.runner do
+      {:noreply, socket}
+    else
+      {:noreply,
+       socket |> assign(:runner, runner) |> assign(:readiness, Runners.runner_readiness(runner))}
+    end
+  end
+
+  # No-op for the other broadcasts the on_mount badge/fleet hooks forward
+  # (approvals, pack trust). The hooks own those nav cues; this page ignores them.
   def handle_info(_msg, socket), do: {:noreply, socket}
 
   def render(assigns) do

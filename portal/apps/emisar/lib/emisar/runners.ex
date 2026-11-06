@@ -2398,6 +2398,28 @@ defmodule Emisar.Runners do
     )
   end
 
+  # A registration that claimed a use changed the key's count and status; the
+  # narrow token-recovery retry claimed nothing, so it announces nothing.
+  defp broadcast_registration_key_use(%EnrollmentKey{} = key, %{authorize_key: :consumed}),
+    do: broadcast_enrollment_key_used(key)
+
+  defp broadcast_registration_key_use(%EnrollmentKey{}, _changes), do: :ok
+
+  defp broadcast_enrollment_key_used(%EnrollmentKey{} = key) do
+    Emisar.PubSub.broadcast(
+      account_enrollment_keys_topic(key.account_id),
+      {:list_changed, :enrollment_key, "enrollment_key.used", key.id}
+    )
+  end
+
+  # The retention sweep deletes a batch of keys, so it names the account.
+  defp broadcast_install_keys_expired(account_id) do
+    Emisar.PubSub.broadcast(
+      account_enrollment_keys_topic(account_id),
+      {:list_changed, :enrollment_key, "enrollment_key.expired_deleted", account_id}
+    )
+  end
+
   @doc """
   Subscribe the caller to a runner's cloud→runner transport topic. Used
   by the runner socket process; messages arrive as
@@ -2554,7 +2576,7 @@ defmodule Emisar.Runners do
       |> Multi.run(:evicted, fn _repo, %{key: key} ->
         {:ok, evict_install_ring_overflow(account_id, cap, grace_s, key.auto_generated_at)}
       end)
-      |> Repo.commit_multi()
+      |> Repo.commit_multi(after_commit: &broadcast_enrollment_key_created(&1.key))
       |> case do
         {:ok, %{key: key}} -> {:ok, raw, key}
         {:error, reason} -> {:error, reason}
@@ -2572,7 +2594,13 @@ defmodule Emisar.Runners do
   @doc "Internal — deletes unused, expired console install keys for one account in bounded batches."
   def delete_expired_install_keys(account_id, opts \\ []) do
     batch_size = opts |> Keyword.get(:batch_size, 100) |> max(1) |> min(1_000)
-    delete_expired_install_key_batches(account_id, DateTime.utc_now(), batch_size, 0)
+
+    {:ok, deleted} =
+      delete_expired_install_key_batches(account_id, DateTime.utc_now(), batch_size, 0)
+
+    # One list change per sweep, not one per key: a reflow re-reads what is left.
+    if deleted > 0, do: broadcast_install_keys_expired(account_id)
+    {:ok, deleted}
   end
 
   defp delete_expired_install_key_batches(account_id, now, batch_size, total) do
@@ -3095,7 +3123,7 @@ defmodule Emisar.Runners do
     |> Multi.run(:token, fn repo, %{registration: {runner, _fresh?}} ->
       {:ok, mint_runner_token(runner, key.id, repo: repo)}
     end)
-    |> Repo.commit_multi()
+    |> Repo.commit_multi(after_commit: &broadcast_registration_key_use(key, &1))
     |> case do
       {:ok, %{registration: {runner, _fresh?}, token: {raw_token, token}}} ->
         {:ok, runner, token, raw_token}

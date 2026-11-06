@@ -236,6 +236,22 @@ defmodule EmisarWeb.PacksLiveTest do
       assert render_hook(lv, "filter", %{"name" => ["oops"], "risk" => ["bad"]})
     end
 
+    test "Enter in the search box submits the filter instead of reloading the page", %{
+      conn: conn
+    } do
+      {conn, _user, account} = register_and_log_in(conn)
+      advertise_hcp(Fixtures.Runners.create_runner(account_id: account.id, name: "admin-a"))
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
+
+      html =
+        lv
+        |> form("#pack-filter-form", %{"name" => "tfc.apply_run"})
+        |> render_submit()
+
+      assert html =~ "1 matching action"
+      assert has_element?(lv, ~s(#pack-name-filter[value="tfc.apply_run"]))
+    end
+
     test "lists workspace packs in full and disables controls outside pack authority", %{
       conn: conn
     } do

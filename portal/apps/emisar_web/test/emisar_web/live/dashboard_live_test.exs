@@ -178,6 +178,32 @@ defmodule EmisarWeb.DashboardLiveTest do
       refute html =~ "Install a pack from the catalog"
     end
 
+    test "an agent connecting while the dashboard is open completes the agent step", %{
+      conn: conn
+    } do
+      {conn, owner, account} = register_and_log_in(conn)
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner)
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}")
+      assert html =~ "1 of 3 done"
+
+      # The key's own broadcast queues the refresh; the test only skips the
+      # debounce wait.
+      {_raw, key} =
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_membership_id: owner.id
+        )
+
+      Fixtures.ApiKeys.mark_used(key)
+      send(lv.pid, :refresh_dashboard)
+
+      html = render(lv)
+      assert html =~ "2 of 3 done"
+      assert html =~ "1 agent connected"
+    end
+
     test "actions advertised only by an offline runner don't count as ready", %{conn: conn} do
       {conn, owner, account} = register_and_log_in(conn)
       Fixtures.Runners.create_runner(account_id: account.id)
@@ -514,6 +540,34 @@ defmodule EmisarWeb.DashboardLiveTest do
       assert html2 =~ "Recent runs"
     end
 
+    test "a pack installed over an open runner connection completes the pack step", %{
+      conn: conn
+    } do
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      {:ok, _raw, key} =
+        Emisar.ApiKeys.create_key(
+          %{name: "Bot", scopes: ["actions:read"], runner_filter: []},
+          subject
+        )
+
+      Fixtures.ApiKeys.mark_used(key)
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}")
+      assert html =~ "Install a pack from the catalog"
+
+      # The re-advertise moves no presence; only the catalog signal arrives.
+      Fixtures.Catalog.create_action(runner: runner)
+      send(lv.pid, {:catalog_changed, account.id})
+      send(lv.pid, :refresh_dashboard)
+
+      html = render(lv)
+      assert html =~ "Ask your agent to run an action"
+      refute html =~ "Install a pack from the catalog"
+    end
+
     # every sub-read on the dashboard flows through
     # `current_subject`, so the board is account-scoped: A's operator sees A's
     # recent run + pending approval and never B's, even though both accounts have
@@ -795,6 +849,28 @@ defmodule EmisarWeb.DashboardLiveTest do
 
       assert html =~ "One runner slot left"
       refute html =~ "at your runner limit"
+    end
+
+    test "a runner registering while the dashboard is open moves the plan banner too", %{
+      conn: conn,
+      account: account
+    } do
+      for _ <- 1..2, do: Fixtures.Runners.create_runner(account_id: account.id)
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}")
+      assert html =~ "One runner slot left"
+
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      send(lv.pid, %{
+        event: "presence_diff",
+        payload: %{joins: %{runner.id => %{metas: [%{}]}}, leaves: %{}}
+      })
+
+      send(lv.pid, :refresh_dashboard)
+
+      html = render(lv)
+      assert html =~ "You&#39;re at your runner limit (3 of 3)."
+      refute html =~ "One runner slot left"
     end
 
     # when a runner advertises a pack version no operator has trusted yet

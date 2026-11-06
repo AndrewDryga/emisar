@@ -1073,6 +1073,46 @@ defmodule EmisarWeb.RunDetailLiveTest do
     refute html =~ "chunk-50\n"
   end
 
+  test "a run watched live past the window pages its evicted output back once it settles",
+       %{conn: conn} do
+    {conn, _owner, account} = register_and_log_in(conn)
+    run = run_with(account, %{status: "running"})
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    now = DateTime.utc_now()
+
+    rows =
+      for seq <- 1..600 do
+        %{
+          id: Repo.generate_id(),
+          run_id: run.id,
+          account_id: account.id,
+          seq: seq,
+          kind: :progress,
+          stream: "stdout",
+          payload: %{"chunk" => "chunk-#{seq}\n"},
+          inserted_at: now
+        }
+      end
+
+    {600, _} = Repo.insert_all(RunEvent, rows)
+    for row <- rows, do: send(lv.pid, {:run_event, struct(RunEvent, row)})
+
+    # The live viewer shed seq 1..100 while the mount saw no output at all.
+    refute render(lv) =~ "chunk-100\n"
+
+    Fixtures.Runs.charge_progress_budget(run, events: 600)
+    finished = Fixtures.Runs.finish_without_runbook_callback(run, :success, %{})
+    send(lv.pid, {:run_updated, finished})
+
+    html = lv |> element("button", "Load earlier output") |> render_click()
+    assert html =~ "chunk-1\n"
+    assert output_index(html, "chunk-100\n") < output_index(html, "chunk-101\n")
+    assert output_count(html, "chunk-101\n") == 1
+    refute html =~ "Load earlier output"
+  end
+
   test "an unknown run id bounces to the runs index", %{conn: conn} do
     {conn, _owner, account} = register_and_log_in(conn)
 
@@ -1106,6 +1146,33 @@ defmodule EmisarWeb.RunDetailLiveTest do
     assert html =~ "Cancellation requested. Waiting for the runner to stop."
     assert html =~ "Cancellation requested"
     assert Repo.reload!(run).status == :cancelling
+  end
+
+  test "cancel keeps the runner and the dispatcher named", %{conn: conn} do
+    {conn, _owner, account} = register_and_log_in(conn)
+
+    dispatcher =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        role: "admin",
+        display_name: "Riley Dispatcher"
+      )
+
+    run = run_with(account, %{status: "sent", initiating_membership_id: dispatcher.id})
+    runner_link = ~s(a[href="/app/#{account.slug}/runners/#{run.runner_id}"])
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+    assert has_element?(lv, runner_link, "runner-1")
+    assert render(lv) =~ "Riley Dispatcher"
+
+    # The click's own render, then the post-commit run broadcast after it.
+    for html <- [render_click(lv, "cancel", %{}), render(lv)] do
+      assert html =~ ~s(<span class="hidden sm:inline">on runner-1</span>)
+      assert html =~ "Riley Dispatcher"
+      refute html =~ "a removed runner"
+    end
+
+    assert has_element?(lv, runner_link, "runner-1")
   end
 
   test "scope loss keeps run output and disables cancellation, including an already-open confirmation",

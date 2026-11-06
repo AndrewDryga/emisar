@@ -20,6 +20,12 @@ defmodule EmisarWeb.DashboardLive do
 
       if connected?(socket) do
         Runs.subscribe_account_runs(account_id)
+
+        # The agents pillar and the checklist's agent step read the key list:
+        # a key minted, revoked, or first used elsewhere reflows them.
+        if ApiKeys.subject_can_view_api_keys?(subject),
+          do: ApiKeys.subscribe_account_api_keys(account_id)
+
         {:ok, load(socket)}
       else
         {:ok, socket |> assign(:page_title, "Dashboard") |> assign(:loading?, true)}
@@ -48,11 +54,19 @@ defmodule EmisarWeb.DashboardLive do
     end
   end
 
+  # A runner re-advertising its catalog over its open connection moves no
+  # presence, yet it can complete the checklist's "install a pack" step.
+  def handle_info({:catalog_changed, _account_id}, socket),
+    do: {:noreply, schedule_refresh(socket, :runners)}
+
   def handle_info({:run_updated, _run_id}, socket),
     do: {:noreply, schedule_refresh(socket, :runs)}
 
   def handle_info({:approval_updated, _request_id}, socket),
     do: {:noreply, schedule_refresh(socket, :approvals)}
+
+  def handle_info({:list_changed, :api_key, _event_type, _key_id}, socket),
+    do: {:noreply, schedule_refresh(socket, :agents)}
 
   # Same-role scope change (the shared hook already rebuilt the Subject): the
   # runner-dependent flags and tiles are scope-derived, so take the full load.
@@ -84,7 +98,6 @@ defmodule EmisarWeb.DashboardLive do
   end
 
   defp load(socket) do
-    account = socket.assigns.current_account
     subject = socket.assigns.current_subject
     # Tolerate {:error, :unauthorized} per tile — a billing_manager (or any
     # future narrow role) still gets a rendering dashboard rather than a crashed
@@ -92,8 +105,6 @@ defmodule EmisarWeb.DashboardLive do
     # an empty list only means "genuinely empty account" when its read verifiably
     # succeeded, so the first-run checklist refuses to activate on unverified
     # emptiness and every tile renders its own read failure instead of a zero.
-    api_keys_read = ApiKeys.list_api_keys_for_account(subject)
-    api_keys = list_or_empty(api_keys_read)
     runner_access = Runners.runner_access_facts_for_subject(subject)
 
     socket
@@ -101,12 +112,12 @@ defmodule EmisarWeb.DashboardLive do
     |> assign(:loading?, false)
     |> assign(:reload_scheduled?, false)
     |> assign(:pending_refreshes, [])
-    |> assign(:setup_reads, %{api_keys: read_ok?(api_keys_read)})
+    |> assign(:setup_reads, %{})
     # Only the first-run fleet read answers this; the counted path past the
     # first run never renders the checklist that asks.
     |> assign(:actions_advertised?, false)
-    |> assign(:agents, agents_summary(api_keys))
-    |> assign(:billing, unwrap_ok(Billing.billing_summary(account, subject)))
+    |> refresh_agents()
+    |> refresh_billing()
     |> assign(:team_security, team_security(subject))
     |> assign(:sso_enabled?, sso_enabled?(subject))
     |> assign(:can_view_runners?, Runners.subject_can_view_runners?(subject))
@@ -134,9 +145,34 @@ defmodule EmisarWeb.DashboardLive do
     |> assign_current_setup_state()
   end
 
-  defp refresh_domain(:runners, socket), do: refresh_runners(socket)
+  # The plan banner counts the account's runners, so a registration or removal
+  # that moves the fleet total re-reads billing with the pillar; a reconnect,
+  # which moves nothing billing shows, doesn't pay for it.
+  defp refresh_domain(:runners, socket) do
+    total = socket.assigns.runners_total
+    socket = refresh_runners(socket)
+
+    if socket.assigns.runners_total == total, do: socket, else: refresh_billing(socket)
+  end
+
   defp refresh_domain(:runs, socket), do: refresh_runs(socket)
   defp refresh_domain(:approvals, socket), do: refresh_approvals(socket)
+  defp refresh_domain(:agents, socket), do: refresh_agents(socket)
+
+  defp refresh_agents(socket) do
+    api_keys_read = ApiKeys.list_api_keys_for_account(socket.assigns.current_subject)
+
+    socket
+    |> assign(:agents, agents_summary(list_or_empty(api_keys_read)))
+    |> put_setup_read(:api_keys, api_keys_read)
+  end
+
+  defp refresh_billing(socket) do
+    summary =
+      Billing.billing_summary(socket.assigns.current_account, socket.assigns.current_subject)
+
+    assign(socket, :billing, unwrap_ok(summary))
+  end
 
   defp refresh_runners(socket) do
     if socket.assigns[:recent_runs] in [nil, []] do

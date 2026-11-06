@@ -520,6 +520,43 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     assert render(lv) =~ "minted-elsewhere"
   end
 
+  test "a host registering with a single-use key takes it off the active list", %{conn: conn} do
+    {conn, owner, account} = register_and_log_in(conn)
+
+    {raw, _key} =
+      Fixtures.Runners.create_enrollment_key(membership: owner, description: "one-host")
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/keys")
+    assert html =~ "one-host"
+
+    assert {:ok, _runner, _token, _raw_token} =
+             Runners.register_via_enrollment_key(raw, %{
+               external_id: "ext-web-7",
+               hostname: "web-7"
+             })
+
+    # The registration's own broadcast reflows the list; nothing is sent by hand.
+    refute render(lv) =~ "one-host"
+  end
+
+  test "revoking a key removed since the list loaded says so and refreshes the list", %{
+    conn: conn
+  } do
+    {conn, owner, account} = register_and_log_in(conn)
+
+    {_raw, key} =
+      Fixtures.Runners.create_enrollment_key(membership: owner, description: "gone-key")
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/keys")
+    assert html =~ "gone-key"
+
+    Fixtures.Runners.set_enrollment_key_state(key, deleted_at: DateTime.utc_now())
+
+    html = render_click(lv, "revoke", %{"id" => key.id})
+    assert html =~ "That key no longer exists. It may have just been removed."
+    refute html =~ "gone-key"
+  end
+
   test "last-used renders through <.local_time> — 'never' until used, then a time", %{conn: conn} do
     {conn, owner, account} = register_and_log_in(conn)
     subject = Fixtures.Subjects.subject_for(owner)

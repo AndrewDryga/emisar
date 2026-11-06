@@ -530,6 +530,47 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     refute Emisar.Repo.reload!(runner).disabled_at
   end
 
+  test "disable and enable keep the connection key's expiry and Rotate", %{
+    conn: conn,
+    account: account,
+    runner: runner
+  } do
+    {_raw, token} = Fixtures.Runners.create_token(runner)
+    runner = Fixtures.Runners.set_connection_credential(runner, token)
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
+
+    render_click(lv, "disable", %{})
+    assert has_element?(lv, "#runner-current-key-expiry-time[datetime]")
+
+    render_click(lv, "enable", %{})
+    assert has_element?(lv, "#runner-current-key-expiry-time[datetime]")
+    assert has_element?(lv, "#runner-connection-key button:not([disabled])", "Rotate key")
+  end
+
+  test "a catalog re-advertise refreshes the actions on the debounce tick", %{
+    conn: conn,
+    account: account,
+    runner: runner
+  } do
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
+    refute html =~ "linux.freshly_installed"
+
+    # `emisar pack install` re-advertises over the same connection: no presence
+    # change, only the packs topic the shared hook forwards.
+    Fixtures.Catalog.create_action(runner: runner, action_id: "linux.freshly_installed")
+    :erlang.trace(lv.pid, true, [:receive, tracer: self()])
+
+    for _ <- 1..3 do
+      send(lv.pid, {:catalog_changed, account.id})
+      send(lv.pid, {:pack_trust_changed, account.id})
+    end
+
+    pid = lv.pid
+    assert_receive {:trace, ^pid, :receive, :refresh_runner}, 1500
+    refute_receive {:trace, ^pid, :receive, :refresh_runner}, 700
+    assert render(lv) =~ "linux.freshly_installed"
+  end
+
   test "disabling re-reads the page's status and lifecycle zones from the updated runner", %{
     conn: conn,
     account: account,
