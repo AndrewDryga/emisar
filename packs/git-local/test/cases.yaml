@@ -1,12 +1,18 @@
 # git-local reads a checkout on the machine the action runs on, which is the
-# client container, so every case seeds the repository it asserts on and
-# nothing outlives the case. Fixed authors and dates make every asserted line
-# deterministic; no assertion pins a commit id.
-services: [git-host]
+# client container. That client is built from the version row's own image, so
+# the row's git is the git under test. Every case seeds the repository it
+# asserts on and nothing outlives the case. Fixed authors and dates make every
+# asserted line deterministic; no assertion pins a commit id.
+services: [git]
+# Each buildpack-deps scm image carries its Debian release's own git package.
 versions:
-  - version: "trixie-20260918-slim"
-    digest: "@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a"
+  # git version 2.47.3 (Debian 13, 1:2.47.3-0+deb13u1)
+  - version: "trixie-scm"
+    digest: "@sha256:d0c09fddebc1466b9b4914b2cffab8a1395b8c0b907727b7c79ec2189c4a24b8"
     default: true
+  # git version 2.39.5 (Debian 12, 1:2.39.5-0+deb12u3)
+  - version: "bookworm-scm"
+    digest: "@sha256:5bac6b3020afcf0358de87990605d5dc4c3f060629381912266b9b9278375af3"
 # Remote URLs are where this pack meets a credential. These values are written
 # into a checkout by the remote_list arrange steps; none is in inherit_env, so
 # an action could only print one by reading it back from the checkout.
