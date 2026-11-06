@@ -32,10 +32,15 @@ defmodule Emisar.ApplicationTest do
       ref = Process.monitor(task)
       send(task, {:exit, :test_crash})
 
-      # The abnormal exit is logged from inside the task before it terminates,
-      # so the DOWN trails a synchronous crash report; under full-suite load
-      # that round-trip needs the suite's standard cross-process window.
-      assert_receive {:DOWN, ^ref, :process, ^task, :test_crash}, 5_000
+      # The task logs its crash report before it exits, and ExUnit's log capture
+      # can hold that call for its own 5 s await on a busy machine, so wait on the
+      # monitor itself; ExUnit's test timeout still bounds a task that never exits.
+      reason =
+        receive do
+          {:DOWN, ^ref, :process, ^task, reason} -> reason
+        end
+
+      assert reason == :test_crash
       assert Process.alive?(task_supervisor)
 
       assert {:ok, _task} =

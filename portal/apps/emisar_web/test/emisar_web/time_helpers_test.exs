@@ -6,15 +6,15 @@ defmodule EmisarWeb.TimeHelpersTest do
 
   describe "relative_time/2" do
     test "buckets past offsets" do
-      now = DateTime.utc_now()
+      now = ~U[2026-05-21 14:03:00Z]
 
-      assert relative_time(now) == "just now"
-      assert relative_time(DateTime.add(now, -30, :second)) == "30s ago"
-      assert relative_time(DateTime.add(now, -120, :second)) == "2m ago"
-      assert relative_time(DateTime.add(now, -7_200, :second)) == "2h ago"
-      assert relative_time(DateTime.add(now, -3 * 86_400, :second)) == "3d ago"
-      # Beyond a week: a calendar date like "May 18".
-      assert relative_time(DateTime.add(now, -30 * 86_400, :second)) =~ ~r/^[A-Z][a-z]{2} \d/
+      assert relative_time(now, now: now) == "just now"
+      assert relative_time(DateTime.add(now, -30, :second), now: now) == "30s ago"
+      assert relative_time(DateTime.add(now, -120, :second), now: now) == "2m ago"
+      assert relative_time(DateTime.add(now, -7_200, :second), now: now) == "2h ago"
+      assert relative_time(DateTime.add(now, -3 * 86_400, :second), now: now) == "3d ago"
+      # Beyond a week: a calendar date.
+      assert relative_time(DateTime.add(now, -30 * 86_400, :second), now: now) == "Apr 21"
     end
 
     test "an absolute date from a previous calendar year names the year" do
@@ -28,11 +28,11 @@ defmodule EmisarWeb.TimeHelpersTest do
     end
 
     test "buckets future offsets (expiries)" do
-      now = DateTime.utc_now()
+      now = ~U[2026-05-21 14:03:00Z]
 
-      assert relative_time(DateTime.add(now, 90, :second)) == "in 1m"
-      assert relative_time(DateTime.add(now, 7_200, :second)) == "in 2h"
-      assert relative_time(DateTime.add(now, 2 * 86_400, :second)) == "in 2d"
+      assert relative_time(DateTime.add(now, 90, :second), now: now) == "in 1m"
+      assert relative_time(DateTime.add(now, 7_200, :second), now: now) == "in 2h"
+      assert relative_time(DateTime.add(now, 2 * 86_400, :second), now: now) == "in 2d"
     end
 
     test "nil renders the placeholder; NaiveDateTime is treated as UTC" do

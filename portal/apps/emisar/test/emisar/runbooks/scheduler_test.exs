@@ -667,6 +667,10 @@ defmodule Emisar.Runbooks.SchedulerTest do
     assert execution(result.execution_id).status == :halted
   end
 
+  # Dispatches and settles 51 executions, one past the recovery sweep's batch of
+  # 50, then runs two sweeps: about 17 s alone at host load 44, and past ExUnit's
+  # 60 s default when the full suite shares a busy machine.
+  @tag timeout: 180_000
   test "the bounded recovery sweep rotates work instead of starving later executions", %{
     account: account,
     subject: subject,

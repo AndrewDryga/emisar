@@ -21,16 +21,17 @@ defmodule EmisarWeb.TimeHelpers do
 
       just now  /  3m ago  /  4h ago  /  2d ago  /  May 18
 
-  Falls back to `placeholder` for nil.
+  Falls back to `placeholder` for nil. `:now` is the instant the offset is
+  measured from, the current time by default.
   """
   def relative_time(value, opts \\ [])
 
   def relative_time(nil, opts), do: Keyword.get(opts, :placeholder, "—")
 
-  def relative_time(%DateTime{} = datetime, _opts) do
+  def relative_time(%DateTime{} = datetime, opts) do
     # One `now` for both the diff and the year comparison — reading the clock
     # twice can straddle midnight on New Year's Eve and print the wrong form.
-    now = DateTime.utc_now()
+    now = Keyword.get_lazy(opts, :now, &DateTime.utc_now/0)
     diff = DateTime.diff(now, datetime, :second)
 
     cond do

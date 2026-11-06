@@ -119,6 +119,11 @@ defmodule Emisar.SSO.OIDC.OidccTest do
   end
 
   describe "the bounded HTTP adapter" do
+    # Production's request lifetime. A short one only raced the loopback probe: a
+    # retry or a followed redirect still reaches the probe within this one, and
+    # the refute_receive assertions catch it.
+    @request_timeout 15_000
+
     test "does not schedule a Retry-After request after returning" do
       profile = start_httpc_profile(:emisar_oidcc_no_retry_test)
       url = start_http_policy_probe(:retry)
@@ -129,7 +134,7 @@ defmodule Emisar.SSO.OIDC.OidccTest do
                  {url, []},
                  %{topic: [:emisar, :oidcc_retry_test]},
                  %{
-                   timeout: 50,
+                   timeout: @request_timeout,
                    http_adapter: {Emisar.SSO.OIDC.BoundedHTTPAdapter, %{profile: profile}}
                  }
                )
@@ -148,7 +153,7 @@ defmodule Emisar.SSO.OIDC.OidccTest do
                  {url, []},
                  %{topic: [:emisar, :oidcc_close_test]},
                  %{
-                   timeout: 1_000,
+                   timeout: @request_timeout,
                    http_adapter: {Emisar.SSO.OIDC.BoundedHTTPAdapter, %{profile: profile}}
                  }
                )
@@ -167,7 +172,7 @@ defmodule Emisar.SSO.OIDC.OidccTest do
                  {url, []},
                  %{topic: [:emisar, :oidcc_redirect_test]},
                  %{
-                   timeout: 50,
+                   timeout: @request_timeout,
                    http_adapter: {Emisar.SSO.OIDC.BoundedHTTPAdapter, %{profile: profile}}
                  }
                )
