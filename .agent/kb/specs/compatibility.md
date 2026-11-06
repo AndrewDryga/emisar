@@ -468,9 +468,8 @@ binary into a system path; `install-mcp.sh --install-dir/INSTALL_DIR` and
 `install-mcp.ps1 -InstallDir` install a per-user bridge. They are three
 different products' conventions (POSIX long flags and a PowerShell parameter),
 and unifying them would rename a flag every existing bootstrap line passes.
-`-ConnectAll` exists only on the PowerShell installer because only it can
-enumerate Windows clients at install time; the Unix path connects afterwards
-with `emisar-mcp connect --all`.
+Neither MCP installer has a switch that connects every client: the Unix and
+Windows paths both connect afterwards with `emisar-mcp connect --all`.
 
 **The control-plane origin has one name per surface, and they do not collapse.**
 `cloud.url` in config, `EMISAR_URL` in the environment, `--url` on
@@ -849,7 +848,7 @@ were left in place when the bridge predates it, rather than reporting a
 removal that did not happen.
 
 `install-mcp.ps1` accepts `-Version`, `-InstallDir`,
-`-PortalOrigin`, `-Uninstall`, `-Yes`, and `-ConnectAll`. Its environment is
+`-PortalOrigin`, `-Uninstall`, and `-Yes`. Its environment is
 `EMISAR_URL`, `EMISAR_REPO`, `EMISAR_GITHUB_TOKEN`,
 `EMISAR_ATTESTATION_WORKFLOW`, `EMISAR_ALLOW_INSECURE`, and
 `EMISAR_MCP_TEST_BASE_URL`. The last is the one

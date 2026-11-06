@@ -15,8 +15,7 @@ param(
     [string]$InstallDir = "",
     [string]$PortalOrigin = "",
     [switch]$Uninstall,
-    [switch]$Yes,
-    [switch]$ConnectAll
+    [switch]$Yes
 )
 
 Set-StrictMode -Version 2.0
@@ -621,7 +620,7 @@ $versionNumber = $release.Tag.Substring(5)
 # apply the same rule. An explicit -Version stays the deliberate rollback route.
 $installedVersion = Get-InstalledVersion $executable
 if ($null -ne $installedVersion) {
-    if (-not $Version -and -not $ConnectAll -and $installedVersion -ge [Version]$versionNumber) {
+    if (-not $Version -and $installedVersion -ge [Version]$versionNumber) {
         Write-Info "emisar-mcp $installedVersion is already current"
         Write-Host ""
         Write-Host "Connect a client with the installed bridge: emisar-mcp connect"
@@ -687,13 +686,12 @@ Write-Host "  $executable"
 # The bridge owns the connection phase: it detects the LLM clients installed for
 # this user, runs ONE browser approval covering the direct CLI and every client
 # the operator picks, and writes each client's own configuration shape.
-if ($Yes -and -not $ConnectAll) {
+if ($Yes) {
     Write-Host ""
     Write-Host "Connect this machine and your LLM clients: emisar-mcp connect"
     Write-Host "Manual client snippets: $($script:PortalOrigin)/app/agents/connect"
 } else {
     $connectArguments = @("connect", "--url", $script:PortalOrigin)
-    if ($ConnectAll) { $connectArguments += @("--all") }
     & {
         $ErrorActionPreference = "Continue"
         # The installer is establishing stored, per-account credentials. An

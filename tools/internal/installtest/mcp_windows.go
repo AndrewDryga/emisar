@@ -289,7 +289,6 @@ func testWindowsMCPInstaller(root, shell string) error {
 			"-InstallDir",
 			checksumInstallDir,
 			"-Yes",
-			"-ConnectAll",
 		)
 		if failureErr == nil || !bytes.Contains(failureOutput, []byte(want)) {
 			return fmt.Errorf("%s checksum was not refused: %v\n%s", name, failureErr, failureOutput)
@@ -336,7 +335,6 @@ func testWindowsMCPInstaller(root, shell string) error {
 		"-PortalOrigin",
 		server.URL,
 		"-Yes",
-		"-ConnectAll",
 	)
 	if err != nil {
 		return fmt.Errorf("install: %w\n%s", err, output)
@@ -344,8 +342,21 @@ func testWindowsMCPInstaller(root, shell string) error {
 	if !bytes.Contains(output, []byte("install target: windows/"+runtime.GOARCH)) {
 		return fmt.Errorf("installer did not select windows/%s\n%s", runtime.GOARCH, output)
 	}
+	if !bytes.Contains(output, []byte("Connect this machine and your LLM clients: emisar-mcp connect")) {
+		return fmt.Errorf("a -Yes install did not name the connect step\n%s", output)
+	}
+	// -Yes only places the binary. The connection phase is the bridge's own
+	// command, run the way the installer's next step tells an operator to.
+	installed := filepath.Join(localAppData, "Programs", "Emisar", "bin", "emisar-mcp.exe")
+	connect := exec.Command(installed, "connect", "--all", "--url", server.URL)
+	connect.Env = environmentWithout(env, "EMISAR_URL", "EMISAR_API_KEY")
+	connectOutput, err := connect.CombinedOutput()
+	output = append(output, connectOutput...)
+	if err != nil {
+		return fmt.Errorf("connect: %w\n%s", err, output)
+	}
 	if outputContainsWindowsKey(output, cliKey, clientKeys) {
-		return fmt.Errorf("installer output disclosed a delivered API key")
+		return fmt.Errorf("install or connect output disclosed a delivered API key")
 	}
 	serverMu.Lock()
 	firstRequested := append([]string(nil), requested...)
@@ -359,7 +370,6 @@ func testWindowsMCPInstaller(root, shell string) error {
 			output,
 		)
 	}
-	installed := filepath.Join(localAppData, "Programs", "Emisar", "bin", "emisar-mcp.exe")
 	versionOutput, err := exec.Command(installed, "--version").CombinedOutput()
 	if err != nil || strings.TrimSpace(string(versionOutput)) != "emisar-mcp "+windowsMCPVersion {
 		return fmt.Errorf("installed version: %w, %q", err, versionOutput)
@@ -379,9 +389,11 @@ func testWindowsMCPInstaller(root, shell string) error {
 		return fmt.Errorf("stored CLI credential or Windows ACL is unusable: %w\n%s", err, result)
 	}
 
-	// A rerun must verify the stored account, not an inherited explicit pair.
-	// Revoke the stored key while keeping the inherited pair valid: the installer
-	// should request fresh browser approval and replace the account credential.
+	// A rerun where the bridge is already current stops before any download and
+	// names the connect step, and connect repairs the registration. It must
+	// verify the stored account, not an inherited explicit pair. Revoke the
+	// stored key while keeping the inherited pair valid: connect should request
+	// fresh browser approval and replace the account credential.
 	serverMu.Lock()
 	activeCLIKey = cliReplacementKey
 	serverMu.Unlock()
@@ -398,10 +410,21 @@ func testWindowsMCPInstaller(root, shell string) error {
 		"-PortalOrigin",
 		server.URL,
 		"-Yes",
-		"-ConnectAll",
 	)
 	if err != nil {
 		return fmt.Errorf("rerun with inherited environment: %w\n%s", err, output)
+	}
+	if !bytes.Contains(output, []byte("emisar-mcp "+windowsMCPVersion+" is already current")) ||
+		!bytes.Contains(output, []byte("Connect a client with the installed bridge: emisar-mcp connect")) ||
+		bytes.Contains(output, []byte("install target:")) {
+		return fmt.Errorf("an already-current rerun did not stop at the connect step\n%s", output)
+	}
+	connect = exec.Command(installed, "connect", "--all", "--url", server.URL)
+	connect.Env = environment(rerunEnv)
+	connectOutput, err = connect.CombinedOutput()
+	output = append(output, connectOutput...)
+	if err != nil {
+		return fmt.Errorf("connect with inherited environment: %w\n%s", err, output)
 	}
 	if outputContainsWindowsKey(output, cliReplacementKey, clientKeys) || bytes.Contains(output, []byte(explicitKey)) {
 		return errors.New("rerun output disclosed an API key")
@@ -412,6 +435,22 @@ func testWindowsMCPInstaller(root, shell string) error {
 	serverMu.Unlock()
 	if rerunDeviceGrants != 2 || !slices.Equal(rerunRequested, []string{"emisar-mcp-cli"}) {
 		return fmt.Errorf("rerun used inherited auth: grants=%d clients=%v", rerunDeviceGrants, rerunRequested)
+	}
+	// An explicit -Version is the deliberate route past the already-current
+	// exit: it replaces the existing executable in place, and the stored account
+	// checked below must survive the replacement.
+	output, err = runPowerShellInstaller(
+		shell,
+		installer,
+		environmentWithout(env, "EMISAR_URL", "EMISAR_API_KEY"),
+		"-PortalOrigin",
+		server.URL,
+		"-Version",
+		"mcp-v"+windowsMCPVersion,
+		"-Yes",
+	)
+	if err != nil || !bytes.Contains(output, []byte("emisar-mcp "+windowsMCPVersion+" installed")) {
+		return fmt.Errorf("pinned reinstall over the existing executable: %v\n%s", err, output)
 	}
 	verify = exec.Command(installed, "list_tools", "--json")
 	verify.Env = environmentWithout(map[string]string{
