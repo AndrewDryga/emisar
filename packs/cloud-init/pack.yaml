@@ -2,7 +2,7 @@ schema_version: 1
 
 id: cloud-init
 name: cloud-init operations
-version: 0.1.20
+version: 0.1.21
 # 0.1.19 and below ran `cloud-init clean --logs` as the medium clean_logs,
 # which also deletes /var/lib/cloud, so with no approval the next boot
 # provisioned the host as a new instance; and collect_logs left its bundle,

@@ -6,7 +6,11 @@ risk: low
 description: >
   Show the current overall cloud-init state — `running`, `done`, `error`,
   `disabled`, or `not run`. Use as the first answer to "did boot
-  finish?".
+  finish?". A boot that finished with recoverable errors (cloud-init
+  23.4 and later exit 2, for example a datasource probe that failed
+  before another one succeeded) still succeeds and prints `status: done`;
+  cloud-init.status_long lists those warnings. An unrecoverable error
+  (exit 1, `status: error`) fails the action.
 side_effects:
   - One CLI call.
   - Read-only.
@@ -18,6 +22,9 @@ execution:
     binary: cloud-init
     argv: ["status"]
   timeout: 10s
+  # cloud-init 23.4+ exits 2 for "done with recoverable errors", which every
+  # GCE boot reports for its local-datasource probe; exit 1 is a real failure.
+  success_exit_codes: [2]
 output:
   parser: text
   max_stdout_bytes: 4096

@@ -6,7 +6,10 @@ risk: low
 description: >
   Show detailed status — per-stage state, last update, recoverable + last
   errors, datasource detected. With `block: true`, blocks until cloud-init
-  finishes (useful right after boot).
+  finishes (useful right after boot). A boot that finished with
+  recoverable errors (exit 2 on cloud-init 23.4 and later, `extended_status:
+  degraded done`) succeeds and lists them; an unrecoverable error (exit 1)
+  fails the action.
 side_effects:
   - One CLI call (may block up to timeout if block=true).
   - Read-only.
@@ -23,6 +26,9 @@ execution:
       - "-c"
       - "if [ '{{ args.block }}' = 'true' ]; then cloud-init status --long --wait; else cloud-init status --long; fi"
   timeout: 5m
+  # cloud-init 23.4+ exits 2 for "done with recoverable errors"; exit 1 is a
+  # real failure.
+  success_exit_codes: [2]
 output:
   parser: text
   max_stdout_bytes: 32768
