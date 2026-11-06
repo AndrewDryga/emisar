@@ -3,7 +3,11 @@ id: tf.validate
 title: terraform validate
 kind: exec
 risk: low
-description: Validate the workspace's HCL files. No state read or write.
+description: >
+  Validate the workspace's HCL files. No state read or write. Terraform starts
+  the provider plugins installed under `.terraform/providers` to load their
+  schemas and check the configuration, as the runner's user, so whoever can
+  write the workspace controls what this action runs.
 side_effects:
   - Forks the configured CLI.
   - Read-only.

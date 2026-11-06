@@ -3,7 +3,11 @@ id: py.pip_outdated
 title: $PY_VENV/bin/pip list --outdated
 kind: exec
 risk: low
-description: List packages with newer versions available.
+description: >
+  List packages with newer versions available.
+  This executes the venv's own `bin/pip`, and the `.pth` and `sitecustomize`
+  hooks its interpreter loads at startup, as the runner's user, so whoever can
+  write the venv controls what this action runs.
 side_effects:
   - Queries PyPI (or configured index) for latest versions.
   - Read-only.

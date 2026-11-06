@@ -5,6 +5,10 @@ kind: exec
 risk: medium
 description: >
   Compute a plan but does NOT save it (no -out). Cannot be applied from this run. May call out to providers (read API quotas).
+  Terraform starts the provider plugins installed under `.terraform/providers`
+  and runs every `data "external"` program the configuration declares, as the
+  runner's user, so whoever can write the workspace controls what this action
+  runs.
 side_effects:
   - Calls every provider's read API — quota usage applies.
   - Read-only — does not modify state or save a plan file.

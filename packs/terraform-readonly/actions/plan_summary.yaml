@@ -23,6 +23,10 @@ description: >
   execution stream no structured output, and this fails rather than reporting
   an empty plan — review those with the hcp-terraform pack. A `cloud` block
   alone is fine; what decides it is the workspace's execution mode.
+  Terraform starts the provider plugins installed under `.terraform/providers`
+  and runs every `data "external"` program the configuration declares, as the
+  runner's user, so whoever can write the workspace controls what this action
+  runs.
 side_effects:
   - Calls every provider's read API to refresh state — quota usage applies.
   - Briefly holds the backend's state lock while planning.

@@ -1,8 +1,54 @@
 recipes:
+  # A deployer working under umask 077 leaves the workspace owner-only, so group
+  # membership alone is not enough: the recipe's recursive chmod is load-bearing.
+  # The probe needs what validate, show, and plan need from the filesystem: read
+  # the configuration and state, then execute a provider plugin out of
+  # .terraform/providers (a stand-in script; the behavior plan proves the CLI).
   - access: 0
     recipe: 0
     fixture: debian
+    action: tf.validate
+    prepare:
+      - groupadd packtest-deploy
+      - useradd --no-create-home --gid packtest-deploy --shell /usr/sbin/nologin packtest-deploy
+      - mkdir -p /srv/infra/prod/.terraform/providers/registry.terraform.io/hashicorp/null/3.3.2/linux_amd64
+      - touch /srv/infra/prod/main.tf /srv/infra/prod/terraform.tfstate
+      - printf '#!/bin/sh\nexit 0\n' > /srv/infra/prod/.terraform/providers/registry.terraform.io/hashicorp/null/3.3.2/linux_amd64/terraform-provider-null_v3.3.2_x5
+      - chown -R packtest-deploy:packtest-deploy /srv/infra/prod
+      - find /srv/infra/prod -type d -exec chmod 0700 {} + && find /srv/infra/prod -type f -exec chmod 0600 {} +
+      - chmod 0700 /srv/infra/prod/.terraform/providers/registry.terraform.io/hashicorp/null/3.3.2/linux_amd64/terraform-provider-null_v3.3.2_x5
+    # `terraform init -upgrade` reinstalls the plugins under the deployer's own
+    # umask; at 027 the group membership is what has to survive it.
+    recreate:
+      - rm -rf /srv/infra/prod/.terraform/providers
+      - mkdir -p /srv/infra/prod/.terraform/providers/registry.terraform.io/hashicorp/null/3.3.2/linux_amd64
+      - printf '#!/bin/sh\nexit 0\n' > /srv/infra/prod/.terraform/providers/registry.terraform.io/hashicorp/null/3.3.2/linux_amd64/terraform-provider-null_v3.3.2_x5
+      - chown -R packtest-deploy:packtest-deploy /srv/infra/prod/.terraform/providers
+      - find /srv/infra/prod/.terraform/providers -exec chmod 0750 {} +
+    probe: test -r /srv/infra/prod/main.tf && test -r /srv/infra/prod/terraform.tfstate && /srv/infra/prod/.terraform/providers/registry.terraform.io/hashicorp/null/3.3.2/linux_amd64/terraform-provider-null_v3.3.2_x5
+  # With a local backend the plan actions also lock the state: Terraform opens
+  # terraform.tfstate read-write and creates and removes
+  # .terraform.tfstate.lock.info beside it, and the probe makes exactly those
+  # calls. The deployer's next apply rewrites the state in place, which keeps
+  # the mode and group the recipe set.
+  - access: 0
+    recipe: 1
+    fixture: debian
     action: tf.plan_no_save
     prepare:
-      - install -d -o root -g root -m 0700 /srv/infra/prod && install -o root -g root -m 0600 /dev/null /srv/infra/prod/terraform.tfstate
-    probe: test "$(id -u)" = 0 && test -r /srv/infra/prod/terraform.tfstate && test -w /srv/infra/prod
+      - groupadd packtest-deploy
+      - useradd --no-create-home --gid packtest-deploy --shell /usr/sbin/nologin packtest-deploy
+      - mkdir -p /srv/infra/prod/.terraform/providers/registry.terraform.io/hashicorp/null/3.3.2/linux_amd64
+      - touch /srv/infra/prod/main.tf /srv/infra/prod/terraform.tfstate
+      - printf '#!/bin/sh\nexit 0\n' > /srv/infra/prod/.terraform/providers/registry.terraform.io/hashicorp/null/3.3.2/linux_amd64/terraform-provider-null_v3.3.2_x5
+      - chown -R packtest-deploy:packtest-deploy /srv/infra/prod
+      - find /srv/infra/prod -type d -exec chmod 0700 {} + && find /srv/infra/prod -type f -exec chmod 0600 {} +
+      - chmod 0700 /srv/infra/prod/.terraform/providers/registry.terraform.io/hashicorp/null/3.3.2/linux_amd64/terraform-provider-null_v3.3.2_x5
+    recreate:
+      - printf '{"version":4,"serial":2}\n' | runuser -u packtest-deploy -- tee /srv/infra/prod/terraform.tfstate >/dev/null
+      - rm -rf /srv/infra/prod/.terraform/providers
+      - mkdir -p /srv/infra/prod/.terraform/providers/registry.terraform.io/hashicorp/null/3.3.2/linux_amd64
+      - printf '#!/bin/sh\nexit 0\n' > /srv/infra/prod/.terraform/providers/registry.terraform.io/hashicorp/null/3.3.2/linux_amd64/terraform-provider-null_v3.3.2_x5
+      - chown -R packtest-deploy:packtest-deploy /srv/infra/prod/.terraform/providers
+      - find /srv/infra/prod/.terraform/providers -exec chmod 0750 {} +
+    probe: test -r /srv/infra/prod/main.tf && exec 3<>/srv/infra/prod/terraform.tfstate && true >/srv/infra/prod/.terraform.tfstate.lock.info && rm /srv/infra/prod/.terraform.tfstate.lock.info && /srv/infra/prod/.terraform/providers/registry.terraform.io/hashicorp/null/3.3.2/linux_amd64/terraform-provider-null_v3.3.2_x5

@@ -2,7 +2,7 @@ schema_version: 1
 
 id: terraform-readonly
 name: Terraform / OpenTofu read-only ops
-version: 0.7.11
+version: 0.7.12
 description: >
   Read-only Terraform or OpenTofu CLI actions for inspecting a workspace's
   configuration, plans, and state. Keep applies, destroys, and state changes in
@@ -72,21 +72,58 @@ setup:
         - tf.state_compare_metadata
         - tf.plan_no_save
         - tf.plan_summary
-      requirement: Read the Terraform workspace and create its local lock or working files while planning.
+      requirement: Read a Terraform working directory owned by another user, run the provider plugins it installed, and lock a local state file while planning.
       recipes:
-        - name: Run the Emisar service as root
+        - name: Add the Emisar service user to the group that owns the workspace (remote state)
           commands:
-            - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
-            - "printf '%s\\n' '[Service]' 'User=root' 'Group=root' | sudo tee /etc/systemd/system/emisar.service.d/10-terraform-host-access.conf >/dev/null"
+            - "sudo rm -f /etc/systemd/system/emisar.service.d/10-terraform-host-access.conf"
             - "sudo systemctl daemon-reload"
+            - "sudo usermod -aG \"$(stat -c %G /srv/infra/prod)\" emisar"
+            - "sudo chmod -R g+rX /srv/infra/prod"
             - "sudo systemctl restart emisar"
           verify:
-            - "test \"$(systemctl show emisar --property=User --value)\" = root"
-            - "sudo test -r /srv/infra/prod"
-            - "sudo test -w /srv/infra/prod"
+            - "test \"$(systemctl show emisar --property=User --value)\" = emisar"
+            - "id -nG emisar | tr ' ' '\\n' | grep -Fx \"$(stat -c %G /srv/infra/prod)\""
+            - "test -z \"$(sudo -u emisar find /srv/infra/prod ! -readable -print -quit)\""
+            - "test -z \"$(sudo -u emisar find /srv/infra/prod -type f -perm -u+x ! -executable -print -quit)\""
           impact: >
-            Every Emisar action on this runner executes as root and can read or modify local
-            Terraform files, including state and embedded secrets. Pack policy still limits commands.
+            tf.validate, tf.state_show, tf.show_json, tf.plan_file_summary, tf.plan_no_save, and
+            tf.plan_summary start the provider plugins under `.terraform/providers` as emisar, and
+            both plan actions also run every `data "external"` program the configuration declares.
+            Whoever can write this workspace (its owner, a developer, or a CI job) therefore runs
+            code as emisar, with this runner's own token and every other grant emisar holds. Every
+            process running as emisar can read the configuration, local state, and backend
+            settings here, including the secrets they hold, and whatever else that group is
+            granted on this host; the recipe itself adds group read, never write. This covers
+            every action when state lives in a remote backend, which locks remotely; with a local
+            `terraform.tfstate`, tf.plan_no_save and tf.plan_summary need the next recipe. The
+            first two commands undo this pack's earlier root override.
+            Substitute your own `TF_DIR` for `/srv/infra/prod`, give `TF_PLAN_DIR` and
+            `TF_STATE_CANDIDATE_DIR` the same group and `g+rX` mode when you set them, and note
+            that an action declaring `execution.user` replaces these inherited supplementary groups.
+        - name: Add the Emisar service user to the workspace's group and let it lock local state
+          commands:
+            - "sudo rm -f /etc/systemd/system/emisar.service.d/10-terraform-host-access.conf"
+            - "sudo systemctl daemon-reload"
+            - "sudo usermod -aG \"$(stat -c %G /srv/infra/prod)\" emisar"
+            - "sudo chmod -R g+rX /srv/infra/prod"
+            - "sudo chmod g+w /srv/infra/prod /srv/infra/prod/terraform.tfstate"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "test \"$(systemctl show emisar --property=User --value)\" = emisar"
+            - "id -nG emisar | tr ' ' '\\n' | grep -Fx \"$(stat -c %G /srv/infra/prod)\""
+            - "test -z \"$(sudo -u emisar find /srv/infra/prod ! -readable -print -quit)\""
+            - "test -z \"$(sudo -u emisar find /srv/infra/prod -type f -perm -u+x ! -executable -print -quit)\""
+            - "sudo -u emisar test -w /srv/infra/prod"
+            - "sudo -u emisar test -w /srv/infra/prod/terraform.tfstate"
+          impact: >
+            Everything the remote-state recipe grants, plus group write on this directory and its
+            `terraform.tfstate`. tf.plan_no_save and tf.plan_summary need both with a local
+            backend: Terraform opens the state file read-write to lock it and creates and removes
+            `.terraform.tfstate.lock.info` beside it, and plan writes nothing else. Every process
+            running as emisar can then rewrite or delete this workspace's state and add or replace
+            files in the directory, including `.tf` files the owner's next plan or apply loads
+            and runs as that owner.
   verify: tf.version
 
 actions:

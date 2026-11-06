@@ -3,7 +3,11 @@ id: py.site_packages_du
 title: du -sh site-packages/*
 kind: exec
 risk: low
-description: Show disk usage per installed package — find bloated installs.
+description: >
+  Show disk usage per installed package — find bloated installs.
+  This executes the venv's own `bin/python`, and the `.pth` and
+  `sitecustomize` hooks it loads at startup, as the runner's user, so whoever
+  can write the venv controls what this action runs.
 side_effects: ["One file-system traversal of the venv's site-packages.", "Read-only."]
 args: []
 execution:

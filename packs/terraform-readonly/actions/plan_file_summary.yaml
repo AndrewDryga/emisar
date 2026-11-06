@@ -9,18 +9,21 @@ search_terms:
   - what will this apply change
 description: >
   List what a plan file already on disk would create, update, delete, or
-  replace, in the same shape as tf.plan_summary but without contacting any
-  provider — this reads a plan CI has already computed. The summary counts
+  replace, in the same shape as tf.plan_summary but without calling any
+  provider API — this reads a plan CI has already computed. The summary counts
   always cover the whole plan; the change, drift, and output lists keep a
   bounded sample — most destructive first — and `truncated` reports how many
   entries each list dropped, so the result fits the runner's structured-output
   cap on plans of any size. The filename must resolve beneath TF_PLAN_DIR;
   symlink and traversal escapes fail closed. A saved plan stores every
   attribute and output value in cleartext, sensitive ones included; this
-  projection reads none of them.
+  projection reads none of them. Terraform still starts the provider plugins
+  installed under `.terraform/providers` to load their schemas, as the
+  runner's user, so whoever can write the workspace controls what this action
+  runs.
 side_effects:
   - Reads one saved plan file capped at 32 MiB, plus the workspace's provider schemas.
-  - Contacts no provider and never modifies the plan or state.
+  - Calls no provider API and never modifies the plan or state.
 args:
   - name: plan_file
     type: string

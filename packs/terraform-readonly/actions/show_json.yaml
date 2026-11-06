@@ -10,6 +10,9 @@ description: >
   in cleartext; scope it by policy. The runner's redaction is a
   fail-closed backstop, not a guarantee — it is pattern-bound and can't
   reliably mask secrets whose names and shapes match no rule.
+  Terraform starts the provider plugins installed under
+  `.terraform/providers` to load their schemas, as the runner's user, so
+  whoever can write the workspace controls what this action runs.
 side_effects:
   - Reads state file.
   - Read-only, but dumps every resource attribute (may include secrets).

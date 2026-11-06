@@ -3,7 +3,11 @@ id: py.pip_show
 title: $PY_VENV/bin/pip show <pkg>
 kind: exec
 risk: low
-description: Show details for one package (version, deps, location).
+description: >
+  Show details for one package (version, deps, location).
+  This executes the venv's own `bin/pip`, and the `.pth` and `sitecustomize`
+  hooks its interpreter loads at startup, as the runner's user, so whoever can
+  write the venv controls what this action runs.
 side_effects: ["One pip show call.", "Read-only."]
 args:
   - name: package

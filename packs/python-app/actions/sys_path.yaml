@@ -3,7 +3,11 @@ id: py.sys_path
 title: python -c 'import sys; print(sys.path)'
 kind: exec
 risk: low
-description: Show the effective sys.path for the venv interpreter.
+description: >
+  Show the effective sys.path for the venv interpreter.
+  This executes the venv's own `bin/python`, and the `.pth` and
+  `sitecustomize` hooks it loads at startup, as the runner's user, so whoever
+  can write the venv controls what this action runs.
 side_effects: ["One forked python process.", "Read-only."]
 args: []
 execution:

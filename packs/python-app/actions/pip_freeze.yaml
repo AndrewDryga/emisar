@@ -3,7 +3,11 @@ id: py.pip_freeze
 title: $PY_VENV/bin/pip freeze
 kind: exec
 risk: low
-description: Dump installed packages in requirements format.
+description: >
+  Dump installed packages in requirements format.
+  This executes the venv's own `bin/pip`, and the `.pth` and `sitecustomize`
+  hooks its interpreter loads at startup, as the runner's user, so whoever can
+  write the venv controls what this action runs.
 side_effects: ["One pip freeze call.", "Read-only."]
 args: []
 execution:

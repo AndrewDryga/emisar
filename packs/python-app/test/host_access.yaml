@@ -19,9 +19,3 @@ recipes:
       - install -d -o packtest-deploy -g packtest-deploy -m 0755 /opt/app/venv/bin
       - install -o packtest-deploy -g packtest-deploy -m 0644 /dev/null /opt/app/venv/bin/python
     probe: test -r /opt/app/venv/bin/python
-  - access: 0
-    recipe: 1
-    fixture: debian
-    action: py.venv_python_version
-    prepare: ["true"]
-    probe: test "$(id -u)" = 0

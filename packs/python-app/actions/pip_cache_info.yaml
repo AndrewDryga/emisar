@@ -3,7 +3,11 @@ id: py.pip_cache_info
 title: $PY_VENV/bin/pip cache info
 kind: exec
 risk: low
-description: Show pip cache size + location.
+description: >
+  Show pip cache size + location.
+  This executes the venv's own `bin/pip`, and the `.pth` and `sitecustomize`
+  hooks its interpreter loads at startup, as the runner's user, so whoever can
+  write the venv controls what this action runs.
 side_effects: ["One pip cache call.", "Read-only."]
 args: []
 execution:

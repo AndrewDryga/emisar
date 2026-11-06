@@ -3,7 +3,11 @@ id: py.venv_python_version
 title: $PY_VENV/bin/python --version
 kind: exec
 risk: low
-description: Show the interpreter version inside the configured venv.
+description: >
+  Show the interpreter version inside the configured venv. This executes
+  whatever the venv's `bin/python` is, as the runner's user, so whoever can
+  write the venv controls what this action runs; `--version` exits before
+  Python loads any `.pth` or `sitecustomize` hook.
 side_effects: ["One forked process.", "Read-only."]
 args: []
 execution:
