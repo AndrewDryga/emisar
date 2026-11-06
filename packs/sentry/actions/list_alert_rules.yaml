@@ -1,9 +1,9 @@
 schema_version: 1
 id: sentry.list_alert_rules
-title: List issue alert rules
+title: List project alert workflows
 kind: script
 risk: low
-description: List a project's issue alert rules — conditions, actions, and frequency — to see what pages whom and why.
+description: List one bounded page of a project's alert workflows — triggers, action filters, actions, and frequency — through the current organization workflows API. Requires Sentry's workflow API; the removed project rules endpoint is not used.
 side_effects: [One read-only API request.]
 args:
   - name: organization
@@ -20,9 +20,21 @@ args:
     validation:
       pattern: "^[a-z0-9][a-z0-9._-]{0,63}$"
       max_length: 64
+  - name: limit
+    type: integer
+    default: 20
+    description: Maximum alert workflows returned in this page, up to Sentry's API limit of 100.
+    validation: {min: 1, max: 100}
+  - name: page_cursor
+    type: string
+    default: ""
+    description: Opaque continuation cursor returned by the previous page, with the other arguments unchanged.
+    validation:
+      pattern: "^[0-9A-Za-z:_=-]{0,120}$"
+      max_length: 120
 execution:
   script: {path: scripts/sentry_api.sh, interpreter: /bin/bash}
-  argv: [list-alert-rules, "{{ args.organization }}", "{{ args.project }}"]
+  argv: [list-alert-rules, "{{ args.organization }}", "{{ args.project }}", "{{ args.limit }}", "{{ args.page_cursor }}"]
   timeout: 30s
 output:
   parser: json

@@ -58,7 +58,7 @@ rename_next_page_token() {
 
 interval() {
   minutes=$1
-  end_epoch=$(date -u +%s)
+  end_epoch=${2:-$(date -u +%s)}
   start_epoch=$((end_epoch - minutes * 60))
   start_time=$(date -u -d "@$start_epoch" +%Y-%m-%dT%H:%M:%SZ)
   end_time=$(date -u -d "@$end_epoch" +%Y-%m-%dT%H:%M:%SZ)
@@ -72,13 +72,48 @@ case "$mode" in
     alignment_seconds=$6
     aligner=$7
     page_size=$8
-    page_token=$9
+    page_cursor=$9
+
+    now_epoch=$(date -u +%s)
+    end_epoch=$now_epoch
+    # The provider requires identical request parameters on every page. A
+    # cursor carries only the anchored time and opaque continuation, never a
+    # target or filter; rebuild those from the current validated arguments.
+    query_fingerprint=$(jq -nc \
+      --arg endpoint "$api_base" --arg project "$project" \
+      --arg metric "$metric_type" --arg filter "$resource_filter" \
+      --argjson window "$window_minutes" --argjson alignment "$alignment_seconds" \
+      --arg aligner "$aligner" --argjson size "$page_size" \
+      '[$endpoint,$project,$metric,$filter,$window,$alignment,$aligner,$size]' | sha256sum)
+    query_fingerprint=${query_fingerprint%% *}
+    invalid_cursor() {
+      printf '%s\n' 'Invalid Cloud Monitoring continuation; start a new query with an empty page_cursor.' >&2
+      exit 2
+    }
+    page_token=''
+    if [ -n "$page_cursor" ]; then
+      # 2048 supported provider characters + 79 for v1, time and fingerprint.
+      [ "${#page_cursor}" -le 2127 ] || invalid_cursor
+      case "$page_cursor" in v1.*.*.*) ;; *) invalid_cursor ;; esac
+      remaining=${page_cursor#v1.}
+      end_epoch=${remaining%%.*}
+      remaining=${remaining#*.}
+      fingerprint=${remaining%%.*}
+      page_token=${remaining#*.}
+      case "$end_epoch" in ''|0*|*[!0-9]*) invalid_cursor ;; esac
+      [ "${#end_epoch}" -le 10 ] || invalid_cursor
+      [ "$end_epoch" -le "$now_epoch" ] || invalid_cursor
+      [ "$end_epoch" -ge "$((window_minutes * 60))" ] || invalid_cursor
+      [ "$fingerprint" = "$query_fingerprint" ] || invalid_cursor
+      [ -n "$page_token" ] && [ "${#page_token}" -le 2048 ] || invalid_cursor
+      case "$page_token" in *[!A-Za-z0-9+./=_~-]*) invalid_cursor ;; esac
+    fi
 
     filter="metric.type = \"$metric_type\""
     if [ -n "$resource_filter" ]; then
       filter="$filter AND ($resource_filter)"
     fi
-    interval "$window_minutes"
+    interval "$window_minutes" "$end_epoch"
 
     set -- --get \
       --data-urlencode "filter=$filter" \
@@ -97,7 +132,18 @@ case "$mode" in
     out=$(mktemp "${TMPDIR:-/tmp}/emisar-gcp-monitoring.XXXXXX")
     trap 'rm -f -- "$out"' EXIT HUP INT TERM
     request_to "$out" "$@" "$api_base/v3/projects/$project/timeSeries"
-    rename_next_page_token "$out"
+    jq -ce --arg anchor "$end_epoch" --arg fingerprint "$query_fingerprint" '
+      def allowed:
+        explode | all(.[];
+          (. >= 48 and . <= 57) or (. >= 65 and . <= 90) or
+          (. >= 97 and . <= 122) or
+          . == 43 or . == 45 or . == 46 or . == 47 or . == 61 or . == 95 or . == 126);
+      if (.nextPageToken // "") == "" then del(.nextPageToken)
+      elif (.nextPageToken | type) == "string" and
+           (.nextPageToken | length) <= 2048 and (.nextPageToken | allowed)
+      then . + {next_page_cursor: ("v1." + $anchor + "." + $fingerprint + "." + .nextPageToken)} | del(.nextPageToken)
+      else error("Cloud Monitoring returned an unsupported continuation cursor")
+      end' "$out"
     ;;
 
   metric-descriptors)

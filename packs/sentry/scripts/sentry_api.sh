@@ -250,7 +250,9 @@ org_stats() {
 }
 
 list_alert_rules() {
-  request "$api/projects/$1/$2/rules/" | jq -ce .
+  local org=$1 project=$2 limit=$3 cursor=$4
+  with_cursor "$cursor" --get "$api/organizations/$org/workflows/" \
+    --data-urlencode "project=$project" --data-urlencode "per_page=$limit"
 }
 
 command=${1:-}

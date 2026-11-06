@@ -184,13 +184,30 @@ def response(raw_path):
             "compute.googleapis.com/instance/cpu/utilization"
             in filter_value
         ):
-            return {
+            cursor = query.get("pageToken", [""])[0]
+            provider_cursor = "M" * 2048 if "max_cursor" in filter_value else "metric.next+/_=-~"
+            if cursor:
+                current = {key: value for key, value in REQUESTS[-1].items() if key != "pageToken"}
+                previous = {key: value for key, value in REQUESTS[-2].items() if key != "pageToken"} if len(REQUESTS) > 1 else None
+                if cursor != provider_cursor or current != previous:
+                    raise InvalidFilter("For pagination, all request parameters except pageToken must match the original request.")
+                continued = metric_series(
+                    "compute.googleapis.com/instance/cpu/utilization",
+                    0.84,
+                    "gce_instance",
+                )
+                continued["resource"]["labels"]["instance_id"] = "1002"
+                return {"timeSeries": [continued]}
+            payload = {
                 "timeSeries": [metric_series(
                     "compute.googleapis.com/instance/cpu/utilization",
                     0.42,
                     "gce_instance",
                 )]
             }
+            if query.get("pageSize") == ["1"]:
+                payload["nextPageToken"] = provider_cursor
+            return payload
     if request.path.endswith("/alertPolicies"):
         return {"alertPolicies": [alert_policy()]}
     return None
