@@ -1,10 +1,6 @@
 // JS bundle for the authenticated console (every LiveView render). The
 // static marketing site loads the much leaner `marketing.js` instead —
 // see that file and `root.html.heex` for how the bundle is chosen.
-//
-// If you want to use Phoenix channels, run `mix help phx.gen.channel`
-// to get started and then uncomment the line below.
-// import "./user_socket.js"
 
 // Include phoenix_html to handle method=PUT/DELETE in forms and buttons.
 import "phoenix_html"
@@ -21,22 +17,6 @@ import {Tooltip} from "./tooltip.js"
 import {EnrollmentKeyFilters} from "./enrollment_key_filters.js"
 import {DialogFocus} from "./dialog_focus.js"
 import {CodeInput} from "./code_input.js"
-
-// `<time>` element formatter. The server renders a UTC fallback into
-// `textContent` (so non-JS users see something) and stamps the ISO
-// `datetime` + a `data-format` mode; this hook rewrites textContent to
-// the user's local timezone on mount/update.
-//
-//   <time
-//     phx-hook="LocalTime"
-//     id="when-<%= row.id %>"
-//     datetime="2026-05-30T18:59:00Z"
-//     data-format="absolute"
-//   >May 30, 18:59 UTC</time>
-//
-// `data-format`:
-//   - "absolute" → "May 30, 14:59 (your time)" / "May 30, 2027, 14:59"
-//   - "relative" → "3m ago" / "Jul 14"
 
 // Searchable filter combobox (LiveTable `%Filter{search: true}` and runbook
 // action pickers). The server renders options inline or into a lazy shared pool;
@@ -285,6 +265,21 @@ const FilterableList = {
   }
 }
 
+// `<time>` element formatter. The server renders a UTC fallback into
+// `textContent` (so non-JS users see something) and stamps the ISO
+// `datetime` + a `data-format` mode; this hook rewrites textContent to
+// the user's local timezone on mount/update.
+//
+//   <time
+//     phx-hook="LocalTime"
+//     id="when-<%= row.id %>"
+//     datetime="2026-05-30T18:59:00Z"
+//     data-format="absolute"
+//   >May 30, 18:59 UTC</time>
+//
+// `data-format`:
+//   - "absolute" → "May 30, 14:59 (your time)" / "May 30, 2027, 14:59"
+//   - "relative" → "3m ago" / "Jul 14"
 const LocalTime = {
   mounted() { this.format() },
   updated() { this.format() },
