@@ -175,7 +175,9 @@ defmodule Emisar.SSO.OIDC.GuardTest do
     :gen_tcp.connect({127, 0, 0, 1}, port, [:binary, active: false, packet: :raw], @wait)
   end
 
-  defp assert_tunnel_count(expected, attempts \\ 200)
+  # Poll for the whole @wait budget, not two seconds: on a busy machine the Guard
+  # can take several seconds to accept 192 connections (seen: 94, 140, 152).
+  defp assert_tunnel_count(expected, attempts \\ div(@wait, 10))
 
   defp assert_tunnel_count(expected, 0),
     do: flunk("expected #{expected} open Guard tunnels, got #{tunnel_count()}")
