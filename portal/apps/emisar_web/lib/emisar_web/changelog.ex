@@ -17,6 +17,43 @@ defmodule EmisarWeb.Changelog do
 
   @entries [
     %{
+      date: ~D[2026-11-06],
+      slug: "medusa-backups-and-least-privilege-pack-recipes",
+      title: "Medusa backups and least-privilege pack recipes",
+      tag: "v0.57.0",
+      summary:
+        "A new Medusa pack runs Cassandra backups, verifies them, applies retention, and restores them. Host-access recipes no longer run code a deployment controls as root: python-app and terraform-readonly grant a group instead, refuse a folder whose group is root, and say what code runs as the runner. Five packs retire older versions that were unsafe to keep running.",
+      details: [
+        {"Security",
+         [
+           "git-local 0.1.12 redacts credentials in every remote URL. cloud-init 0.1.20 truncates only its two logs instead of resetting instance state, and writes its log bundle readable by root alone. php-fpm 0.1.17 runs Composer with plugins and scripts off. GitHub workflow reruns and PM2 log flushes now need approval. Each retires the versions before it.",
+           "Sign-in, MFA, invitation, and identity-link forms reach the identity provider through the handoff page, so the browser's form-action policy no longer blocks them. The portal bounds request bodies, applies the HTTP/1 header limit, and answers a malformed OAuth client registration with 400.",
+           "The Windows MCP installer keeps an existing install folder's permissions and refuses a folder other users can change."
+         ]},
+        {"Packs",
+         [
+           "Twenty pack fixes, including Redis database indexes beyond 15, zfs pool names and interval samples, memcached flush refusals, dnf update checks, and a crontab read that covers every user. Postgres gains a sampling-window read for pg_stat_statements, and MySQL reads work with the real MySQL client.",
+           "git-local and python-app have behavior plans, and each git-local version row now tests its own Git. cloud-init status reports a boot that finished with recoverable errors as done. Sentry alert reads use the current workflow API, and Cloud Monitoring metric queries keep their interval across pages."
+         ]},
+        {"MCP",
+         [
+           "Argument refusals name the rule and every colliding argument. emisar-mcp connect keeps other servers in Codex and Grok configs and fixes fourteen connect, disconnect, help, and installer issues. Tool schemas are published without a top-level allOf, and the Windows installer drops -ConnectAll."
+         ]},
+        {"Runner",
+         [
+           "Every usage mistake exits with the usage code, emisar state check-dispatch-log is removed in favor of emisar doctor, and a shutdown drains only that node's runner sockets. Runner 0.32.0 and MCP Bridge 0.18.0 ship with this release."
+         ]},
+        {"Console",
+         [
+           "A pending-approval email goes to the person who started the run and to those who can approve it. The Agents, approvals, runbooks, SSO settings, and Team pages get a round of fixes."
+         ]},
+        {"Platform",
+         [
+           "Image scans carry evidenced exceptions for zlib and ntpsec findings Debian has not fixed. The release-cookie cutover toggle, the legacy checkout preflight, and DATABASE_SSL_CACERTFILE are retired. Swoosh and the Debian test images are current."
+         ]}
+      ]
+    },
+    %{
       date: ~D[2026-11-03],
       slug: "operational-guides-and-nomad-diagnostics",
       title: "Operational guides and Nomad diagnostics",
