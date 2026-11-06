@@ -51,6 +51,7 @@ const Combobox = {
     this.panel = this.el.querySelector("[data-combobox-panel]")
     this.search = this.el.querySelector("[data-combobox-search]")
     this.hidden = this.el.querySelector("[data-combobox-value]")
+    this.form = this.el.closest("form")
     this.list = this.el.querySelector("[data-combobox-options]")
     this.options = Array.from(this.el.querySelectorAll("[data-combobox-option]"))
     this.sections = Array.from(this.el.querySelectorAll("[data-combobox-section]"))
@@ -84,6 +85,24 @@ const Combobox = {
     document.removeEventListener("click", this.onDocClick)
     this.poolObserver?.disconnect()
     this.untrack()
+    // A pick re-keys the picker, so the patch swaps in a replacement node and
+    // focus on this trigger falls to <body>. Hooks are destroyed after the
+    // patch, so the replacement exists; focus moved elsewhere stays put.
+    const active = document.activeElement
+    if (this.picked && (!active || active === document.body)) this.focusReplacement()
+  },
+
+  // The replacement is the picker for the same field name in the same form; a
+  // hidden or disabled trigger refuses focus, so the first that takes it wins.
+  focusReplacement() {
+    const scope = this.form?.isConnected ? this.form : document
+    const name = this.hidden.name
+    for (const field of scope.querySelectorAll("[data-combobox-value]")) {
+      if (field.name !== name) continue
+      const trigger = field.parentElement.querySelector("[data-combobox-trigger]")
+      trigger?.focus()
+      if (trigger && document.activeElement === trigger) return
+    }
   },
 
   // The hovered option's description mirrors into the footer pane — a fixed
@@ -209,8 +228,13 @@ const Combobox = {
 
   select(option) {
     if (option.disabled) return
+    // Only a new value re-keys the picker; destroyed() follows it to the
+    // replacement node.
+    if (this.hidden.value !== option.dataset.value) this.picked = true
     this.hidden.value = option.dataset.value
     this.close()
+    // Hiding the panel would drop the focused option or search box to <body>.
+    this.trigger.focus()
     // Bubbling input event → the surrounding filter form's phx-change fires;
     // the URL patch then re-renders this node (new value ⇒ new id).
     this.hidden.dispatchEvent(new Event("input", { bubbles: true }))

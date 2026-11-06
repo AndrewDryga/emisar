@@ -1073,6 +1073,38 @@ defmodule EmisarWeb.RunDetailLiveTest do
     refute html =~ "chunk-50\n"
   end
 
+  test "a run with no output at mount flags the trim once its live output passes the window",
+       %{conn: conn} do
+    {conn, _owner, account} = register_and_log_in(conn)
+    run = run_with(account, %{status: "running"})
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    stream_chunk = fn seq ->
+      event = %RunEvent{
+        id: Repo.generate_id(),
+        run_id: run.id,
+        account_id: account.id,
+        seq: seq,
+        kind: :progress,
+        stream: "stdout",
+        payload: %{"chunk" => "chunk-#{seq}\n"}
+      }
+
+      send(lv.pid, {:run_event, event})
+    end
+
+    # The window still holds every chunk, so nothing is hidden yet.
+    Enum.each(1..500, stream_chunk)
+    refute render(lv) =~ "earlier output hidden"
+
+    # The run row still counts no output; the viewer's own count trips the note.
+    stream_chunk.(501)
+    html = render(lv)
+    assert html =~ "earlier output hidden"
+    refute html =~ "Load earlier output"
+  end
+
   test "a run watched live past the window pages its evicted output back once it settles",
        %{conn: conn} do
     {conn, _owner, account} = register_and_log_in(conn)

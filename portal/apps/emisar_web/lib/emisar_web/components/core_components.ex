@@ -587,7 +587,9 @@ defmodule EmisarWeb.CoreComponents do
 
   The value-keyed `id` is part of the component contract: the picker uses
   `phx-update="ignore"` so an open search survives unrelated LiveView renders.
-  Include every server fact that changes the option set in that id.
+  Include every server fact that changes the option set in that id. A pick
+  therefore replaces the node, and the Combobox hook hands focus to the
+  replacement's trigger by `name` within the form, so keep `name` stable.
 
   When many pickers on one page share one large option catalog, render that
   catalog ONCE with `searchable_select_pool/1` and point each picker at it via

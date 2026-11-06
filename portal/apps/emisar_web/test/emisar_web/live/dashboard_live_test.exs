@@ -680,6 +680,27 @@ defmodule EmisarWeb.DashboardLiveTest do
       assert render(lv) =~ "1 of 3 done"
     end
 
+    test "deleting an offline runner recounts the fleet pillar without a presence change", %{
+      conn: conn
+    } do
+      {conn, owner, account} = register_and_log_in(conn)
+      kept = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      removed = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      first_run(account, kept)
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}")
+      assert html =~ "/ 2 connected"
+
+      # The lifecycle broadcast queues the refresh; the test only skips the
+      # debounce wait.
+      {:ok, _deleted} =
+        Emisar.Runners.delete_runner(removed, Fixtures.Subjects.subject_for(owner))
+
+      send(lv.pid, :refresh_dashboard)
+
+      assert render(lv) =~ "/ 1 connected"
+    end
+
     test "a run event refreshes only the recent runs it renders", %{conn: conn} do
       {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}")
@@ -806,8 +827,8 @@ defmodule EmisarWeb.DashboardLiveTest do
 
   describe "plan / packs headroom banners" do
     setup %{conn: conn} do
-      {conn, _owner, account} = register_and_log_in(conn)
-      %{conn: conn, account: account}
+      {conn, owner, account} = register_and_log_in(conn)
+      %{conn: conn, owner: owner, account: account}
     end
 
     # at the plan's runner cap the dashboard renders the
@@ -871,6 +892,30 @@ defmodule EmisarWeb.DashboardLiveTest do
       html = render(lv)
       assert html =~ "You&#39;re at your runner limit (3 of 3)."
       refute html =~ "One runner slot left"
+    end
+
+    test "disabling an offline runner frees its plan slot on the open dashboard", %{
+      conn: conn,
+      owner: owner,
+      account: account
+    } do
+      [runner | _rest] =
+        for _ <- 1..3,
+            do: Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}")
+      assert html =~ "You&#39;re at your runner limit (3 of 3)."
+
+      # Disabling moves neither presence nor the fleet total, only the plan
+      # count; the lifecycle broadcast queues the refresh.
+      {:ok, _disabled} =
+        Emisar.Runners.disable_runner(runner, Fixtures.Subjects.subject_for(owner))
+
+      send(lv.pid, :refresh_dashboard)
+
+      html = render(lv)
+      assert html =~ "One runner slot left"
+      refute html =~ "at your runner limit"
     end
 
     # when a runner advertises a pack version no operator has trusted yet

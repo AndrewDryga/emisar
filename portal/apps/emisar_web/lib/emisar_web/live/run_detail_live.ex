@@ -16,7 +16,12 @@ defmodule EmisarWeb.RunDetailLive do
     "max-h-[60vh] overflow-auto whitespace-pre-wrap break-all bg-black/60 p-4 font-mono text-xs leading-normal text-zinc-300"
   end
 
-  defp events_truncated?(run), do: run.progress_event_count > @event_window
+  # The run row's count moves only on a status broadcast, never per chunk, so
+  # the viewer also counts the chunks it received: the mount read plus every
+  # chunk streamed since. A run with no output at mount still reads as trimmed
+  # once its live output outgrows the window.
+  defp events_truncated?(run, received_count),
+    do: max(run.progress_event_count, received_count) > @event_window
 
   # "Load earlier output" is offered only for terminal runs: a running run's
   # stream evicts to the most-recent window, so paging earlier chunks in would
@@ -91,7 +96,8 @@ defmodule EmisarWeb.RunDetailLive do
          |> assign(:output_present?, events != [])
          |> assign(:output_state, output_state)
          |> assign(:oldest_seq, event_seq(List.first(events)))
-         |> assign(:more_earlier?, events_truncated?(run))
+         |> assign(:received_count, length(events))
+         |> assign(:more_earlier?, events_truncated?(run, length(events)))
          |> stream(:events, events)}
     end
   end
@@ -199,7 +205,8 @@ defmodule EmisarWeb.RunDetailLive do
     {:noreply,
      socket
      |> stream_insert(:events, event, limit: -@event_window)
-     |> assign(:output_present?, true)}
+     |> assign(:output_present?, true)
+     |> update(:received_count, &(&1 + 1))}
   end
 
   def handle_info(%{event: "presence_diff"} = event, socket) do
@@ -243,7 +250,7 @@ defmodule EmisarWeb.RunDetailLive do
   # the move into a terminal status reads; later updates keep loaded pages.
   defp reload_settled_output(%{assigns: %{run: run}} = socket, %Runs.ActionRun{} = old) do
     if Runs.terminal_status?(run.status) and not Runs.terminal_status?(old.status) and
-         events_truncated?(run) do
+         events_truncated?(run, socket.assigns.received_count) do
       case Runs.list_recent_events_for_run(run, event_window(), socket.assigns.current_subject) do
         {:ok, events} ->
           socket
@@ -866,7 +873,8 @@ defmodule EmisarWeb.RunDetailLive do
             <div class="ml-auto flex flex-wrap items-center justify-end gap-2">
               <div
                 :if={
-                  (@run.status in [:sent, :running, :cancelling] and events_truncated?(@run)) or
+                  (@run.status in [:sent, :running, :cancelling] and
+                     events_truncated?(@run, @received_count)) or
                     can_load_earlier?(@run, @more_earlier?)
                 }
                 id="run-output-raw-tools"
@@ -876,7 +884,10 @@ defmodule EmisarWeb.RunDetailLive do
                      says so; a terminal run offers to page the earlier output back
                      in (gated so backfill never fights the live stream's eviction). --%>
                 <span
-                  :if={@run.status in [:sent, :running, :cancelling] and events_truncated?(@run)}
+                  :if={
+                    @run.status in [:sent, :running, :cancelling] and
+                      events_truncated?(@run, @received_count)
+                  }
                   class="text-amber-400/80"
                 >
                   Showing recent output · earlier output hidden

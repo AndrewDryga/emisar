@@ -235,6 +235,7 @@ defmodule Emisar.Runbooks.ExecutionApprovalTest do
     runbook = published_runbook(subject, required_definition(runner.group))
 
     assert {:ok, result} = Runbooks.dispatch_runbook(runbook, "deny maintenance", subject)
+    subscribe_to_execution(account, result.execution_id)
 
     assert {:ok, [request], _metadata} =
              Approvals.list_pending_approval_requests(approver)
@@ -245,6 +246,7 @@ defmodule Emisar.Runbooks.ExecutionApprovalTest do
     execution = execution(result.execution_id)
     assert execution.status == :halted
     assert execution.terminal_code == "approval_denied"
+    assert_execution_announced(result.execution_id)
     assert Runs.list_runs_for_runbook_execution(account.id, result.execution_id) == []
     assert [denied] = approval_events(request.id, "approval.denied")
     assert denied.payload["runbook_execution_id"] == result.execution_id
@@ -357,6 +359,7 @@ defmodule Emisar.Runbooks.ExecutionApprovalTest do
     runbook = published_runbook(subject, required_definition(runner.group))
 
     assert {:ok, result} = Runbooks.dispatch_runbook(runbook, "expired window", subject)
+    subscribe_to_execution(account, result.execution_id)
 
     assert {:ok, [request], _metadata} =
              Approvals.list_pending_approval_requests(approver)
@@ -377,6 +380,8 @@ defmodule Emisar.Runbooks.ExecutionApprovalTest do
 
     assert halted.terminal_message ==
              "Approval expired before all required approvals were received."
+
+    assert_execution_announced(result.execution_id)
 
     assert Runs.list_runs_for_runbook_execution(account.id, result.execution_id) == []
     assert [event] = approval_events(request.id, "approval.expired")
@@ -413,6 +418,7 @@ defmodule Emisar.Runbooks.ExecutionApprovalTest do
   end
 
   test "membership loss at decision halts and closes the pending request", %{
+    account: account,
     approver: approver,
     runner: runner,
     subject: subject
@@ -421,6 +427,8 @@ defmodule Emisar.Runbooks.ExecutionApprovalTest do
 
     assert {:ok, result} =
              Runbooks.dispatch_runbook(runbook, "membership decision recheck", subject)
+
+    subscribe_to_execution(account, result.execution_id)
 
     assert {:ok, [request], _metadata} =
              Approvals.list_pending_approval_requests(approver)
@@ -437,6 +445,7 @@ defmodule Emisar.Runbooks.ExecutionApprovalTest do
     assert halted.status == :halted
     assert halted.terminal_code == "authorization_lost"
     assert Repo.reload!(request).status == :cancelled
+    assert_execution_announced(result.execution_id)
   end
 
   test "one-runner group selection stays frozen when the chosen runner disconnects", %{
@@ -676,4 +685,17 @@ defmodule Emisar.Runbooks.ExecutionApprovalTest do
 
   defp execution(id),
     do: RunbookExecution.Query.by_id(id) |> Repo.fetch!(RunbookExecution.Query)
+
+  # Subscribed after the dispatch, so its creation signal can't satisfy a later assert.
+  defp subscribe_to_execution(account, execution_id) do
+    :ok = Runbooks.subscribe_account_executions(account.id)
+    :ok = Runbooks.subscribe_execution(account.id, execution_id)
+  end
+
+  # The recent-executions rails, and the execution's own watchers (its page and
+  # an MCP wait), each hear the halt.
+  defp assert_execution_announced(execution_id) do
+    assert_receive {:list_changed, :runbook_execution, "runbook_execution.updated", ^execution_id}
+    assert_receive {:runbook_execution_updated, ^execution_id}
+  end
 end

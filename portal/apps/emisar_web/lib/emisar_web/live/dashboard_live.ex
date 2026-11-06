@@ -26,6 +26,11 @@ defmodule EmisarWeb.DashboardLive do
         if ApiKeys.subject_can_view_api_keys?(subject),
           do: ApiKeys.subscribe_account_api_keys(account_id)
 
+        # Enabling, disabling, or deleting an offline runner (or the retention
+        # sweep) moves no presence, yet it moves the pillar and the plan banner.
+        if Runners.subject_can_view_runners?(subject),
+          do: Runners.subscribe_account_inventory(account_id)
+
         {:ok, load(socket)}
       else
         {:ok, socket |> assign(:page_title, "Dashboard") |> assign(:loading?, true)}
@@ -57,6 +62,9 @@ defmodule EmisarWeb.DashboardLive do
   # A runner re-advertising its catalog over its open connection moves no
   # presence, yet it can complete the checklist's "install a pack" step.
   def handle_info({:catalog_changed, _account_id}, socket),
+    do: {:noreply, schedule_refresh(socket, :runners)}
+
+  def handle_info({:runner_inventory_changed, _account_id}, socket),
     do: {:noreply, schedule_refresh(socket, :runners)}
 
   def handle_info({:run_updated, _run_id}, socket),
@@ -145,14 +153,15 @@ defmodule EmisarWeb.DashboardLive do
     |> assign_current_setup_state()
   end
 
-  # The plan banner counts the account's runners, so a registration or removal
-  # that moves the fleet total re-reads billing with the pillar; a reconnect,
-  # which moves nothing billing shows, doesn't pay for it.
+  # The plan banner counts the account's enabled runners, so a registration,
+  # removal, enable, or disable that moves that count re-reads billing with the
+  # pillar; a reconnect, which moves nothing billing shows, doesn't pay for it.
+  # The pillar's total keeps disabled runners, so it can't stand in here.
   defp refresh_domain(:runners, socket) do
-    total = socket.assigns.runners_total
+    active = socket.assigns.runners_active
     socket = refresh_runners(socket)
 
-    if socket.assigns.runners_total == total, do: socket, else: refresh_billing(socket)
+    if socket.assigns.runners_active == active, do: socket, else: refresh_billing(socket)
   end
 
   defp refresh_domain(:runs, socket), do: refresh_runs(socket)
@@ -206,7 +215,11 @@ defmodule EmisarWeb.DashboardLive do
         _ -> false
       end
 
-    fleet_counts = %{total: length(runners), online: length(online_runner_ids)}
+    fleet_counts = %{
+      total: length(runners),
+      active: Enum.count(readiness, &(&1.connection.state != :disabled)),
+      online: length(online_runner_ids)
+    }
 
     socket
     |> assign_fleet_counts(fleet_counts, read_ok?(runners_read))
@@ -231,11 +244,12 @@ defmodule EmisarWeb.DashboardLive do
   end
 
   defp fleet_counts_or_zero({:ok, fleet}), do: fleet.counts
-  defp fleet_counts_or_zero(_error), do: %{total: 0, online: 0}
+  defp fleet_counts_or_zero(_error), do: %{total: 0, active: 0, online: 0}
 
   defp assign_fleet_counts(socket, counts, read_ok?) do
     socket
     |> assign(:runners_total, counts.total)
+    |> assign(:runners_active, counts.active)
     |> assign(:runners_connected, counts.online)
     |> assign(:runners_error?, not read_ok?)
   end

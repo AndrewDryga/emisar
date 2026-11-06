@@ -2064,6 +2064,8 @@ defmodule Emisar.Approvals do
       end)
       |> Repo.commit_multi(
         after_commit: fn _changes ->
+          _ = Runbooks.approval_settled(request.runbook_execution_id)
+
           request
           |> then(&Request.Query.by_id(Request.Query.all(), &1.id))
           |> Repo.peek()

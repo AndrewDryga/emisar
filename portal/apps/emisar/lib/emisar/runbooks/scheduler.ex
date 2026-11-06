@@ -34,9 +34,24 @@ defmodule Emisar.Runbooks.Scheduler do
   @doc "Fast-path terminal callback. Duplicate and stale calls are harmless."
   def action_run_settled(run), do: Settlement.action_run_settled(run)
 
-  @doc "Approval callback: advance the execution only after the request commits."
-  def approval_settled(execution_id) when is_binary(execution_id),
-    do: advance_execution(execution_id)
+  @doc """
+  Approval callback, run only after the request commits. An approval activated
+  the execution, and its advance announces the first dispatch. A denial, an
+  expiry, or a failed decision-time recheck halted it inside that transaction,
+  which leaves the advance nothing to do or announce, so the halt is announced
+  here.
+  """
+  def approval_settled(execution_id) when is_binary(execution_id) do
+    execution = RunbookExecution.Query.by_id(execution_id) |> Repo.peek()
+
+    case execution do
+      %RunbookExecution{status: :halted} ->
+        Emisar.Runbooks.broadcast_execution_updated(execution.account_id, execution.id)
+
+      _execution ->
+        advance_execution(execution_id)
+    end
+  end
 
   @doc "Fail-fast membership and exact-contract recheck before an execution vote."
   def recheck_execution_approval(execution_id) when is_binary(execution_id) do
