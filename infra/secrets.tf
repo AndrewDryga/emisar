@@ -30,7 +30,7 @@ locals {
 
   app_secrets = {
     for id, env_name in local.secret_definitions : id => env_name
-    if id != "emisar-database-url" && (id != "emisar-release-cookie" || var.release_cookie_ready)
+    if id != "emisar-database-url"
   }
 
   # The three PROVIDER-GENERATED secrets, whose value has no payload to hash: a
@@ -87,19 +87,16 @@ locals {
   # rendered secret is therefore required: IAM, network, HTTP, and payload
   # failures stop the VM before it can become ready with degraded production
   # behavior hidden behind a fallback.
-  mandatory_runtime_secrets = merge({
+  mandatory_runtime_secrets = {
     "emisar-secret-key-base" = {
       env_name = "SECRET_KEY_BASE"
       version  = google_secret_manager_secret_version.secret_key_base.version
     }
-    },
-    var.release_cookie_ready ? {
-      "emisar-release-cookie" = {
-        env_name = "RELEASE_COOKIE"
-        version  = one(google_secret_manager_secret_version.release_cookie[*].version)
-      }
-    } : {},
-  )
+    "emisar-release-cookie" = {
+      env_name = "RELEASE_COOKIE"
+      version  = google_secret_manager_secret_version.release_cookie.version
+    }
+  }
 
   optional_runtime_secrets = {
     for id in local.populated_optional_secrets : id => {
@@ -217,11 +214,18 @@ resource "google_secret_manager_secret_iam_member" "admin_runner_access" {
 # needs its hand-maintained counter, and rotating it means bumping
 # local.secret_generations in the same change as the workspace variable.
 resource "google_secret_manager_secret_version" "release_cookie" {
-  count                  = var.release_cookie_ready || var.livebook_enabled ? 1 : 0
   secret                 = google_secret_manager_secret.app["emisar-release-cookie"].id
   secret_data_wo         = var.release_cookie_value
   secret_data_wo_version = local.secret_generations["emisar-release-cookie"]
   deletion_policy        = "ABANDON"
+}
+
+# The version used to be counted behind the cookie cutover toggle. Recording the
+# move keeps the live version in place instead of abandoning it and writing a
+# new one; delete this block after the apply that records it.
+moved {
+  from = google_secret_manager_secret_version.release_cookie[0]
+  to   = google_secret_manager_secret_version.release_cookie
 }
 
 resource "google_secret_manager_secret_version" "optional" {

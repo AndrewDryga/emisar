@@ -26,7 +26,6 @@ locals {
   })
 
   start = templatefile("${path.module}/../../runtime/portal/start.sh", merge(local.common, {
-    release_cookie_ready = true
     runtime_secrets = merge(local.common.runtime_secrets, {
       "emisar-release-cookie" = { env_name = "RELEASE_COOKIE", version = "1" }
     })

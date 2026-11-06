@@ -29,7 +29,7 @@ locals {
     livebook_port                 = local.livebook_port
     livebook_backend_name         = local.livebook_backend_name
     livebook_secret_version       = try(google_secret_manager_secret_version.livebook_secret_key_base[0].version, "")
-    release_cookie_version        = try(google_secret_manager_secret_version.release_cookie[0].version, "")
+    release_cookie_version        = google_secret_manager_secret_version.release_cookie.version
     database_user                 = local.livebook_database_user
     database_user_uri             = urlencode(local.livebook_database_user)
     database_name                 = google_sql_database.emisar.name

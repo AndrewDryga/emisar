@@ -69,19 +69,18 @@ locals {
     gcloud_image          = local.gcloud_image
   })
   start_script = templatefile("${path.module}/runtime/portal/start.sh", {
-    container_image      = var.container_image
-    project_id           = var.project_id
-    domain               = var.domain
-    app_port             = local.portal_port
-    mailer_from_email    = var.mailer_from_email
-    cluster_value        = "emisar"
-    disable_billing      = var.disable_billing
-    runtime_secrets      = local.runtime_secrets
-    database_user        = trimsuffix(google_service_account.vm.email, ".gserviceaccount.com")
-    database_name        = google_sql_database.emisar.name
-    database_role        = "emisar_owner"
-    database_pool_size   = local.portal_database_pool_size
-    release_cookie_ready = var.release_cookie_ready
+    container_image    = var.container_image
+    project_id         = var.project_id
+    domain             = var.domain
+    app_port           = local.portal_port
+    mailer_from_email  = var.mailer_from_email
+    cluster_value      = "emisar"
+    disable_billing    = var.disable_billing
+    runtime_secrets    = local.runtime_secrets
+    database_user      = trimsuffix(google_service_account.vm.email, ".gserviceaccount.com")
+    database_name      = google_sql_database.emisar.name
+    database_role      = "emisar_owner"
+    database_pool_size = local.portal_database_pool_size
   })
   admin_runner_config = templatefile("${path.module}/runtime/admin-runner/config.yaml", {
     domain = var.domain

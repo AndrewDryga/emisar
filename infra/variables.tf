@@ -93,25 +93,15 @@ variable "pack_registry_location" {
   default     = "US"
 }
 
-variable "release_cookie_ready" {
-  description = "Use the separate RELEASE_COOKIE secret. Keep false until release_cookie_value is the currently derived production cookie."
-  type        = bool
-  default     = false
-}
-
 variable "release_cookie_value" {
-  description = "Exact RELEASE_COOKIE payload. Required when release_cookie_ready or livebook_enabled is true; derive the current production value so every node remains one cluster."
+  description = "Exact RELEASE_COOKIE payload shared by every portal node and the Livebook workbench. Set as a sensitive ephemeral HCP Terraform workspace variable; rotating it also bumps its entry in local.secret_generations."
   type        = string
   sensitive   = true
   ephemeral   = true
-  default     = null
 
   validation {
-    condition = (
-      (!var.release_cookie_ready && !var.livebook_enabled) ||
-      (var.release_cookie_value != null && length(var.release_cookie_value) >= 32)
-    )
-    error_message = "release_cookie_value must be at least 32 characters when release_cookie_ready or livebook_enabled is true."
+    condition     = length(var.release_cookie_value) >= 32
+    error_message = "release_cookie_value must be at least 32 characters."
   }
 }
 
@@ -243,7 +233,7 @@ variable "mailer_from_email" {
 # ── Livebook admin workbench ─────────────────────────────────────────────────
 variable "livebook_enabled" {
   type        = bool
-  description = "Deploy the private Livebook admin workbench behind Google IAP. Enabling it requires release_cookie_value, livebook_iap_iam_user, and database_owner_role_ready; release_cookie_ready may stay false. To turn a provisioned workbench off day-to-day, set livebook_running = false instead — flipping this back to false plans a full teardown, which prevent_destroy on the data disk, secret, and database principal deliberately blocks until those are explicitly retired."
+  description = "Deploy the private Livebook admin workbench behind Google IAP. Enabling it requires livebook_iap_iam_user and database_owner_role_ready. To turn a provisioned workbench off day-to-day, set livebook_running = false instead — flipping this back to false plans a full teardown, which prevent_destroy on the data disk, secret, and database principal deliberately blocks until those are explicitly retired."
   default     = false
 }
 

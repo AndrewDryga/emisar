@@ -386,50 +386,7 @@ same change as the workspace value. The resulting exact version is part of
 cloud-init, so the instance template rolls and no VM ever follows the mutable
 `latest` alias.
 
-The first cookie cutover is special: leave `release_cookie_ready=false`. First
-prove every serving VM is healthy and uses one instance template, then read the
-numeric `emisar-secret-key-base` version embedded in that template's rendered
-startup script. Never use `latest`: a newer version created outside this flow
-may not be the value running VMs use. The command below intentionally fails
-until the new exact-version template has fully rolled out.
-
-The `gcloud secrets versions access` below reads `emisar-secret-key-base` as
-your own principal, which is not one of the expected readers. Expect one
-"Unexpected Secret Manager Access" alert for yourself and acknowledge it. The
-alert is the guard working, not a separate incident.
-
-```sh
-mig=$(terraform output -raw mig_name)
-instances=$(gcloud compute instance-groups managed list-instances "$mig" \
-  --project emisar --region us-central1 --format=json)
-jq -e 'length > 0 and all(.[];
-  .instanceStatus == "RUNNING" and .currentAction == "NONE" and
-  all(.instanceHealth[]?; .detailedHealthState == "HEALTHY"))' <<<"$instances"
-templates=$(jq -r '.[].version.instanceTemplate | split("/")[-1]' \
-  <<<"$instances" | sort -u)
-[ "$(printf '%s\n' "$templates" | sed '/^$/d' | wc -l | tr -d ' ')" = 1 ]
-template=$templates
-secret_version=$(gcloud compute instance-templates describe "$template" \
-  --project emisar --format=json |
-  jq -r '.properties.metadata.items[] | select(.key == "user-data") | .value' |
-  sed -n 's/.*fetch_secret "emisar-secret-key-base" "\([0-9][0-9]*\)" "SECRET_KEY_BASE".*/\1/p')
-[ -n "$secret_version" ]
-umask 077
-gcloud secrets versions access "$secret_version" --project emisar \
-  --secret emisar-secret-key-base |
-  { IFS= read -r value; printf 'emisar-release-cookie:%s' "$value" | openssl dgst -sha256 -r | cut -d' ' -f1; } \
-  > /tmp/emisar-release-cookie
-```
-
-Store that file's value as sensitive ephemeral `release_cookie_value`, securely
-delete the local file, and then choose the staged consumer. Enabling Livebook
-while `release_cookie_ready=false` writes that exact value for Livebook without
-changing the portal template; portal nodes continue deriving the same cookie.
-Setting `release_cookie_ready=true` is the later, separately reviewed portal
-rollout onto the already-matching secret. Old and new nodes therefore use
-identical cookies throughout.
-
-Rotate signing and cookie values separately, in later maintenance windows:
+Rotate signing and cookie values separately, each in its own maintenance window:
 
 1. Prove no migration or long-running job is in flight.
 2. Increment only the affected generation.

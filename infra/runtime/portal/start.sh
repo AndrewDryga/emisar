@@ -51,14 +51,7 @@ fetch_secret "${secret_id}" "${secret.version}" "${secret.env_name}"
 %{ endfor ~}
 
 grep -q '^SECRET_KEY_BASE=' "$ENV_FILE" || { echo "SECRET_KEY_BASE missing from Secret Manager" >&2; exit 1; }
-%{ if release_cookie_ready ~}
 grep -q '^RELEASE_COOKIE=' "$ENV_FILE" || { echo "RELEASE_COOKIE missing from Secret Manager" >&2; exit 1; }
-%{ else ~}
-# Preserve the pre-cutover cookie until the separate secret is seeded with this
-# exact value. That keeps old and new VMs in one BEAM cluster during the rollout.
-SKB=$(grep '^SECRET_KEY_BASE=' "$ENV_FILE" | cut -d= -f2-)
-printf 'RELEASE_COOKIE=%s\n' "$(printf 'emisar-release-cookie:%s' "$SKB" | sha256sum | cut -d' ' -f1)" >> "$ENV_FILE"
-%{ endif ~}
 
 NODE_IP=$(curl --fail --silent --show-error --retry 5 --retry-delay 2 \
   --retry-connrefused --connect-timeout 5 --max-time 30 \
