@@ -29,11 +29,6 @@ import Config
 #                            published host port); only applies when FORCE_SSL=false
 #   FORCE_SSL              — "false" disables HTTPS redirect + secure cookies (default true)
 #   POOL_SIZE              — Ecto pool size (default 10)
-#   DATABASE_SSL_CACERTFILE — PEM file to verify the server cert against
-#                            (Cloud SQL / private-CA Postgres); implies TLS.
-#                            For plain TLS with the system trust store, put
-#                            `?ssl=true` in DATABASE_URL — Ecto parses it and it
-#                            overrides the default here.
 #   DATABASE_PORT          — proxy port (default 5432)
 #   DATABASE_ROLE          — PostgreSQL role assumed at connection startup
 #   POSTMARK_API_TOKEN     — mailer adapter (Postmark); OR set EMISAR_DISABLE_MAIL=1
@@ -108,35 +103,12 @@ if config_env() == :prod do
         ]
       )
 
-  # Cloud SQL (and any private-CA Postgres) signs its server cert with an
-  # instance-specific CA that no public trust store carries, so `ssl: true`'s
-  # public-CA verification can never pass (unknown_ca). With a CA file we pin
-  # verification to that CA instead: validating the chain against the
-  # per-instance CA IS the server authentication. Hostname matching is
-  # skipped deliberately — the cert names "<project>:<instance>", never the
-  # private IP we dial, so it could never match and adds nothing on top of
-  # the pinned chain.
-  # No DATABASE_SSL boolean: Ecto already parses `?ssl=true` out of DATABASE_URL
-  # and merges it OVER this config, so the env var was a second, untested
-  # spelling of something the URL says in the standard way. What the URL cannot
-  # express is a private CA, which is the only reason this stays.
-  database_ssl =
-    case env.("DATABASE_SSL_CACERTFILE") do
-      nil ->
-        false
-
-      cacertfile ->
-        [
-          verify: :verify_peer,
-          cacertfile: cacertfile,
-          customize_hostname_check: [match_fun: fn _reference, _presented -> true end]
-        ]
-    end
-
+  # On the URL path `?ssl=true` turns on TLS verified against the system trust
+  # store: Ecto merges URL options over the `ssl: false` default below.
   database_connection =
     case env.("DATABASE_URL") do
       url when is_binary(url) ->
-        [url: url, ssl: database_ssl]
+        [url: url, ssl: false]
 
       nil ->
         [
