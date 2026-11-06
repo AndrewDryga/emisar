@@ -44,11 +44,12 @@ setup:
           commands:
             - "sudo rm -f /etc/systemd/system/emisar.service.d/10-python-app-host-access.conf"
             - "sudo systemctl daemon-reload"
-            - "sudo usermod -aG \"$(stat -c %G /opt/app/venv)\" emisar"
+            - "test \"$(stat -c %g /opt/app/venv)\" -ne 0 || { echo 'Refusing to add emisar to group root (gid 0): give /opt/app/venv a dedicated group first.' >&2; false; } && sudo usermod -aG \"$(stat -c %G /opt/app/venv)\" emisar"
             - "sudo chmod -R g+rX /opt/app/venv"
             - "sudo systemctl restart emisar"
           verify:
             - "test \"$(systemctl show emisar --property=User --value)\" = emisar"
+            - "test \"$(stat -c %g /opt/app/venv)\" -ne 0"
             - "id -nG emisar | tr ' ' '\\n' | grep -Fx \"$(stat -c %G /opt/app/venv)\""
             - "sudo -u emisar test -r /opt/app/venv/bin/python"
           impact: >
@@ -58,8 +59,10 @@ setup:
             or anyone who compromises the application running as that user) therefore runs code
             as emisar, with this runner's own token and every other grant emisar holds. Every
             process running as emisar also gets whatever the deployment group is granted on this
-            host, not only the venv; the recipe itself adds group read, never write. The first
-            two commands undo this pack's earlier root override.
+            host, not only the venv, so the recipe refuses a venv whose group is root; it adds
+            group read, never write. The first two commands undo this pack's earlier root override.
+            Versions before 0.1.15 did not refuse a root-group venv; if `id -nG emisar` lists
+            `root`, remove it with `sudo gpasswd -d emisar root` before restarting.
             Substitute your own `PY_VENV` for `/opt/app/venv`, and note that an action declaring
             `execution.user` replaces these inherited supplementary groups.
   verify: py.python_version_system

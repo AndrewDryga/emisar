@@ -18,6 +18,13 @@ group, ACL, capability, polkit rule, or root, declare `setup.host_access` in
   or log and the runner restarting. Configure the resource creator, a durable
   service hook, or a persistent group/policy; a one-shot ACL on a recreated
   path is not a recipe.
+- a group grant that reads its group from the resource
+  (`usermod -aG "$(stat -c %G <dir>)" emisar`) refuses gid 0 with a message
+  telling the operator to give the resource a dedicated group first. The
+  refusal sits in the usermod command itself, because a pasted block keeps
+  running after a failed line, and `verify` repeats the check. Otherwise a
+  root-owned tree adds the runner to group root, which reaches every
+  root-group file and socket on the host.
 
 **Why.** The commands are display-and-copy text. Neither the runner nor the Portal
 executes, interpolates, or silently adjusts them.

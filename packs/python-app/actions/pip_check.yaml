@@ -4,8 +4,10 @@ title: $PY_VENV/bin/pip check
 kind: exec
 risk: low
 description: >
-  Check for dependency conflicts. Empty output means clean.
-  This executes the venv's own `bin/pip`, and the `.pth` and `sitecustomize`
+  Check the venv's installed packages for dependency conflicts. A clean venv
+  prints `No broken requirements found.`; a conflict prints one line per broken
+  requirement and fails the action with pip's exit status 1, still carrying the
+  report. This executes the venv's own `bin/pip`, and the `.pth` and `sitecustomize`
   hooks its interpreter loads at startup, as the runner's user, so whoever can
   write the venv controls what this action runs.
 side_effects: ["One pip check call.", "Read-only."]

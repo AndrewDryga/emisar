@@ -1,0 +1,238 @@
+# python-app reads a venv on the machine the action runs on, which is the
+# client container, so every case creates the venv it asserts on and nothing
+# outlives the case. The venv's own pip.conf makes the wheels baked into the
+# client its only index: no case reaches the network, and pip list --outdated
+# compares against releases the plan controls.
+services: [python]
+versions:
+  - version: "3.15.2-slim-trixie"
+    digest: "@sha256:e97b88e416c3c01eb427b21fd8cd3ebf006e6ee38afcfcc3cae1c54ee2ab0a75"
+    default: true
+inherit_env: [PY_VENV]
+cases:
+  # The client is the pinned image, so the system interpreter is the build the
+  # version row names.
+  - action: py.python_version_system
+    expect:
+      stdout_contains: ["Python 3.15.2\n"]
+
+  # Every venv case starts from this venv at the default PY_VENV: the venv's
+  # own pip, plus packtest-widget and the packtest-gadget 1.0.0 it requires.
+  - action: py.venv_python_version
+    arrange:
+      - &venv
+        name: create the app venv
+        argv:
+          - /bin/sh
+          - -c
+          - |
+            set -eu
+            python3 -m venv /opt/app/venv
+            printf '[global]\nno-index = true\nfind-links = /opt/packtest/wheels\n' > /opt/app/venv/pip.conf
+            /opt/app/venv/bin/pip install --quiet packtest-widget packtest-gadget==1.0.0
+    expect:
+      stdout_contains: ["Python 3.15.2\n"]
+
+  # A missing venv fails the action instead of falling back to the system
+  # interpreter. The action's 2>&1 carries the shell's error into stdout.
+  - name: py.venv-python-version-missing-venv-fails
+    action: py.venv_python_version
+    expect:
+      status: failure
+      exit: [127]
+      reason_contains: [process exited with code 127]
+      stdout_contains: ["/opt/app/venv/bin/python: not found"]
+
+  # Sorted by name; packtest-legacy is in the wheel directory but not installed.
+  - action: py.pip_list
+    arrange: [*venv]
+    expect:
+      json:
+        /0/name: packtest-gadget
+        /0/version: "1.0.0"
+        /1/name: packtest-widget
+        /1/version: "1.2.3"
+        /2/name: pip
+      stdout_not_contains: [packtest-legacy]
+
+  - name: py.pip-list-missing-venv-fails
+    action: py.pip_list
+    expect:
+      status: failure
+      exit: [127]
+      reason_contains: [process exited with code 127]
+      stderr_contains: ["/opt/app/venv/bin/pip: not found"]
+
+  # Python runs a venv's .pth import lines and its sitecustomize module at
+  # startup, so whoever can write the venv runs code inside every pip and python
+  # action, as the runner's own uid. Both hooks write to stderr, which leaves
+  # the JSON on stdout intact.
+  - name: py.pip-list-runs-venv-startup-hooks
+    action: py.pip_list
+    arrange:
+      - *venv
+      - &hooks
+        name: plant venv startup hooks
+        argv:
+          - /bin/sh
+          - -c
+          - |
+            set -eu
+            sp=/opt/app/venv/lib/python3.15/site-packages
+            printf '%s\n' 'import os, sys; sys.stderr.write(f"packtest .pth hook ran as uid {os.getuid()}\n")' > "$sp/packtest-hook.pth"
+            printf '%s\n' 'import os, sys' 'sys.stderr.write(f"packtest sitecustomize ran as uid {os.getuid()}\n")' > "$sp/sitecustomize.py"
+    expect:
+      stderr_contains:
+        - "packtest .pth hook ran as uid 65532\n"
+        - "packtest sitecustomize ran as uid 65532\n"
+      json:
+        /1/name: packtest-widget
+
+  # The same planted venv: --version exits before Python reads either hook, and
+  # the action's 2>&1 would have carried their output into stdout.
+  - name: py.venv-python-version-skips-venv-startup-hooks
+    action: py.venv_python_version
+    arrange: [*venv, *hooks]
+    expect:
+      stdout_contains: ["Python 3.15.2\n"]
+      stdout_not_contains: ["packtest .pth hook", "packtest sitecustomize"]
+      stderr_not_contains: ["packtest .pth hook", "packtest sitecustomize"]
+
+  # Requirements format, without pip itself.
+  - action: py.pip_freeze
+    arrange: [*venv]
+    expect:
+      stdout_contains: ["packtest-gadget==1.0.0\npacktest-widget==1.2.3\n"]
+      stdout_not_contains: ["pip=="]
+
+  - action: py.pip_show
+    args: {package: packtest-widget}
+    arrange: [*venv]
+    expect:
+      stdout_contains:
+        - "Name: packtest-widget\nVersion: 1.2.3\n"
+        - "Location: /opt/app/venv/lib/python3.15/site-packages\nRequires: packtest-gadget\n"
+
+  - name: py.pip-show-unknown-package-fails
+    action: py.pip_show
+    args: {package: packtest-absent}
+    arrange: [*venv]
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: ["WARNING: Package(s) not found: packtest-absent"]
+
+  # A package name may not start with `-`, so it never reaches pip as an option.
+  - name: py.pip-show-rejects-an-option-as-package
+    action: py.pip_show
+    args: {package: "--verbose"}
+    expect:
+      status: failure
+      reason: argument_invalid
+      error_contains: [must match pattern]
+
+  - action: py.pip_check
+    arrange: [*venv]
+    expect:
+      stdout_contains: ["No broken requirements found.\n"]
+
+  # packtest-legacy needs packtest-gadget<1.0 and is installed without its
+  # dependencies, so the venv really is inconsistent. pip check exits 1 then,
+  # which the runner reports as a failed action that still carries the report.
+  - name: py.pip-check-reports-a-conflict
+    action: py.pip_check
+    arrange:
+      - *venv
+      - argv: [/opt/app/venv/bin/pip, install, --quiet, --no-deps, packtest-legacy]
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stdout_contains: ["packtest-legacy 0.9.0 has requirement packtest-gadget<1.0, but you have packtest-gadget 1.0.0.\n"]
+
+  # A clean venv prints a verdict, so a missing venv's empty stdout is never
+  # mistaken for one: the action fails.
+  - name: py.pip-check-missing-venv-fails
+    action: py.pip_check
+    expect:
+      status: failure
+      exit: [127]
+      reason_contains: [process exited with code 127]
+      stderr_contains: ["/opt/app/venv/bin/pip: not found"]
+      stdout_not_contains: ["No broken requirements found."]
+
+  # The wheel directory holds a newer packtest-gadget than the venv has, and the
+  # same packtest-widget, so exactly one package is outdated.
+  - action: py.pip_outdated
+    arrange: [*venv]
+    expect:
+      json:
+        /0/name: packtest-gadget
+        /0/version: "1.0.0"
+        /0/latest_version: "2.0.0"
+      stdout_not_contains: [packtest-widget]
+
+  # The venv's path is the standard library, its own site-packages without the
+  # system one, and then a .pth path line, which is how an editable install puts
+  # the application's source on the path.
+  - action: py.sys_path
+    arrange:
+      - *venv
+      - argv: [/bin/sh, -c, "mkdir /opt/app/src && echo /opt/app/src > /opt/app/venv/lib/python3.15/site-packages/packtest-app.pth"]
+    expect:
+      stdout_contains: ["\n/usr/local/lib/python3.15\n/usr/local/lib/python3.15/lib-dynload\n/opt/app/venv/lib/python3.15/site-packages\n/opt/app/src\n"]
+      stdout_not_contains: [/usr/local/lib/python3.15/site-packages]
+
+  # PY_VENV reaches the action through inherit_env and replaces the default.
+  - name: py.sys-path-follows-py-venv
+    action: py.sys_path
+    env: {PY_VENV: /tmp/packtest-venv}
+    arrange:
+      - argv: [python3, -m, venv, --without-pip, /tmp/packtest-venv]
+    expect:
+      stdout_contains: ["\n/tmp/packtest-venv/lib/python3.15/site-packages\n"]
+      stdout_not_contains: [/opt/app/venv]
+
+  - action: py.site_packages_du
+    arrange: [*venv]
+    expect:
+      stdout_contains:
+        - "\t/opt/app/venv/lib/python3.15/site-packages/pip\n"
+        - "\t/opt/app/venv/lib/python3.15/site-packages/packtest_widget\n"
+        - "\t/opt/app/venv/lib/python3.15/site-packages/packtest_widget-1.2.3.dist-info\n"
+
+  # The guard stops before du runs: an unresolved interpreter once turned this
+  # action into `du -sh /*` reported as success.
+  - name: py.site-packages-du-missing-venv-fails
+    action: py.site_packages_du
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: ["cannot resolve site-packages via /opt/app/venv/bin/python"]
+      stdout_not_contains: ["\t/"]
+
+  # du is handed site-packages' entries, so one it cannot read fails the action
+  # instead of a partial listing passing as success.
+  - name: py.site-packages-du-unreadable-entry-fails
+    action: py.site_packages_du
+    arrange:
+      - *venv
+      - argv: [chmod, "000", /opt/app/venv/lib/python3.15/site-packages/packtest_widget]
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains:
+        - "du: cannot read directory '/opt/app/venv/lib/python3.15/site-packages/packtest_widget': Permission denied"
+        - "cannot measure /opt/app/venv/lib/python3.15/site-packages"
+
+  # pip keeps its cache under the runner identity's HOME, and installing from
+  # local wheels has not used it.
+  - action: py.pip_cache_info
+    arrange: [*venv]
+    expect:
+      stdout_contains:
+        - "Package index page cache location (pip v23.3+): /tmp/packtest/.cache/pip/http-v2\n"
+        - "Locally built wheels location: /tmp/packtest/.cache/pip/wheels\nLocally built wheels size: 0 bytes\n"

@@ -1,0 +1,23 @@
+services:
+  runner-tools:
+    build:
+      context: ${EMISAR_ROOT}/packs/python-app/test
+      dockerfile: Dockerfile
+      args:
+        PACKTEST_IMAGE: ${PACKTEST_IMAGE:-python:${PACKTEST_VERSION:-3.15.2-slim-trixie}${PACKTEST_DIGEST-}}
+    image: emisar-packtest-python-app-tools:${PACKTEST_VERSION:-3.15.2-slim-trixie}
+
+  # These actions run Python on the machine the ACTION runs on, which is the
+  # client container above, built from this same pinned image, so every case
+  # creates its own venv there and nothing here is a service to drive. This
+  # service keeps the version row and the interpreter under test the same image.
+  python:
+    image: ${PACKTEST_IMAGE:-python:${PACKTEST_VERSION:-3.15.2-slim-trixie}${PACKTEST_DIGEST-}}
+    init: true
+    command: [sleep, infinity]
+    healthcheck:
+      test: [CMD, python3, --version]
+      interval: 2s
+      start_period: 10s
+      start_interval: 1s
+      retries: 10
