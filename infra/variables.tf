@@ -243,7 +243,7 @@ variable "mailer_from_email" {
 # ── Livebook admin workbench ─────────────────────────────────────────────────
 variable "livebook_enabled" {
   type        = bool
-  description = "Deploy the private Livebook admin workbench behind Google IAP. Enabling it requires release_cookie_ready and livebook_iap_iam_user. To turn a provisioned workbench off day-to-day, set livebook_running = false instead — flipping this back to false plans a full teardown, which prevent_destroy on the data disk, secret, and database principal deliberately blocks until those are explicitly retired."
+  description = "Deploy the private Livebook admin workbench behind Google IAP. Enabling it requires release_cookie_value, livebook_iap_iam_user, and database_owner_role_ready; release_cookie_ready may stay false. To turn a provisioned workbench off day-to-day, set livebook_running = false instead — flipping this back to false plans a full teardown, which prevent_destroy on the data disk, secret, and database principal deliberately blocks until those are explicitly retired."
   default     = false
 }
 

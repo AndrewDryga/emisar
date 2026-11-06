@@ -132,7 +132,7 @@ The verified release bundle seeds a fixed host operations set on first boot:
 `time-sync`, and `elixir-beam`. A runner-only bridge maps the three BEAM
 toolchain checks to fixed, read-only RPC expressions in the colocated portal
 release and rejects every other invocation. The combined `firewall` pack is
-removed because COS has no `nft` CLI, so its complete dependency contract cannot
+excluded because COS has no `nft` CLI, so its complete dependency contract cannot
 be met. Service startup checks the remaining packs' declared host dependencies
 before the runner advertises them. Every pack in the curated host set, plus the
 public GCP, HCP Terraform, and Sentry packs used by this runner, is then
@@ -652,6 +652,18 @@ stack, including IAM, WIF, secret containers, and workload resources. Its HCP
 token and apply identity are production-admin credentials. Organization Policy
 administration is intentionally excluded: Google grants that authority above
 the project, where it would also cover unrelated projects in the organization.
+
+### Fresh project bootstrap
+
+Terraform enables the project's other APIs through Service Usage and reads the
+project and its IAM policy through Resource Manager, so it cannot turn those two
+APIs on itself. In a new project, such as a disaster-recovery rebuild, enable
+them once before the first plan. `<project-id>` is the workspace's `project_id`:
+
+```sh
+gcloud services enable serviceusage.googleapis.com \
+  cloudresourcemanager.googleapis.com --project=<project-id>
+```
 
 ## DNS and DNSSEC
 

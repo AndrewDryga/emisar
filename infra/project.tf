@@ -3,8 +3,9 @@ data "google_project" "current" {
 }
 
 # Enabling a service needs serviceusage + cloudresourcemanager already on. The
-# README bootstrap step turns those on once. disable_on_destroy=false prevents a
-# destroy from yanking an API another workload in the project relies on.
+# README's "Fresh project bootstrap" turns those on once per project.
+# disable_on_destroy=false prevents a destroy from yanking an API another
+# workload in the project relies on.
 resource "google_project_service" "apis" {
   for_each = toset([
     "compute.googleapis.com",

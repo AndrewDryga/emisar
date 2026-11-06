@@ -4,14 +4,17 @@
 # renaming a key renames the metric.
 locals {
   application_log_metrics = {
+    # A sweep rescues a row that raises so the rest of its tick still runs, and
+    # the executor never sees that failure, so the row line is counted here too.
+    # It ends in the row id, hence `:` rather than `=`.
     recurrent_job_failures = {
-      description = "Crashes at the shared supervised recurrent-job executor boundary."
-      filter      = "resource.type=\"gce_instance\" AND jsonPayload.message=\"recurrent_job.failed\""
+      description = "Crashes at the shared supervised recurrent-job executor boundary, and sweep rows rescued after raising."
+      filter      = "resource.type=\"gce_instance\" AND (jsonPayload.message=\"recurrent_job.failed\" OR jsonPayload.message:\"sweep.row_failed\")"
     }
 
     billing_sync_failures = {
       description = "Paddle lifecycle or billable-runner quantity reconciliation failures."
-      filter      = "resource.type=\"gce_instance\" AND (jsonPayload.message=\"billing_sync.retrieve_failed\" OR jsonPayload.message=\"billing_sync.upsert_failed\" OR jsonPayload.message=\"billing_sync.runner_quantity_failed\" OR jsonPayload.message=\"billing_runner_quantity_sync.failed\" OR jsonPayload.message=\"billing_runner_quantity_sync.crashed\")"
+      filter      = "resource.type=\"gce_instance\" AND (jsonPayload.message=\"billing_sync.retrieve_failed\" OR jsonPayload.message=\"billing_sync.upsert_failed\" OR jsonPayload.message=\"billing_sync.runner_quantity_failed\" OR jsonPayload.message=\"billing_runner_quantity_sync.failed\")"
     }
 
     cluster_failures = {
@@ -62,7 +65,7 @@ resource "google_monitoring_alert_policy" "recurrent_job_failures" {
   combiner     = "OR"
 
   documentation {
-    content   = "A supervised recurrent job crashed at the executor boundary (the `recurrent_job.failed` log line names the `job`). These sweeps drive dispatch timeouts, event/run retention, and the fleet-observability signal, so a crash-looping one silently stops that housekeeping. Check the failing job's error and whether it is a one-off or looping, plus any recent deploy touching that context's jobs/."
+    content   = "A supervised recurrent job crashed at the executor boundary (`recurrent_job.failed`), or a sweep skipped a row that raised (`sweep.row_failed row=<id>`). Both lines name the `job` and the exception type in `error`. These sweeps drive dispatch timeouts, billing reconciliation, event/run retention, and the fleet-observability signal, so a crash-looping job silently stops that housekeeping, and a skipped row is left unprocessed: a stuck run is not timed out, or an account's Paddle quantity stops converging. Check the failing job's error, the row it names, and whether it is a one-off or looping, plus any recent deploy touching that context's jobs/."
     mime_type = "text/markdown"
   }
 
@@ -256,34 +259,4 @@ resource "google_monitoring_alert_policy" "dispatch_backlog" {
   }
 
   notification_channels = local.paging_notification_channels
-}
-
-moved {
-  from = google_logging_metric.recurrent_job_failures
-  to   = google_logging_metric.application["recurrent_job_failures"]
-}
-
-moved {
-  from = google_logging_metric.billing_sync_failures
-  to   = google_logging_metric.application["billing_sync_failures"]
-}
-
-moved {
-  from = google_logging_metric.cluster_failures
-  to   = google_logging_metric.application["cluster_failures"]
-}
-
-moved {
-  from = google_logging_metric.fleet_observability_ticks
-  to   = google_logging_metric.application["fleet_observability_ticks"]
-}
-
-moved {
-  from = google_logging_metric.fleet_no_connected_runners
-  to   = google_logging_metric.application["fleet_no_connected_runners"]
-}
-
-moved {
-  from = google_logging_metric.dispatch_backlog
-  to   = google_logging_metric.application["dispatch_backlog"]
 }

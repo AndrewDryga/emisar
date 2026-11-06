@@ -27,5 +27,6 @@ crash.*.log
 # Developer documentation, checks, and root operational helpers are not run by HCP.
 .tflint.hcl
 AGENTS.md
+CLAUDE.md
 README.md
 tests/

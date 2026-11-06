@@ -194,18 +194,3 @@ resource "google_monitoring_alert_policy" "db_backup_failed" {
 
   notification_channels = local.paging_notification_channels
 }
-
-moved {
-  from = google_monitoring_alert_policy.db_cpu
-  to   = google_monitoring_alert_policy.cloudsql_utilization["cpu"]
-}
-
-moved {
-  from = google_monitoring_alert_policy.db_disk
-  to   = google_monitoring_alert_policy.cloudsql_utilization["disk"]
-}
-
-moved {
-  from = google_monitoring_alert_policy.db_memory
-  to   = google_monitoring_alert_policy.cloudsql_utilization["memory"]
-}

@@ -272,61 +272,6 @@ resource "google_dns_record_set" "github_org_verification" {
   rrdatas      = ["\"080664a769\""]
 }
 
-moved {
-  from = google_dns_record_set.a
-  to   = google_dns_record_set.address["apex-A"]
-}
-
-moved {
-  from = google_dns_record_set.aaaa
-  to   = google_dns_record_set.address["apex-AAAA"]
-}
-
-moved {
-  from = google_dns_record_set.registry_a
-  to   = google_dns_record_set.address["registry-A"]
-}
-
-moved {
-  from = google_dns_record_set.registry_aaaa
-  to   = google_dns_record_set.address["registry-AAAA"]
-}
-
-moved {
-  from = google_dns_record_set.livebook_a[0]
-  to   = google_dns_record_set.address["livebook-A"]
-}
-
-moved {
-  from = google_dns_record_set.livebook_aaaa[0]
-  to   = google_dns_record_set.address["livebook-AAAA"]
-}
-
-moved {
-  from = google_dns_record_set.cert_auth
-  to   = google_dns_record_set.cert_auth["apex"]
-}
-
-moved {
-  from = google_dns_record_set.cert_auth_www
-  to   = google_dns_record_set.cert_auth["www"]
-}
-
-moved {
-  from = google_dns_record_set.cert_auth_mta_sts
-  to   = google_dns_record_set.cert_auth["mta_sts"]
-}
-
-moved {
-  from = google_dns_record_set.cert_auth_registry
-  to   = google_dns_record_set.cert_auth["registry"]
-}
-
-moved {
-  from = google_dns_record_set.cert_auth_livebook[0]
-  to   = google_dns_record_set.cert_auth["livebook"]
-}
-
 # Verify only this hostname: verifying the apex in ProtectorateHQ could unlink
 # other Pages sites that still belong to a different GitHub account.
 resource "google_dns_record_set" "coop_pages_verification" {

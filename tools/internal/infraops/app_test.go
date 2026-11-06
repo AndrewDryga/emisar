@@ -2,6 +2,7 @@ package infraops
 
 import (
 	"bytes"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -320,5 +321,46 @@ func TestCloneOwnershipCoversTheLabelFailureWindow(t *testing.T) {
 					tc.labels, id, tc.accountOwned, owned, preLabel, tc.owned, tc.preLabel)
 			}
 		})
+	}
+}
+
+// CD uploads infra/ minus .terraformignore, so a symlink whose target that file
+// drops reaches HCP dangling, as CLAUDE.md -> AGENTS.md did. Exact entries are
+// compared: every excluded document is listed by name.
+func TestHCPUploadDropsSymlinksWithTheirTargets(t *testing.T) {
+	infra := filepath.Join(repositoryRoot(t), "infra")
+	data, err := os.ReadFile(filepath.Join(infra, ".terraformignore"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ignored := map[string]bool{}
+	for _, line := range strings.Split(string(data), "\n") {
+		ignored[strings.TrimSpace(line)] = true
+	}
+	err = filepath.WalkDir(infra, func(path string, entry fs.DirEntry, err error) error {
+		switch {
+		case err != nil:
+			return err
+		case entry.IsDir() && entry.Name() == ".terraform":
+			return filepath.SkipDir
+		case entry.Type()&fs.ModeSymlink == 0:
+			return nil
+		}
+		link, err := filepath.Rel(infra, path)
+		if err != nil {
+			return err
+		}
+		target, err := os.Readlink(path)
+		if err != nil {
+			return err
+		}
+		target = filepath.ToSlash(filepath.Join(filepath.Dir(link), target))
+		if link = filepath.ToSlash(link); ignored[target] && !ignored[link] {
+			t.Errorf("infra/.terraformignore drops %s but uploads its symlink %s", target, link)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }

@@ -438,7 +438,6 @@ func (a *App) validateTemplates(ctx context.Context) error {
 		"emisar version " + runnerVersion,
 		"docker exec emisar /app/bin/emisar pid",
 		"test -r /var/lib/emisar-admin-runner/packs/emisar-admin/scripts/callback.sh",
-		"rm -rf /var/lib/emisar-admin-runner/packs/firewall",
 		`"$runner" pack list --packs-dir /var/lib/emisar-admin-runner/packs`,
 		`exec "$runner" connect --config /var/lib/emisar-admin-runner/config.yaml`,
 		"Requires=emisar.service", "PartOf=emisar.service",

@@ -252,18 +252,3 @@ resource "google_monitoring_alert_policy" "nat_allocation" {
 
   notification_channels = local.paging_notification_channels
 }
-
-moved {
-  from = google_monitoring_alert_policy.portal_cpu
-  to   = google_monitoring_alert_policy.portal_vm["cpu"]
-}
-
-moved {
-  from = google_monitoring_alert_policy.portal_memory
-  to   = google_monitoring_alert_policy.portal_vm["memory"]
-}
-
-moved {
-  from = google_monitoring_alert_policy.portal_disk
-  to   = google_monitoring_alert_policy.portal_vm["disk"]
-}

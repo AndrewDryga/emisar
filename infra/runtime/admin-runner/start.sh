@@ -208,10 +208,6 @@ while IFS='|' read -r pack_ref expected_hash; do
 done <<'PACKS'
 ${pinned_packs}
 PACKS
-# COS has iptables but no nft CLI. The combined firewall pack therefore cannot
-# satisfy its own declared dependency; remove a copy left by an older template
-# so none of its partially runnable actions remain advertised.
-rm -rf /var/lib/emisar-admin-runner/packs/firewall
 # This producer must succeed before jq: otherwise a failed list could look like
 # an empty dependency set. Read the actual authenticated installed manifests,
 # including retained older pins, rather than a second hard-coded tool list.
