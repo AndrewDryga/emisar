@@ -34,7 +34,14 @@ defmodule Emisar.Runbooks.Scheduler.Creation do
          ) do
       {:ok, changes} ->
         execution = Map.fetch!(changes, {:runbook_execution, execution_id})
-        if execution.status == :active, do: Scheduler.advance_execution(execution_id)
+
+        # An active execution announces itself through its first advance; one
+        # held for approval has no transition until the decision, so announce it
+        # now for the recent-executions rails.
+        if execution.status == :active,
+          do: Scheduler.advance_execution(execution_id),
+          else: Emisar.Runbooks.broadcast_execution_updated(execution.account_id, execution_id)
+
         Scheduler.fetch_result(execution_id, runbook.account_id)
 
       {:error, reason} ->

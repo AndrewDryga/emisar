@@ -298,7 +298,10 @@ defmodule EmisarWeb.RunbookEditorComponents do
               save_blocker={draft_save_blocker(assigns)}
               publish_review={@publish_review}
             />
+            <%!-- A viewer's check never runs (`:read_only`), so like the run
+                 page's plan it is not shown rather than shown as a failure. --%>
             <.publish_panel
+              :if={not @read_only?}
               preview={@preview}
               definition_issues={@definition_issues}
               pristine?={is_nil(@runbook) and not @dirty?}
@@ -383,20 +386,33 @@ defmodule EmisarWeb.RunbookEditorComponents do
           align={:right}
         />
       </div>
-      <.publish_review :if={@publish_review} id={"#{@id}-review"} review={@publish_review} />
+      <.publish_review
+        :if={@publish_review}
+        id={"#{@id}-review"}
+        review={@publish_review}
+        return_focus={"#{@id}-publish"}
+      />
     </div>
     """
   end
 
   attr :id, :string, required: true
   attr :review, :map, required: true
+  attr :return_focus, :string, required: true, doc: "id of the Publish button the review replaces"
 
   # The confirm step: what publishing changes about the live release sits beside
   # the button that does it, so the decision is made against the artifact rather
-  # than a remembered one.
+  # than a remembered one. It replaces the focused Publish button, so its confirm
+  # takes focus on mount and ReturnFocus hands focus back to Publish when the
+  # review closes with focus inside it.
   defp publish_review(assigns) do
     ~H"""
-    <div id={@id} class="space-y-4 rounded-xl bg-zinc-950/40 p-5 ring-1 ring-white/10">
+    <div
+      id={@id}
+      phx-hook="ReturnFocus"
+      data-return-focus={@return_focus}
+      class="space-y-4 rounded-xl bg-zinc-950/40 p-5 ring-1 ring-white/10"
+    >
       <p :if={is_nil(@review.diff)} class="text-xs leading-relaxed text-zinc-400">
         Publish v{@review.next_version} to make this workflow available to run.
       </p>
@@ -416,6 +432,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
           size={:md}
           phx-click="publish"
           phx-disable-with="Publishing…"
+          phx-mounted={JS.focus()}
         >
           Publish v{@review.next_version}
         </.button>
@@ -934,7 +951,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
       |> assign(:ready_body, ready_body)
 
     ~H"""
-    <section>
+    <section id="runbook-check">
       <.section_header title={@panel_title} />
 
       <.event_block

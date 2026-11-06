@@ -104,7 +104,12 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
     |> validate_length(:description, max: 4_096)
     |> validate_length(:description, max: @max_description_bytes, count: :bytes)
     |> validate_format(:slug, ~r/\A[a-z][a-z0-9_-]{0,79}\z/)
-    |> unique_constraint([:account_id, :slug])
+    # Filed under the slug the operator can change, not the list's first field
+    # (`account_id`), which no form renders.
+    |> unique_constraint([:account_id, :slug],
+      error_key: :slug,
+      message: "is already used by another runbook"
+    )
   end
 
   defp validate_slug_unchanged_after_release(changeset) do

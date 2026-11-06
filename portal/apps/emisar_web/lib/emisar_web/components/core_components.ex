@@ -620,12 +620,17 @@ defmodule EmisarWeb.CoreComponents do
       class={["relative", @class]}
     >
       <input type="hidden" name={@name} value={@value} data-combobox-value />
+      <%!-- The face shows only the value, so the name carries the field AND
+           that value; the Combobox hook flips aria-expanded as the panel it
+           controls opens and closes. --%>
       <button
         type="button"
         data-combobox-trigger
         phx-click={@on_open}
         disabled={@disabled}
-        aria-label={@aria_label}
+        aria-label={"#{@aria_label}, #{@selected_label}"}
+        aria-expanded="false"
+        aria-controls={"#{@id}-panel"}
         class={[
           "flex w-full items-center justify-between gap-2 rounded-lg border bg-zinc-950 text-left disabled:cursor-not-allowed disabled:opacity-60",
           searchable_select_size(@size),
@@ -647,6 +652,7 @@ defmodule EmisarWeb.CoreComponents do
            room below, so the panel flips above the trigger and `data-side`
            carries the fused border and corners up with it. --%>
       <div
+        id={"#{@id}-panel"}
         data-combobox-panel
         hidden
         data-side="below"
@@ -662,6 +668,7 @@ defmodule EmisarWeb.CoreComponents do
           type="text"
           data-combobox-search
           placeholder="Search…"
+          aria-label={"Search #{@aria_label}"}
           autocomplete="off"
           class={[
             "w-full border-0 border-b border-zinc-800 bg-zinc-950 px-3 py-2 text-zinc-200 placeholder:text-zinc-600 focus:border-zinc-800 focus:ring-0",
@@ -737,7 +744,7 @@ defmodule EmisarWeb.CoreComponents do
             data-search={option.search}
             data-description={option[:description]}
             disabled={option[:disabled] || false}
-            aria-selected={option.value == @value}
+            aria-current={if option.value == @value, do: "true"}
             class={[
               searchable_select_option_class(option[:variant] || :default),
               option.value == @value && "bg-white/[0.06] text-zinc-100",

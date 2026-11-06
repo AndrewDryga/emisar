@@ -211,19 +211,27 @@ defmodule EmisarWeb.RunbookImportLive do
     end
   end
 
+  # Import supplies only the title and derives the slug from it, so a slug error
+  # (another runbook already using it) is fixed by retitling. Each error states
+  # its own problem; anything else is not the operator's to fix here.
   defp assign_changeset_errors(socket, changeset) do
     errors = Ecto.Changeset.traverse_errors(changeset, &CoreComponents.translate_error/1)
 
-    case Map.get(errors, :title, []) do
-      [] ->
-        assign(
-          socket,
-          :title_errors,
-          ["A runbook with this title already exists. Choose another title."]
+    case {errors[:title], errors[:slug]} do
+      {[_ | _] = title_errors, _slug_errors} ->
+        assign(socket, :title_errors, title_errors)
+
+      {nil, [message | _]} ->
+        slug = Ecto.Changeset.get_field(changeset, :slug)
+        assign(socket, :title_errors, ["The slug #{slug} #{message}. Choose another title."])
+
+      {nil, nil} ->
+        Logger.error(
+          "runbook import failed account_id=#{socket.assigns.current_account.id} " <>
+            "fields=#{inspect(Keyword.keys(changeset.errors))}"
         )
 
-      title_errors ->
-        assign(socket, :title_errors, title_errors)
+        put_flash(socket, :error, "Could not import this runbook.")
     end
   end
 

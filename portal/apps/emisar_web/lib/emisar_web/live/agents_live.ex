@@ -669,7 +669,11 @@ defmodule EmisarWeb.AgentsLive do
   # an operator already working through a selected client, or a one-time secret
   # on screen (a quick mint / rotation reveal must not vanish when the reload
   # lands). Otherwise the flow lives on its own /connect page behind the title
-  # CTA.
+  # CTA. After a failed read the empty rows prove nothing about the account, so
+  # the error branch's decision stands until a read succeeds; the activity tick
+  # must not reopen onboarding over "Couldn't load your agents".
+  defp assign_connect_inline(%{assigns: %{load_error?: true}} = socket), do: socket
+
   defp assign_connect_inline(socket) do
     # Paginator count is the FILTERED total. It proves onboarding only when
     # the default (live agents) view itself is empty; a search miss or an
@@ -778,8 +782,8 @@ defmodule EmisarWeb.AgentsLive do
         |> assign(:never_used_count, summary.activity.never_used)
         |> assign(:issued_count, summary.live)
         |> assign_quick_connection(rows)
-        |> assign_connect_inline()
         |> assign(:load_error?, false)
+        |> assign_connect_inline()
 
       # A clean reload can fail too (e.g. a tightened list permission) — flag it
       # so the list says "couldn't load" instead of a silent empty list (which
@@ -877,10 +881,11 @@ defmodule EmisarWeb.AgentsLive do
 
   defp owner_group({_key, _facts}), do: {"Created automatically", nil}
 
-  # Pre-sort by owner so each `group_by={&owner_group/1}` cluster is one
-  # contiguous run under a single header; within a cluster the context's
-  # recent-first order holds.
-  defp sort_by_owner(rows), do: Enum.sort_by(rows, &elem(owner_group(&1), 0))
+  # Pre-sort by the full `{label, membership_id}` group so each
+  # `group_by={&owner_group/1}` cluster is one contiguous run under a single
+  # header, even when two owners share a display name (or the "Former member"
+  # fallback); within a cluster the context's recent-first order holds.
+  defp sort_by_owner(rows), do: Enum.sort_by(rows, &owner_group/1)
 
   defp default_params do
     %{"name" => "", "description" => "", "expires_at" => ""}

@@ -1288,7 +1288,8 @@ defmodule Emisar.RunbooksTest do
       assert {:ok, _first} = Runbooks.create_runbook(runbook_attrs(slug: "taken"), subject)
 
       assert {:error, changeset} = Runbooks.create_runbook(runbook_attrs(slug: "taken"), subject)
-      assert "has already been taken" in errors_on(changeset).account_id
+      # Filed under the slug the editor renders, never the unrendered account_id.
+      assert errors_on(changeset) == %{slug: ["is already used by another runbook"]}
     end
 
     test "denies a principal without draft permission" do
@@ -2209,6 +2210,21 @@ defmodule Emisar.RunbooksTest do
       assert Runbooks.unsubscribe_execution(account_id, execution_id) == :ok
       assert Runbooks.broadcast_execution_updated(account_id, execution_id) == :ok
       refute_receive {:runbook_execution_updated, ^execution_id}
+    end
+  end
+
+  describe "subscribe_account_executions/1" do
+    test "receives every execution transition in that account and no other" do
+      account_id = Ecto.UUID.generate()
+      execution_id = Ecto.UUID.generate()
+
+      assert Runbooks.subscribe_account_executions(account_id) == :ok
+      assert Runbooks.broadcast_execution_updated(Ecto.UUID.generate(), execution_id) == :ok
+      refute_receive {:list_changed, :runbook_execution, _event, ^execution_id}
+      assert Runbooks.broadcast_execution_updated(account_id, execution_id) == :ok
+
+      assert_receive {:list_changed, :runbook_execution, "runbook_execution.updated",
+                      ^execution_id}
     end
   end
 

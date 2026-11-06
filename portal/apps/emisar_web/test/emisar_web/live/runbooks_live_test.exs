@@ -184,6 +184,30 @@ defmodule EmisarWeb.RunbooksLiveTest do
     refute has_element?(lv, "#recent-runbook-runs [id$='-pager']")
   end
 
+  test "the recent-executions rail follows execution transitions without a reload", %{
+    conn: conn
+  } do
+    {conn, owner, account} = register_and_log_in(conn)
+    runbook = create_runbook!(owner, account, "Deploy check", published?: true)
+    execution = create_execution!(owner, account, runbook, "Deploy during change window")
+    row = "#recent-runbook-runs a[href$='/runs/#{execution.id}']"
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks")
+    assert has_element?(lv, row, "active")
+
+    Fixtures.Runbooks.settle_execution(execution, DateTime.utc_now())
+    Runbooks.broadcast_execution_updated(account.id, execution.id)
+
+    # The account's execution signal scheduled one debounced rail reload; run
+    # it now instead of sleeping out the debounce.
+    render(lv)
+    assert :sys.get_state(lv.pid).socket.assigns.reload_scheduled?
+    send(lv.pid, :reload_recent_executions)
+
+    assert has_element?(lv, row, "succeeded")
+    refute has_element?(lv, row, "active")
+  end
+
   test "an account with no executions yet offers no door to an empty list", %{conn: conn} do
     {conn, owner, account} = register_and_log_in(conn)
     create_runbook!(owner, account, "Never run", published?: true)

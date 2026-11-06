@@ -66,7 +66,14 @@ const Combobox = {
         const first = this.options.find((o) => !o.disabled && !o.parentElement.hidden)
         if (first) this.select(first)
       }
-      if (e.key === "Escape") this.close()
+    })
+    // Escape from the search box or any option closes the panel and returns
+    // focus to the trigger; hiding the focused control would drop it to <body>.
+    this.panel.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return
+      e.preventDefault()
+      this.close()
+      this.trigger.focus()
     })
     this.onDocClick = (e) => { if (!this.el.contains(e.target)) this.close() }
     document.addEventListener("click", this.onDocClick)
@@ -104,9 +111,11 @@ const Combobox = {
     all.filter((o) => !known.has(o)).forEach((o) => this.wireOption(o))
     this.options = all
     this.sections = Array.from(this.el.querySelectorAll("[data-combobox-section]"))
+    // Options are buttons, which have no selected state; `aria-current` marks
+    // the chosen one, as the server render does for inline options.
     const selected = this.options.find((o) => o.dataset.value === this.hidden.value)
     if (selected) {
-      selected.setAttribute("aria-selected", "true")
+      selected.setAttribute("aria-current", "true")
       selected.classList.add("bg-white/[0.06]", "text-zinc-100")
     }
     return true
@@ -142,6 +151,7 @@ const Combobox = {
     this.search.value = ""
     this.filter()
     this.panel.hidden = false
+    this.trigger.setAttribute("aria-expanded", "true")
     // Focus first: the browser may scroll the field into view to reveal it, and
     // that moves the rects the panel is measured against.
     this.search.focus()
@@ -152,6 +162,7 @@ const Combobox = {
 
   close() {
     this.panel.hidden = true
+    this.trigger.setAttribute("aria-expanded", "false")
     this.untrack()
     this.trigger.classList.remove("rounded-b-none", "rounded-t-none")
     this.describe(null)
@@ -519,6 +530,22 @@ const PendingButton = {
   }
 }
 
+// A server-rendered step that replaced the control which opened it (the runbook
+// publish review replaces Publish) takes focus through its own
+// `phx-mounted={JS.focus()}`. When the server removes the step, focus that was
+// inside it falls to <body>; hand it back to the control named by
+// data-return-focus, which the same patch rendered. Focus the operator already
+// moved elsewhere stays put: typing in a field also closes the review. Hooks are
+// destroyed after the patch, so the target exists; a hidden or disabled target
+// is a no-op focus, which lets a responsive twin claim it instead.
+const ReturnFocus = {
+  destroyed() {
+    const active = document.activeElement
+    if (active && active !== document.body) return
+    document.getElementById(this.el.dataset.returnFocus)?.focus()
+  }
+}
+
 // "Close this tab" on the device-grant approval page. That tab was opened by
 // the terminal (`open` / `xdg-open`), not by a script, so window.close() is
 // honored only where the tab has no history of its own — and refused SILENTLY
@@ -604,7 +631,7 @@ let liveSocket = new LiveSocket(liveSocketPath, Socket, {
   disconnectedTimeout: 100,
   logger: portalSocketLogger,
   params: {_csrf_token: csrfToken},
-  hooks: { LocalTime, Combobox, FilterableList, EnrollmentKeyFilters, ExpiryCountdown, ResendCooldown, MagicCodeExpiry, CodeInput, FlashAutoClose, Tooltip, DialogFocus, PendingButton, CloseTab, PortalPerformance }
+  hooks: { LocalTime, Combobox, FilterableList, EnrollmentKeyFilters, ExpiryCountdown, ResendCooldown, MagicCodeExpiry, CodeInput, FlashAutoClose, Tooltip, DialogFocus, PendingButton, ReturnFocus, CloseTab, PortalPerformance }
 })
 
 // Show progress bar on live navigation and form submits

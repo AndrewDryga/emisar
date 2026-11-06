@@ -75,6 +75,19 @@ defmodule Emisar.Runbooks.Runbook.ChangesetTest do
 
       assert create(%{id: id}).changes.id == id
     end
+
+    test "derives a valid slug from a digit-leading or non-Latin title left without one" do
+      for {title, slug} <- [
+            {"2FA reset", "rb-2fa-reset"},
+            {"Перезапуск nginx", "nginx"},
+            {"Перезапуск", "runbook"}
+          ] do
+        changeset = create(%{title: title, slug: ""})
+
+        assert changeset.valid?, "#{title}: #{inspect(errors_on(changeset))}"
+        assert changeset.changes.slug == slug
+      end
+    end
   end
 
   describe "draft/2" do

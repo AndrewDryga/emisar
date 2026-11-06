@@ -71,6 +71,36 @@ defmodule EmisarWeb.RunbookImportLiveTest do
     assert runbook.draft_definition == definition
   end
 
+  test "a digit-leading title imports, and a colliding one names the slug it reuses", %{
+    conn: conn
+  } do
+    {conn, owner, account} = register_and_log_in(conn)
+    json = Jason.encode!(Emisar.Fixtures.Runbooks.default_definition())
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/import")
+
+    lv
+    |> form("#runbook-import-form", %{"import" => %{"title" => "2FA reset", "json" => json}})
+    |> render_submit()
+
+    assert {_path, %{"info" => "Runbook imported as a draft."}} = assert_redirect(lv)
+
+    assert {:ok, [%{slug: "rb-2fa-reset"}], _metadata} =
+             Runbooks.list_runbooks(Fixtures.Subjects.subject_for(owner), page: [limit: 10])
+
+    # A different title that derives the same slug is a collision, and the
+    # message says so rather than blaming an unrelated field.
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/import")
+
+    html =
+      lv
+      |> form("#runbook-import-form", %{"import" => %{"title" => "2FA Reset!", "json" => json}})
+      |> render_submit()
+
+    assert html =~
+             "The slug rb-2fa-reset is already used by another runbook. Choose another title."
+  end
+
   test "uploads or drops one bounded JSON file and derives a useful title", %{conn: conn} do
     {conn, owner, account} = register_and_log_in(conn)
     encoded = Jason.encode!(Emisar.Fixtures.Runbooks.default_definition())

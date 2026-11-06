@@ -606,8 +606,10 @@ defmodule EmisarWeb.RunbookEditorLive do
     assign(socket, :authoring_error, error)
   end
 
+  # A viewer never runs the check (the run page's `:read_only` preflight): the
+  # skip is its own state, never the `:unavailable` failure.
   defp schedule_preview(%{assigns: %{read_only?: true}} = socket) do
-    assign(socket, :preview, %{state: :unavailable, plan: nil, issues: [], checked_at: nil})
+    assign(socket, :preview, %{state: :read_only, plan: nil, issues: [], checked_at: nil})
   end
 
   defp schedule_preview(socket) do

@@ -1631,5 +1631,34 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert html =~ "by Test User"
       refute html =~ "Execution cancelled"
     end
+
+    test "the start form's recent executions follow execution transitions", %{
+      conn: conn,
+      account: account,
+      subject: subject
+    } do
+      runner = trusted_runner(account, subject)
+      runbook = published_runbook(subject, runner)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
+      assert has_element?(lv, "#runbook-execution-history", "No executions yet.")
+
+      execution =
+        Fixtures.Runbooks.create_execution(
+          account_id: account.id,
+          runbook: runbook,
+          initiating_membership_id: subject.membership_id,
+          reason: "Started from another tab"
+        )
+
+      Runbooks.broadcast_execution_updated(account.id, execution.id)
+
+      # The account's execution signal scheduled one debounced rail reload; run
+      # it now instead of sleeping out the debounce.
+      render(lv)
+      assert :sys.get_state(lv.pid).socket.assigns.reload_scheduled?
+      send(lv.pid, :reload_recent_executions)
+
+      assert has_element?(lv, "#runbook-execution-history", "Started from another tab")
+    end
   end
 end

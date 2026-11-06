@@ -210,6 +210,22 @@ defmodule Emisar.Runbooks.ExecutionApprovalTest do
     assert {:ok, [], _metadata} = Approvals.list_pending_approval_requests(approver)
   end
 
+  test "an execution held for approval announces itself to the recent-executions rails", %{
+    account: account,
+    runner: runner,
+    subject: subject
+  } do
+    runbook = published_runbook(subject, required_definition(runner.group))
+    assert Runbooks.subscribe_account_executions(account.id) == :ok
+
+    assert {:ok, result} = Runbooks.dispatch_runbook(runbook, "approve maintenance", subject)
+
+    # No advance runs before the decision, so creation itself is the signal.
+    execution_id = result.execution_id
+    assert execution(execution_id).status == :pending_approval
+    assert_receive {:list_changed, :runbook_execution, "runbook_execution.updated", ^execution_id}
+  end
+
   test "a denied execution halts without creating an action run", %{
     account: account,
     approver: approver,

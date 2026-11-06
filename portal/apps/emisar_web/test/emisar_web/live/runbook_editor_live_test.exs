@@ -1381,6 +1381,27 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       refute Map.has_key?(runbook.draft_definition, "steps")
     end
 
+    test "a title whose slug is taken explains the collision in Details", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      Fixtures.Runbooks.create_runbook(
+        account_id: account.id,
+        created_by_membership_id: user.id,
+        title: "Fleet health",
+        slug: "fleet-health"
+      )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+      change(lv, valid_draft(slug: ""))
+      render_click(lv, "save", %{})
+
+      # Not a silent no-op: the derived slug's collision sits under the Slug field.
+      assert has_element?(lv, "#runbook-editor-form", "is already used by another runbook")
+      assert Repo.aggregate(Runbook, :count) == 1
+    end
+
     test "publishing is gated by the real current-state preflight", %{
       conn: conn,
       user: user,
@@ -1880,9 +1901,23 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       change(lv, valid_draft(inputs: [RunbookDraft.input()]))
       render_click(lv, "review_publish", %{})
 
+      # The review replaces the focused Publish button, so keyboard focus moves
+      # with it: its confirm takes focus on mount, and ReturnFocus names the
+      # Publish button that comes back when the review closes.
+      for layout <- ["mobile", "desktop"] do
+        assert has_element?(lv, "#runbook-actions-#{layout}-review-confirm[phx-mounted*=focus]")
+
+        assert has_element?(
+                 lv,
+                 ~s(#runbook-actions-#{layout}-review[phx-hook="ReturnFocus"]) <>
+                   ~s([data-return-focus="runbook-actions-#{layout}-publish"])
+               )
+      end
+
       html = render_click(lv, "cancel_publish", %{})
 
       refute html =~ "These lines replace what runs today."
+      assert has_element?(lv, "#runbook-actions-mobile-publish", "Publish")
       assert has_element?(lv, "#runbook-actions-desktop-publish", "Publish")
       assert Repo.one!(Runbook).live_version == 1
     end
@@ -2527,6 +2562,9 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert has_element?(lv, "#runbook-editor-form input[disabled]")
       refute has_element?(lv, "button", "Save draft")
       refute has_element?(lv, "button", "Publish")
+      # A viewer's check never runs, so it is neither shown nor reported failed.
+      refute has_element?(lv, "#runbook-check")
+      refute html =~ "Couldn&#39;t check current runners and actions."
       refute has_element?(lv, "#delete-runbook")
       refute has_element?(lv, "#discard-runbook-draft")
       refute has_element?(lv, "button", "Add input")

@@ -10,7 +10,7 @@ defmodule EmisarWeb.RunbookRunLive do
   """
   use EmisarWeb, :live_view
   alias Emisar.{Approvals, Runbooks, Runs}
-  alias EmisarWeb.{Permissions, RunbookMarkdown, RunbookWorkflowComponents}
+  alias EmisarWeb.{LiveTable, Permissions, RunbookMarkdown, RunbookWorkflowComponents}
 
   @preflight_delay_ms 300
   @execution_reload_delay_ms 500
@@ -18,9 +18,13 @@ defmodule EmisarWeb.RunbookRunLive do
 
   def mount(%{"id" => id} = params, _session, socket) do
     if Runbooks.subject_can_view_runbooks?(socket.assigns.current_subject) do
-      if connected?(socket),
-        do: mount_runbook(id, Map.has_key?(params, "execution_id"), socket),
-        else: mount_disconnected(socket)
+      if connected?(socket) do
+        # Execution transitions keep the start form's "Recent executions" live.
+        Runbooks.subscribe_account_executions(socket.assigns.current_account.id)
+        mount_runbook(id, Map.has_key?(params, "execution_id"), socket)
+      else
+        mount_disconnected(socket)
+      end
     else
       {:ok,
        socket
@@ -272,6 +276,20 @@ defmodule EmisarWeb.RunbookRunLive do
         } = socket
       ) do
     {:noreply, load_execution(socket, execution_id)}
+  end
+
+  # Transitions arrive in bursts, so the rail reloads once per burst; an
+  # execution detail shows no rail and skips the read.
+  def handle_info({:list_changed, :runbook_execution, _event_type, _id}, socket),
+    do: {:noreply, LiveTable.schedule_reload(socket, :reload_recent_executions)}
+
+  def handle_info(:reload_recent_executions, socket) do
+    socket = LiveTable.reload_drained(socket)
+
+    case socket.assigns do
+      %{result: nil, runbook: %Runbooks.Runbook{}} -> {:noreply, load_recent_executions(socket)}
+      _execution_detail -> {:noreply, socket}
+    end
   end
 
   def handle_info(_message, socket), do: {:noreply, socket}

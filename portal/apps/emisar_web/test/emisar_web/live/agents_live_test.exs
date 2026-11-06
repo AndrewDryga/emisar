@@ -530,6 +530,33 @@ defmodule EmisarWeb.AgentsLiveTest do
       refute html =~ "No agents connected yet."
     end
 
+    test "a failed read stays an error through the activity tick, not onboarding", %{conn: conn} do
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
+      {:ok, _raw, _key} = ApiKeys.create_key(%{name: "Present bot"}, subject)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents")
+
+      # Tighten the list permission under the mounted page, so its next clean
+      # reload fails the way a revoked view permission would.
+      :sys.replace_state(lv.pid, fn state ->
+        update_in(
+          state.socket.assigns.current_subject.permissions,
+          &MapSet.delete(&1, ApiKeys.Authorizer.view_api_keys_permission())
+        )
+      end)
+
+      send(lv.pid, :reload_agents)
+      assert render(lv) =~ "Couldn&#39;t load your agents"
+
+      send(lv.pid, :tick)
+      html = render(lv)
+
+      assert html =~ "Couldn&#39;t load your agents"
+      refute has_element?(lv, "#connect-panel")
+      refute html =~ "No agents connected yet."
+    end
+
     test "selecting Claude.ai (remote MCP) shows OAuth URL instead of bridge snippet",
          %{conn: conn} do
       {conn, _owner, account} = register_and_log_in(conn)
@@ -967,6 +994,52 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert flash =~ "Revoked 2 keys."
       assert %DateTime{} = Repo.reload!(key_one).revoked_at
       assert %DateTime{} = Repo.reload!(key_two).revoked_at
+    end
+
+    test "owners who share a display name each head exactly one group", %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+
+      [first, second] =
+        for _ <- 1..2 do
+          Fixtures.Memberships.create_membership(
+            account_id: account.id,
+            role: "operator",
+            display_name: "Sam Rivera"
+          )
+        end
+
+      # Interleave the owners in the list's recent-first order, so sorting on
+      # the shared name alone splits the first owner's keys around the second's.
+      now = DateTime.utc_now()
+
+      for {membership, minutes_ago} <- [{first, 1}, {second, 2}, {first, 3}] do
+        {_raw, key} =
+          Fixtures.ApiKeys.create_api_key(
+            account_id: account.id,
+            created_by_membership_id: membership.id
+          )
+
+        Fixtures.ApiKeys.backdate_api_key_inserted_at(
+          key,
+          DateTime.add(now, -minutes_ago, :minute)
+        )
+      end
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/agents")
+      document = LazyHTML.from_document(html)
+
+      headers =
+        document
+        |> LazyHTML.query("#agents > li > h2")
+        |> Enum.map(&(&1 |> LazyHTML.text() |> String.trim()))
+
+      assert headers == ["Sam Rivera", "Sam Rivera"]
+
+      for membership <- [first, second] do
+        assert document
+               |> LazyHTML.query("#revoke-member-keys-button-#{membership.id}")
+               |> Enum.count() == 1
+      end
     end
 
     test "expired-only keys disable bulk revoke but keep individual cleanup available", %{

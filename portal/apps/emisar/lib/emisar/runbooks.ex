@@ -933,15 +933,32 @@ defmodule Emisar.Runbooks do
   def unsubscribe_execution(account_id, execution_id),
     do: Emisar.PubSub.unsubscribe(execution_topic(account_id, execution_id))
 
+  @doc """
+  Subscribe to every execution transition in the account
+  (`{:list_changed, :runbook_execution, "runbook_execution.updated", execution_id}`),
+  for the recent-executions rails. Like the per-execution signal it carries only
+  the id; subscribers re-read through `list_recent_executions/2`.
+  """
+  def subscribe_account_executions(account_id),
+    do: Emisar.PubSub.subscribe(account_executions_topic(account_id))
+
   @doc "Internal after-commit signal for one durable execution transition."
   def broadcast_execution_updated(account_id, execution_id) do
+    _ =
+      Emisar.PubSub.broadcast(
+        execution_topic(account_id, execution_id),
+        {:runbook_execution_updated, execution_id}
+      )
+
     Emisar.PubSub.broadcast(
-      execution_topic(account_id, execution_id),
-      {:runbook_execution_updated, execution_id}
+      account_executions_topic(account_id),
+      {:list_changed, :runbook_execution, "runbook_execution.updated", execution_id}
     )
   end
 
   defp account_runbooks_topic(account_id), do: "account:#{account_id}:runbooks"
+
+  defp account_executions_topic(account_id), do: "account:#{account_id}:runbook-executions"
 
   defp execution_topic(account_id, execution_id),
     do: "account:#{account_id}:runbook-execution:#{execution_id}"
@@ -1216,10 +1233,18 @@ defmodule Emisar.Runbooks do
     reservation = changes.mcp_operation
     created_execution = Map.get(changes, {:runbook_execution, execution_id})
 
+    # As in `Scheduler.create_execution/4`: an execution held for approval has no
+    # advance to announce it, so it is announced here.
     _ =
       case {reservation.fresh?, created_execution} do
-        {true, %RunbookExecution{status: :active}} -> Scheduler.advance_execution(execution_id)
-        _ -> :ok
+        {true, %RunbookExecution{status: :active}} ->
+          Scheduler.advance_execution(execution_id)
+
+        {true, %RunbookExecution{} = execution} ->
+          broadcast_execution_updated(execution.account_id, execution_id)
+
+        _replay ->
+          :ok
       end
 
     case fetch_execution_by_id(execution_id, subject) do

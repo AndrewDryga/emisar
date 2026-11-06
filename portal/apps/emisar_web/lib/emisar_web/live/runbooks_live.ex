@@ -10,8 +10,11 @@ defmodule EmisarWeb.RunbooksLive do
   alias EmisarWeb.{LiveTable, RunbookWorkflowComponents}
 
   def mount(_params, _session, socket) do
-    if connected?(socket),
-      do: Runbooks.subscribe_account_runbooks(socket.assigns.current_account.id)
+    if connected?(socket) do
+      Runbooks.subscribe_account_runbooks(socket.assigns.current_account.id)
+      # Execution transitions keep the "Recent executions" rail's statuses live.
+      Runbooks.subscribe_account_executions(socket.assigns.current_account.id)
+    end
 
     {:ok, assign(socket, :page_title, "Runbooks")}
   end
@@ -46,6 +49,14 @@ defmodule EmisarWeb.RunbooksLive do
 
   def handle_info({:list_changed, :runbook, _event_type, _id}, socket),
     do: {:noreply, load(socket, socket.assigns[:filter_params] || %{})}
+
+  # An execution's item settlements arrive in bursts, and the rail needs only
+  # the latest five statuses, so the rail alone reloads once per burst.
+  def handle_info({:list_changed, :runbook_execution, _event_type, _id}, socket),
+    do: {:noreply, LiveTable.schedule_reload(socket, :reload_recent_executions)}
+
+  def handle_info(:reload_recent_executions, socket),
+    do: {:noreply, socket |> LiveTable.reload_drained() |> load_recent_executions()}
 
   def handle_info(_, socket), do: {:noreply, socket}
 
