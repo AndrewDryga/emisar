@@ -1046,15 +1046,16 @@ func shellQuote(s string) string {
 // verifyScriptSHA re-hashes the on-disk script and compares it to the hash the
 // pack loader recorded at trust time, closing the gap between "the bytes we
 // trust" and "the bytes we execute". A mismatch means the file changed after
-// the pack was loaded. An empty recorded hash means checksums were disabled at
-// load (an explicit operator opt-out), so there is nothing to verify against.
+// the pack was loaded. The loader always records a hash, so a missing one is
+// refused: skipping the comparison would silently drop this check on exactly
+// the actions it guards.
 //
 // This shrinks the TOCTOU window from load-to-exec down to hash-to-exec; a
 // truly atomic guarantee would need fexecve of an already-open fd, which Go
 // does not expose portably.
 func verifyScriptSHA(si packs.ScriptInfo) error {
 	if si.SHA256 == "" {
-		return nil
+		return fmt.Errorf("script %s has no recorded sha256; refusing to execute", si.Path)
 	}
 	data, err := os.ReadFile(si.Path)
 	if err != nil {

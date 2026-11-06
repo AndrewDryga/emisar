@@ -270,3 +270,116 @@ func TestChain_SyncFailureLatchesUntilRestart(t *testing.T) {
 		t.Fatalf("restart did not recover the persisted chain: %v", err)
 	}
 }
+
+// TestJSONLSink_EveryRecordStaysVerifiable — VerifyReader and the tail seeder
+// read lines up to MaxLineBytes, newline included, so the sink never appends a
+// longer one. An oversized record (escaped previews at the preview limit plus
+// escaped copies of a 32 KiB argument and a long reason) lands with bulk fields
+// emptied previews-first and named, its evidence and digests kept, and the
+// caller's event untouched. A record exactly at the cap lands intact, and the
+// chain verifies across a reopen whose final line sits at the cap.
+func TestJSONLSink_EveryRecordStaysVerifiable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "events.jsonl")
+	sink, err := OpenJSONL(path, JSONLOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	preview := strings.Repeat("\x01", 64<<10) // six bytes each once encoded
+	arg := strings.Repeat("<", 32<<10)
+	oversized := Event{
+		EventID: "evt_oversized", Type: EventExecutionCompleted, ActionID: "x.do",
+		Request: &RequestInfo{
+			ArgsSHA256: "args-digest", ArgsRedacted: map[string]any{"q": arg},
+			Reason: strings.Repeat("<", 100_000),
+		},
+		Execution: &ExecutionInfo{
+			Argv: []string{"/bin/echo", arg}, ExecutedCommand: "/bin/echo " + arg,
+			StdoutSHA256: "stdout-digest", StdoutPreview: preview, StderrPreview: preview,
+		},
+	}
+	if err := sink.Write(context.Background(), oversized); err != nil {
+		t.Fatal(err)
+	}
+	if oversized.Execution.StdoutPreview != preview || oversized.Execution.ExecutedCommand == "" {
+		t.Fatal("trimming changed the caller's event")
+	}
+
+	// Sized with the 64-hex prev_hash Write stamps on every event after the first.
+	atCap := Event{
+		EventID: "evt_at_cap", Type: EventExecutionCompleted, ActionID: "x.do",
+		PrevHash: strings.Repeat("0", 64), Execution: &ExecutionInfo{StdoutPreview: "x"},
+	}
+	encoded, err := json.Marshal(atCap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	atCap.Execution.StdoutPreview += strings.Repeat("x", MaxLineBytes-1-len(encoded))
+	if err := sink.Write(context.Background(), atCap); err != nil {
+		t.Fatal(err)
+	}
+	if err := sink.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.SplitAfter(string(body), "\n")
+	var trimmed Event
+	if err := json.Unmarshal([]byte(lines[0]), &trimmed); err != nil {
+		t.Fatal(err)
+	}
+	wantOmitted := "execution.stdout_preview,execution.stderr_preview,execution.executed_command"
+	if got := strings.Join(trimmed.OmittedFields, ","); got != wantOmitted || len(lines[0]) > MaxLineBytes {
+		t.Fatalf("oversized record: omitted %q in a %d-byte line, want %q under %d", got, len(lines[0]), wantOmitted, MaxLineBytes)
+	}
+	if trimmed.Request.ArgsSHA256 != "args-digest" || trimmed.Request.ArgsRedacted["q"] != arg ||
+		trimmed.Execution.StdoutSHA256 != "stdout-digest" || len(trimmed.Execution.Argv) != 2 || trimmed.Request.Reason == "" {
+		t.Fatal("trimming dropped evidence that fit under the cap")
+	}
+	if len(lines[1]) != MaxLineBytes || strings.Contains(lines[1], "omitted_fields") {
+		t.Fatalf("record at the cap: %d-byte line, want %d bytes written intact", len(lines[1]), MaxLineBytes)
+	}
+
+	sink, err = OpenJSONL(path, JSONLOptions{})
+	if err != nil {
+		t.Fatalf("reopen after a record at the cap: %v", err)
+	}
+	if err := sink.Write(context.Background(), Event{EventID: "evt_after", Type: EventExecutionCompleted}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sink.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyChain(path); err != nil {
+		t.Fatalf("journal with trimmed and at-cap records does not verify: %v", err)
+	}
+}
+
+// TestOpenJSONL_RefusesAnOversizedFinalRecord — a complete final line longer
+// than MaxLineBytes (left by an older runner, or planted) has no newline before
+// it inside the tail window. Hashing the window's piece would chain every later
+// event from a fragment, so the journal is refused and left intact.
+func TestOpenJSONL_RefusesAnOversizedFinalRecord(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "events.jsonl")
+	writeN(t, path, 2)
+	appendRaw(t, path, `{"event_id":"evt_oversized","stdout_preview":"`+strings.Repeat("x", MaxLineBytes)+"\"}\n")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sink, err := OpenJSONL(path, JSONLOptions{})
+	if err == nil {
+		_ = sink.Close()
+		t.Fatal("OpenJSONL seeded the chain from a fragment of an oversized final record")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatal("a refused journal was rewritten instead of left for the operator")
+	}
+}

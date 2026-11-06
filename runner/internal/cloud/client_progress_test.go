@@ -101,3 +101,55 @@ func TestClient_EnqueueProgress_NeverMergesIntoAnAttemptedMessage(t *testing.T) 
 		t.Fatalf("the new line must take its own seq, got %#v", msgs[1])
 	}
 }
+
+// A reconnect prepends a recovery action_started for a run inside Engine.Run.
+// That shifts the queue, so the attempted prefix must shift with it, or the
+// next line merges into a seq the cloud already holds: the cloud keeps its
+// first copy, drops the merged bytes, and progress_chunks still matches.
+func TestClient_Reconnect_KeepsAttemptedProgressIntact(t *testing.T) {
+	cli := buildClient(t, &queuedDialer{conns: []*fakeConn{newFakeConn()}})
+	s := &runState{requestID: "req_reconnect", started: true}
+	cli.mu.Lock()
+	cli.runs[s.requestID] = s
+	cli.mu.Unlock()
+
+	cli.enqueueProgress(s, s.requestID, "stdout", "sent\n")
+	// The Send fails after the cloud stored the frame.
+	stored := map[int]string{1: "sent\n"}
+	if err := cli.drainOnce(t.Context(), &failAfterNConn{fakeConn: newFakeConn(), failAt: 1}); err == nil {
+		t.Fatal("drainOnce should surface the send failure")
+	}
+	if got := cli.requeueActiveStarts(); got != 1 {
+		t.Fatalf("requeued %d action_started frames, want 1", got)
+	}
+	cli.enqueueProgress(s, s.requestID, "stdout", "after\n")
+
+	next := newFakeConn()
+	if err := cli.drainOnce(t.Context(), next); err != nil {
+		t.Fatal(err)
+	}
+	next.mu.Lock()
+	defer next.mu.Unlock()
+	if len(next.sent) == 0 {
+		t.Fatal("the new session sent nothing")
+	}
+	if _, ok := next.sent[0].(ActionStartedMsg); !ok {
+		t.Fatalf("first frame = %T, want the recovery action_started", next.sent[0])
+	}
+	for _, msg := range next.sent[1:] {
+		progress, ok := msg.(ActionProgressMsg)
+		if !ok {
+			t.Fatalf("unexpected frame %#v", msg)
+		}
+		if _, held := stored[progress.Seq]; !held {
+			stored[progress.Seq] = progress.Chunk
+		}
+	}
+	output := ""
+	for seq := 1; seq <= len(stored); seq++ {
+		output += stored[seq]
+	}
+	if output != "sent\nafter\n" || s.progressSeq != len(stored) {
+		t.Fatalf("cloud kept %q in %d seqs (progress_chunks %d), want both lines", output, len(stored), s.progressSeq)
+	}
+}

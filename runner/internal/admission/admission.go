@@ -16,8 +16,8 @@
 //   - Non-empty allow → action id MUST match at least one allow pattern.
 //   - Non-empty deny → action id MUST NOT match any deny pattern.
 //   - When both are set, allow is evaluated first, then deny.
-//   - A risk ceiling (max_risk) rejects any action above that tier — the
-//     one-flag "read-only demo" switch (see AdmitRisk).
+//   - A risk ceiling (max_risk) rejects any action above that tier, so one
+//     flag keeps a host's higher-risk actions from running (see AdmitRisk).
 //
 // Patterns use shell-style globs interpreted by `filepath.Match`. Action
 // ids look like `pack.action_name`; since the dot is not a path

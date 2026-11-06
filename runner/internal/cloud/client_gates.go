@@ -312,12 +312,29 @@ func (c *Client) emitPackMismatch(ctx context.Context, s *runState, m RunActionM
 	c.finishRun(s, result)
 }
 
+// maxJournaledReasonRunes is the portal's dispatch-reason limit, the MCP
+// schema's reason.maxLength. The signature and dispatch digest bind the full
+// text the cloud sent; only the engine's journaled copy is cut, so a control
+// plane cannot spend a journal line's budget on the reason.
+const maxJournaledReasonRunes = 2000
+
+func journaledReason(reason string) string {
+	runes := 0
+	for i := range reason {
+		if runes == maxJournaledReasonRunes {
+			return reason[:i] + "…"
+		}
+		runes++
+	}
+	return reason
+}
+
 func requestForDispatch(m RunActionMsg, registry *packs.Registry, progress engine.ProgressFunc) engine.Request {
 	req := engine.Request{
 		ControlPlaneRequestID: m.RequestID,
 		ActionID:              m.ActionID,
 		Args:                  m.Args,
-		Reason:                m.Reason,
+		Reason:                journaledReason(m.Reason),
 		RegistrySnapshot:      registry,
 		OnProgress:            progress,
 	}

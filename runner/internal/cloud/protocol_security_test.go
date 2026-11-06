@@ -328,3 +328,21 @@ func TestRunActionMsgRejectsInvalidArgumentShapeAndBudget(t *testing.T) {
 		t.Fatalf("Unmarshal oversized message error = %v", err)
 	}
 }
+
+// The portal limits a dispatch reason to 2000 characters, so a longer one can
+// only come from a control plane spending the local journal's line budget. The
+// engine journals a capped copy with a marker; the message itself keeps the
+// full text the signature and dispatch digest bind.
+func TestRequestForDispatchCapsTheJournaledReason(t *testing.T) {
+	atLimit := strings.Repeat("é", maxJournaledReasonRunes)
+	if got := requestForDispatch(RunActionMsg{Reason: atLimit}, nil, nil).Reason; got != atLimit {
+		t.Fatal("a reason at the portal's limit was changed")
+	}
+	m := RunActionMsg{Reason: atLimit + strings.Repeat("<", 90_000)}
+	if got := requestForDispatch(m, nil, nil).Reason; got != atLimit+"…" {
+		t.Fatalf("journaled reason has %d runes, want the first %d plus a marker", len([]rune(got)), maxJournaledReasonRunes)
+	}
+	if len(m.Reason) != len(atLimit)+90_000 {
+		t.Fatal("capping the journaled copy changed the dispatch message")
+	}
+}

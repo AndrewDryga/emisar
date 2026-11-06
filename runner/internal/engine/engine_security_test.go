@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,6 +16,7 @@ import (
 	"github.com/andrewdryga/emisar/runner/internal/admission"
 	"github.com/andrewdryga/emisar/runner/internal/executor"
 	"github.com/andrewdryga/emisar/runner/internal/expressions"
+	"github.com/andrewdryga/emisar/runner/internal/packs"
 	"github.com/andrewdryga/emisar/runner/internal/redact"
 	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
 )
@@ -821,5 +824,25 @@ output:
 				t.Fatalf("a progress chunk leaked the start of a sensitive argument: %q", streamed.String())
 			}
 		})
+	}
+}
+
+// TestVerifyScriptSHA_RefusesAMissingRecordedHash — the loader always records a
+// script's hash, so an empty one is an incomplete trust record. The pre-exec
+// re-check must refuse it rather than skip the comparison it exists to make;
+// the same bytes with their real hash still pass.
+func TestVerifyScriptSHA_RefusesAMissingRecordedHash(t *testing.T) {
+	script := filepath.Join(t.TempDir(), "run.sh")
+	body := []byte("#!/bin/sh\necho ok\n")
+	if err := os.WriteFile(script, body, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	err := verifyScriptSHA(packs.ScriptInfo{Path: script})
+	if err == nil || !strings.Contains(err.Error(), "no recorded sha256") {
+		t.Fatalf("a script with no recorded hash must be refused, got %v", err)
+	}
+	sum := sha256.Sum256(body)
+	if err := verifyScriptSHA(packs.ScriptInfo{Path: script, SHA256: hex.EncodeToString(sum[:])}); err != nil {
+		t.Fatalf("the trusted bytes must still pass: %v", err)
 	}
 }

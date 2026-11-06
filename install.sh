@@ -16,7 +16,7 @@
 #
 # Usage:
 #
-#   curl -fsSL https://raw.githubusercontent.com/andrewdryga/emisar/main/install.sh | sudo bash
+#   curl -fsSL https://emisar.dev/install.sh | sudo bash
 #
 #   # Pin a specific runner version (tag, with or without prefix):
 #   curl -fsSL https://.../install.sh | sudo bash -s -- --version runner-vX.Y.Z
@@ -25,7 +25,8 @@
 #   # Unattended (no prompts) with a fixed pack set — for CI / cloud-init:
 #   curl -fsSL https://.../install.sh | sudo bash -s -- --yes --packs linux-core,postgres,redis
 #
-#   # Uninstall:
+#   # Uninstall (repeat any --bin-dir/--etc-dir/--data-dir/--log-dir the
+#   # install used):
 #   sudo bash install.sh --uninstall
 #
 # Idempotent: re-running upgrades in place. Safe to interrupt — every
@@ -172,7 +173,7 @@ must set it explicitly, including to an empty string.
 USAGE
 }
 
-# Normalize --version into the canonical `runner-vX.Y.Z` shape so
+# Normalize --version / VERSION into the canonical `runner-vX.Y.Z` shape so
 # `download_release` doesn't have to. Accepts:
 #   runner-vX.Y.Z  → runner-vX.Y.Z  (verbatim)
 #   vX.Y.Z         → runner-vX.Y.Z
@@ -262,7 +263,7 @@ require_owned_dir() {
 PURGE=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    --version) require_value "$@"; VERSION="$(normalize_version "$2")"; shift 2;;
+    --version) require_value "$@"; VERSION="$2"; shift 2;;
     --uninstall) MODE="uninstall"; shift;;
     --purge) PURGE=1; shift;;
     --no-start) NO_START=1; shift;;
@@ -279,6 +280,11 @@ while [ $# -gt 0 ]; do
     *) echo "unknown flag: $1" >&2; usage >&2; exit 2;;
   esac
 done
+
+# --version and the VERSION environment variable are one input, so they accept
+# the same spellings. Normalizing only in the flag arm refused the documented
+# `VERSION=0.31.1` that `--version 0.31.1` accepts.
+[ -z "${VERSION}" ] || VERSION="$(normalize_version "${VERSION}")"
 
 # Validate the directory inputs HERE, not in the flag arms. require_owned_dir was
 # reachable only through --etc-dir/--data-dir/--log-dir, while the usage text
@@ -661,10 +667,9 @@ LAUNCHD_RUNNER
 }
 
 config_skeleton() {
-  # Pre-fill cloud.url from EMISAR_URL when the install command set it.
+  # Pre-fill cloud.url from EMISAR_URL, which defaults to https://emisar.dev.
   # We translate http(s):// → ws(s):// so the YAML carries the websocket
-  # URL the runner actually dials. Empty otherwise so the operator edits
-  # before connecting.
+  # URL the runner actually dials.
   local cloud_url=""
   if [ -n "${EMISAR_URL:-}" ]; then
     case "${EMISAR_URL}" in
@@ -729,9 +734,8 @@ EOF
   cat <<EOF
 
 cloud:
-  # WSS URL of the control plane. Until you set this, the runner runs in
-  # local-only mode (CLI subcommands work; \`connect\` exits with an
-  # error).
+  # WSS URL of the control plane \`connect\` dials, written from
+  # EMISAR_URL at install time.
   url: "${cloud_url}"
   # Name of the environment variable holding the runner enrollment key. The
   # systemd unit reads ${ETC_DIR}/runner.env which should contain:
@@ -1558,8 +1562,12 @@ install_default_packs() {
 
   mkdir -p "${dst}"
   local p
+  # Every installer `pack install` passes --no-verify. On a configured host the
+  # post-install probe runs the pack's verify action as root with this script's
+  # environment, its output discarded here, and can stall for the action's
+  # whole timeout. Probing stays explicit operator work: `emisar pack verify`.
   for p in "${selected[@]}"; do
-    if "${BIN_DIR}/emisar" pack install "${bundle}/${p}" --dest "${dst}" --force >/dev/null 2>&1; then
+    if "${BIN_DIR}/emisar" pack install "${bundle}/${p}" --dest "${dst}" --force --no-verify >/dev/null 2>&1; then
       log "installed pack ${p}"
     else
       warn "failed to install pack ${p} (continuing)"
@@ -1604,7 +1612,7 @@ install_suggested_packs() {
   mkdir -p "${dst}"
   local n
   for n in ${out}; do
-    if "${BIN_DIR}/emisar" pack install "${n}" --dest "${dst}" --force >/dev/null 2>&1; then
+    if "${BIN_DIR}/emisar" pack install "${n}" --dest "${dst}" --force --no-verify >/dev/null 2>&1; then
       log "installed pack ${n}"
     else
       warn "failed to install pack ${n} (continuing)"
@@ -1649,7 +1657,7 @@ install_named_packs() {
       src="${p}"; origin="registry"
     fi
 
-    if "${BIN_DIR}/emisar" pack install "${src}" --dest "${dst}" --force >/dev/null 2>&1; then
+    if "${BIN_DIR}/emisar" pack install "${src}" --dest "${dst}" --force --no-verify >/dev/null 2>&1; then
       log "installed pack ${p} (${origin})"
     else
       warn "failed to install pack ${p} (${origin}) — continuing"
@@ -2205,8 +2213,15 @@ EOF
 
   echo
   # \$0 is "bash" when run as `curl ... | sudo bash`, so don't print that.
-  # Show the canonical re-curl form instead.
-  echo "Uninstall:  curl -fsSL https://emisar.dev/install.sh | sudo bash -s -- --uninstall"
+  # Show the canonical re-curl form instead, naming every directory this run
+  # moved off its default: a bare --uninstall after a custom-path install
+  # removes the unit but leaves the binary, receipt, and bearer token behind.
+  local uninstall_flags=""
+  [ "${BIN_DIR}" = "/usr/local/bin" ] || uninstall_flags+=" --bin-dir $(printf '%q' "${BIN_DIR}")"
+  [ "${ETC_DIR}" = "/etc/emisar" ] || uninstall_flags+=" --etc-dir $(printf '%q' "${ETC_DIR}")"
+  [ "${DATA_DIR}" = "/var/lib/emisar" ] || uninstall_flags+=" --data-dir $(printf '%q' "${DATA_DIR}")"
+  [ "${LOG_DIR}" = "/var/log/emisar" ] || uninstall_flags+=" --log-dir $(printf '%q' "${LOG_DIR}")"
+  echo "Uninstall:  curl -fsSL https://emisar.dev/install.sh | sudo bash -s -- --uninstall${uninstall_flags}"
   echo "Update:     sudo ${BIN_DIR}/emisar update"
   echo "==============================================================="
 }
@@ -2262,7 +2277,7 @@ do_uninstall() {
 
 Kept (use --purge to remove):
   ${ETC_DIR}  (config + secrets)
-  ${DATA_DIR} (dispatch log + signing nonces; token + identity removed)
+  ${DATA_DIR} (dispatch log + signing nonces; cached token removed)
   ${LOG_DIR}  (security log)
 EOF
   fi

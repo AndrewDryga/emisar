@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -101,6 +102,55 @@ func TestAuditVerifyCmd_MissingFileErrors(t *testing.T) {
 	// It must be the open error, not a chain-break (which would os.Exit(1)).
 	if strings.Contains(err.Error(), "chain break") {
 		t.Fatalf("missing file should be an open error, not a chain break: %v", err)
+	}
+}
+
+// A journal whose content cannot be verified (a line that is not JSON, or one
+// too long to read) is a verdict, not a command error: with --json a fleet
+// sweep must still get {"path","intact":false,"error"} for that host, and the
+// command still exits non-zero. Only an open failure stays a plain error.
+func TestAuditVerifyCmd_CorruptLineIsAJSONVerdict(t *testing.T) {
+	for name, tc := range map[string]struct {
+		line string
+		want string
+	}{
+		"not JSON":         {line: "not json\n", want: "audit: line 4: parse"},
+		"too long to read": {line: strings.Repeat("x", audit.MaxLineBytes) + "\n", want: "audit: line 4: bufio.Scanner: token too long"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			withJSONOut(t, true)
+			path := filepath.Join(t.TempDir(), "events.jsonl")
+			writeChain(t, path, 3)
+			f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := f.WriteString(tc.line); err != nil {
+				t.Fatal(err)
+			}
+			if err := f.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			var execErr error
+			out := captureStdout(t, func() {
+				cmd := auditVerifyCmd()
+				cmd.SilenceUsage, cmd.SilenceErrors = true, true
+				cmd.SetArgs([]string{path})
+				execErr = cmd.Execute()
+			})
+			if execErr == nil {
+				t.Fatal("a corrupt journal must fail the command")
+			}
+			var results []auditVerifyResult
+			if err := json.Unmarshal([]byte(out), &results); err != nil {
+				t.Fatalf("--json printed no verdict: %v\n%s", err, out)
+			}
+			if len(results) != 1 || results[0].Path != path || results[0].Intact ||
+				!strings.HasPrefix(results[0].Error, tc.want) {
+				t.Fatalf("verdict = %+v, want %s not intact with error %q", results, path, tc.want)
+			}
+		})
 	}
 }
 

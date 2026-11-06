@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -73,40 +72,37 @@ and, on a break, "error" — so a fleet sweep can collect verdicts.`,
 			var firstBreak error
 			results := make([]auditVerifyResult, 0, len(paths))
 			for _, p := range paths {
-				if err := audit.VerifyChain(p); err == nil {
+				f, err := os.Open(p)
+				if err != nil && !all {
+					// One explicitly named file that cannot be opened is a
+					// plain command error: the operator gets the reason.
+					return err
+				}
+				// A rotated sibling that could not be opened (vanished
+				// mid-rotation, bad permissions) is reported and the walk goes
+				// on: discoverRotated hands back oldest-first, so returning here
+				// skipped every later file INCLUDING the active log, which is
+				// the one that matters most on a forensic tool.
+				if err == nil {
+					err = audit.VerifyReader(f)
+					_ = f.Close()
+				}
+				if err == nil {
 					results = append(results, auditVerifyResult{Path: p, Intact: true})
 					if !flagJSONOut {
 						fmt.Fprintf(os.Stdout, "audit: chain intact: %s\n", p)
 					}
-				} else {
-					var ve *audit.VerifyError
-					if errors.As(err, &ve) {
-						results = append(results, auditVerifyResult{Path: p, Error: ve.Error()})
-						if !flagJSONOut {
-							fmt.Fprintf(os.Stderr, "audit: %s: %s\n", p, ve.Error())
-						}
-						if firstBreak == nil {
-							firstBreak = err
-						}
-					} else if !all {
-						// One explicitly named file that cannot be opened is a
-						// plain command error: the operator gets the reason.
-						return err
-					} else {
-						// A rotated sibling that could not be read at all
-						// (vanished mid-rotation, bad permissions, truncated).
-						// Report it and keep walking: discoverRotated hands back
-						// oldest-first, so returning here skipped every later
-						// file INCLUDING the active log, which is the one that
-						// matters most on a forensic tool.
-						results = append(results, auditVerifyResult{Path: p, Error: err.Error()})
-						if !flagJSONOut {
-							fmt.Fprintf(os.Stderr, "audit: %s: %v\n", p, err)
-						}
-						if firstBreak == nil {
-							firstBreak = err
-						}
-					}
+					continue
+				}
+				// A prev_hash break, a line that is not JSON, and a line too
+				// long to read are all verdicts on an opened file's contents,
+				// so each is reported, never left as an empty --json document.
+				results = append(results, auditVerifyResult{Path: p, Error: err.Error()})
+				if !flagJSONOut {
+					fmt.Fprintf(os.Stderr, "audit: %s: %v\n", p, err)
+				}
+				if firstBreak == nil {
+					firstBreak = err
 				}
 			}
 			// Emit the report before returning the break, so a broken chain is

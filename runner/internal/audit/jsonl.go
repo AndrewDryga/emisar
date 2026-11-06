@@ -167,28 +167,36 @@ func healAndSeed(path string) (string, error) {
 		tail = tail[:cut+1]
 	}
 
-	last := lastNonEmptyLine(tail)
+	last, delimited := lastNonEmptyLine(tail)
 	if last == nil && partial {
 		// A window's worth of blank lines is corruption or a hand-edit, never
 		// something Write produces. The real chain head is further back, and
 		// seeding an empty one would write a false break into the next event.
 		return "", errors.New("journal tail is blank")
 	}
+	if partial && !delimited {
+		// No newline before the final complete line inside the window, so the
+		// line is longer than MaxLineBytes and starts before what was read.
+		// Hashing the window's piece would seed the chain from a fragment, and
+		// no reader here can parse the line anyway: refuse the journal intact.
+		return "", fmt.Errorf("final line exceeds %d bytes", MaxLineBytes)
+	}
 	return lineHash(last), nil
 }
 
 // lastNonEmptyLine returns the final non-empty newline-terminated line in data,
-// without its newline, or nil when there is none.
-func lastNonEmptyLine(data []byte) []byte {
+// without its newline, or nil when there is none. delimited reports whether a
+// newline before the line inside data marks where it starts.
+func lastNonEmptyLine(data []byte) (line []byte, delimited bool) {
 	for len(data) > 0 {
 		end := len(data) - 1 // data always ends on the newline we cut to
-		start := bytes.LastIndexByte(data[:end], '\n') + 1
-		if end > start {
-			return data[start:end]
+		previous := bytes.LastIndexByte(data[:end], '\n')
+		if start := previous + 1; end > start {
+			return data[start:end], previous >= 0
 		}
 		data = data[:end]
 	}
-	return nil
+	return nil, false
 }
 
 func lineHash(line []byte) string {
@@ -197,6 +205,74 @@ func lineHash(line []byte) string {
 	}
 	h := sha256.Sum256(line)
 	return hex.EncodeToString(h[:])
+}
+
+// encodeLine marshals ev so its line, newline included, fits MaxLineBytes, the
+// ceiling VerifyReader and healAndSeed read with. A longer line is not slow to
+// read but unreadable: `audit verify` stops there, and the next open seeds the
+// chain from a fragment. Only bulk evidence can cross the cap (escaped preview
+// pairs, or escaped copies of a large argument in args, argv, and the rendered
+// command), so those fields are emptied one at a time and each is named in
+// OmittedFields; the args, argv, stdout, and stderr digests still bind the full
+// content. An event that still cannot fit is refused, never written unreadable.
+func encodeLine(ev *Event) ([]byte, error) {
+	b, err := json.Marshal(ev)
+	if err != nil || len(b) < MaxLineBytes {
+		return b, err
+	}
+	// Request and Execution are the caller's; cut copies, never its data.
+	if ev.Request != nil {
+		request := *ev.Request
+		ev.Request = &request
+	}
+	if ev.Execution != nil {
+		execution := *ev.Execution
+		ev.Execution = &execution
+	}
+	for field := omitBulkField(ev); field != ""; field = omitBulkField(ev) {
+		ev.OmittedFields = append(ev.OmittedFields, field)
+		if b, err = json.Marshal(ev); err != nil || len(b) < MaxLineBytes {
+			return b, err
+		}
+	}
+	return nil, fmt.Errorf("audit: event %s exceeds %d bytes with its bulk fields omitted", ev.EventID, MaxLineBytes)
+}
+
+// omitBulkField empties the next bulk field in cut order and returns its JSON
+// path, or "" when none is left: the output previews first, then the rendered
+// command (a quoted copy of argv), the redacted args, argv, the dispatch
+// reason, and the error text.
+func omitBulkField(ev *Event) string {
+	if x := ev.Execution; x != nil {
+		switch {
+		case x.StdoutPreview != "":
+			x.StdoutPreview = ""
+			return "execution.stdout_preview"
+		case x.StderrPreview != "":
+			x.StderrPreview = ""
+			return "execution.stderr_preview"
+		case x.ExecutedCommand != "":
+			x.ExecutedCommand = ""
+			return "execution.executed_command"
+		}
+	}
+	if r := ev.Request; r != nil && len(r.ArgsRedacted) > 0 {
+		r.ArgsRedacted = nil
+		return "request.args_redacted"
+	}
+	if x := ev.Execution; x != nil && len(x.Argv) > 0 {
+		x.Argv = nil
+		return "execution.argv"
+	}
+	if r := ev.Request; r != nil && r.Reason != "" {
+		r.Reason = ""
+		return "request.reason"
+	}
+	if ev.Error != "" {
+		ev.Error = ""
+		return "error"
+	}
+	return ""
 }
 
 // Write appends one JSON-encoded event followed by a newline, rotating
@@ -223,7 +299,7 @@ func (s *JSONLSink) Write(_ context.Context, ev Event) error {
 	}
 
 	ev.PrevHash = s.lastHash
-	b, err := json.Marshal(ev)
+	b, err := encodeLine(&ev)
 	if err != nil {
 		return err
 	}
@@ -243,7 +319,7 @@ func (s *JSONLSink) Write(_ context.Context, ev Event) error {
 	}
 	if ev.PrevHash != s.lastHash {
 		ev.PrevHash = s.lastHash
-		if b, err = json.Marshal(ev); err != nil {
+		if b, err = encodeLine(&ev); err != nil {
 			return err
 		}
 	}
@@ -447,12 +523,11 @@ func VerifyChain(path string) error {
 	return VerifyReader(f)
 }
 
-// MaxLineBytes is the largest journal line this package can read back. Both the
-// tail reader and the hash-chain verifier scan with this ceiling, so a line
-// written above it is not merely slow to parse — it is unreadable, and an
-// unreadable line breaks chain verification for everything after it. Anything
-// that sizes a field written into a line must fit its worst case under this
-// (see config.MaxPreviewBytesLimit).
+// MaxLineBytes is the largest journal line, newline included, this package can
+// read back. Both the tail reader and the hash-chain verifier scan with this
+// ceiling, so a line written above it is not merely slow to parse — it is
+// unreadable, and an unreadable line breaks chain verification for everything
+// after it. Write keeps every line it appends within it (see encodeLine).
 const MaxLineBytes = 1 << 20
 
 // VerifyReader is the io.Reader form of VerifyChain. Skips empty lines.
@@ -484,7 +559,12 @@ func VerifyReader(r io.Reader) error {
 		h := sha256.Sum256(line)
 		expected = hex.EncodeToString(h[:])
 	}
-	return scanner.Err()
+	if err := scanner.Err(); err != nil {
+		// The scanner stops at the line it could not read (too long, or an I/O
+		// failure); name it the way a parse failure is named.
+		return fmt.Errorf("audit: line %d: %w", lineNo+1, err)
+	}
+	return nil
 }
 
 // Close closes the underlying file.

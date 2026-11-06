@@ -104,6 +104,10 @@ type Event struct {
 	Execution  *ExecutionInfo     `json:"execution,omitempty"`
 	Redactions []RedactionSummary `json:"redactions,omitempty"`
 	Error      string             `json:"error,omitempty"`
+	// OmittedFields names, by JSON path, the bulk fields the sink emptied so
+	// the record fits audit.MaxLineBytes and stays verifiable; the digests
+	// still cover the omitted content.
+	OmittedFields []string `json:"omitted_fields,omitempty"`
 }
 
 // crockford is ULID's alphabet: base32 without I, L, O or U, so a

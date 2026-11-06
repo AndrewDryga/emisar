@@ -155,7 +155,8 @@ func writeBulkJournal(t *testing.T, path string, size int) []byte {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return append([]byte(nil), lastNonEmptyLine(body)...)
+	last, _ := lastNonEmptyLine(body)
+	return append([]byte(nil), last...)
 }
 
 func appendRaw(t *testing.T, path, text string) {

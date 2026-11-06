@@ -64,14 +64,17 @@ func runnerChecks() []runnerCheck {
 		{"failed service stop reported truthfully", false, runnerFailedServiceStopReport},
 		{"signal-interrupted rollback", false, runnerSignalRollback},
 		{"installed pack repair", false, runnerPackRepair},
+		{"pack installs skip verify probes", false, runnerPackInstallNoVerify},
 		{"systemd activation", false, runnerSystemdActive},
 		{"launchd environment wrapper", false, runnerLaunchdWrapper},
 		{"root-owned policy state", true, runnerPolicyOwnership},
 		{"latest release resolution", false, runnerLatestRelease},
+		{"version spellings from flag and environment", false, runnerVersionSpellings},
 		{"fresh-install service rollback", false, runnerFreshServiceRollback},
 		{"config value validation", false, runnerConfigValueValidation},
 		{"staged binary rejects the config", false, runnerStagedConfigPreflight},
 		{"runner id override in config skeleton", false, runnerIDOverride},
+		{"uninstall hint names custom directories", false, runnerUninstallHint},
 	}
 }
 
@@ -1639,6 +1642,68 @@ verify_installed_packs
 	return requireRegular(marker)
 }
 
+// runnerPackInstallNoVerify proves every installer pack install skips the
+// post-install verify probe. On a configured host the probe ran each pack's
+// verify action as root with the installer's environment, discarded its
+// output, and could stall a re-run for the action's whole timeout.
+func runnerPackInstallNoVerify(h *harness) error {
+	root := h.path("pack-install-no-verify")
+	bin := filepath.Join(root, "bin")
+	extracted := filepath.Join(root, "extracted")
+	if err := h.mkdir(bin, filepath.Join(extracted, "packs", "linux-core"),
+		filepath.Join(extracted, "packs", "debugging")); err != nil {
+		return err
+	}
+	trace := filepath.Join(root, "emisar-calls")
+	if err := fakeExecutable(filepath.Join(bin, "emisar"), `
+printf '%s\n' "$*" >>"$EMISAR_PACK_TRACE"
+case "$1 $2" in
+  "pack suggest") printf 'redis\n' ;;
+  "pack install") ;;
+  *) exit 2 ;;
+esac
+`); err != nil {
+		return err
+	}
+	result := h.functions(h.repoPath("install.sh"),
+		[]string{"install_default_packs", "install_suggested_packs", "install_named_packs"}, `
+log() { :; }
+warn() { printf '%s\n' "$*" >&2; }
+confirm() { return 0; }
+INIT=none
+install_default_packs "$EXTRACTED"
+INIT=systemd
+install_suggested_packs
+PRE_PACKS=linux-core,postgres
+install_named_packs "$EXTRACTED"
+`, map[string]string{
+			"BIN_DIR": bin, "ETC_DIR": filepath.Join(root, "etc"),
+			"EXTRACTED": extracted, "EMISAR_PACK_TRACE": trace,
+		})
+	if _, err := requireOutput(result); err != nil {
+		return err
+	}
+	calls, err := os.ReadFile(trace)
+	if err != nil {
+		return err
+	}
+	installs := 0
+	for _, call := range strings.Split(strings.TrimSpace(string(calls)), "\n") {
+		if !strings.HasPrefix(call, "pack install ") {
+			continue
+		}
+		installs++
+		if !strings.HasSuffix(call, " --no-verify") {
+			return fmt.Errorf("installer ran a verify probe: emisar %s", call)
+		}
+	}
+	// Default (2 bundled), suggested (redis), and named (bundled + registry).
+	if installs != 5 {
+		return fmt.Errorf("installer made %d pack installs, want 5:\n%s", installs, calls)
+	}
+	return nil
+}
+
 func runnerSystemdActive(h *harness) error {
 	fakeBin := h.path("fake-systemd-bin")
 	if err := h.mkdir(fakeBin); err != nil {
@@ -1869,6 +1934,67 @@ resolve_latest_version
 	return nil
 }
 
+// runnerVersionSpellings proves --version and the VERSION environment variable
+// accept the same documented spellings. Only the flag was normalized, so a
+// cloud-init template pinning VERSION=0.31.1, the spelling the docs show for
+// --version, was refused. The fake mktemp stops each run at the install's first
+// mutation, just past the release gate, so nothing is downloaded or written.
+func runnerVersionSpellings(h *harness) error {
+	root := h.path("version-spellings")
+	fakeBin := filepath.Join(root, "fake-bin")
+	if err := h.mkdir(fakeBin); err != nil {
+		return err
+	}
+	if err := fakeExecutable(filepath.Join(fakeBin, "id"), `
+if [ "${1:-}" = "-u" ]; then
+  printf '0\n'
+  exit 0
+fi
+exit 1
+`); err != nil {
+		return err
+	}
+	if err := fakeExecutable(filepath.Join(fakeBin, "mktemp"), `
+printf 'RELEASE GATE PASSED\n' >&2
+exit 1
+`); err != nil {
+		return err
+	}
+	run := func(version string, args ...string) commandResult {
+		env := map[string]string{
+			"PATH":         fakeBin + string(os.PathListSeparator) + os.Getenv("PATH"),
+			"BIN_DIR":      filepath.Join(root, "bin"),
+			"ETC_DIR":      filepath.Join(root, "etc"),
+			"DATA_DIR":     filepath.Join(root, "data"),
+			"LOG_DIR":      filepath.Join(root, "log"),
+			"EMISAR_PACKS": "", "EMISAR_ENROLLMENT_KEY": "", "VERSION": version,
+		}
+		return h.command(h.root, env, "bash",
+			append([]string{h.repoPath("install.sh"), "--yes", "--no-service"}, args...)...)
+	}
+
+	for _, spelling := range []string{"0.31.1", "v0.31.1", "runner-v0.31.1"} {
+		for source, result := range map[string]commandResult{
+			"flag":        run("", "--version", spelling),
+			"environment": run(spelling),
+		} {
+			if err := expectFailure(result, "RELEASE GATE PASSED"); err != nil {
+				return fmt.Errorf("%s from %s: %w", spelling, source, err)
+			}
+			if !strings.Contains(string(result.output), "pinned release: runner-v0.31.1\n") {
+				return fmt.Errorf("%s from %s was not pinned as runner-v0.31.1:\n%s",
+					spelling, source, result.output)
+			}
+		}
+	}
+	// Normalization only adds the prefix; the gate still refuses a malformed pin.
+	if err := expectFailure(run("0.31"),
+		"release version must match runner-vMAJOR.MINOR.PATCH (got 'runner-v0.31')"); err != nil {
+		return fmt.Errorf("malformed VERSION: %w", err)
+	}
+	return nil
+}
+
 // runnerFreshServiceRollback proves a FAILED FRESH install leaves no enabled
 // unit behind.
 //
@@ -1955,6 +2081,54 @@ func runnerIDOverride(h *harness) error {
 	}
 	if strings.Contains(string(output), "\n  id:") {
 		return fmt.Errorf("unset EMISAR_RUNNER_ID still emitted an id line:\n%s", output)
+	}
+	return nil
+}
+
+// runnerUninstallHint proves the success summary's uninstall line names every
+// directory the install moved off its default. A bare --uninstall after a
+// custom-path install removes the service unit but leaves the binary, the
+// install receipt, and the cached bearer token in place.
+func runnerUninstallHint(h *harness) error {
+	const prefix = "Uninstall:  curl -fsSL https://emisar.dev/install.sh | sudo bash -s -- "
+	cases := []struct {
+		name string
+		dirs map[string]string
+		want string
+	}{
+		{
+			name: "default directories",
+			dirs: map[string]string{
+				"BIN_DIR": "/usr/local/bin", "ETC_DIR": "/etc/emisar",
+				"DATA_DIR": "/var/lib/emisar", "LOG_DIR": "/var/log/emisar",
+			},
+			want: "--uninstall",
+		},
+		{
+			name: "custom directories",
+			dirs: map[string]string{
+				"BIN_DIR": "/opt/emisar/bin", "ETC_DIR": "/opt/emisar/etc",
+				"DATA_DIR": "/opt/emisar/runner data", "LOG_DIR": "/var/log/emisar",
+			},
+			want: `--uninstall --bin-dir /opt/emisar/bin --etc-dir /opt/emisar/etc --data-dir /opt/emisar/runner\ data`,
+		},
+	}
+	for _, tc := range cases {
+		env := map[string]string{
+			"VERSION": "runner-v9.9.9", "INIT": "none", "SERVICE_STARTED": "0",
+			"needs_configuration": "0", "config_preexisted": "0", "ENROLLMENT_KEY_UPDATE": "0",
+		}
+		for k, v := range tc.dirs {
+			env[k] = v
+		}
+		output, err := requireOutput(h.functions(h.repoPath("install.sh"),
+			[]string{"print_next_steps"}, "print_next_steps\n", env))
+		if err != nil {
+			return fmt.Errorf("%s: %w", tc.name, err)
+		}
+		if !strings.Contains(string(output), "\n"+prefix+tc.want+"\n") {
+			return fmt.Errorf("%s: summary does not print %q:\n%s", tc.name, prefix+tc.want, output)
+		}
 	}
 	return nil
 }

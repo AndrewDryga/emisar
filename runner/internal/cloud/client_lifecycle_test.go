@@ -432,7 +432,7 @@ func TestClient_Outbox_ProgressDropCountIsStructured(t *testing.T) {
 			Seq:      i,
 			Stream:   "stdout",
 			Chunk:    "x",
-		}, dropOldestProgress)
+		})
 	}
 
 	s.mu.Lock()
@@ -480,7 +480,7 @@ func TestClient_Outbox_PreservesActionStartedUnderPressure(t *testing.T) {
 		cli.enqueue(state, ActionProgressMsg{
 			Envelope: Envelope{Type: MsgActionProgress, ProtocolVersion: ProtocolVersion, RequestID: state.requestID},
 			Seq:      seq,
-		}, dropOldestProgress)
+		})
 	}
 
 	state.mu.Lock()

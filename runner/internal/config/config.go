@@ -14,13 +14,16 @@ import (
 // MaxPreviewBytesLimit caps events.max_preview_bytes.
 //
 // One event line carries a stdout AND a stderr preview, and JSON escaping can
-// expand a byte up to sixfold (a control byte becomes \u00XX). At 64 KiB each
-// the worst case is ~768 KiB plus the envelope, which stays under
-// audit.MaxLineBytes (1 MiB) — the ceiling both the tail reader and the
-// hash-chain verifier scan with.
+// expand a byte up to sixfold (a control byte becomes \u00XX), so at 64 KiB
+// each the previews alone can take ~768 KiB of audit.MaxLineBytes (1 MiB), the
+// ceiling both the tail reader and the hash-chain verifier scan with. The rest
+// of the line is no small envelope: it also carries the request's args, the
+// rendered argv and command, and the reason. The journal writer, not this
+// limit, keeps every line under the ceiling by emptying bulk fields (previews
+// first) and naming them in the event's omitted_fields.
 //
 // Refused rather than clamped: an operator who asked for megabyte previews is
-// asking for something that silently makes the journal unverifiable, and this
+// asking for previews the journal would then drop from every line, and this
 // is the audit trail of a security product. Fail at load, say why.
 const MaxPreviewBytesLimit = 64 * 1024
 
@@ -198,16 +201,17 @@ type Execution struct {
 //   - Non-empty deny → action id MUST NOT match any deny entry.
 //   - Both → allow gate first, then deny gate.
 //
-// Blocked actions are also hidden from the catalog this runner
-// advertises to cloud, so they don't appear in the portal at all.
+// Blocked actions stay in the catalog this runner advertises to cloud,
+// marked `admission_allowed: false`: the portal lists them as denied and
+// never dispatches them here, and the runner refuses them at dispatch.
 type Admission struct {
 	Allow []string `yaml:"allow,omitempty"`
 	Deny  []string `yaml:"deny,omitempty"`
 	// MaxRisk is an optional risk ceiling. When set, any action whose risk
-	// exceeds it is hidden from the advertised catalog AND refused at dispatch
+	// exceeds it is advertised as not admitted AND refused at dispatch
 	// (defense-in-depth, like Allow/Deny). Empty = no ceiling. Setting it to
-	// e.g. `medium` is the one-flag "read-only demo" switch — high/critical
-	// actions never reach the portal.
+	// e.g. `medium` is the one-flag switch that keeps high/critical actions
+	// from running on this host.
 	MaxRisk actionspec.Risk `yaml:"max_risk,omitempty"`
 }
 

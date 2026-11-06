@@ -30,7 +30,7 @@ paths:
 execution: {}
 
 # Admission is the runner-local gate over which actions this host will
-# expose and run. The cloud already decides which actions are safe; this
+# run. The cloud already decides which actions are safe; this
 # is defense-in-depth on the host side. If the portal is compromised, a
 # malicious dispatch still has to clear admission before the runner will
 # execute. Two axes — action id (allow/deny globs) and risk ceiling.
@@ -42,15 +42,16 @@ execution: {}
 #   - When both are set, allow is checked first, then deny.
 #
 # Risk ceiling (max_risk): when set, any action whose risk exceeds the
-# tier is dropped — one flag turns the fleet read-only for a customer
-# demo (low|medium|high|critical; empty = no ceiling). The whole linux
-# pack can be installed, but high/critical actions (reboot, restart,
-# repair) simply never appear.
+# tier is refused (low|medium|high|critical; empty = no ceiling). The
+# whole linux pack can be installed, and with `max_risk: medium` its
+# high/critical actions (reboot, restart, repair) never run here.
 #
-# Both axes hide a rejected action from the catalog this runner
-# advertises to cloud (so it never appears in the portal) AND refuse it
-# at dispatch, so neither a stale catalog nor a compromised portal can
-# run what the operator suppressed.
+# Neither axis hides an action. Every loaded action stays in the catalog
+# this runner advertises to cloud; a rejected one is marked
+# `admission_allowed: false`, so the portal lists it as denied and never
+# dispatches it here. The runner also refuses it at dispatch, so neither a
+# stale catalog nor a compromised portal can run what the operator
+# suppressed.
 #
 # admission:
 #   allow:
@@ -59,7 +60,7 @@ execution: {}
 #   deny:
 #     - "*.repair"           # no matter the pack, never repair
 #     - "linux.systemctl_restart"
-#   max_risk: medium         # read-only demo: hide/refuse high + critical
+#   max_risk: medium         # refuse high + critical
 
 # Signing is the bridge-attested-dispatch gate — the strongest defense
 # against a compromised control plane. With enforce_signatures on, the

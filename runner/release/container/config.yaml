@@ -30,7 +30,8 @@ paths:
 
 # The default image is observation-only: actions above `low` risk (the
 # debugging pack's kill/sysctl/drop_caches mutators, its process-env
-# dump) are hidden from the advertised catalog and refused at dispatch.
+# dump) are refused at dispatch. They stay in the advertised catalog
+# marked `admission_allowed: false`, so the console lists them as denied.
 # Cloud policy still gates everything; this is the host-side floor.
 # Mount your own config to admit more — deliberately, per fleet.
 admission:

@@ -49,31 +49,31 @@ func TestClient_GateOrder_SignatureBeforeTrust(t *testing.T) {
 
 // Under outbox pressure the terminal result is never dropped. Progress may be
 // evicted while the socket is down, but the cloud must eventually receive the
-// action outcome.
-func TestClient_Enqueue_ResultNeverDroppedUnderPressure(t *testing.T) {
-	cli := buildClient(t, &queuedDialer{conns: []*fakeConn{newFakeConn()}})
-	cli.opts.MaxPendingPerRun = 4
-
-	s := &runState{requestID: "req_pressure"}
+// action outcome, so finishRun queues it past the progress cap.
+func TestClient_FinishRun_ResultNeverDroppedUnderPressure(t *testing.T) {
+	cli := buildClient(t, &queuedDialer{conns: []*fakeConn{newFakeConn()}}, func(o *Options) {
+		o.MaxPendingPerRun = 4
+	})
+	requestID := "req_pressure"
+	digest := testDispatchDigest(requestID)
+	if decision, _, err := cli.dedup.reserve(requestID, digest); err != nil || decision != reservationNew {
+		t.Fatalf("reserve: decision=%v err=%v", decision, err)
+	}
+	s := &runState{requestID: requestID, dispatchDigest: digest}
 
 	// Fill the buffer to capacity, then keep pushing progress: each overflow
 	// evicts the oldest progress chunk and bumps the dropped counter.
 	for i := 0; i < cli.opts.MaxPendingPerRun*3; i++ {
 		cli.enqueue(s, ActionProgressMsg{
-			Envelope: Envelope{Type: MsgActionProgress, ProtocolVersion: ProtocolVersion, RequestID: "req_pressure"},
+			Envelope: Envelope{Type: MsgActionProgress, ProtocolVersion: ProtocolVersion, RequestID: requestID},
 			Seq:      i,
 			Stream:   "stdout",
 			Chunk:    "chunk",
-		}, dropOldestProgress)
+		})
 	}
 
-	// Now enqueue the terminal result with the never policy while the buffer
-	// is already at/over capacity.
-	result := ActionResultMsg{
-		Envelope: Envelope{Type: MsgActionResult, ProtocolVersion: ProtocolVersion, RequestID: "req_pressure"},
-		Status:   "success",
-	}
-	cli.enqueue(s, result, never)
+	// Finish the run the way production does while the buffer is full.
+	cli.finishRun(s, testActionResult(requestID, ActionResultMsg{Status: "success", EventID: "evt_pressure"}))
 
 	s.mu.Lock()
 	pending := append([]any(nil), s.pending...)
@@ -83,20 +83,10 @@ func TestClient_Enqueue_ResultNeverDroppedUnderPressure(t *testing.T) {
 	if dropped == 0 {
 		t.Fatal("expected progress chunks to have been dropped under buffer pressure")
 	}
-	// The result must be present despite the buffer having been full.
-	found := false
-	for _, msg := range pending {
-		if r, ok := msg.(ActionResultMsg); ok && r.Status == "success" {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("the result was dropped under buffer pressure (pending=%d, dropped=%d) — `never` policy must protect it",
-			len(pending), dropped)
-	}
-	// The never-policy append exceeds the cap rather than evicting the result,
-	// so it lands as the final queued message.
+	// The result exceeds the cap rather than being shed, so it lands as the
+	// final queued message.
 	if last, ok := pending[len(pending)-1].(ActionResultMsg); !ok || last.Status != "success" {
-		t.Fatalf("the result must be the final queued message; last=%T", pending[len(pending)-1])
+		t.Fatalf("the result was dropped under buffer pressure (pending=%d, dropped=%d); last=%T",
+			len(pending), dropped, pending[len(pending)-1])
 	}
 }

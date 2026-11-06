@@ -70,24 +70,16 @@ func (c *Client) enqueueProgressChunk(s *runState, requestID, stream, chunk stri
 	}
 	s.mu.Unlock()
 
-	c.enqueue(s, msg, dropOldestProgress)
+	c.enqueue(s, msg)
 }
 
-// dropPolicy controls what happens when the per-run buffer is full.
-type dropPolicy int
-
-const (
-	dropOldestProgress dropPolicy = iota
-	never                         // result/error messages are never dropped
-)
-
-// enqueue appends msg to a run's outbox. If full and policy is
-// dropOldestProgress, the oldest progress chunk in the buffer is
-// removed and dropped count is incremented. Final results/errors are
-// never dropped — they push out older progress chunks if needed.
-func (c *Client) enqueue(s *runState, msg any, policy dropPolicy) {
+// enqueue appends a progress message to a run's outbox. When the outbox is
+// full, the oldest queued progress message is evicted (or msg itself is
+// dropped when none is queued) and the dropped count is incremented. Terminal
+// results never come through here: finishRun appends them past the cap.
+func (c *Client) enqueue(s *runState, msg ActionProgressMsg) {
 	s.mu.Lock()
-	if len(s.pending) >= c.opts.MaxPendingPerRun && policy == dropOldestProgress {
+	if len(s.pending) >= c.opts.MaxPendingPerRun {
 		progress := -1
 		for i, pending := range s.pending {
 			if _, ok := pending.(ActionProgressMsg); ok {

@@ -190,8 +190,9 @@ type runState struct {
 	// that against its own event count to judge whether output was omitted.
 	progressSeq int
 	// attempted counts leading pending messages already handed to a failed
-	// Send. The cloud may hold them and deduplicates on (request_id, seq), so
-	// their bytes must never change; merging never touches this prefix.
+	// Send, plus any recovery action_started requeued ahead of them. The cloud
+	// may hold them and deduplicates on (request_id, seq), so their bytes must
+	// never change; merging never touches this prefix.
 	attempted int
 }
 
@@ -466,6 +467,10 @@ func (c *Client) requeueActiveStarts() int {
 			RequestID:       state.requestID,
 		}}
 		state.pending = append([]any{started}, state.pending...)
+		// The frame shifts the queue, so the protected prefix grows with it:
+		// otherwise the last attempted message leaves the prefix and a new line
+		// merges into a seq the cloud already holds and drops as a duplicate.
+		state.attempted++
 		state.mu.Unlock()
 		requeued++
 	}
