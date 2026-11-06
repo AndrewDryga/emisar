@@ -617,10 +617,6 @@ defmodule EmisarWeb.BillingLive do
     "We're confirming that an earlier subscription was cancelled. Try again shortly, or contact support if this continues."
   end
 
-  defp checkout_error(:legacy_checkout_pending) do
-    "We couldn't confirm an earlier checkout. Try again shortly, or contact support if this continues."
-  end
-
   defp checkout_error(:account_closed), do: "This account is closed. Checkout is unavailable."
 
   defp checkout_error(:checkout_unavailable),

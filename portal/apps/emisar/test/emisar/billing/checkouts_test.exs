@@ -114,12 +114,7 @@ defmodule Emisar.Billing.CheckoutsTest do
   # Failing it is what lets the workspace ever check out (or close) again.
   test "an hour-old reservation with a clean empty discovery fails, and the next click reserves fresh",
        %{account: account, subject: subject} do
-    abandoned = Fixtures.Billing.create_checkout_intent(account)
-
-    abandoned
-    |> Ecto.Changeset.change(inserted_at: DateTime.add(DateTime.utc_now(), -3_601, :second))
-    |> Repo.update!()
-
+    abandoned = abandoned_reservation(account)
     assert {:ok, _url} = Billing.start_checkout(account, "team", :month, subject)
     assert Repo.reload!(abandoned).state == :failed
     assert intent(account).state == :payable
@@ -128,12 +123,7 @@ defmodule Emisar.Billing.CheckoutsTest do
   end
 
   test "an abandoned reservation no longer blocks closing the account", %{account: account} do
-    abandoned = Fixtures.Billing.create_checkout_intent(account)
-
-    abandoned
-    |> Ecto.Changeset.change(inserted_at: DateTime.add(DateTime.utc_now(), -3_601, :second))
-    |> Repo.update!()
-
+    abandoned = abandoned_reservation(account)
     assert Emisar.Billing.Checkouts.cancel_for_close(account.id) == :ok
     assert Repo.reload!(abandoned).state == :failed
     refute_received {:paddle, :create, _attrs, _caller}
@@ -230,106 +220,27 @@ defmodule Emisar.Billing.CheckoutsTest do
     refute_received {:paddle, :cancel_transaction, _id, _caller}
   end
 
-  test "legacy unpaid links block fresh checkout without creating a reservation", %{
+  test "another account's transaction on a shared customer never blocks discovery", %{
     account: account,
     subject: subject
   } do
-    transaction = Fixtures.Billing.create_legacy_transaction(account)
-    assert_received {:paddle, :create, _attrs, _caller}
-
-    for status <- ["draft", "ready", "billed", "unknown"] do
-      Fixtures.Billing.set_transaction(transaction["id"], %{"status" => status})
-
-      assert {:error, :legacy_checkout_pending} =
-               Billing.start_checkout(account, "team", :year, subject)
-
-      assert is_nil(intent(account))
-    end
-
-    refute_received {:paddle, :create, _attrs, _caller}
-    refute_received {:paddle, :cancel_transaction, _id, _caller}
-  end
-
-  test "a legacy payment without a linked subscription blocks POST", %{
-    account: account,
-    subject: subject
-  } do
-    Fixtures.Billing.create_legacy_transaction(account, %{"status" => "completed"})
-    assert_received {:paddle, :create, _attrs, _caller}
-
-    assert {:error, :payment_reconciling} =
-             Billing.start_checkout(account, "team", :month, subject)
-
-    assert is_nil(intent(account))
-    refute_received {:paddle, :create, _attrs, _caller}
-  end
-
-  test "terminal legacy history does not block new checkout", %{
-    account: account,
-    subject: subject
-  } do
-    Fixtures.Billing.create_legacy_transaction(account, %{"status" => "canceled"})
-    assert {:ok, _url} = Billing.start_checkout(account, "team", :month, subject)
-  end
-
-  test "a legacy payment after listing is reconciled before any fresh reservation", %{
-    account: account,
-    subject: subject
-  } do
-    transaction = Fixtures.Billing.create_legacy_transaction(account)
-    assert_received {:paddle, :create, _attrs, _caller}
-
-    Config.put_override(:emisar, :billing_test_after_call, fn
-      :list_transactions, _attrs, result ->
-        Fixtures.Billing.complete_transaction(transaction["id"])
-        result
-
-      _, _, result ->
-        result
-    end)
-
-    assert {:error, :subscription_already_active} =
-             Billing.start_checkout(account, "team", :month, subject)
-
-    assert is_nil(intent(account))
-    refute_received {:paddle, :create, _attrs, _caller}
-    refute_received {:paddle, :cancel_transaction, _id, _caller}
-  end
-
-  test "a malformed fresh legacy GET is a scan barrier, not an exception", %{
-    account: account,
-    subject: subject
-  } do
-    Fixtures.Billing.create_legacy_transaction(account)
-    assert_received {:paddle, :create, _attrs, _caller}
-
-    Config.put_override(:emisar, :billing_test_after_call, fn
-      :get_transaction, _id, _result -> {:ok, "not an object"}
-      _, _, result -> result
-    end)
-
-    assert {:error, :legacy_checkout_pending} =
-             Billing.start_checkout(account, "team", :month, subject)
-
-    assert is_nil(intent(account))
-    refute_received {:paddle, :create, _attrs, _caller}
-  end
-
-  test "another account's signed link on a shared customer is not ours", %{
-    account: account,
-    subject: subject
-  } do
+    abandoned = abandoned_reservation(account)
     other = Fixtures.Accounts.create_account(%{paddle_customer_id: account.paddle_customer_id})
     Fixtures.Billing.create_legacy_transaction(other)
-    assert {:ok, _url} = Billing.start_checkout(account, "team", :month, subject)
 
+    assert {:ok, _url} = Billing.start_checkout(account, "team", :month, subject)
+    assert Repo.reload!(abandoned).state == :failed
     refute_received {:paddle, :cancel_transaction, _transaction_id, _caller}
   end
 
-  test "malformed or cyclic legacy scans block POST without a reservation", %{
+  # Only a complete, clean discovery may fail an abandoned reservation: an
+  # incomplete one could hide the accepted transaction a second POST would duplicate.
+  test "malformed or cyclic discovery scans keep an abandoned reservation without POST", %{
     account: account,
     subject: subject
   } do
+    abandoned = abandoned_reservation(account)
+
     for reply <- [
           {:error, :timeout},
           {:ok, %{transactions: [nil], next_after: nil}},
@@ -340,10 +251,10 @@ defmodule Emisar.Billing.CheckoutsTest do
         _operation, _args, result -> result
       end)
 
-      assert {:error, :legacy_checkout_pending} =
+      assert {:error, :checkout_pending} =
                Billing.start_checkout(account, "team", :month, subject)
 
-      assert is_nil(intent(account))
+      assert Repo.reload!(abandoned).state == :creating
     end
 
     refute_received {:paddle, :create, _attrs, _caller}
@@ -396,25 +307,27 @@ defmodule Emisar.Billing.CheckoutsTest do
              {:ok, {account.id, id}}
   end
 
-  test "full-history pagination caps block POST without reserving", %{
+  test "discovery pagination caps keep an abandoned reservation without POST", %{
     account: account,
     subject: subject
   } do
+    abandoned = abandoned_reservation(account)
+
     Config.put_override(:emisar, :billing_test_after_call, fn
       :list_transactions, _args, _result ->
-        page = Process.get(:legacy_pages, 0) + 1
-        Process.put(:legacy_pages, page)
+        page = Process.get(:discovery_pages, 0) + 1
+        Process.put(:discovery_pages, page)
         {:ok, %{transactions: [], next_after: "txn_page_#{page}"}}
 
       _, _, result ->
         result
     end)
 
-    assert {:error, :legacy_checkout_pending} =
+    assert {:error, :checkout_pending} =
              Billing.start_checkout(account, "team", :month, subject)
 
-    assert Process.get(:legacy_pages) == 100
-    assert is_nil(intent(account))
+    assert Process.get(:discovery_pages) == 100
+    assert Repo.reload!(abandoned).state == :creating
     refute_received {:paddle, :create, _attrs, _caller}
   end
 
@@ -447,6 +360,14 @@ defmodule Emisar.Billing.CheckoutsTest do
     |> CheckoutIntent.Query.by_account_id()
     |> CheckoutIntent.Query.pending()
     |> Repo.peek()
+  end
+
+  # A `creating` reservation past the hour-long grace for a lost create response.
+  defp abandoned_reservation(account) do
+    account
+    |> Fixtures.Billing.create_checkout_intent()
+    |> Ecto.Changeset.change(inserted_at: DateTime.add(DateTime.utc_now(), -3_601, :second))
+    |> Repo.update!()
   end
 
   defp checkout_return(url), do: URI.decode_query(URI.parse(url).query)["emisar_return"]

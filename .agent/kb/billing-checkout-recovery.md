@@ -3,7 +3,7 @@ name: billing-checkout-recovery
 description: one-shot checkout reservations, exact provider binding, durable duplicate-subscription cleanup, and account closure
 subsystem: portal
 sources: [portal/apps/emisar/lib/emisar/billing.ex, portal/apps/emisar/lib/emisar/billing/checkouts.ex, portal/apps/emisar/lib/emisar/billing/subscription_retirements.ex, portal/apps/emisar/lib/emisar/billing/jobs/sync_subscriptions.ex, portal/apps/emisar/lib/emisar/accounts.ex]
-updated: 2026-09-16
+updated: 2026-11-06
 ---
 
 Billing commits one current checkout intent per account before creating a
@@ -38,9 +38,8 @@ persists confirmed canonical cancellation with an optimistic mirror guard, then
 checks all remaining work under the account lock before tombstoning. A failed
 database write after provider cancellation is repaired by a subsequent GET.
 
-First-rollout ordering is in [the checkout cutover runbook](runbooks/billing-checkout-cutover.md).
-
 ## Changelog
 
+- 2026-11-06 — dropped the first-rollout runbook link; the pre-reservation scan of a customer's whole transaction history is gone (re-checked against `checkouts.ex`).
 - 2026-09-16 — abandoned `creating` reservations fail after an hour; closure recovers them first.
 - 2026-09-05 — documented durable checkout and retirement recovery and two-phase closure.

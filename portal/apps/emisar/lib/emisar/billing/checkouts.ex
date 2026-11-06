@@ -19,8 +19,7 @@ defmodule Emisar.Billing.Checkouts do
   end
 
   defp start_fresh(account_id, facts) do
-    with :ok <- legacy_preflight(account_id, facts.customer_id),
-         {:ok, reservation} <- reserve(account_id, facts) do
+    with {:ok, reservation} <- reserve(account_id, facts) do
       case reservation do
         {:fresh, intent} ->
           with {:ok, intent} <- create_transaction(intent), do: resume_checkout(intent, facts)
@@ -415,55 +414,6 @@ defmodule Emisar.Billing.Checkouts do
   defp accepted_subscription({:ok, %SubscriptionRetirement{}}), do: :ok
   defp accepted_subscription(:ok), do: :ok
   defp accepted_subscription(_result), do: {:error, :payment_reconciling}
-
-  defp legacy_preflight(account_id, customer_id) do
-    case list_all(customer: customer_id) do
-      {:ok, transactions} ->
-        Enum.reduce_while(transactions, :ok, fn transaction, :ok ->
-          case legacy_transaction(account_id, customer_id, transaction) do
-            :ok -> {:cont, :ok}
-            error -> {:halt, error}
-          end
-        end)
-
-      _incomplete ->
-        {:error, :legacy_checkout_pending}
-    end
-  end
-
-  defp legacy_transaction(account_id, customer_id, transaction) do
-    if bound?(account_id, transaction["id"], transaction) do
-      with {:ok, fresh} when is_map(fresh) <- PaddleClient.retrieve_transaction(transaction["id"]),
-           true <- fresh["id"] == transaction["id"] and fresh["customer_id"] == customer_id,
-           true <- bound?(account_id, fresh["id"], fresh) do
-        legacy_status(account_id, fresh)
-      else
-        _unresolved -> {:error, :legacy_checkout_pending}
-      end
-    else
-      :ok
-    end
-  end
-
-  defp legacy_status(_account_id, %{"status" => "canceled"}), do: :ok
-
-  defp legacy_status(account_id, %{"status" => status} = transaction)
-       when status in ["paid", "completed"] do
-    with {:ok, subscription} <- paid_subscription(account_id, transaction) do
-      if subscription["status"] == "canceled" do
-        :ok
-      else
-        case Billing.reconcile_discovered_subscription_data(subscription) do
-          {:ok, %SubscriptionRetirement{}} -> {:error, :subscription_retirement_pending}
-          {:ok, %Subscription{}} -> {:error, :subscription_already_active}
-          :ok -> {:error, :subscription_already_active}
-          _unresolved -> {:error, :payment_reconciling}
-        end
-      end
-    end
-  end
-
-  defp legacy_status(_account_id, _transaction), do: {:error, :legacy_checkout_pending}
 
   defp list_all(attrs), do: list_page(attrs, nil, MapSet.new(), [], 0)
 

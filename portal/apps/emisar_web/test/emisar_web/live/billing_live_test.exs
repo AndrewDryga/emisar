@@ -250,7 +250,6 @@ defmodule EmisarWeb.BillingLiveTest do
 
     for {state, message} <- [
           creating: "We&#39;re confirming your checkout.",
-          legacy: "We couldn&#39;t confirm an earlier checkout.",
           paid: "We&#39;re confirming your payment and subscription.",
           retirement: "We&#39;re confirming that an earlier subscription was cancelled."
         ] do
@@ -268,10 +267,6 @@ defmodule EmisarWeb.BillingLiveTest do
         case unquote(state) do
           :creating ->
             Fixtures.Billing.create_checkout_intent(account)
-
-          :legacy ->
-            Fixtures.Billing.create_legacy_transaction(account)
-            assert_received {:paddle, :create, _attrs, _caller}
 
           :paid ->
             assert {:ok, _url} = Emisar.Billing.start_checkout(account, "team", :month, subject)

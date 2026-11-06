@@ -132,9 +132,7 @@ Related rule: `rules/<domain>-<slug>.md` <!-- link the real rule when applicable
 - [staff access](runbooks/staff-access.md) — creating, resetting and removing
   staff logins from a production node
 
-One-shot rollouts stay listed until their production apply is confirmed, then leave:
-
-- [First durable-checkout rollout](runbooks/billing-checkout-cutover.md) — quiescent old producers, forward migration `20261025000000`, and unresolved legacy payment links; delete once that migration is confirmed applied in production
+One-shot rollouts stay listed until their production apply is confirmed, then leave.
 
 Normative rules live in the [shared rule index](rules/README.md) and, for
 Portal-only rules, the [Portal rule index](../../portal/.agent/kb/rules/README.md);

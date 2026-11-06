@@ -11,26 +11,23 @@ defmodule Emisar.Billing.CheckoutConcurrencyTest do
     %{store: Fixtures.Billing.start_provider()}
   end
 
-  test "two completed first scans on separate connections grant exactly one POST", %{store: store} do
+  test "two first reservations on separate connections grant exactly one POST", %{store: store} do
     unboxed_account(store, fn state ->
       parent = self()
 
-      after_call = fn
-        :list_transactions, attrs, result ->
-          if is_nil(attrs[:created_after]) and not Process.get(:initial_scan_done, false) do
-            Process.put(:initial_scan_done, true)
-            send(parent, {:scanned, self(), backend_pid()})
+      holder =
+        unboxed_task(fn ->
+          Repo.transaction(fn ->
+            assert {:ok, _account} = Accounts.fetch_and_lock_account(state.account.id)
+            send(parent, {:holding_account, self()})
 
             receive do
-              :continue_scan -> :ok
+              :release -> :ok
             end
-          end
+          end)
+        end)
 
-          result
-
-        _operation, _args, result ->
-          result
-      end
+      assert_receive {:holding_account, holder_pid}, 5_000
 
       before_call = fn
         :create, _attrs ->
@@ -44,15 +41,23 @@ defmodule Emisar.Billing.CheckoutConcurrencyTest do
           :ok
       end
 
+      after_call = fn _operation, _args, result -> result end
       first = checkout_task(state, before_call, after_call)
       second = checkout_task(%{state | subject: state.second_subject}, before_call, after_call)
+      first_pid = first.pid
+      second_pid = second.pid
 
       try do
-        assert_receive {:scanned, first_pid, first_backend}, 5_000
-        assert_receive {:scanned, second_pid, second_backend}, 5_000
+        # Both have seen no reservation and queue on the reservation's account
+        # lock. The later waiter queues behind the earlier one on the row, so
+        # either may be blocked by the other checkout rather than the holder.
+        assert_receive {:checkout_backend, ^first_pid, first_backend}, 5_000
+        assert_receive {:checkout_backend, ^second_pid, second_backend}, 5_000
         assert first_backend != second_backend
-        send(first_pid, :continue_scan)
-        send(second_pid, :continue_scan)
+        await_blocked(first_backend)
+        await_blocked(second_backend)
+        send(holder_pid, :release)
+        assert {:ok, :ok} = Task.await(holder, 10_000)
         assert_receive {:post_winner, winner}, 5_000
         loser = if first.pid == winner, do: second, else: first
         winning_task = if first.pid == winner, do: first, else: second
@@ -71,7 +76,7 @@ defmodule Emisar.Billing.CheckoutConcurrencyTest do
         assert_received {:paddle, :create, _attrs, _caller}
         refute_received {:paddle, :create, _attrs, _caller}
       after
-        stop_tasks([first, second])
+        stop_tasks([holder, first, second])
       end
     end)
   end
@@ -284,8 +289,11 @@ defmodule Emisar.Billing.CheckoutConcurrencyTest do
   end
 
   defp checkout_task(state, before_call, after_call) do
+    parent = self()
+
     unboxed_task(fn ->
       configure_provider(state.store, before_call, after_call)
+      send(parent, {:checkout_backend, self(), backend_pid()})
       Billing.start_checkout(state.account, "team", :month, state.subject)
     end)
   end
