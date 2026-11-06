@@ -36,6 +36,7 @@ func MCP(root string, out io.Writer) error {
 		{"signed checksum", mcpChecksumSignature},
 		{"download checksum mismatch", mcpDownloadChecksum},
 		{"latest release resolution", mcpLatestRelease},
+		{"version spellings from flag and environment", mcpVersionSpellings},
 		{"per-destination upgrade selection", mcpUpgradeSelection},
 		{"installation and rollback", mcpInstallRollback},
 		{"temporary directory privilege boundary", mcpTempDirectoryPrivilegeBoundary},
@@ -323,6 +324,56 @@ resolve_latest_version
 `, nil)
 	if err := expectFailure(invalid, "invalid MCP latest.json"); err != nil {
 		return fmt.Errorf("invalid mirror manifest did not fail closed: %w", err)
+	}
+	return nil
+}
+
+// mcpVersionSpellings proves --version and the VERSION environment variable
+// accept the same documented spellings. Only the flag was normalized, so
+// VERSION=0.11.0 and VERSION=v0.11.0, which --version accepts, were refused.
+// The fake curl fails the first release lookup, just past the version gate, so
+// nothing is downloaded or written.
+func mcpVersionSpellings(h *harness) error {
+	root := h.path("version-spellings")
+	fakeBin := filepath.Join(root, "fake-bin")
+	bin := filepath.Join(root, "bin")
+	if err := h.mkdir(fakeBin, bin); err != nil {
+		return err
+	}
+	if err := fakeExecutable(filepath.Join(fakeBin, "curl"), `
+printf 'RELEASE GATE PASSED\n' >&2
+exit 1
+`); err != nil {
+		return err
+	}
+	run := func(version string, args ...string) commandResult {
+		env := map[string]string{
+			"PATH":    fakeBin + string(os.PathListSeparator) + os.Getenv("PATH"),
+			"HOME":    filepath.Join(root, "home"),
+			"VERSION": version,
+		}
+		return h.command(h.root, env, "bash",
+			append([]string{h.repoPath("install-mcp.sh"), "--yes", "--install-dir", bin}, args...)...)
+	}
+
+	for _, spelling := range []string{"0.11.0", "v0.11.0", "mcp-v0.11.0"} {
+		for source, result := range map[string]commandResult{
+			"flag":        run("", "--version", spelling),
+			"environment": run(spelling),
+		} {
+			if err := expectFailure(result, "RELEASE GATE PASSED"); err != nil {
+				return fmt.Errorf("%s from %s: %w", spelling, source, err)
+			}
+			if !strings.Contains(string(result.output), "pinned release: mcp-v0.11.0\n") {
+				return fmt.Errorf("%s from %s was not pinned as mcp-v0.11.0:\n%s",
+					spelling, source, result.output)
+			}
+		}
+	}
+	// Normalization only adds the prefix; the gate still refuses a malformed pin.
+	if err := expectFailure(run("0.11"),
+		"release version must match mcp-vMAJOR.MINOR.PATCH (got 'mcp-v0.11')"); err != nil {
+		return fmt.Errorf("malformed VERSION: %w", err)
 	}
 	return nil
 }

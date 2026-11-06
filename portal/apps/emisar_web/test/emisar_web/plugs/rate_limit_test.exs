@@ -27,6 +27,28 @@ defmodule EmisarWeb.Plugs.RateLimitTest do
     assert rejected.resp_body =~ "rate_limited"
   end
 
+  test "a browser route's refusal is the branded page, still a 429 with Retry-After", %{
+    conn: conn
+  } do
+    enable_rate_limiting()
+
+    opts =
+      RateLimit.init(
+        bucket: unique_bucket(),
+        limit: 1,
+        window_ms: 3_600_000,
+        on_reject: {EmisarWeb.ErrorHTML, :rate_limited}
+      )
+
+    assert %{halted: false} = RateLimit.call(conn, opts)
+
+    rejected = RateLimit.call(conn, opts)
+    assert rejected.halted
+    assert get_resp_header(rejected, "retry-after") == ["3600"]
+    assert html_response(rejected, 429) =~ "Too many attempts"
+    assert html_response(rejected, 429) =~ "Try again in 1 hour."
+  end
+
   test "keys by GCP's client IP, so different clients get separate windows", %{conn: conn} do
     enable_rate_limiting()
     opts = RateLimit.init(bucket: unique_bucket(), limit: 1, window_ms: 60_000, by: :ip)

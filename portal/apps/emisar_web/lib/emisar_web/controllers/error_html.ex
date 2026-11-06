@@ -56,6 +56,20 @@ defmodule EmisarWeb.ErrorHTML do
     })
   end
 
+  # The limits count per network address, so the copy blames the network rather
+  # than the person: a team signing in together behind one office address
+  # shares a budget.
+  def render("429.html", %{retry_after: retry_after}) do
+    error_page(%{
+      status: 429,
+      title: "Too many attempts",
+      message:
+        "Too many requests came from your network in a short time. Try again in #{retry_wait(retry_after)}.",
+      action: "Open dashboard",
+      href: "/app"
+    })
+  end
+
   def render("500.html", _assigns) do
     error_page(%{
       status: 500,
@@ -87,6 +101,33 @@ defmodule EmisarWeb.ErrorHTML do
       {n, _} -> n
       :error -> 500
     end
+  end
+
+  @doc """
+  The `:on_reject` of `EmisarWeb.Plugs.RateLimit` for a route a person opens in
+  a browser: this branded page naming the wait, in place of the plug's JSON
+  body. The 429 status and the plug's `Retry-After` header stay as they are.
+  """
+  # The body is this module's own HEEx page, escaped as it renders, and its only
+  # input is the plug's integer window; nothing from the request reaches it.
+  # sobelow_skip ["XSS.SendResp"]
+  def rate_limited(%Plug.Conn{} = conn, retry_after) when is_integer(retry_after) do
+    page = "429.html" |> render(%{retry_after: retry_after}) |> Phoenix.HTML.Safe.to_iodata()
+
+    conn
+    |> Plug.Conn.put_resp_content_type("text/html")
+    |> Plug.Conn.send_resp(:too_many_requests, page)
+  end
+
+  # Retry-After is a whole fixed window in seconds, so it names a round unit.
+  defp retry_wait(seconds) do
+    {size, unit} =
+      Enum.find([{3_600, "hour"}, {60, "minute"}, {1, "second"}], fn {size, _unit} ->
+        rem(seconds, size) == 0
+      end)
+
+    count = div(seconds, size)
+    "#{count} #{unit}#{if count == 1, do: "", else: "s"}"
   end
 
   defp error_page(assigns) do

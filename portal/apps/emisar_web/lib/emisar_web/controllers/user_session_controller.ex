@@ -49,9 +49,15 @@ defmodule EmisarWeb.UserSessionController do
   # Per-IP cap on every start, completion and confirmation, layered over the
   # address budget and the per-code 5-attempt cap. By IP (never email — an email
   # key would let an attacker lock a victim out); generous enough for a NAT'd
-  # team behind one egress IP.
+  # team behind one egress IP. A person meets it in a browser, so the refusal
+  # is the readable page.
   plug EmisarWeb.Plugs.RateLimit,
-       [bucket: "sign_in", limit: 30, window_ms: 60_000]
+       [
+         bucket: "sign_in",
+         limit: 30,
+         window_ms: 60_000,
+         on_reject: {EmisarWeb.ErrorHTML, :rate_limited}
+       ]
        when action in [
               :magic_link_start,
               :invitation_start,

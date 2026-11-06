@@ -23,6 +23,10 @@ defmodule EmisarWeb.ApprovalDetailLive do
     {"90 days", "ninety_days"}
   ]
 
+  # One sentence for a decision note or override reason the domain refuses as
+  # unsafe text; both render it inline at their own textarea.
+  @unsafe_reason_error "Remove invisible formatting characters, such as those pasted from chat."
+
   def mount(%{"id" => id}, _session, socket) do
     if connected?(socket), do: mount_connected(id, socket), else: mount_disconnected(socket)
   end
@@ -489,6 +493,13 @@ defmodule EmisarWeb.ApprovalDetailLive do
      )}
   end
 
+  defp override_failed(socket, :decision_reason_unsafe_text, params) do
+    {:noreply,
+     socket
+     |> assign_override_fields(params)
+     |> assign(:override_reason_error, @unsafe_reason_error)}
+  end
+
   defp override_failed(socket, :unauthorized, _params) do
     {:noreply,
      socket
@@ -559,6 +570,17 @@ defmodule EmisarWeb.ApprovalDetailLive do
        :decision_reason_error,
        "Shorten the note to #{Approvals.max_decision_reason_length()} characters or fewer."
      )}
+  end
+
+  # The domain refuses a note carrying a control or format character (the
+  # zero-width joiner inside an emoji sequence, a zero-width space or soft hyphen
+  # a paste from chat brings along). Retrying fails the same way and a refresh
+  # loses the note, so this is fixed at the textarea too.
+  defp decision_failed(socket, :decision_reason_unsafe_text, params) do
+    {:noreply,
+     socket
+     |> assign_decision_fields(params)
+     |> assign(:decision_reason_error, @unsafe_reason_error)}
   end
 
   # The approve gate re-resolved the action's trusted contract and refused. The

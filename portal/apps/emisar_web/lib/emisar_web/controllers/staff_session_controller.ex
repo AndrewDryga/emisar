@@ -16,7 +16,12 @@ defmodule EmisarWeb.StaffSessionController do
   # per-login throttle on code requests and the lock after wrong authenticator
   # codes. The ten a minute is far above what one person needs.
   plug EmisarWeb.Plugs.RateLimit,
-       [bucket: "staff_sign_in", limit: 10, window_ms: 60_000]
+       [
+         bucket: "staff_sign_in",
+         limit: 10,
+         window_ms: 60_000,
+         on_reject: {EmisarWeb.ErrorHTML, :rate_limited}
+       ]
        when action in [:create, :verify]
 
   def new(conn, _params), do: render(conn, :new, form: email_form(""))

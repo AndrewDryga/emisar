@@ -48,8 +48,15 @@ defmodule EmisarWeb.SSOController do
   # Provider work is capped separately, on the canonical loaded provider id, in
   # the shared OIDC adapter so sign-in, callback replay and the ceremonies
   # cannot bypass one another's allowance.
+  # Every one of these is a browser navigation, so a refusal is the readable page.
   plug EmisarWeb.Plugs.RateLimit,
-       [bucket: "sso_oidc_ip", limit: 20, window_ms: 60_000, by: :ip]
+       [
+         bucket: "sso_oidc_ip",
+         limit: 20,
+         window_ms: 60_000,
+         by: :ip,
+         on_reject: {EmisarWeb.ErrorHTML, :rate_limited}
+       ]
        when action in [
               :begin,
               :begin_invitation,
@@ -134,11 +141,7 @@ defmodule EmisarWeb.SSOController do
       {:error, :rate_limited} ->
         conn
         |> put_resp_header("retry-after", "60")
-        |> put_status(:too_many_requests)
-        |> json(%{
-          error: "rate_limited",
-          message: "Too many requests. Retry in 60s."
-        })
+        |> EmisarWeb.ErrorHTML.rate_limited(60)
 
       other ->
         # The operator gets one sentence; the reason belongs in the log. Discarding

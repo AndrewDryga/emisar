@@ -545,17 +545,10 @@ defmodule EmisarWeb.TeamLive do
   def handle_event("save_edit", %{"membership_id" => id, "member" => params}, socket) do
     socket = assign(socket, :edit_form, to_form(params, as: "member"))
 
-    with_membership(socket, id, fn membership ->
-      case Accounts.update_member_profile_as_admin(
-             membership,
-             params,
-             socket.assigns.current_subject
-           ) do
-        {:ok, _user} -> {:ok, "Member updated."}
-        {:error, reason} -> {:error, MemberErrors.message(reason)}
-      end
-    end)
-    |> close_edit_if_saved()
+    case find_member_membership(socket, id) do
+      nil -> {:noreply, socket}
+      %Accounts.Membership{} = membership -> do_save_edit(socket, membership, params)
+    end
   end
 
   def handle_event("validate", %{"invite" => params} = event, socket) do
@@ -1388,10 +1381,30 @@ defmodule EmisarWeb.TeamLive do
 
   defp close_scope_edit_if_saved({:error, socket}), do: {:noreply, socket}
 
-  defp close_edit_if_saved({:ok, socket}),
-    do: {:noreply, close_name_edit(socket)}
+  # A name the changeset refuses (a service account's cleared name, or one past
+  # 255 characters) is fixed in the field just typed in, so its error renders
+  # under that field and the editor stays open on the draft. Any other refusal
+  # is about the member, not the text, and keeps the page-level message.
+  defp do_save_edit(socket, membership, params) do
+    case Accounts.update_member_profile_as_admin(
+           membership,
+           params,
+           socket.assigns.current_subject
+         ) do
+      {:ok, _membership} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Member updated.")
+         |> reload()
+         |> close_name_edit()}
 
-  defp close_edit_if_saved({:error, socket}), do: {:noreply, socket}
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:noreply, assign(socket, :edit_form, to_form(changeset, as: "member"))}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, MemberErrors.message(reason))}
+    end
+  end
 
   defp save_built_access(socket, id, {:ok, access}) do
     with_membership(socket, id, fn membership ->
@@ -1547,14 +1560,28 @@ defmodule EmisarWeb.TeamLive do
         {:noreply, put_flash(socket, :error, "Only owners and admins can invite members.")}
 
       {:error, :already_member} ->
-        email = params |> Map.get("email", "") |> String.trim()
-        {:noreply, put_flash(socket, :error, "#{email} is already a member.")}
+        {:noreply, assign_address_taken(socket, params)}
 
-      {:error, :rate_limited} ->
-        {:noreply, put_flash(socket, :error, MemberErrors.message(:rate_limited))}
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, MemberErrors.message(reason))}
+    end
+  end
 
-      {:error, _reason} ->
-        {:noreply, put_flash(socket, :error, "Could not send invitation.")}
+  # A taken address is fixed by editing the email the inviter just typed, so the
+  # refusal goes under that field. Accounts finds it only inside the invite's own
+  # transaction, so the form's changeset has no error to carry; the rebuilt form
+  # takes the refusal's sentence on its email field instead.
+  defp assign_address_taken(socket, params) do
+    params = keep_pack_selection(socket.assigns.form, params)
+
+    case Accounts.change_invitation(params, socket.assigns.current_subject) do
+      {:ok, changeset} ->
+        form = to_form(changeset, as: "invite")
+        taken = {MemberErrors.message(:already_member), []}
+        assign(socket, :form, %{form | errors: [email: taken]})
+
+      {:error, :unauthorized} ->
+        assign(socket, :form, nil)
     end
   end
 
@@ -3078,6 +3105,7 @@ defmodule EmisarWeb.TeamLive do
                         type="text"
                         label="Full name"
                         autocomplete="name"
+                        maxlength="255"
                       />
                       <:actions>
                         <.button phx-disable-with="Saving...">Save</.button>

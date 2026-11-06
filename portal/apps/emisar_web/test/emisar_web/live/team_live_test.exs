@@ -1056,6 +1056,54 @@ defmodule EmisarWeb.TeamLiveTest do
       refute html =~ "Invitation sent"
     end
 
+    test "an address already on the team is refused under the email field", %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team/invite")
+
+      lv
+      |> form("#invite_form", %{"invite" => %{"email" => member.email, "role" => "operator"}})
+      |> render_submit()
+
+      assert has_element?(
+               lv,
+               "#invite_form p",
+               "This address already belongs to a member or a pending invitation."
+             )
+
+      assert has_element?(lv, "#invite_form input[name='invite[email]'][value='#{member.email}']")
+      refute has_element?(lv, "#flash-error")
+    end
+
+    test "a scoped admin inviting beyond their own access is told why", %{conn: conn} do
+      {_owner_conn, _owner, account} = register_and_log_in(conn)
+      {:ok, scoped} = Emisar.Accounts.RunnerAccess.restricted(["web"], [])
+
+      admin =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+        |> Fixtures.Memberships.force_runner_access(scoped)
+
+      {:ok, lv, _html} =
+        build_conn()
+        |> log_in_member(admin)
+        |> live(~p"/app/#{account}/settings/team/invite")
+
+      html =
+        lv
+        |> form("#invite_form", %{
+          "invite" => %{
+            "email" => "wide@example.com",
+            "role" => "operator",
+            "runner_access_mode" => "all"
+          }
+        })
+        |> render_submit()
+
+      assert html =~ "You can only grant runner access that you currently have."
+      refute html =~ "Could not send invitation"
+      refute html =~ "Invitation sent"
+    end
+
     test "a successful invite lands on the success step with next actions", %{conn: conn} do
       {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team/invite")
@@ -1505,6 +1553,26 @@ defmodule EmisarWeb.TeamLiveTest do
       refute Emisar.Accounts.Membership.Query.all()
              |> Emisar.Accounts.Membership.Query.by_kind(:service_account)
              |> Emisar.Repo.one()
+    end
+
+    test "clearing a service account's name is refused under the field", %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/service-accounts")
+      edit_form = "#edit-form-#{service_account.id}"
+
+      render_click(lv, "start_edit", %{"membership_id" => service_account.id})
+      assert has_element?(lv, "#{edit_form} input[name='member[display_name]'][maxlength='255']")
+
+      html =
+        lv
+        |> form(edit_form, %{"member" => %{"display_name" => ""}})
+        |> render_submit()
+
+      assert has_element?(lv, "#{edit_form} p", "can't be blank")
+      refute html =~ "wasn&#39;t valid"
+      refute has_element?(lv, "#flash-error")
+      assert Emisar.Repo.reload!(service_account).display_name == "Ryker"
     end
 
     test "an operator can't add one, even with a crafted event", %{conn: conn} do

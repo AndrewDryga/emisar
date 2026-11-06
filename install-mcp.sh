@@ -165,7 +165,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --version)
       require_value "$@"
-      VERSION="$(normalize_version "$2")"
+      VERSION="$2"
       shift 2
       ;;
     --install-dir)
@@ -180,6 +180,11 @@ while [ $# -gt 0 ]; do
     *) echo "unknown flag: $1" >&2; usage >&2; exit 2;;
   esac
 done
+
+# --version and the VERSION environment variable are one input, so they accept
+# the same spellings. Normalizing only in the flag arm refused `VERSION=0.5.0`
+# and `VERSION=v0.5.0`, which `--version` accepts.
+[ -z "${VERSION}" ] || VERSION="$(normalize_version "${VERSION}")"
 
 log()  { printf '\033[1;34m[install-mcp]\033[0m %s\n' "$*" >&2; }
 warn() { printf '\033[1;33m[install-mcp]\033[0m %s\n' "$*" >&2; }

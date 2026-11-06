@@ -41,4 +41,26 @@ defmodule EmisarWeb.UnsubscribeControllerTest do
       assert html_response(conn, 404) =~ "workspace is no longer available"
     end
   end
+
+  describe "the shared hourly limit" do
+    # The POST is also a mail provider's RFC 8058 one-click call, so only the
+    # page a person opens gets the readable refusal.
+    test "refuses the page readably and keeps the one-click POST's JSON" do
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+      n = System.unique_integer([:positive])
+      forwarded = "198.18.#{rem(div(n, 256), 256)}.#{rem(n, 256)}, 8.233.97.247"
+      from_ip = fn -> put_req_header(build_conn(), "x-forwarded-for", forwarded) end
+
+      for _attempt <- 1..60 do
+        assert get(from_ip.(), ~p"/unsubscribe/monthly-report/nope").status == 404
+      end
+
+      page = get(from_ip.(), ~p"/unsubscribe/monthly-report/nope")
+      assert html_response(page, 429) =~ "Try again in 1 hour."
+      assert get_resp_header(page, "retry-after") == ["3600"]
+
+      one_click = post(from_ip.(), ~p"/unsubscribe/monthly-report/nope")
+      assert json_response(one_click, 429)["error"] == "rate_limited"
+    end
+  end
 end

@@ -415,7 +415,7 @@ defmodule EmisarWeb.SSOControllerTest do
       end
 
       rejected = get(conn_from(201), ~p"/sign_in/sso/#{Ecto.UUID.generate()}")
-      assert rejected.status == 429
+      assert html_response(rejected, 429) =~ "Try again in 1 minute."
       assert get_resp_header(rejected, "retry-after") == ["60"]
 
       allowed = get(conn_from(202), ~p"/sign_in/sso/#{Ecto.UUID.generate()}")
@@ -436,7 +436,8 @@ defmodule EmisarWeb.SSOControllerTest do
       end
 
       rejected = get(conn_from(61), ~p"/sign_in/sso/#{provider_id}")
-      assert rejected.status == 429
+      assert html_response(rejected, 429) =~ "Try again in 1 minute."
+      assert get_resp_header(rejected, "retry-after") == ["60"]
       refute_receive {:oidc_begin, ^provider_id}
 
       other = provider_fixture(enterprise_account())

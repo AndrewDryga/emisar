@@ -14,7 +14,23 @@ defmodule EmisarWeb.UnsubscribeController do
   alias Emisar.Accounts
 
   plug :put_layout, false
-  plug EmisarWeb.Plugs.RateLimit, bucket: "unsubscribe", limit: 60, window_ms: 3_600_000, by: :ip
+
+  # One budget for both. The page a person opens gets the readable refusal; the
+  # POST is also RFC 8058's one-click call from a mail provider, so it keeps the
+  # machine-readable body.
+  plug EmisarWeb.Plugs.RateLimit,
+       [
+         bucket: "unsubscribe",
+         limit: 60,
+         window_ms: 3_600_000,
+         by: :ip,
+         on_reject: {EmisarWeb.ErrorHTML, :rate_limited}
+       ]
+       when action == :show
+
+  plug EmisarWeb.Plugs.RateLimit,
+       [bucket: "unsubscribe", limit: 60, window_ms: 3_600_000, by: :ip]
+       when action == :create
 
   def show(conn, %{"token" => token}) do
     case Accounts.fetch_account_for_report_unsubscribe(token) do

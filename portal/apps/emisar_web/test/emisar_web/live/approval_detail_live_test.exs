@@ -900,6 +900,27 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert html =~ note
   end
 
+  test "a note carrying an invisible formatting character is refused inline and kept", %{
+    conn: conn
+  } do
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_request(account, owner)
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    note = "Checked with the on-call​ lead."
+
+    html =
+      lv
+      |> form("form[phx-submit='decide']", %{})
+      |> render_submit(%{"decision" => "approve", "reason" => note})
+
+    assert html =~ "Remove invisible formatting characters, such as those pasted from chat."
+    refute html =~ "Refresh the page to check"
+    assert html =~ note
+    assert %Approvals.Request{status: :pending} = Repo.reload!(request)
+  end
+
   test "the issuer of the requesting service account's key is self-blocked and offered override",
        %{conn: conn} do
     {conn, owner, account} = register_and_log_in(conn)
@@ -1685,6 +1706,22 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
              ~s(#override-reason[aria-describedby="override-reason-error"])
            )
 
+    assert has_element?(lv, "#override-reason-error[role=alert]")
+    assert %Approvals.Request{status: :pending} = Repo.reload!(request)
+  end
+
+  test "an override reason carrying an invisible formatting character is refused inline", %{
+    conn: conn
+  } do
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_request(account, owner, min_approvals: 2)
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    html = render_hook(lv, "override", %{"reason" => "Restore the data­base now"})
+
+    assert html =~ "Remove invisible formatting characters, such as those pasted from chat."
+    refute html =~ "Refresh the page to check"
     assert has_element?(lv, "#override-reason-error[role=alert]")
     assert %Approvals.Request{status: :pending} = Repo.reload!(request)
   end

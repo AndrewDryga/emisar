@@ -43,8 +43,14 @@ defmodule EmisarWeb.OAuthController do
   # Authorizing a Client ID Metadata Document client makes the server fetch the
   # client's own URL, so cap how often one caller can trigger that outbound
   # request even though the endpoint already requires a signed-in operator.
+  # The consent page is a browser's, so its refusal is the readable page.
   plug EmisarWeb.Plugs.RateLimit,
-       [bucket: "oauth_authorize", limit: 60, window_ms: 60_000]
+       [
+         bucket: "oauth_authorize",
+         limit: 60,
+         window_ms: 60_000,
+         on_reject: {EmisarWeb.ErrorHTML, :rate_limited}
+       ]
        when action in [:authorize, :authorize_submit]
 
   defp put_noindex(conn, _opts), do: assign(conn, :noindex, true)

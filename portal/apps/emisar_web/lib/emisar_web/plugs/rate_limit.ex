@@ -20,7 +20,10 @@ defmodule EmisarWeb.Plugs.RateLimit do
 
   `:on_reject` may be an `{module, function}` callback invoked with the conn and
   integer `Retry-After` seconds. It lets protocol endpoints shape their own
-  error envelope without coupling this generic plug to that protocol.
+  error envelope without coupling this generic plug to that protocol. A route a
+  person opens in a browser passes `{EmisarWeb.ErrorHTML, :rate_limited}` for
+  the branded page; without a callback the refusal is the JSON body machine
+  clients read.
 
   The on/off switch and the `RateLimiter` delegation live in
   `Emisar.Throttle` (shared with the LiveView send paths that can't sit

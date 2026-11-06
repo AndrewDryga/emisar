@@ -703,7 +703,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
       end
 
       limited = start_sign_in(from_ip(build_conn(), ip), account, "one-more@example.test")
-      assert limited.status == 429
+      assert html_response(limited, 429) =~ "Too many requests came from your network"
       refute_received {:email, _code}
     end
 

@@ -38,6 +38,7 @@ defmodule EmisarWeb.MemberErrors do
       "That member is deactivated in your identity provider. Reactivate them there first.",
     service_account_role_fixed:
       "A service account always has the Operator role. Change its runner and pack access instead.",
+    already_member: "This address already belongs to a member or a pending invitation.",
     rate_limited: "This workspace has used up its hourly invitation limit. Try again in an hour."
   }
 
