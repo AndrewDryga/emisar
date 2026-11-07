@@ -1,0 +1,118 @@
+schema_version: 1
+id: gcp-dataproc.job_details
+title: Show a Dataproc job
+kind: script
+risk: low
+description: Show one job's lifecycle, placement and up to four YARN application states and progress
+  values. Return no job arguments, properties, tracking URLs or driver-output locations. Free-text
+  fields are clipped and omitted applications are counted. An unavailable placement UUID is null,
+  including while placement is pending.
+side_effects:
+- One gcloud credential read and one authenticated Dataproc v1 GET.
+args:
+- name: project
+  type: string
+  required: true
+  description: Google Cloud project ID.
+  validation:
+    pattern: ^[a-z][a-z0-9-]{4,28}[a-z0-9]$
+    max_length: 30
+- name: region
+  type: string
+  required: true
+  description: Explicit Dataproc region, such as us-central1.
+  validation:
+    pattern: ^[a-z][a-z0-9-]{0,62}$
+    max_length: 63
+- name: job
+  type: string
+  required: true
+  description: Exact Dataproc job ID.
+  validation:
+    pattern: ^[A-Za-z0-9_-]{1,100}$
+    max_length: 100
+execution:
+  script:
+    path: scripts/dataproc.sh
+    interpreter: /bin/bash
+  argv:
+  - job_details
+  - '{{ args.project }}'
+  - '{{ args.region }}'
+  - '{{ args.job }}'
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required:
+    - id
+    - cluster
+    - state
+    - state_started
+    - type
+    - uuid
+    - substate
+    - yarn
+    - yarn_omitted
+    properties:
+      id:
+        type: string
+        maxLength: 100
+      cluster:
+        type: string
+        maxLength: 51
+      state:
+        type: string
+        maxLength: 24
+      state_started:
+        type: string
+        maxLength: 40
+      type:
+        type: string
+        maxLength: 24
+      uuid:
+        type:
+        - string
+        - 'null'
+        maxLength: 36
+      substate:
+        type: string
+        maxLength: 24
+      yarn:
+        type: array
+        maxItems: 4
+        items:
+          type: object
+          additionalProperties: false
+          required:
+          - name
+          - state
+          - progress
+          properties:
+            name:
+              type: string
+              maxLength: 96
+            state:
+              type: string
+              maxLength: 24
+            progress:
+              type:
+              - number
+              - 'null'
+              minimum: 0
+              maximum: 100
+      yarn_omitted:
+        type: integer
+        minimum: 0
+examples:
+- title: Show a Dataproc job
+  args:
+    project: example-prod
+    region: us-central1
+    job: job-20261107

@@ -1,0 +1,888 @@
+services:
+- gcp-api
+versions:
+- version: 587.0.0-slim
+  digest: '@sha256:be4876b4311056bf3ce236a14a7dea1288e70b7cfea2454ea15e4165c819921f'
+  default: true
+secret_env:
+- CLOUDSDK_AUTH_ACCESS_TOKEN
+inherit_env:
+- CLOUDSDK_API_ENDPOINT_OVERRIDES_DATAPROC
+- CLOUDSDK_AUTH_ACCESS_TOKEN
+- CURL_CA_BUNDLE
+env:
+  CLOUDSDK_API_ENDPOINT_OVERRIDES_DATAPROC: https://gcp-api:8443/
+  CURL_CA_BUNDLE: /packs/gcp-dataproc/test/fixtures/server.crt
+  CLOUDSDK_AUTH_ACCESS_TOKEN: packtest-canary-dataproc-access-27bb
+defaults:
+  expect:
+    stdout_not_empty: true
+    stdout_not_contains:
+    - packtest-canary-dataproc-access-27bb
+    - packtest-canary-dataproc-invalid-access-933d
+    - packtest-canary-dataproc-private-payload-946c
+    - packtest-canary-dataproc-error-envelope-8fe1
+    - packtest-canary-dataproc-error-bearer-8442
+    stderr_not_contains:
+    - packtest-canary-dataproc-access-27bb
+    - packtest-canary-dataproc-invalid-access-933d
+    - packtest-canary-dataproc-private-payload-946c
+    - packtest-canary-dataproc-error-envelope-8fe1
+    - packtest-canary-dataproc-error-bearer-8442
+cases:
+- name: gcp-dataproc.clusters_list
+  action: gcp-dataproc.clusters_list
+  args:
+    project: example-prod
+    region: us-central1
+  expect:
+    json:
+      /items/0/name: lol-20261107
+      /items/0/state: RUNNING
+      /items/0/workers: 2
+      /next_page_cursor: page-two
+- name: gcp-dataproc.cluster_details
+  action: gcp-dataproc.cluster_details
+  args:
+    project: example-prod
+    region: us-central1
+    cluster: lol-20261107
+  expect:
+    json:
+      /uuid: 9e52399f-eaa6-4fd0-a41b-d847812b356b
+      /workers: 2
+      /secondary_workers: 4
+      /autoscaling_policy: analytics
+      /idle_delete_ttl: 1800s
+      /service_account: analytics@example-prod.iam.gserviceaccount.com
+- name: gcp-dataproc.cluster_metrics
+  action: gcp-dataproc.cluster_metrics
+  args:
+    project: example-prod
+    region: us-central1
+    cluster: lol-20261107
+  expect:
+    json:
+      /available: true
+      /hdfs/0/name: CapacityTotal
+      /hdfs/0/value: '1099511627776'
+      /yarn/0/value: '2'
+      /omitted:
+        hdfs: 0
+        yarn: 0
+- name: gcp-dataproc.jobs_list
+  action: gcp-dataproc.jobs_list
+  args:
+    project: example-prod
+    region: us-central1
+  expect:
+    json:
+      /items/0/id: failed-job
+      /items/0/type: pyspark
+      /items/1/state: RUNNING
+      /unreachable_count: 1
+- name: gcp-dataproc.job_details
+  action: gcp-dataproc.job_details
+  args:
+    project: example-prod
+    region: us-central1
+    job: failed-job
+  expect:
+    json:
+      /id: failed-job
+      /uuid: 9e52399f-eaa6-4fd0-a41b-d847812b356b
+      /yarn/0/state: FAILED
+      /yarn/0/progress: 42
+- name: gcp-dataproc.job_errors
+  action: gcp-dataproc.job_errors
+  args:
+    project: example-prod
+    region: us-central1
+    job: failed-job
+  expect:
+    json:
+      /state: ERROR
+      /details: 'Executor failed Authorization: Bearer [REDACTED]'
+      /history/0/state: RUNNING
+  probes:
+  - name: Error read is one GET without a state change
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{methods:[.requests[].method],state:.jobs["failed-job"].status.state}'
+    expect:
+      json:
+        /methods:
+        - GET
+        /state: ERROR
+- name: gcp-dataproc.operations_list
+  action: gcp-dataproc.operations_list
+  args:
+    project: example-prod
+    region: us-central1
+  expect:
+    json:
+      /items/0/id: 11111111-1111-4111-8111-111111111111
+      /items/0/done: false
+      /items/0/type: UPDATE
+- name: gcp-dataproc.operation_details
+  action: gcp-dataproc.operation_details
+  args:
+    project: example-prod
+    region: us-central1
+    operation: 11111111-1111-4111-8111-111111111111
+  expect:
+    json:
+      /done: true
+      /error_code: 9
+      /message: 'Quota blocked Authorization: Bearer [REDACTED]'
+  probes:
+  - name: Error read is one GET without a state change
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{methods:[.requests[].method],state:.jobs["failed-job"].status.state}'
+    expect:
+      json:
+        /methods:
+        - GET
+        /state: ERROR
+- name: gcp-dataproc.autoscaling_policies_list
+  action: gcp-dataproc.autoscaling_policies_list
+  args:
+    project: example-prod
+    region: us-central1
+  expect:
+    json:
+      /items/0/id: analytics
+      /items/0/primary/max: 20
+      /items/0/secondary/min: 0
+- name: gcp-dataproc.autoscaling_policy_details
+  action: gcp-dataproc.autoscaling_policy_details
+  args:
+    project: example-prod
+    region: us-central1
+    policy: analytics
+  expect:
+    json:
+      /id: analytics
+      /algorithm: yarn
+      /scale_up_factor: 0.5
+      /scale_down_factor: 0.25
+      /graceful_decommission: 600s
+- name: gcp-dataproc.cluster_start
+  action: gcp-dataproc.cluster_start
+  args:
+    project: example-prod
+    region: us-central1
+    cluster: cold-cluster
+    cluster_uuid: 9e52399f-eaa6-4fd0-a41b-d847812b356b
+  expect:
+    json:
+      /id: 11111111-1111-4111-8111-111111111111
+      /done: false
+  probes:
+  - name: Exact fixture state and request shape
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{state:.clusters["cold-cluster"].status.state, request:.requests[-1]}'
+    expect:
+      json:
+        /state: STARTING
+        /request/method: POST
+        /request/body:
+          clusterUuid: 9e52399f-eaa6-4fd0-a41b-d847812b356b
+- name: gcp-dataproc.cluster_stop
+  action: gcp-dataproc.cluster_stop
+  args:
+    project: example-prod
+    region: us-central1
+    cluster: lol-20261107
+    cluster_uuid: 9e52399f-eaa6-4fd0-a41b-d847812b356b
+  expect:
+    json:
+      /id: 11111111-1111-4111-8111-111111111111
+      /done: false
+  probes:
+  - name: Exact fixture state and request shape
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{state:.clusters["lol-20261107"].status.state, request:.requests[-1]}'
+    expect:
+      json:
+        /state: STOPPING
+        /request/method: POST
+        /request/body:
+          clusterUuid: 9e52399f-eaa6-4fd0-a41b-d847812b356b
+- name: gcp-dataproc.cluster_resize_workers
+  action: gcp-dataproc.cluster_resize_workers
+  args:
+    project: example-prod
+    region: us-central1
+    cluster: lol-20261107
+    workers: 5
+    graceful_seconds: 86400
+  expect:
+    json:
+      /id: 11111111-1111-4111-8111-111111111111
+      /done: false
+  probes:
+  - name: Exact fixture state and request shape
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{workers:.clusters["lol-20261107"].config.workerConfig.numInstances, request:.requests[-1]}'
+    expect:
+      json:
+        /workers: 5
+        /request/method: PATCH
+        /request/query/updateMask/0: config.worker_config.num_instances
+        /request/query/gracefulDecommissionTimeout/0: 86400s
+        /request/body:
+          config:
+            workerConfig:
+              numInstances: 5
+- name: gcp-dataproc.cluster_resize_secondary_workers
+  action: gcp-dataproc.cluster_resize_secondary_workers
+  args:
+    project: example-prod
+    region: us-central1
+    cluster: lol-20261107
+    secondary_workers: 0
+    graceful_seconds: 86400
+  expect:
+    json:
+      /id: 11111111-1111-4111-8111-111111111111
+      /done: false
+  probes:
+  - name: Exact fixture state and request shape
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{workers:.clusters["lol-20261107"].config.secondaryWorkerConfig.numInstances, request:.requests[-1]}'
+    expect:
+      json:
+        /workers: 0
+        /request/method: PATCH
+        /request/query/updateMask/0: config.secondary_worker_config.num_instances
+        /request/query/gracefulDecommissionTimeout/0: 86400s
+        /request/body:
+          config:
+            secondaryWorkerConfig:
+              numInstances: 0
+- name: gcp-dataproc.cluster_delete
+  action: gcp-dataproc.cluster_delete
+  args:
+    project: example-prod
+    region: us-central1
+    cluster: lol-20261107
+    cluster_uuid: 9e52399f-eaa6-4fd0-a41b-d847812b356b
+  expect:
+    json:
+      /id: 11111111-1111-4111-8111-111111111111
+      /done: false
+  probes:
+  - name: Exact fixture state and request shape
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{present:(.clusters | has("lol-20261107")), request:.requests[-1]}'
+    expect:
+      json:
+        /present: false
+        /request/method: DELETE
+        /request/query/clusterUuid/0: 9e52399f-eaa6-4fd0-a41b-d847812b356b
+- name: gcp-dataproc.job_cancel
+  action: gcp-dataproc.job_cancel
+  args:
+    project: example-prod
+    region: us-central1
+    job: active-job
+  expect:
+    json:
+      /id: active-job
+      /state: CANCEL_PENDING
+  probes:
+  - name: Exact fixture state and request shape
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{state:.jobs["active-job"].status.state,request:.requests[-1]}'
+    expect:
+      json:
+        /state: CANCEL_PENDING
+        /request/method: POST
+        /request/body: {}
+- name: gcp-dataproc.job_delete
+  action: gcp-dataproc.job_delete
+  args:
+    project: example-prod
+    region: us-central1
+    job: failed-job
+  expect:
+    json:
+      /id: failed-job
+      /deleted: true
+  probes:
+  - name: Exact fixture state and request shape
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{present:(.jobs | has("failed-job")),request:.requests[-1]}'
+    expect:
+      json:
+        /present: false
+        /request/method: DELETE
+- name: gcp-dataproc.clusters_list-worst-escaped-page-fits-cap
+  action: gcp-dataproc.clusters_list
+  args:
+    project: worst-prod
+    region: us-central1
+    page_size: 6
+  expect:
+    json:
+      /returned_count: 6
+      /cursor_omitted: false
+- name: gcp-dataproc.clusters_list-continuation
+  action: gcp-dataproc.clusters_list
+  args:
+    project: example-prod
+    region: us-central1
+    page_size: 1
+    page_cursor: page-two
+  expect:
+    json:
+      /next_page_cursor: null
+      /more_available: false
+  probes:
+  - name: Exact fixture state and request shape
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '.requests[-1]'
+    expect:
+      json:
+        /query/pageToken/0: page-two
+        /query/pageSize/0: '1'
+- name: gcp-dataproc.jobs_list-worst-escaped-page-fits-cap
+  action: gcp-dataproc.jobs_list
+  args:
+    project: worst-prod
+    region: us-central1
+    page_size: 6
+  expect:
+    json:
+      /returned_count: 6
+      /cursor_omitted: false
+- name: gcp-dataproc.jobs_list-continuation
+  action: gcp-dataproc.jobs_list
+  args:
+    project: example-prod
+    region: us-central1
+    page_size: 1
+    page_cursor: page-two
+  expect:
+    json:
+      /next_page_cursor: null
+      /more_available: false
+  probes:
+  - name: Exact fixture state and request shape
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '.requests[-1]'
+    expect:
+      json:
+        /query/pageToken/0: page-two
+        /query/pageSize/0: '1'
+- name: gcp-dataproc.operations_list-worst-escaped-page-fits-cap
+  action: gcp-dataproc.operations_list
+  args:
+    project: worst-prod
+    region: us-central1
+    page_size: 6
+  expect:
+    json:
+      /returned_count: 6
+      /cursor_omitted: false
+- name: gcp-dataproc.operations_list-continuation
+  action: gcp-dataproc.operations_list
+  args:
+    project: example-prod
+    region: us-central1
+    page_size: 1
+    page_cursor: page-two
+  expect:
+    json:
+      /next_page_cursor: null
+      /more_available: false
+  probes:
+  - name: Exact fixture state and request shape
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '.requests[-1]'
+    expect:
+      json:
+        /query/pageToken/0: page-two
+        /query/pageSize/0: '1'
+- name: gcp-dataproc.autoscaling_policies_list-worst-escaped-page-fits-cap
+  action: gcp-dataproc.autoscaling_policies_list
+  args:
+    project: worst-prod
+    region: us-central1
+    page_size: 6
+  expect:
+    json:
+      /returned_count: 6
+      /cursor_omitted: false
+- name: gcp-dataproc.autoscaling_policies_list-continuation
+  action: gcp-dataproc.autoscaling_policies_list
+  args:
+    project: example-prod
+    region: us-central1
+    page_size: 1
+    page_cursor: page-two
+  expect:
+    json:
+      /next_page_cursor: null
+      /more_available: false
+  probes:
+  - name: Exact fixture state and request shape
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '.requests[-1]'
+    expect:
+      json:
+        /query/pageToken/0: page-two
+        /query/pageSize/0: '1'
+- name: gcp-dataproc.jobs_list-server-selectors
+  action: gcp-dataproc.jobs_list
+  args:
+    project: example-prod
+    region: us-central1
+    cluster_filter: lol-20261107
+    state: ACTIVE
+  expect:
+    json:
+      /items/0/id: active-job
+      /returned_count: 1
+  probes:
+  - name: Exact fixture state and request shape
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '.requests[-1]'
+    expect:
+      json:
+        /query/clusterName/0: lol-20261107
+        /query/jobStateMatcher/0: ACTIVE
+- name: gcp-dataproc.clusters_list-empty
+  action: gcp-dataproc.clusters_list
+  args:
+    project: empty-prod
+    region: us-central1
+  expect:
+    json:
+      /items: []
+      /returned_count: 0
+      /more_available: false
+- name: gcp-dataproc.cluster_metrics-unavailable-is-not-zero
+  action: gcp-dataproc.cluster_metrics
+  args:
+    project: empty-prod
+    region: us-central1
+    cluster: lol-20261107
+  expect:
+    json:
+      /available: false
+      /hdfs: []
+      /yarn: []
+- name: gcp-dataproc.clusters_list-unsupported-cursor
+  action: gcp-dataproc.clusters_list
+  args:
+    project: badcursor-prod
+    region: us-central1
+  expect:
+    json:
+      /next_page_cursor: null
+      /cursor_omitted: true
+      /more_available: true
+- name: gcp-dataproc.cluster_metrics-worst-map-fits-cap
+  action: gcp-dataproc.cluster_metrics
+  args:
+    project: worst-prod
+    region: us-central1
+    cluster: lol-20261107
+  expect:
+    json:
+      /hdfs/0/name_truncated: true
+      /hdfs/0/value: '9223372036854775807'
+      /omitted:
+        hdfs: 22
+        yarn: 22
+- name: gcp-dataproc.job_errors-worst-message-fits-cap
+  action: gcp-dataproc.job_errors
+  args:
+    project: worst-prod
+    region: us-central1
+    job: failed-job
+  expect:
+    json:
+      /history_omitted: 6
+  probes:
+  - name: Error read is one GET without a state change
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{methods:[.requests[].method],state:.jobs["failed-job"].status.state}'
+    expect:
+      json:
+        /methods:
+        - GET
+        /state: ERROR
+- name: gcp-dataproc.job_details-worst-applications-fit-cap
+  action: gcp-dataproc.job_details
+  args:
+    project: worst-prod
+    region: us-central1
+    job: failed-job
+  expect:
+    json:
+      /yarn_omitted: 6
+      /yarn/3/progress: 42
+- name: gcp-dataproc.operation_details-worst-message-fits-cap
+  action: gcp-dataproc.operation_details
+  args:
+    project: worst-prod
+    region: us-central1
+    operation: 11111111-1111-4111-8111-111111111111
+  expect:
+    json:
+      /done: true
+      /error_code: 9
+  probes:
+  - name: Error read is one GET without a state change
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{methods:[.requests[].method],state:.jobs["failed-job"].status.state}'
+    expect:
+      json:
+        /methods:
+        - GET
+        /state: ERROR
+- name: gcp-dataproc.clusters_list-permission-denied
+  action: gcp-dataproc.clusters_list
+  args:
+    project: denied-prod
+    region: us-central1
+  expect:
+    status: failure
+    exit:
+    - 22
+    stdout_not_empty: false
+    stderr_contains:
+    - Dataproc permission denied
+    - PERMISSION_DENIED
+- name: gcp-dataproc.cluster_start-permission-denied
+  action: gcp-dataproc.cluster_start
+  args:
+    project: denied-prod
+    region: us-central1
+    cluster: cold-cluster
+    cluster_uuid: 9e52399f-eaa6-4fd0-a41b-d847812b356b
+  expect:
+    status: failure
+    exit:
+    - 22
+    stdout_not_empty: false
+    stderr_contains:
+    - Dataproc permission denied
+    - PERMISSION_DENIED
+- name: gcp-dataproc.clusters_list-invalid-credential
+  action: gcp-dataproc.clusters_list
+  args:
+    project: example-prod
+    region: us-central1
+  expect:
+    status: failure
+    exit:
+    - 22
+    stdout_not_empty: false
+    stderr_contains:
+    - Dataproc permission denied
+  env:
+    CLOUDSDK_AUTH_ACCESS_TOKEN: packtest-canary-dataproc-invalid-access-933d
+- name: gcp-dataproc.job_delete-rejects-active
+  action: gcp-dataproc.job_delete
+  args:
+    project: example-prod
+    region: us-central1
+    job: active-job
+  expect:
+    status: failure
+    exit:
+    - 22
+    stdout_not_empty: false
+    stderr_contains:
+    - Active jobs must be cancelled
+    - FAILED_PRECONDITION
+  probes:
+  - name: Exact fixture state and request shape
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{state:.jobs["active-job"].status.state}'
+    expect:
+      json:
+        /state: RUNNING
+- name: gcp-dataproc.cluster_start-refuses-reused-identity
+  action: gcp-dataproc.cluster_start
+  args:
+    project: example-prod
+    region: us-central1
+    cluster: cold-cluster
+    cluster_uuid: 00000000-0000-4000-8000-000000000000
+  expect:
+    status: failure
+    exit:
+    - 22
+    stdout_not_empty: false
+    stderr_contains:
+    - Expected exact cluster UUID guard
+  probes:
+  - name: Exact fixture state and request shape
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{state:.clusters["cold-cluster"].status.state}'
+    expect:
+      json:
+        /state: STOPPED
+- name: gcp-dataproc.cluster_details-missing
+  action: gcp-dataproc.cluster_details
+  args:
+    project: example-prod
+    region: us-central1
+    cluster: missing-cluster
+  expect:
+    status: failure
+    exit:
+    - 22
+    stdout_not_empty: false
+    stderr_contains:
+    - Cluster not found
+    - NOT_FOUND
+- name: gcp-dataproc.clusters_list-malformed-collection
+  action: gcp-dataproc.clusters_list
+  args:
+    project: malformed-prod
+    region: us-central1
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - expected a Dataproc collection array
+- name: gcp-dataproc.cluster_metrics-malformed-value
+  action: gcp-dataproc.cluster_metrics
+  args:
+    project: malformed-prod
+    region: us-central1
+    cluster: lol-20261107
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - expected Dataproc int64 metric strings
+- name: gcp-dataproc.clusters_list-bounds-download
+  action: gcp-dataproc.clusters_list
+  args:
+    project: oversize-prod
+    region: us-central1
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - Dataproc API request failed
+- name: gcp-dataproc.cluster_details-core-jq
+  action: gcp-dataproc.cluster_details
+  args:
+    project: example-prod
+    region: us-central1
+    cluster: lol-20261107
+  expect:
+    json:
+      /uuid: 9e52399f-eaa6-4fd0-a41b-d847812b356b
+      /workers: 2
+  env:
+    PATH: /opt/jq-without-regex:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+- name: gcp-dataproc.metacharacter-cluster
+  action: gcp-dataproc.cluster_details
+  args:
+    project: example-prod
+    region: us-central1
+    cluster: lol;echo injected
+  expect:
+    status: failure
+    reason: argument_invalid
+    stdout_not_empty: false
+- name: gcp-dataproc.region-path
+  action: gcp-dataproc.clusters_list
+  args:
+    project: example-prod
+    region: us-central1/../other
+  expect:
+    status: failure
+    reason: argument_invalid
+    stdout_not_empty: false
+- name: gcp-dataproc.worker-overflow
+  action: gcp-dataproc.cluster_resize_workers
+  args:
+    project: example-prod
+    region: us-central1
+    cluster: lol-20261107
+    workers: 2147483648
+  expect:
+    status: failure
+    reason: argument_invalid
+    stdout_not_empty: false
+- name: gcp-dataproc.negative-secondary
+  action: gcp-dataproc.cluster_resize_secondary_workers
+  args:
+    project: example-prod
+    region: us-central1
+    cluster: lol-20261107
+    secondary_workers: -1
+  expect:
+    status: failure
+    reason: argument_invalid
+    stdout_not_empty: false
+- name: gcp-dataproc.graceful-over-day
+  action: gcp-dataproc.cluster_resize_workers
+  args:
+    project: example-prod
+    region: us-central1
+    cluster: lol-20261107
+    workers: 2
+    graceful_seconds: 86401
+  expect:
+    status: failure
+    reason: argument_invalid
+    stdout_not_empty: false
+- name: gcp-dataproc.page-over-budget
+  action: gcp-dataproc.clusters_list
+  args:
+    project: example-prod
+    region: us-central1
+    page_size: 7
+  expect:
+    status: failure
+    reason: argument_invalid
+    stdout_not_empty: false
+- name: gcp-dataproc.operation-url
+  action: gcp-dataproc.operation_details
+  args:
+    project: example-prod
+    region: us-central1
+    operation: https://other/operation
+  expect:
+    status: failure
+    reason: argument_invalid
+    stdout_not_empty: false
+- name: gcp-dataproc.clusters_list-no-plaintext-endpoint
+  action: gcp-dataproc.clusters_list
+  args:
+    project: example-prod
+    region: us-central1
+  expect:
+    status: failure
+    exit:
+    - 2
+    stdout_not_empty: false
+    stderr_contains:
+    - must be an HTTPS origin
+  env:
+    CLOUDSDK_API_ENDPOINT_OVERRIDES_DATAPROC: http://gcp-api:8443/
+- name: gcp-dataproc.clusters_list-does-not-override-quota-project
+  action: gcp-dataproc.clusters_list
+  args:
+    project: example-prod
+    region: us-central1
+  expect:
+    json:
+      /items/0/name: lol-20261107
+  probes:
+  - name: Only resource project and bearer authority are used
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{quota_project:.requests[0].quota_project,project:.requests[0].project}'
+    expect:
+      json:
+        /quota_project: null
+        /project: example-prod
+- name: gcp-dataproc.job_details-pending-placement
+  action: gcp-dataproc.job_details
+  args:
+    project: pending-prod
+    region: us-central1
+    job: failed-job
+  expect:
+    json:
+      /state: PENDING
+      /uuid: null
+      /yarn: []
+- name: gcp-dataproc.cluster_details-preserves-long-uri-policy-id
+  action: gcp-dataproc.cluster_details
+  args:
+    project: longuri-prod
+    region: us-central1
+    cluster: lol-20261107
+  expect:
+    json:
+      /autoscaling_policy: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+- name: gcp-dataproc.clusters_list-bounds-chunked-download
+  action: gcp-dataproc.clusters_list
+  args:
+    project: chunked-prod
+    region: us-central1
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - Dataproc API request failed
+- name: gcp-dataproc.clusters_list-stream-cap-without-curl-size-optimization
+  action: gcp-dataproc.clusters_list
+  args:
+    project: chunked-prod
+    region: us-central1
+  env:
+    PATH: /packs/gcp-dataproc/test/fixtures/curl-before-8.4:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - Dataproc response exceeds the 4 MiB byte budget

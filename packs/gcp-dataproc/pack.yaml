@@ -1,0 +1,70 @@
+schema_version: 1
+id: gcp-dataproc
+name: Google Cloud Dataproc operations
+version: 0.1.0
+description: Inspect classic Dataproc clusters, daemon metrics, jobs, failures, operations and regional
+  autoscaling policies, then govern narrow start, stop, resize, cancellation and deletion controls.
+  Selected projections exclude arbitrary configuration and submitted job payloads. Serverless batches,
+  cluster creation, job submission and policy writes are outside this pack.
+vendor: emisar
+homepage: https://emisar.dev/packs/gcp-dataproc
+requires:
+  os:
+  - linux
+  binaries:
+  - bash
+  - gcloud
+  - curl
+  - jq
+setup:
+  summary: Uses the runner host's gcloud identity. On Google Compute Engine, attach a dedicated
+    service account with the cloud-platform OAuth scope and the permissions below; gcloud obtains
+    its short-lived credential without a key file. The actions send it through curl stdin to the
+    Dataproc HTTPS API, never argv or output.
+  env:
+  - name: CLOUDSDK_CONFIG
+    description: Optional dedicated gcloud configuration directory.
+    example: /etc/emisar/gcloud
+  - name: CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE
+    description: Optional workload-identity or service-account credential file for hosts without
+      an attached identity.
+    example: /etc/emisar/gcp-reader.json
+  notes:
+  - Enable the Dataproc API in the target project. Ordinary metadata and daemon metric reads need
+    dataproc.clusters.get/list, dataproc.jobs.get/list, dataproc.operations.get/list and dataproc.autoscalingPolicies.get/list.
+    A custom role can grant exactly the actions the runner needs.
+  - The controls additionally need dataproc.clusters.start/stop/update/delete and dataproc.jobs.cancel/delete.
+    No cluster creation, job submission, service-account impersonation or iam.serviceAccounts.actAs
+    grant is required by this action surface.
+  - "For a host without an attached identity, create a dedicated gcloud configuration with `gcloud\
+    \ auth login --cred-file=...` using a workload-identity configuration or a service-account credential\
+    \ from Google Cloud IAM \u2192 Service Accounts. Allowlist configured credential/config variables\
+    \ in `execution.inherit_env`; ordinary gcloud authentication does not use GOOGLE_APPLICATION_CREDENTIALS."
+  - Targets are explicit project and region arguments. Remote authentication is not host authority;
+    no protected-file, sudo or root grant is needed. This remote pack has no host detection signal.
+  - Requires curl 7.76 or newer. Read pages contain at most six rows to stay within the 8 KiB structured-result
+    budget; follow next_page_cursor with unchanged selectors. Long or unsupported provider cursors
+    are omitted with cursor_omitted=true.
+  - Lifecycle operations are asynchronous. A successful request is acceptance, not completion; inspect
+    the returned operation or job until it reaches a terminal state. Start, stop and delete requests
+    require the UUID from cluster_details to protect against a reused name. Worker resize uses the
+    cluster name and a single worker-count update mask; it has no UUID argument.
+  verify: gcp-dataproc.clusters_list
+actions:
+- actions/clusters_list.yaml
+- actions/cluster_details.yaml
+- actions/cluster_metrics.yaml
+- actions/jobs_list.yaml
+- actions/job_details.yaml
+- actions/job_errors.yaml
+- actions/operations_list.yaml
+- actions/operation_details.yaml
+- actions/autoscaling_policies_list.yaml
+- actions/autoscaling_policy_details.yaml
+- actions/cluster_start.yaml
+- actions/cluster_stop.yaml
+- actions/cluster_resize_workers.yaml
+- actions/cluster_resize_secondary_workers.yaml
+- actions/cluster_delete.yaml
+- actions/job_cancel.yaml
+- actions/job_delete.yaml

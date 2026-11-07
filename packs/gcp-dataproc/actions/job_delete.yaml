@@ -1,0 +1,67 @@
+schema_version: 1
+id: gcp-dataproc.job_delete
+title: Delete a Dataproc job record
+kind: script
+risk: high
+description: Delete one terminal Dataproc job record. Active jobs are rejected by Dataproc and must
+  be cancelled separately. Remove the job resource used for inspection; this action does not delete
+  output data or cluster VMs.
+side_effects:
+- One gcloud credential read and one authenticated Dataproc v1 lifecycle request; no automatic polling
+  or retry.
+args:
+- name: project
+  type: string
+  required: true
+  description: Google Cloud project ID.
+  validation:
+    pattern: ^[a-z][a-z0-9-]{4,28}[a-z0-9]$
+    max_length: 30
+- name: region
+  type: string
+  required: true
+  description: Explicit Dataproc region, such as us-central1.
+  validation:
+    pattern: ^[a-z][a-z0-9-]{0,62}$
+    max_length: 63
+- name: job
+  type: string
+  required: true
+  description: Exact Dataproc job ID.
+  validation:
+    pattern: ^[A-Za-z0-9_-]{1,100}$
+    max_length: 100
+execution:
+  script:
+    path: scripts/dataproc.sh
+    interpreter: /bin/bash
+  argv:
+  - job_delete
+  - '{{ args.project }}'
+  - '{{ args.region }}'
+  - '{{ args.job }}'
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required:
+    - id
+    - deleted
+    properties:
+      id:
+        type: string
+        maxLength: 100
+      deleted:
+        const: true
+examples:
+- title: Delete a Dataproc job record
+  args:
+    project: example-prod
+    region: us-central1
+    job: job-20261107
