@@ -1,0 +1,94 @@
+schema_version: 1
+id: gcp-dataproc.operation_details
+title: Read a Dataproc operation result
+kind: script
+risk: medium
+description: Read one operation's completion, cluster, type and bounded provider error message.
+  The message may include submitted application text and receives runner redaction. A pending operation
+  is not completion proof; a done operation with an error code is a failed operation. Return no
+  response payload or error details envelope.
+side_effects:
+- One gcloud credential read and one authenticated Dataproc v1 GET.
+args:
+- name: project
+  type: string
+  required: true
+  description: Google Cloud project ID.
+  validation:
+    pattern: ^[a-z][a-z0-9-]{4,28}[a-z0-9]$
+    max_length: 30
+- name: region
+  type: string
+  required: true
+  description: Explicit Dataproc region, such as us-central1.
+  validation:
+    pattern: ^[a-z][a-z0-9-]{0,62}$
+    max_length: 63
+- name: operation
+  type: string
+  required: true
+  description: Operation ID from a lifecycle result; pass the ID only, not a resource URL.
+  validation:
+    pattern: ^[A-Za-z0-9_-]{1,40}$
+    max_length: 40
+execution:
+  script:
+    path: scripts/dataproc.sh
+    interpreter: /bin/bash
+  argv:
+  - operation_details
+  - '{{ args.project }}'
+  - '{{ args.region }}'
+  - '{{ args.operation }}'
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required:
+    - id
+    - done
+    - cluster
+    - type
+    - state
+    - state_started
+    - error_code
+    - message
+    properties:
+      id:
+        type: string
+        maxLength: 40
+      done:
+        type: boolean
+      cluster:
+        type: string
+        maxLength: 51
+      type:
+        type: string
+        maxLength: 24
+      state:
+        type: string
+        maxLength: 24
+      state_started:
+        type: string
+        maxLength: 40
+      error_code:
+        type:
+        - integer
+        - 'null'
+        minimum: 0
+        maximum: 2147483647
+      message:
+        type: string
+        maxLength: 512
+examples:
+- title: Read a Dataproc operation result
+  args:
+    project: example-prod
+    region: us-central1
+    operation: 11111111-1111-4111-8111-111111111111

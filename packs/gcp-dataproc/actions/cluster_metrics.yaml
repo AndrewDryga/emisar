@@ -1,0 +1,122 @@
+schema_version: 1
+id: gcp-dataproc.cluster_metrics
+title: Show Dataproc HDFS and YARN metrics
+kind: script
+risk: low
+description: Show the cluster daemon HDFS and YARN metric snapshot from clusters.get. Preserve int64
+  values as decimal strings; return up to eight metrics per family with omission counts. Missing
+  metrics report available=false, never zero usage. Metric names are clipped at 48 characters with
+  an explicit flag. This vendor snapshot is a beta field and is not a historical Cloud Monitoring
+  query.
+side_effects:
+- One gcloud credential read and one authenticated Dataproc v1 GET.
+args:
+- name: project
+  type: string
+  required: true
+  description: Google Cloud project ID.
+  validation:
+    pattern: ^[a-z][a-z0-9-]{4,28}[a-z0-9]$
+    max_length: 30
+- name: region
+  type: string
+  required: true
+  description: Explicit Dataproc region, such as us-central1.
+  validation:
+    pattern: ^[a-z][a-z0-9-]{0,62}$
+    max_length: 63
+- name: cluster
+  type: string
+  required: true
+  description: Exact classic Dataproc cluster name.
+  validation:
+    pattern: ^[a-z](?:[a-z0-9-]{0,49}[a-z0-9])?$
+    max_length: 51
+execution:
+  script:
+    path: scripts/dataproc.sh
+    interpreter: /bin/bash
+  argv:
+  - cluster_metrics
+  - '{{ args.project }}'
+  - '{{ args.region }}'
+  - '{{ args.cluster }}'
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required:
+    - cluster
+    - available
+    - hdfs
+    - yarn
+    - omitted
+    properties:
+      cluster:
+        type: string
+        maxLength: 51
+      available:
+        type: boolean
+      hdfs:
+        type: array
+        maxItems: 8
+        items:
+          type: object
+          additionalProperties: false
+          required:
+          - name
+          - name_truncated
+          - value
+          properties:
+            name:
+              type: string
+              maxLength: 48
+            name_truncated:
+              type: boolean
+            value:
+              type: string
+              maxLength: 20
+      yarn:
+        type: array
+        maxItems: 8
+        items:
+          type: object
+          additionalProperties: false
+          required:
+          - name
+          - name_truncated
+          - value
+          properties:
+            name:
+              type: string
+              maxLength: 48
+            name_truncated:
+              type: boolean
+            value:
+              type: string
+              maxLength: 20
+      omitted:
+        type: object
+        additionalProperties: false
+        required:
+        - hdfs
+        - yarn
+        properties:
+          hdfs:
+            type: integer
+            minimum: 0
+          yarn:
+            type: integer
+            minimum: 0
+examples:
+- title: Show Dataproc HDFS and YARN metrics
+  args:
+    project: example-prod
+    region: us-central1
+    cluster: analytics-20261107

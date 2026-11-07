@@ -1,0 +1,159 @@
+schema_version: 1
+id: gcp-dataproc.autoscaling_policy_details
+title: Show a Dataproc autoscaling policy
+kind: script
+risk: low
+description: Show one regional autoscaling policy's worker limits, weights, cooldown and YARN scale
+  factors and graceful decommission timeout. Identify Spark Standalone policies but leave their
+  YARN-only factors null. No policy is changed.
+side_effects:
+- One gcloud credential read and one authenticated Dataproc v1 GET.
+args:
+- name: project
+  type: string
+  required: true
+  description: Google Cloud project ID.
+  validation:
+    pattern: ^[a-z][a-z0-9-]{4,28}[a-z0-9]$
+    max_length: 30
+- name: region
+  type: string
+  required: true
+  description: Explicit Dataproc region, such as us-central1.
+  validation:
+    pattern: ^[a-z][a-z0-9-]{0,62}$
+    max_length: 63
+- name: policy
+  type: string
+  required: true
+  description: Regional autoscaling policy ID.
+  validation:
+    pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{1,48}[A-Za-z0-9]$
+    max_length: 50
+execution:
+  script:
+    path: scripts/dataproc.sh
+    interpreter: /bin/bash
+  argv:
+  - autoscaling_policy_details
+  - '{{ args.project }}'
+  - '{{ args.region }}'
+  - '{{ args.policy }}'
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required:
+    - id
+    - primary
+    - secondary
+    - cooldown
+    - algorithm
+    - scale_up_factor
+    - scale_down_factor
+    - scale_up_min_fraction
+    - scale_down_min_fraction
+    - graceful_decommission
+    properties:
+      id:
+        type: string
+        maxLength: 50
+      primary:
+        type: object
+        additionalProperties: false
+        required:
+        - min
+        - max
+        - weight
+        properties:
+          min:
+            type:
+            - integer
+            - 'null'
+            minimum: 0
+            maximum: 2147483647
+          max:
+            type:
+            - integer
+            - 'null'
+            minimum: 0
+            maximum: 2147483647
+          weight:
+            type:
+            - integer
+            - 'null'
+            minimum: 0
+            maximum: 2147483647
+      secondary:
+        type: object
+        additionalProperties: false
+        required:
+        - min
+        - max
+        - weight
+        properties:
+          min:
+            type:
+            - integer
+            - 'null'
+            minimum: 0
+            maximum: 2147483647
+          max:
+            type:
+            - integer
+            - 'null'
+            minimum: 0
+            maximum: 2147483647
+          weight:
+            type:
+            - integer
+            - 'null'
+            minimum: 0
+            maximum: 2147483647
+      cooldown:
+        type: string
+        maxLength: 32
+      algorithm:
+        enum:
+        - yarn
+        - spark_standalone
+        - other
+      scale_up_factor:
+        type:
+        - number
+        - 'null'
+        minimum: 0
+        maximum: 1
+      scale_down_factor:
+        type:
+        - number
+        - 'null'
+        minimum: 0
+        maximum: 1
+      scale_up_min_fraction:
+        type:
+        - number
+        - 'null'
+        minimum: 0
+        maximum: 1
+      scale_down_min_fraction:
+        type:
+        - number
+        - 'null'
+        minimum: 0
+        maximum: 1
+      graceful_decommission:
+        type: string
+        maxLength: 32
+examples:
+- title: Show a Dataproc autoscaling policy
+  args:
+    project: example-prod
+    region: us-central1
+    policy: analytics
