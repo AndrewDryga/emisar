@@ -1,30 +1,52 @@
 schema_version: 1
 id: traefik.metrics
-title: GET /metrics
+title: Show bounded Prometheus metrics
 kind: script
 risk: low
 description: >
-  Show Prometheus metrics in text exposition format (requires
-  --metrics.prometheus=true): per-entrypoint/router/service request counts,
-  durations, open connections, and TLS cert expiry gauges. Served on the
-  traefik entrypoint (:8080) by default unless metrics.prometheus.entryPoint
-  moves it. Set TRAEFIK_METRICS_URL for a separate metrics entrypoint;
-  otherwise uses TRAEFIK_URL.
+  Show a bounded selection of complete Prometheus samples: request counters,
+  duration sums/counts, open connections, and TLS expiry gauges. Filter metric
+  names with a literal prefix; the default selects traefik_ metrics. Histogram
+  bucket samples are omitted unless include_buckets=true. Return at most
+  max_samples within a 64 KiB sample budget, followed by a comment reporting
+  matching, returned, omitted, and skipped-bucket counts. This is a fresh scrape,
+  not a complete inventory or a continuation. Fetch the complete response before
+  emitting samples; fail on HTTP errors, a 20-second fetch deadline, or an input
+  larger than 8 MiB. Requires --metrics.prometheus=true. Set TRAEFIK_METRICS_URL
+  for a separate metrics entrypoint; otherwise uses TRAEFIK_URL.
 side_effects:
   - One read-only HTTP GET to the Traefik metrics endpoint.
-  - Read-only.
-args: []
+  - Fetches at most 8 MiB; emits complete samples within 64 KiB plus a bounded summary.
+args:
+  - name: metric_prefix
+    type: string
+    default: traefik_
+    description: Literal metric-name prefix; empty selects all names. No regular expressions.
+    validation: {pattern: "^([a-zA-Z_:][a-zA-Z0-9_:]*)?$", max_length: 128}
+  - name: max_samples
+    type: integer
+    default: 200
+    description: Maximum returned samples, capped at 2000 per run and by the 64 KiB sample budget.
+    validation: {min: 1, max: 2000}
+  - name: include_buckets
+    type: boolean
+    default: false
+    description: Include metric names ending in _bucket; false keeps histogram sums/counts without the high-cardinality buckets.
 execution:
   script:
-    path: scripts/trget.sh
+    path: scripts/metrics.sh
     interpreter: /bin/sh
   argv:
-    - "/metrics"
-  timeout: 15s
+    - "{{ args.metric_prefix }}"
+    - "{{ args.max_samples }}"
+    - "{{ args.include_buckets }}"
+  timeout: 30s
 output:
   parser: text
-  max_stdout_bytes: 4194304
+  max_stdout_bytes: 66560
   max_stderr_bytes: 8192
 examples:
-  - title: Prometheus metrics
+  - title: Traefik metrics without histogram buckets
     args: {}
+  - title: Inspect service request counters
+    args: {metric_prefix: traefik_service_requests_total, max_samples: 100}

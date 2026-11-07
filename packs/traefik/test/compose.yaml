@@ -28,3 +28,16 @@ services:
       start_period: 20s
       start_interval: 1s
       retries: 20
+
+  # Fault/size cases supplement the real Traefik SUT without replacing it.
+  traefik-metrics-response:
+    image: python:3.14.7-alpine3.24@sha256:9e9fde4d32eedce0b661d9ab91e826b62dddf28e928c230ec55f1866cac66b01
+    entrypoint: [python3, /fixture/metrics-server.py]
+    volumes:
+      - ${EMISAR_ROOT}/packs/traefik/test/fixtures/metrics-server.py:/fixture/metrics-server.py:ro
+    healthcheck:
+      test: [CMD, python3, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 2s
+      start_period: 10s
+      start_interval: 1s
+      retries: 10

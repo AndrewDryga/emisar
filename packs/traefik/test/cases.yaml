@@ -1,13 +1,109 @@
-services: [traefik]
+services: [traefik, traefik-metrics-response]
 versions:
   - version: v3.7.13
     digest: "@sha256:f86a2cab1b5c649070c49f883c743dd32d8485a56e3368c5f93b9e91f1e91259"
     default: true
-inherit_env: [TRAEFIK_METRICS_URL, TRAEFIK_PING_URL, TRAEFIK_URL]
+secret_env: [TRAEFIK_BASICAUTH]
+inherit_env: [TRAEFIK_METRICS_URL, TRAEFIK_PING_URL, TRAEFIK_URL, TRAEFIK_BASICAUTH]
 env:
   TRAEFIK_URL: http://127.0.0.1:8080
   TRAEFIK_PING_URL: http://127.0.0.1:8082
+  TRAEFIK_BASICAUTH: reader:packtest-canary-traefik-metrics-password-710a
+defaults:
+  expect:
+    stdout_not_contains: [packtest-canary-traefik-metrics-password-710a, packtest-canary-traefik-error-secret-6f8d]
+    stderr_not_contains: [packtest-canary-traefik-metrics-password-710a, packtest-canary-traefik-error-secret-6f8d]
 cases:
+  - name: traefik.metrics-busy-scrape-is-bounded
+    action: traefik.metrics
+    env: {TRAEFIK_METRICS_URL: "http://traefik-metrics-response:8080/large"}
+    expect:
+      stdout_contains: ["traefik_config_last_reload_success 1", "returned=200 matching=12002 omitted=11802 skipped_buckets=1000", "truncated=true"]
+      stdout_not_contains: ['service="busy-198@file"', "_bucket{"]
+  - name: traefik.metrics-literal-prefix
+    action: traefik.metrics
+    env: {TRAEFIK_METRICS_URL: "http://traefik-metrics-response:8080/large"}
+    args: {metric_prefix: traefik_service_requests_total, max_samples: 3}
+    expect:
+      stdout_contains: ['service="busy-2@file"', "returned=3 matching=12000 omitted=11997"]
+      stdout_not_contains: [traefik_config_reloads_total, 'service="busy-3@file"']
+  - name: traefik.metrics-histogram-buckets-optional
+    action: traefik.metrics
+    env: {TRAEFIK_METRICS_URL: "http://traefik-metrics-response:8080/small"}
+    args: {include_buckets: true}
+    expect:
+      stdout_contains: ['_bucket{le="+Inf"} 4', "returned=6 matching=6 omitted=0 skipped_buckets=0"]
+      stdout_not_contains: [go_goroutines]
+  - name: traefik.metrics-empty-prefix-selects-all
+    action: traefik.metrics
+    env: {TRAEFIK_METRICS_URL: "http://traefik-metrics-response:8080/small"}
+    args: {metric_prefix: ""}
+    expect:
+      stdout_contains: ["go_goroutines 7", "returned=5 matching=5 omitted=0 skipped_buckets=2"]
+  - name: traefik.metrics-no-matching-samples
+    action: traefik.metrics
+    env: {TRAEFIK_METRICS_URL: "http://traefik-metrics-response:8080/small"}
+    args: {metric_prefix: absent_}
+    expect:
+      stdout_contains: ["returned=0 matching=0 omitted=0 skipped_buckets=0", "truncated=false"]
+      stdout_not_contains: [traefik_config_reloads_total]
+  - name: traefik.metrics-whole-sample-byte-budget
+    action: traefik.metrics
+    env: {TRAEFIK_METRICS_URL: "http://traefik-metrics-response:8080/long-samples"}
+    args: {max_samples: 2000}
+    expect:
+      stdout_contains: ['id="3"', "returned=4 matching=10 omitted=6", "truncated=true"]
+      stdout_not_contains: ['id="4"']
+  - name: traefik.metrics-basic-auth
+    action: traefik.metrics
+    env: {TRAEFIK_METRICS_URL: "http://traefik-metrics-response:8080/auth"}
+    expect:
+      stdout_contains: ["traefik_config_reloads_total 3", "returned=4 matching=4 omitted=0 skipped_buckets=2"]
+  - name: traefik.metrics-auth-failure
+    action: traefik.metrics
+    env: {TRAEFIK_METRICS_URL: "http://traefik-metrics-response:8080/auth"}
+    unset_env: [TRAEFIK_BASICAUTH]
+    expect: {status: failure, exit: [22], stdout_not_empty: false, stderr_contains: ["curl: (22)"]}
+  - name: traefik.metrics-upstream-error-has-no-samples
+    action: traefik.metrics
+    env: {TRAEFIK_METRICS_URL: "http://traefik-metrics-response:8080/http-error"}
+    expect: {status: failure, exit: [22], stdout_not_empty: false, stderr_contains: ["curl: (22)"]}
+  - name: traefik.metrics-partial-scrape-has-no-samples
+    action: traefik.metrics
+    env: {TRAEFIK_METRICS_URL: "http://traefik-metrics-response:8080/partial"}
+    expect: {status: failure, exit: [18], stdout_not_empty: false, stderr_contains: ["curl: (18)"]}
+  - name: traefik.metrics-slow-scrape-has-no-samples
+    action: traefik.metrics
+    env: {TRAEFIK_METRICS_URL: "http://traefik-metrics-response:8080/slow"}
+    expect: {status: failure, exit: [28], stdout_not_empty: false, stderr_contains: ["curl: (28)"]}
+  - name: traefik.metrics-reject-oversized-without-length
+    action: traefik.metrics
+    env: {TRAEFIK_METRICS_URL: "http://traefik-metrics-response:8080/oversized"}
+    expect: {status: failure, exit: [1], stdout_not_empty: false, stderr_contains: ["exceeded 8 MiB"]}
+  - name: traefik.metrics-reject-invalid-exposition
+    action: traefik.metrics
+    env: {TRAEFIK_METRICS_URL: "http://traefik-metrics-response:8080/invalid"}
+    expect: {status: failure, exit: [1], stdout_not_empty: false, stderr_contains: ["invalid Prometheus samples"]}
+  - name: traefik.metrics-reject-shell-metacharacters
+    action: traefik.metrics
+    env: {TRAEFIK_METRICS_URL: "http://traefik-metrics-response:8080/small"}
+    args: {metric_prefix: "traefik_;echo injected"}
+    expect: {status: failure, reason: argument_invalid, error_contains: ["must match pattern"], stdout_not_empty: false}
+    probes:
+      - argv: [/bin/sh, -c, "curl -fsS http://traefik-metrics-response:8080/stats | jq -e '.metrics_requests == 0'"]
+        expect: {stdout_contains: ["true"]}
+  - name: traefik.metrics-reject-regex-prefix
+    action: traefik.metrics
+    args: {metric_prefix: "traefik_.*"}
+    expect: {status: failure, reason: argument_invalid, error_contains: ["must match pattern"], stdout_not_empty: false}
+  - name: traefik.metrics-reject-too-many-samples
+    action: traefik.metrics
+    args: {max_samples: 2001}
+    expect: {status: failure, reason: argument_invalid, stdout_not_empty: false}
+  - name: traefik.metrics-reject-zero-samples
+    action: traefik.metrics
+    args: {max_samples: 0}
+    expect: {status: failure, reason: argument_invalid, stdout_not_empty: false}
   - name: traefik.metrics-separated-entrypoint
     action: traefik.metrics
     env:

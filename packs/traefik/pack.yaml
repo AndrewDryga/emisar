@@ -2,7 +2,7 @@ schema_version: 1
 
 id: traefik
 name: Traefik ingress / reverse proxy
-version: 0.1.25
+version: 0.1.26
 # 0.1.22 and below rated rawdata and http_middlewares `low`, so the live
 # dynamic config — basicAuth user hashes and injected upstream auth headers
 # among it — auto-ran with no approval, three tiers under every sibling proxy's
@@ -15,7 +15,7 @@ description: >
   see which router is broken), a compact per-service health summary, plus a
   per-host readiness check that joins the router and service views into one
   cutover-preflight verdict, the raw dynamic-config dump, version, liveness
-  ping, and Prometheus metrics.
+  ping, and bounded, prefix-filtered Prometheus metrics.
   ACME/Let's Encrypt certificate state is read
   from the on-disk acme.json (no API exposes it), and access-log 4xx/5xx
   tails mirror the nginx pack. Default API at http://127.0.0.1:8080
