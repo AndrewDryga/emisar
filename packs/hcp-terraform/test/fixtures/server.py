@@ -27,6 +27,9 @@ WORST_TAIL_RUN_ID = "run-1TailFloodMx9Kd4Ws"
 WORST_PLAN_RUN_ID = "run-HugePlanWorstCase"
 MALFORMED_PLAN_RUN_ID = "run-MalformedPlanDoc"
 FUTURE_FORMAT_PLAN_RUN_ID = "run-FutureFormatPlan"
+RESOURCE_PATHS_ADDRESS = "module.sentry.google_compute_instance_template.sentry"
+LITERAL_PATHS_ADDRESS = 'module.roles["key.with/slash$(echo injected)"].test_resource.main[0]'
+WORST_PATHS_ADDRESS = "\\" * 512
 
 # Every codepoint of this message costs six bytes once JSON-escaped — the
 # single most expensive shape the clip can emit. A page (or a diagnosed run)
@@ -510,6 +513,74 @@ def worst_plan_json_output():
     }
 
 
+def resource_paths_plan(kind="nested"):
+    before = {
+        "effective_labels": {"container-vm": "old-" + PLAN_SECRET, "stable": "unchanged"},
+        "metadata": {"user-data": "old-" + PLAN_SECRET},
+        "password": "old-" + PLAN_SECRET,
+        "tags": ["stable", "old-" + PLAN_SECRET],
+        "removed_null": None,
+        "empty": None,
+        "type_shift": {"key": PLAN_SECRET},
+        "nested": {"map/key": {"leaf~name": "old-" + PLAN_SECRET}},
+        "serviceAccount": {"email": PLAN_SECRET},
+        "disks": [{"zone": PLAN_SECRET, "size": 3}],
+    }
+    after = {
+        "effective_labels": {"container-vm": "new-" + PLAN_SECRET, "stable": "unchanged"},
+        "metadata": {"user-data": "new-" + PLAN_SECRET},
+        "password": "new-" + PLAN_SECRET,
+        "tags": ["stable", "new-" + PLAN_SECRET],
+        "added_null": None,
+        "empty": {},
+        "type_shift": [],
+        "nested": {"map/key": {"leaf~name": "new-" + PLAN_SECRET}},
+        "disks": [{"size": 4}],
+    }
+    change = {
+        "actions": ["delete", "create"], "before": before, "after": after,
+        "after_unknown": {"id": True, "serviceAccount": True, "disks": [{"zone": True}]},
+        "before_sensitive": {"password": True}, "after_sensitive": {"password": True},
+        "replace_paths": [["effective_labels", "container-vm"], ["nested", "map/key", "leaf~name"]],
+    }
+    address = RESOURCE_PATHS_ADDRESS
+    if kind in ("create", "delete"):
+        change = {"actions": [kind], "before": None, "after": {"config": {"enabled": True}, "empty_list": [], "null_setting": None}}
+        if kind == "delete":
+            change["before"], change["after"] = change["after"], None
+    elif kind == "noop":
+        change = {"actions": ["no-op"], "before": {"password": PLAN_SECRET}, "after": {"password": PLAN_SECRET}}
+    elif kind == "literal":
+        address = LITERAL_PATHS_ADDRESS
+        change = {"actions": ["update"], "before": {"value": PLAN_SECRET}, "after": {"value": "new-" + PLAN_SECRET}}
+    elif kind == "worst":
+        address = WORST_PATHS_ADDRESS
+        keys = [f"{n:02d}" + "\u2028" * 18 for n in range(40)]
+        long_key = "\u2028" * 500
+        change = {
+            "actions": ["delete", "create"],
+            "before": {key: PLAN_SECRET for key in keys + [long_key]},
+            "after": {key: "new-" + PLAN_SECRET for key in keys + [long_key]},
+            "after_unknown": {f"unknown{n:02d}" + "\u2028" * 17: True for n in range(20)},
+            "replace_paths": [[key] for key in keys[:10] + [long_key]],
+        }
+    elif kind == "longprefix":
+        key = "long-container-" + "x" * 5000
+        change = {"actions": ["update"], "before": {key: {str(n): PLAN_SECRET for n in range(2000)}}, "after": {key: {str(n): "new-" + PLAN_SECRET for n in range(2000)}}}
+    elif kind == "invalid-actions":
+        change["actions"] = PLAN_SECRET
+    elif kind == "invalid-before":
+        change["before"] = PLAN_SECRET
+    elif kind == "invalid-unknown":
+        change["after_unknown"] = {"id": PLAN_SECRET}
+    elif kind == "invalid-mask-shape":
+        change["after_unknown"] = {"tags": {"unexpected": True}}
+    elif kind == "invalid-replacement":
+        change["replace_paths"] = [[True]]
+    resource = {"address": address, "change": change}
+    return {"format_version": PLAN_SECRET if kind == "badformat" else "1.2", "resource_changes": [resource, resource] if kind == "duplicate" else [resource]}
+
+
 # A document that still reads back as a plan but carries a scalar where a
 # collection belongs — what a truncating proxy or storage layer can return.
 # The projection must refuse it: reading the collection with []? would report
@@ -753,7 +824,24 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/blob/future-format-plan-json-output":
             self.write_json(200, future_format_plan_json_output())
             return
+        if path == "/fixture/worst-paths-address":
+            self.write_json(200, {"address": WORST_PATHS_ADDRESS})
+            return
+        if path.startswith("/blob/resource-paths/"):
+            self.write_json(200, resource_paths_plan(path.rsplit("/", 1)[-1]))
+            return
         if not self.authenticated():
+            return
+        if path.startswith("/api/v2/runs/run-Paths") and path.endswith("/plan/json-output"):
+            kind = path.split("/")[4].removeprefix("run-Paths")
+            if kind == "denied":
+                self.write_json(403, {"before": PLAN_SECRET, "after": PLAN_SECRET})
+                return
+            kind = {"badactions": "invalid-actions", "badbefore": "invalid-before", "badunknown": "invalid-unknown", "badmask": "invalid-mask-shape", "badreplacement": "invalid-replacement"}.get(kind, kind)
+            self.send_response(307)
+            self.send_header("Location", "/blob/resource-paths/" + kind)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
             return
         for run_id, blob in (
             (RUN_ID, "/blob/plan-json-output"),
