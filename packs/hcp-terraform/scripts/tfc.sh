@@ -623,6 +623,110 @@ run_details() {
         }'
 }
 
+# The values remain local jq inputs; only path strings reach the result. JSON
+# Pointer keeps map keys containing dots/slashes distinct from nested paths.
+# Bound complete paths by ENCODED bytes, including Go JSON U+2028/29 escapes:
+# 28 paths * 128 bytes + a worst-case 512-character address * 6 bytes and the
+# fixed envelope fit below the runner structured-result limit of 8192 bytes.
+readonly resource_paths_projection='
+def pointer: if length == 0 then "" else "/" + (map(tostring | split("~") | join("~0") | split("/") | join("~1")) | join("/")) end;
+def path_wire_bytes: (tojson | utf8bytelength) + ([explode[] | select(. == 8232 or . == 8233)] | length) * 3;
+# Count the complete stream but retain only bounded whole paths. Reject a
+# long prefix before constructing its pointer, avoiding private-memory
+# amplification when many leaves share a very long map key.
+def path_stats(path_stream; $limit):
+  reduce path_stream as $steps ({count: 0, shown: []};
+    .count += 1
+    | if (.shown | length) < $limit and (($steps | map(tostring | utf8bytelength) | add // 0) <= 126) then
+        ($steps | pointer) as $display
+        | if ($display | path_wire_bytes) <= 128 then .shown += [$display] else . end
+      else . end);
+def replacement_steps($change):
+  (if $change | has("replace_paths") then $change.replace_paths else [] end) as $paths
+  | if ($paths | type) != "array" then error("replace_paths in the plan document must be an array")
+    else $paths[]
+      | if type == "array" and length > 64 then error("resource path nesting exceeds 64 steps") else . end
+      | . as $steps | replacement_path as $validated | $steps end;
+def mask_paths($mask; $after; $path):
+  if ($path | length) > 64 then error("resource path nesting exceeds 64 steps")
+  elif $mask == true then $path
+  elif $mask == false or $mask == null then empty
+  elif ($mask | type) == "object" then
+    if ($after | type) != "object" and $after != null then error("after_unknown object does not match its after container")
+    else $mask | to_entries[] | mask_paths(.value; $after[.key]; $path + [.key]) end
+  elif ($mask | type) == "array" then
+    if ($after | type) != "array" and $after != null then error("after_unknown array does not match its after container")
+    else range($mask | length) as $i | mask_paths($mask[$i]; $after[$i]; $path + [$i]) end
+  else error("after_unknown contains a value other than an object, array, boolean or null") end;
+def child_mask($mask; $key):
+  if ($mask | type) == "object" and ($key | type) == "string" then $mask[$key]
+  elif ($mask | type) == "array" and ($key | type) == "number" then $mask[$key]
+  else false end;
+def changed_paths($before; $after; $unknown; $path; $before_present; $after_present):
+  if ($path | length) > 64 then error("resource path nesting exceeds 64 steps")
+  elif $unknown == true then empty
+  elif $before_present == $after_present and $before == $after then empty
+  elif (($before | type) == "object" or $before == null) and (($after | type) == "object" or $after == null)
+       and (($before | type) == "object" or ($after | type) == "object") then
+    (($before // {} | keys) + ($after // {} | keys) | unique) as $keys
+    | if ($keys | length) == 0 then $path else
+        $keys[] as $key | changed_paths($before[$key]; $after[$key]; child_mask($unknown; $key); $path + [$key];
+          (($before | type) == "object" and ($before | has($key))); (($after | type) == "object" and ($after | has($key)))) end
+  elif (($before | type) == "array" or $before == null) and (($after | type) == "array" or $after == null)
+       and (($before | type) == "array" or ($after | type) == "array") then
+    ([($before // [] | length), ($after // [] | length)] | max) as $length
+    | if $length == 0 then $path else
+        range($length) as $i | changed_paths($before[$i]; $after[$i]; child_mask($unknown; $i); $path + [$i];
+          ($i < ($before // [] | length)); ($i < ($after // [] | length))) end
+  else $path end;
+def project_resource_paths($address; $run_id):
+  if type != "object" then error("plan document must be an object") else . end
+  | if plan_format_supported(.format_version) then .
+    else error("plan document is not a supported 0.x or 1.x plan format") end
+  | collection("resource_drift"; "array") as $drift
+  | collection("output_changes"; "object") as $outputs
+  | collection("resource_changes"; "array")
+  | if all(.[]; type == "object" and (.address | type) == "string") then .
+    else error("resource_changes must contain objects with string addresses") end
+  | map(select(.address == $address))
+  | if length == 1 then .[0] else error("exact resource address must match one resource change") end
+  | .change as $change
+  | if ($change | type) != "object" then error("resource change must be an object")
+    elif ($change | has("before") or has("after") | not) then error("resource change has neither before nor after")
+    elif ($change.actions | type) != "array" or ($change.actions | length) < 1 or ($change.actions | length) > 2 then error("resource actions must be a one- or two-item array")
+    elif (all($change.actions[]; . == "no-op" or . == "create" or . == "read" or . == "update" or . == "delete" or . == "forget") | not) then error("resource actions contain an unsupported action")
+    elif (($change.before | type) != "object" and $change.before != null) or (($change.after | type) != "object" and $change.after != null) then error("resource before and after must be objects or null")
+    else . end
+  | (if $change | has("after_unknown") then $change.after_unknown else {} end) as $unknown
+  | path_stats(mask_paths($unknown; $change.after; []); 8) as $unknown_paths
+  | path_stats(changed_paths($change.before; $change.after; $unknown; []; true; true); 16) as $changed
+  | path_stats(replacement_steps($change); 4) as $replaced
+  | {
+      source: "hcp_plan_resource_paths", run_id: $run_id, address: $address,
+      path_format: "json_pointer", actions: $change.actions,
+      counts: {changed: $changed.count, unknown: $unknown_paths.count, replace: $replaced.count},
+      changed_paths: $changed.shown, unknown_paths: $unknown_paths.shown, replace_paths: $replaced.shown,
+      truncated: {changed: ($changed.count - ($changed.shown | length)), unknown: ($unknown_paths.count - ($unknown_paths.shown | length)), replace: ($replaced.count - ($replaced.shown | length))}
+    };
+'
+
+plan_resource_change_paths() (
+  local run_id=$1 address=$2 response work
+  require_id "run_id" "$run_id" "run-"
+  umask 077
+  work=$(mktemp -d "${TMPDIR:-/tmp}/emisar-tfc-plan-paths.XXXXXXXX")
+  trap 'rm -f -- "$work/error"; rmdir -- "$work"' EXIT
+  # Fetch diagnostics can contain a cleartext rejected response. Keep them
+  # private too; this action promises path-only output on every result path.
+  if ! response=$(request api_get_following_redirect "/runs/$run_id/plan/json-output" 2>"$work/error"); then
+    fail "Could not read plan JSON; verify the run ID and user/team workspace-admin access"
+  fi
+  printf '%s' "$response" | jq -cse --arg address "$address" --arg run_id "$run_id" \
+    "$pagination$plan_projection$resource_paths_projection"'
+      if length != 1 then error("expected one plan JSON document") else .[0] end
+      | project_resource_paths($address; $run_id)'
+)
+
 plan_summary() {
   local run_id=$1 response
   require_id "run_id" "$run_id" "run-"
@@ -699,6 +803,9 @@ case "$mode" in
     ;;
   plan_summary)
     plan_summary "$2"
+    ;;
+  plan_resource_change_paths)
+    plan_resource_change_paths "$2" "$3"
     ;;
   create_plan_only_run)
     create_plan_only_run "$2" "$3"

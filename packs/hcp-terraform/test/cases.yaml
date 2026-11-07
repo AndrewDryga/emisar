@@ -17,7 +17,139 @@ defaults:
       # The signature of a presigned log URL is a credential; no action may
       # emit the URL it fetched a log through.
       - packtest-canary-tfe-log-signature-4b9e
+    stderr_not_contains:
+      - packtest-canary-tfe-token-6d2a
+      - packtest-canary-tfe-plan-secret-91c7
+      - packtest-canary-tfe-log-signature-4b9e
 cases:
+  - name: tfc.plan_resource_change_paths-nested-values-stay-private
+    action: tfc.plan_resource_change_paths
+    args: {run_id: run-Pathsnested, address: module.sentry.google_compute_instance_template.sentry}
+    expect:
+      json:
+        /source: hcp_plan_resource_paths
+        /actions: [delete, create]
+        /path_format: json_pointer
+        /counts: {changed: 10, unknown: 3, replace: 2}
+        /changed_paths: [/added_null, /disks/0/size, /effective_labels/container-vm, /empty, /metadata/user-data, /nested/map~1key/leaf~0name, /password, /removed_null, /tags/1, /type_shift]
+        /unknown_paths: [/id, /serviceAccount, /disks/0/zone]
+        /replace_paths: [/effective_labels/container-vm, /nested/map~1key/leaf~0name]
+        /truncated: {changed: 0, unknown: 0, replace: 0}
+      stdout_not_contains: [unchanged, '"size":3', '"size":4', '"enabled":true']
+  - name: tfc.plan_resource_change_paths-create
+    action: tfc.plan_resource_change_paths
+    args: {run_id: run-Pathscreate, address: module.sentry.google_compute_instance_template.sentry}
+    expect:
+      json:
+        /actions: [create]
+        /changed_paths: [/config/enabled, /empty_list, /null_setting]
+        /counts: {changed: 3, unknown: 0, replace: 0}
+  - name: tfc.plan_resource_change_paths-delete
+    action: tfc.plan_resource_change_paths
+    args: {run_id: run-Pathsdelete, address: module.sentry.google_compute_instance_template.sentry}
+    expect:
+      json:
+        /actions: [delete]
+        /changed_paths: [/config/enabled, /empty_list, /null_setting]
+        /counts: {changed: 3, unknown: 0, replace: 0}
+  - name: tfc.plan_resource_change_paths-noop
+    action: tfc.plan_resource_change_paths
+    args: {run_id: run-Pathsnoop, address: module.sentry.google_compute_instance_template.sentry}
+    expect:
+      json:
+        /actions: [no-op]
+        /changed_paths: []
+        /counts: {changed: 0, unknown: 0, replace: 0}
+  - name: tfc.plan_resource_change_paths-literal-address-with-metacharacters
+    action: tfc.plan_resource_change_paths
+    args: {run_id: run-Pathsliteral, address: 'module.roles["key.with/slash$(echo injected)"].test_resource.main[0]'}
+    expect:
+      json:
+        /address: 'module.roles["key.with/slash$(echo injected)"].test_resource.main[0]'
+        /changed_paths: [/value]
+        /counts: {changed: 1, unknown: 0, replace: 0}
+  - name: tfc.plan_resource_change_paths-fits-canonical-byte-cap
+    action: tfc.plan_resource_change_paths
+    args: {run_id: run-Pathsworst}
+    resolve_args:
+      address:
+        argv: [/bin/sh, -c, "curl -fsS http://tfc-api:8080/fixture/worst-paths-address | jq -r .address"]
+    expect:
+      json:
+        /counts: {changed: 41, unknown: 20, replace: 11}
+        /truncated: {changed: 25, unknown: 12, replace: 7}
+  - name: tfc.plan_resource_change_paths-core-jq-without-regex
+    action: tfc.plan_resource_change_paths
+    args: {run_id: run-Pathsnested, address: module.sentry.google_compute_instance_template.sentry}
+    env:
+      PATH: /opt/jq-without-regex:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    expect:
+      json:
+        /counts: {changed: 10, unknown: 3, replace: 2}
+        /changed_paths/2: /effective_labels/container-vm
+  - name: tfc.plan_resource_change_paths-long-shared-prefix-keeps-counts
+    action: tfc.plan_resource_change_paths
+    args: {run_id: run-Pathslongprefix, address: module.sentry.google_compute_instance_template.sentry}
+    expect:
+      json:
+        /counts: {changed: 2000, unknown: 0, replace: 0}
+        /changed_paths: []
+        /truncated: {changed: 2000, unknown: 0, replace: 0}
+  - name: tfc.plan_resource_change_paths-address-over-byte-cap
+    action: tfc.plan_resource_change_paths
+    args: {run_id: run-Pathsworst}
+    resolve_args:
+      address:
+        argv: [/bin/sh, -c, "curl -fsS http://tfc-api:8080/fixture/worst-paths-address | jq -r '.address + \"x\"'"]
+    expect: {status: failure, reason: argument_invalid, stdout_not_empty: false}
+  - name: tfc.plan_resource_change_paths-missing-exact-address
+    action: tfc.plan_resource_change_paths
+    args: {run_id: run-Pathsnested, address: resource.missing}
+    expect: {status: failure, stdout_not_empty: false, stderr_contains: [exact resource address must match one resource change]}
+  - name: tfc.plan_resource_change_paths-duplicate-address
+    action: tfc.plan_resource_change_paths
+    args: {run_id: run-Pathsduplicate, address: module.sentry.google_compute_instance_template.sentry}
+    expect: {status: failure, stdout_not_empty: false, stderr_contains: [exact resource address must match one resource change]}
+  - name: tfc.plan_resource_change_paths-malformed-collection
+    action: tfc.plan_resource_change_paths
+    args: {run_id: run-MalformedPlanDoc, address: module.sentry.google_compute_instance_template.sentry}
+    expect: {status: failure, stdout_not_empty: false, stderr_contains: [resource_drift in the plan document is string rather than an array]}
+  - name: tfc.plan_resource_change_paths-unsupported-format
+    action: tfc.plan_resource_change_paths
+    args: {run_id: run-FutureFormatPlan, address: module.sentry.google_compute_instance_template.sentry}
+    expect: {status: failure, stdout_not_empty: false, stderr_contains: [not a supported 0.x or 1.x plan format]}
+  - name: tfc.plan_resource_change_paths-invalid-actions
+    action: tfc.plan_resource_change_paths
+    args: {run_id: run-Pathsbadactions, address: module.sentry.google_compute_instance_template.sentry}
+    expect: {status: failure, stdout_not_empty: false, stderr_contains: [resource actions must be a one- or two-item array]}
+  - name: tfc.plan_resource_change_paths-malformed-format-stays-private
+    action: tfc.plan_resource_change_paths
+    args: {run_id: run-Pathsbadformat, address: module.sentry.google_compute_instance_template.sentry}
+    expect: {status: failure, stdout_not_empty: false, stderr_contains: [not a supported 0.x or 1.x plan format]}
+  - name: tfc.plan_resource_change_paths-invalid-before-type
+    action: tfc.plan_resource_change_paths
+    args: {run_id: run-Pathsbadbefore, address: module.sentry.google_compute_instance_template.sentry}
+    expect: {status: failure, stdout_not_empty: false, stderr_contains: [resource before and after must be objects or null]}
+  - name: tfc.plan_resource_change_paths-invalid-unknown-mask
+    action: tfc.plan_resource_change_paths
+    args: {run_id: run-Pathsbadunknown, address: module.sentry.google_compute_instance_template.sentry}
+    expect: {status: failure, stdout_not_empty: false, stderr_contains: [after_unknown contains a value other than]}
+  - name: tfc.plan_resource_change_paths-invalid-replacement-path
+    action: tfc.plan_resource_change_paths
+    args: {run_id: run-Pathsbadreplacement, address: module.sentry.google_compute_instance_template.sentry}
+    expect: {status: failure, stdout_not_empty: false, stderr_contains: [replace_paths in the plan document contains a step]}
+  - name: tfc.plan_resource_change_paths-invalid-mask-container
+    action: tfc.plan_resource_change_paths
+    args: {run_id: run-Pathsbadmask, address: module.sentry.google_compute_instance_template.sentry}
+    expect: {status: failure, stdout_not_empty: false, stderr_contains: [after_unknown object does not match its after container]}
+  - name: tfc.plan_resource_change_paths-denied-body-stays-private
+    action: tfc.plan_resource_change_paths
+    args: {run_id: run-Pathsdenied, address: module.sentry.google_compute_instance_template.sentry}
+    expect: {status: failure, stdout_not_empty: false, stderr_contains: [Could not read plan JSON]}
+  - name: tfc.plan_resource_change_paths-unavailable-plan
+    action: tfc.plan_resource_change_paths
+    args: {run_id: run-DoesNotExist, address: module.sentry.google_compute_instance_template.sentry}
+    expect: {status: failure, stdout_not_empty: false, stderr_contains: [Could not read plan JSON]}
   - action: tfc.list_organizations
     expect:
       json:

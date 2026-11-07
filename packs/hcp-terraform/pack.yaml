@@ -2,12 +2,13 @@ schema_version: 1
 
 id: hcp-terraform
 name: HCP Terraform run review and gating
-version: 0.8.10
+version: 0.8.11
 description: >
   Review HCP Terraform (formerly Terraform Cloud) and Terraform Enterprise runs
   and gate what happens next: list workspaces and runs, project a run's plan
   into a summary that carries no resource or output values but does identify
-  the bounded attribute paths that force replacement, read why a run
+  the bounded attribute paths that force replacement, inspect one resource's
+  changed and unknown attribute paths without values, read why a run
   failed from a bounded tail of its plan or apply log, read a bounded plan log
   for finished runs under run-read permissions, queue a speculative
   plan-only run, retry a failed run against its exact configuration version,
@@ -42,7 +43,7 @@ setup:
       example: https://tfe.example.com
   notes:
     - "Create a user token at [app.terraform.io/app/settings/tokens](https://app.terraform.io/app/settings/tokens), or a team token under Organization Settings → Teams → the team → Team API token. The organization token (Organization Settings → API tokens) is the one several actions here reject."
-    - "plan_summary calls the plan's json-output endpoint, which HashiCorp does NOT allow organization tokens to reach: it needs a user or team token with admin access to the workspace. run_details works with a run-read token and reports add/change/destroy counts; plan_log reads a bounded raw excerpt under the same scope, but is not a complete per-resource summary."
+    - "plan_summary and plan_resource_change_paths call the plan's json-output endpoint, which HashiCorp does NOT allow organization tokens to reach: they need a user or team token with admin access to the workspace. run_details works with a run-read token and reports add/change/destroy counts; plan_log reads a bounded raw excerpt under the same scope, but is not a complete per-resource summary."
     - "apply_run, discard_run, and cancel_run also reject organization tokens — HCP requires a user or team token with permission to apply runs for the workspace."
     - "The token can do everything these actions expose, so scope it to the workspaces you actually want reachable and let emisar policy decide who may reach the mutating actions."
     - "Needs curl 7.76 or newer: the actions use --fail-with-body so a rejected request reports the API's error document instead of failing with empty output."
@@ -59,6 +60,7 @@ actions:
   - actions/list_runs.yaml
   - actions/run_details.yaml
   - actions/plan_summary.yaml
+  - actions/plan_resource_change_paths.yaml
   - actions/plan_log.yaml
   - actions/run_diagnostics.yaml
   - actions/create_plan_only_run.yaml

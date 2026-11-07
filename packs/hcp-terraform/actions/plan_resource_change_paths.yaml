@@ -1,0 +1,79 @@
+schema_version: 1
+id: tfc.plan_resource_change_paths
+title: Show one plan resource's changed attribute paths
+kind: script
+risk: low
+description: >
+  Show changed attribute paths for one exact resource address in an HCP
+  Terraform plan, without returning any before/after values. Compare known
+  nested object keys and array indices privately. Report unknown-after subtrees
+  separately rather than treating their absent values as deletions. Type changes
+  and empty containers are reported at their containing path. Paths use JSON
+  Pointer notation (empty is the resource root, ~0 escapes ~, ~1 escapes /).
+  Return complete counts and up to 16 changed, 8 unknown, and 4 replacement
+  paths. Paths exceeding 128 encoded bytes are omitted, never clipped; truncated
+  counts include every omitted path. Address matching is literal, including
+  for_each keys. Fail if the resource is absent, duplicated, or malformed, or
+  the plan format is unsupported, or nesting exceeds the 64-step comparison
+  budget. Requires the same workspace-admin user/team
+  token as tfc.plan_summary; no resource or output values leave the host.
+side_effects:
+  - One read-only plan JSON GET followed through its single presigned redirect.
+  - Downloads at most 32 MiB privately; returns only addresses, actions, paths and counts.
+args:
+  - name: run_id
+    type: string
+    required: true
+    description: Exact HCP Terraform run ID.
+    validation: {pattern: "^run-[A-Za-z0-9]{1,32}$", max_length: 36}
+  - name: address
+    type: string
+    required: true
+    description: Exact resource address from the plan; no pattern matching or expression evaluation.
+    validation: {pattern: "^[^\\x00-\\x1f\\x7f-\\x9f]+$", max_length: 512}
+execution:
+  script: {path: scripts/tfc.sh, interpreter: /bin/bash}
+  argv: [plan_resource_change_paths, "{{ args.run_id }}", "{{ args.address }}"]
+  timeout: 2m
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [source, run_id, address, path_format, actions, counts, changed_paths, unknown_paths, replace_paths, truncated]
+    properties:
+      source: {const: hcp_plan_resource_paths}
+      run_id: {type: string, maxLength: 36}
+      address: {type: string, maxLength: 512}
+      path_format: {const: json_pointer}
+      actions:
+        type: array
+        minItems: 1
+        maxItems: 2
+        items: {enum: [no-op, create, read, update, delete, forget]}
+      counts:
+        type: object
+        additionalProperties: false
+        required: [changed, unknown, replace]
+        properties:
+          changed: {type: integer, minimum: 0}
+          unknown: {type: integer, minimum: 0}
+          replace: {type: integer, minimum: 0}
+      changed_paths: {type: array, maxItems: 16, items: {type: string, maxLength: 128}}
+      unknown_paths: {type: array, maxItems: 8, items: {type: string, maxLength: 128}}
+      replace_paths: {type: array, maxItems: 4, items: {type: string, maxLength: 128}}
+      truncated:
+        type: object
+        additionalProperties: false
+        required: [changed, unknown, replace]
+        properties:
+          changed: {type: integer, minimum: 0}
+          unknown: {type: integer, minimum: 0}
+          replace: {type: integer, minimum: 0}
+examples:
+  - title: Inspect the keys that changed in an instance template
+    args: {run_id: run-4Qm7TvLpXsRbNc2d, address: module.sentry.google_compute_instance_template.sentry}
