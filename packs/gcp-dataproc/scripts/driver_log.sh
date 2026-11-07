@@ -17,6 +17,9 @@ from urllib.parse import quote, urlencode
 DEADLINE = time.monotonic() + 75
 METADATA_CAP = 1048576
 HEADER_CAP = 16384
+# Shipped redaction can grow a one-byte assignment value to [REDACTED].
+# Reserve headroom for its decoded string and JSON/schema representation.
+EMITTED_TEXT_CAP = 1024
 I64 = 9223372036854775807
 SAFE_ENV = {k: v for k, v in os.environ.items() if k in {
     "PATH", "HOME", "LANG", "LC_ALL", "TZ", "TMPDIR", "CLOUDSDK_CONFIG",
@@ -320,7 +323,7 @@ def main():
     # the final newline and never invent one between provider chunks.
     text = raw.decode("utf-8", errors="replace")
     text = "".join(c if c in "\n\t" or (ord(c) >= 32 and not 127 <= ord(c) <= 159) else " " for c in text)
-    while len(text.encode("utf-8")) > byte_limit:
+    while len(text.encode("utf-8")) > min(byte_limit, EMITTED_TEXT_CAP):
         text = text[1:]
         partial = truncated = True
     rows = text.splitlines(keepends=True)

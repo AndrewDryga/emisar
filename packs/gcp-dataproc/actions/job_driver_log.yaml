@@ -8,8 +8,10 @@ description: >
   the runner applies its normal log redaction and account approval policy. Resolve the current
   job's output-only driver URI internally, list at most five pages of 1,000 chunk metadata rows,
   and read at most four newest nonempty, generation-pinned chunks from Cloud Storage. Return
-  at most the requested lines and UTF-8 bytes, with explicit truncation and partial-first-line
-  flags. JSON escaping can further reduce the tail; counts precede runner redaction. Support
+  at most the requested lines and bytes, additionally capped at 1,024 UTF-8 bytes before
+  redaction to leave room for expanding secret masks. Return explicit truncation and
+  partial-first-line flags; JSON escaping can further reduce the tail, and counts precede
+  runner redaction. Support
   classic ASCII gs:// driver prefixes and numeric chunk suffixes, including logs retained after
   cluster deletion. Missing job metadata, unsupported URIs, incomplete listings, chunk gaps,
   encoded objects and changed snapshots fail closed. No bucket, object or URL is caller-selected.
@@ -50,7 +52,7 @@ args:
 - name: bytes
   type: integer
   default: 4096
-  description: Maximum total fetched log bytes and returned UTF-8 text bytes.
+  description: Maximum total fetched log bytes; the emitted UTF-8 tail is also capped at 1,024 bytes before redaction.
   validation: {min: 1, max: 4096}
 execution:
   script:

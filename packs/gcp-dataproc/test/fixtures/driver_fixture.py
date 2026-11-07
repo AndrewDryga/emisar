@@ -49,6 +49,10 @@ def contents(name):
         return {0: b"a\n", 1: b"", 2: b"b\n"}
     if name == "driver-secret":
         return {0: b"Authorization: Bearer packtest-canary-dataproc-error-bearer-8442\nValueError: fixture-only failure\n", 1: b""}
+    if name == "driver-redaction-expansion":
+        return {0: b"pwd=x " * 682 + b" " * 4, 1: b""}
+    if name == "driver-json-secret-expansion":
+        return {0: b'"pwd":0,' * 512, 1: b""}
     if name == "driver-worst-json":
         return {0: b'"' * 4096, 1: b""}
     if name == "driver-invalid-utf8":

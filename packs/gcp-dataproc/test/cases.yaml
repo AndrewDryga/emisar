@@ -1877,3 +1877,63 @@ cases:
         /actual_child_deadline_and_reap: true
         /repeatable_headers_accepted: true
         /duplicate_range_rejected: true
+- name: gcp-dataproc.job_driver_log-short-secret-expansion
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-redaction-expansion
+    bytes: 4096
+    lines: 200
+  expect:
+    json:
+      /bytes_read: 4096
+      /chunks_read: 1
+      /truncated: true
+      /partial_first_line: true
+      /bytes_returned: 1024
+    stdout_contains:
+    - pwd=[REDACTED]
+    stdout_not_contains:
+    - pwd=x
+  probes:
+  - name: Only read calls reached provider
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{methods:([.requests[].method]|unique)}'
+    expect:
+      json:
+        /methods:
+        - GET
+- name: gcp-dataproc.job_driver_log-json-secret-expansion
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-json-secret-expansion
+    bytes: 4096
+    lines: 200
+  expect:
+    json:
+      /bytes_read: 4096
+      /chunks_read: 1
+      /truncated: true
+      /partial_first_line: true
+      /bytes_returned: 1024
+    stdout_contains:
+    - '[REDACTED]'
+    stdout_not_contains:
+    - '"pwd":0'
+  probes:
+  - name: Only read calls reached provider
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{methods:([.requests[].method]|unique)}'
+    expect:
+      json:
+        /methods:
+        - GET
