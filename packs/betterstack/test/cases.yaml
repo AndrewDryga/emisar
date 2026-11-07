@@ -1,0 +1,1437 @@
+services:
+- betterstack-api
+versions:
+- version: 3.14.7-alpine3.24
+  digest: '@sha256:9e9fde4d32eedce0b661d9ab91e826b62dddf28e928c230ec55f1866cac66b01'
+  default: true
+secret_env:
+- BETTERSTACK_API_TOKEN
+- UNRELATED_CREDENTIAL
+inherit_env:
+- BETTERSTACK_API_TOKEN
+- CURL_CA_BUNDLE
+- UNRELATED_CREDENTIAL
+env:
+  BETTERSTACK_API_TOKEN: packtest-canary-betterstack-access-e391
+  CURL_CA_BUNDLE: /packs/betterstack/test/fixtures/server.crt
+  UNRELATED_CREDENTIAL: packtest-canary-betterstack-unrelated-97e2
+defaults:
+  expect:
+    stdout_not_empty: true
+    stdout_not_contains: &id001
+    - packtest-canary-betterstack-access-e391
+    - packtest-canary-betterstack-hidden-content-7ba2
+    - packtest-canary-betterstack-error-8ac4
+    - packtest-canary-betterstack-invalid-9b51
+    - packtest-canary-betterstack-unrelated-97e2
+    stderr_not_contains: *id001
+cases:
+- name: betterstack.monitors_list
+  action: betterstack.monitors_list
+  expect:
+    json:
+      /items/0/id: '101'
+      /items/0/monitor_type: status
+      /next_page: 2
+- name: betterstack.heartbeats_list
+  action: betterstack.heartbeats_list
+  expect:
+    json:
+      /items/0/id: '201'
+- name: betterstack.incidents_list
+  action: betterstack.incidents_list
+  expect:
+    json:
+      /items/0/id: '301'
+      /items/0/monitor_id: '101'
+- name: betterstack.status_pages_list
+  action: betterstack.status_pages_list
+  expect:
+    json:
+      /items/0/id: '401'
+      /items/0/access_protected: true
+- name: betterstack.monitor_details
+  action: betterstack.monitor_details
+  args:
+    monitor_id: '101'
+  expect:
+    json:
+      /id: '101'
+      /check_frequency: 60
+      /request_timeout: 15
+- name: betterstack.heartbeat_details
+  action: betterstack.heartbeat_details
+  args:
+    heartbeat_id: '201'
+  expect:
+    json:
+      /id: '201'
+      /period: 10800
+      /grace: 300
+- name: betterstack.incident_details
+  action: betterstack.incident_details
+  args:
+    incident_id: '301'
+  expect:
+    json:
+      /id: '301'
+      /state: Started
+      /resolved_at: null
+- name: betterstack.status_page_details
+  action: betterstack.status_page_details
+  args:
+    status_page_id: '401'
+  expect:
+    json:
+      /id: '401'
+      /aggregate_state: operational
+      /published: true
+- name: betterstack.monitor_availability
+  action: betterstack.monitor_availability
+  args:
+    monitor_id: '101'
+    from_date: '2026-11-01'
+    to_date: '2026-11-07'
+  expect:
+    json:
+      /availability: 99.98
+      /number_of_incidents: 3
+- name: betterstack.monitor_response_times
+  action: betterstack.monitor_response_times
+  args:
+    monitor_id: '101'
+  expect:
+    json:
+      /window_hours: 24
+      /regions/0/sample_count: 3
+      /regions/0/minimum_seconds: 0.1
+      /regions/0/mean_seconds: 0.2
+      /regions/0/maximum_seconds: 0.3
+      /regions/0/latest_seconds: 0.3
+      /regions/0/latest_at: '2026-11-07T12:34:53.123Z'
+- name: betterstack.monitor_create
+  action: betterstack.monitor_create
+  args:
+    url: https://example.com/health
+    http_method: HEAD
+    team_name: Team "quoted" \ literal
+  expect:
+    json:
+      /id: '102'
+      /http_method: head
+      /verify_ssl: true
+  probes:
+  - name: Independent request and state postcondition
+    argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - probe
+    - monitor_create
+    expect:
+      json:
+        /postcondition: true
+- name: betterstack.monitor_update
+  action: betterstack.monitor_update
+  args:
+    monitor_id: '101'
+    check_frequency: 120
+    request_timeout: 30
+    confirmation_period: 180
+    recovery_period: 300
+  expect:
+    json:
+      /id: '101'
+      /confirmation_period: 180
+  probes:
+  - name: Independent request and state postcondition
+    argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - probe
+    - monitor_update
+    expect:
+      json:
+        /postcondition: true
+- name: betterstack.monitor_pause
+  action: betterstack.monitor_pause
+  args:
+    monitor_id: '101'
+  expect:
+    json:
+      /paused: true
+  probes:
+  - name: Independent request and state postcondition
+    argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - probe
+    - monitor_pause
+    expect:
+      json:
+        /postcondition: true
+- name: betterstack.monitor_resume
+  action: betterstack.monitor_resume
+  args:
+    monitor_id: '101'
+  expect:
+    json:
+      /paused: false
+  probes:
+  - name: Independent request and state postcondition
+    argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - probe
+    - monitor_resume
+    expect:
+      json:
+        /postcondition: true
+- name: betterstack.monitor_delete
+  action: betterstack.monitor_delete
+  args:
+    monitor_id: '101'
+  expect:
+    json:
+      /id: '101'
+      /deleted: true
+  probes:
+  - name: Independent request and state postcondition
+    argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - probe
+    - monitor_delete
+    expect:
+      json:
+        /postcondition: true
+- name: betterstack.heartbeat_update
+  action: betterstack.heartbeat_update
+  args:
+    heartbeat_id: '201'
+    period: 3600
+    grace: 600
+    paused: 'true'
+  expect:
+    json:
+      /period: 3600
+      /paused: true
+  probes:
+  - name: Independent request and state postcondition
+    argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - probe
+    - heartbeat_update
+    expect:
+      json:
+        /postcondition: true
+- name: betterstack.incident_acknowledge
+  action: betterstack.incident_acknowledge
+  args:
+    incident_id: '301'
+  expect:
+    json:
+      /state: Acknowledged
+      /acknowledged_at: '2026-11-07T12:34:56.123Z'
+  probes:
+  - name: Independent request and state postcondition
+    argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - probe
+    - incident_acknowledge
+    expect:
+      json:
+        /postcondition: true
+- name: betterstack.incident_resolve
+  action: betterstack.incident_resolve
+  args:
+    incident_id: '301'
+  expect:
+    json:
+      /state: Resolved
+      /resolved_at: '2026-11-07T12:34:56.123Z'
+  probes:
+  - name: Independent request and state postcondition
+    argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - probe
+    - incident_resolve
+    expect:
+      json:
+        /postcondition: true
+- name: betterstack.incidents_list-filters
+  action: betterstack.incidents_list
+  args:
+    monitor_id: '101'
+    heartbeat_id: '201'
+    resolved: 'false'
+    acknowledged: 'true'
+  expect:
+    json:
+      /items/0/id: '301'
+  probes:
+  - name: Independent request and state postcondition
+    argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - probe
+    - incidents-filtered
+    expect:
+      json:
+        /postcondition: true
+- name: betterstack.monitors_list-max-page-fits-cap
+  action: betterstack.monitors_list
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - max-page
+  expect:
+    json:
+      /returned_count: 6
+      /items/5/id: '12345678901234567895'
+- name: betterstack.monitors_list-empty
+  action: betterstack.monitors_list
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - empty
+  expect:
+    json:
+      /returned_count: 0
+      /more_available: false
+      /next_page: null
+- name: betterstack.heartbeats_list-max-page-fits-cap
+  action: betterstack.heartbeats_list
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - max-page
+  expect:
+    json:
+      /returned_count: 6
+      /items/5/id: '12345678901234567895'
+- name: betterstack.heartbeats_list-empty
+  action: betterstack.heartbeats_list
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - empty
+  expect:
+    json:
+      /returned_count: 0
+      /more_available: false
+      /next_page: null
+- name: betterstack.incidents_list-max-page-fits-cap
+  action: betterstack.incidents_list
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - max-page
+  expect:
+    json:
+      /returned_count: 6
+      /items/5/id: '12345678901234567895'
+- name: betterstack.incidents_list-empty
+  action: betterstack.incidents_list
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - empty
+  expect:
+    json:
+      /returned_count: 0
+      /more_available: false
+      /next_page: null
+- name: betterstack.status_pages_list-max-page-fits-cap
+  action: betterstack.status_pages_list
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - max-page
+  expect:
+    json:
+      /returned_count: 6
+      /items/5/id: '12345678901234567895'
+- name: betterstack.status_pages_list-empty
+  action: betterstack.status_pages_list
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - empty
+  expect:
+    json:
+      /returned_count: 0
+      /more_available: false
+      /next_page: null
+- name: betterstack.monitors_list-continuation
+  action: betterstack.monitors_list
+  args:
+    page: 2
+  expect:
+    json:
+      /more_available: false
+      /next_page: null
+  probes:
+  - name: Independent request and state postcondition
+    argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - probe
+    - pagination
+    expect:
+      json:
+        /postcondition: true
+- name: betterstack.monitor_response_times-large
+  action: betterstack.monitor_response_times
+  args:
+    monitor_id: '101'
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - large-metrics
+  expect:
+    json:
+      /regions/0/sample_count: 8400
+      /regions/3/maximum_seconds: 0.3
+- name: betterstack.monitor_response_times-empty
+  action: betterstack.monitor_response_times
+  args:
+    monitor_id: '101'
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - empty-metrics
+  expect:
+    json:
+      /regions/0/sample_count: 0
+      /regions/0/mean_seconds: null
+      /regions/0/latest_at: null
+- name: betterstack.monitor_details-optional-absent
+  action: betterstack.monitor_details
+  args:
+    monitor_id: '101'
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - optional-absent
+  expect:
+    json:
+      /created_at: null
+      /updated_at: null
+      /last_checked_at: null
+- name: betterstack.monitors_list-spoof-next
+  action: betterstack.monitors_list
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - spoof-next
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - pagination origin or path
+- name: betterstack.monitors_list-malformed-next
+  action: betterstack.monitors_list
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - malformed-next
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - next page
+- name: betterstack.monitors_list-next-selector-change
+  action: betterstack.monitors_list
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - next-selector-change
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - pagination progress or selectors
+- name: betterstack.monitors_list-next-no-progress
+  action: betterstack.monitors_list
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - next-no-progress
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - pagination progress or selectors
+- name: betterstack.monitors_list-next-duplicate
+  action: betterstack.monitors_list
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - next-duplicate
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - pagination selectors
+- name: betterstack.monitors_list-missing-pagination
+  action: betterstack.monitors_list
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - missing-pagination
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - Expected a Better Stack object
+- name: betterstack.monitors_list-wrong-list
+  action: betterstack.monitors_list
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - wrong-list
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - collection
+- name: betterstack.monitors_list-wrong-type
+  action: betterstack.monitors_list
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - wrong-type
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - resource type
+- name: betterstack.monitors_list-invalid-json
+  action: betterstack.monitors_list
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - invalid-json
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - JSON response
+- name: betterstack.monitors_list-duplicate-json
+  action: betterstack.monitors_list
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - duplicate-json
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - Duplicate field
+- name: betterstack.monitors_list-nonfinite-json
+  action: betterstack.monitors_list
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - nonfinite-json
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - Nonfinite
+- name: betterstack.monitors_list-empty-200
+  action: betterstack.monitors_list
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - empty-200
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - JSON response
+- name: betterstack.monitors_list-redirect
+  action: betterstack.monitors_list
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - redirect
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - HTTP 302
+- name: betterstack.monitor_details-wrong-id
+  action: betterstack.monitor_details
+  args:
+    monitor_id: '101'
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - wrong-id
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - different resource ID
+- name: betterstack.monitor_details-wrong-type
+  action: betterstack.monitor_details
+  args:
+    monitor_id: '101'
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - wrong-type
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - resource type
+- name: betterstack.monitor_details-bad-field
+  action: betterstack.monitor_details
+  args:
+    monitor_id: '101'
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - bad-field
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - boolean
+- name: betterstack.monitor_details-bad-timestamp
+  action: betterstack.monitor_details
+  args:
+    monitor_id: '101'
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - bad-timestamp
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - timestamp
+- name: betterstack.monitor_details-http-401
+  action: betterstack.monitor_details
+  args:
+    monitor_id: '101'
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - http-401
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - HTTP 401
+- name: betterstack.monitor_details-http-403
+  action: betterstack.monitor_details
+  args:
+    monitor_id: '101'
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - http-403
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - HTTP 403
+- name: betterstack.monitor_details-http-404
+  action: betterstack.monitor_details
+  args:
+    monitor_id: '101'
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - http-404
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - HTTP 404
+- name: betterstack.monitor_details-http-422
+  action: betterstack.monitor_details
+  args:
+    monitor_id: '101'
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - http-422
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - HTTP 422
+- name: betterstack.monitor_details-http-429
+  action: betterstack.monitor_details
+  args:
+    monitor_id: '101'
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - http-429
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - HTTP 429
+- name: betterstack.monitor_details-http-500
+  action: betterstack.monitor_details
+  args:
+    monitor_id: '101'
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - http-500
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - HTTP 500
+- name: betterstack.incident_acknowledge-conflict
+  action: betterstack.incident_acknowledge
+  args:
+    incident_id: '301'
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - http-409
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - HTTP 409
+- name: betterstack.incident_resolve-conflict
+  action: betterstack.incident_resolve
+  args:
+    incident_id: '301'
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - http-409
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - HTTP 409
+- name: betterstack.monitor_availability-missing-metric
+  action: betterstack.monitor_availability
+  args: &id002
+    monitor_id: '101'
+    from_date: '2026-11-01'
+    to_date: '2026-11-07'
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - missing-metric
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - numeric metric
+- name: betterstack.monitor_availability-bad-metric
+  action: betterstack.monitor_availability
+  args: *id002
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - bad-metric
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - numeric metric
+- name: betterstack.monitor_response_times-missing-metric
+  action: betterstack.monitor_response_times
+  args: &id003
+    monitor_id: '101'
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - missing-metric
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - numeric metric
+- name: betterstack.monitor_response_times-bad-metric
+  action: betterstack.monitor_response_times
+  args: *id003
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - bad-metric
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - numeric metric
+- name: betterstack.monitor_response_times-duplicate-region
+  action: betterstack.monitor_response_times
+  args:
+    monitor_id: '101'
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - duplicate-region
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - Duplicate Better Stack metric region
+- name: betterstack.monitors_list-oversize
+  action: betterstack.monitors_list
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - oversize
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - 4 MiB
+- name: betterstack.monitors_list-chunked-oversize
+  action: betterstack.monitors_list
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - chunked-oversize
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - 4 MiB
+- name: betterstack.monitors_list-slow
+  action: betterstack.monitors_list
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - slow
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - transport failed
+- name: betterstack.monitors_list-chunked-cap-without-curl-size-option
+  action: betterstack.monitors_list
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - chunked-oversize
+  env:
+    PATH: /packs/betterstack/test/fixtures/curl-before-8.4:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - independent byte budget
+- name: betterstack.monitors_list-curl-credential-custody
+  action: betterstack.monitors_list
+  env:
+    PATH: /packs/betterstack/test/fixtures/curl-before-8.4:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    UNRELATED_CREDENTIAL: packtest-canary-betterstack-unrelated-97e2
+  expect:
+    json:
+      /items/0/id: '101'
+  probes:
+  - name: Independent request and state postcondition
+    argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - probe
+    - curl-audit
+    expect:
+      json:
+        /postcondition: true
+- name: betterstack.monitors_list-invalid-auth
+  action: betterstack.monitors_list
+  env:
+    BETTERSTACK_API_TOKEN: packtest-canary-betterstack-invalid-9b51
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - HTTP 401
+- name: betterstack.monitors_list-tls-rejection
+  action: betterstack.monitors_list
+  env:
+    CURL_CA_BUNDLE: /packs/betterstack/test/fixtures/wrong-ca.pem
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - transport failed
+- name: betterstack.monitor_update-cross-setting-bound
+  action: betterstack.monitor_update
+  args:
+    monitor_id: '101'
+    request_timeout: 90
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - timeout cannot exceed
+- name: betterstack.monitor_update-server-type-refused
+  action: betterstack.monitor_update
+  args:
+    monitor_id: '101'
+    request_timeout: 30
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - server-monitor
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - HTTP checks only
+- name: betterstack.monitor_update-false-receipt
+  action: betterstack.monitor_update
+  args:
+    monitor_id: '101'
+    confirmation_period: 180
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - false-receipt
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - did not confirm
+- name: betterstack.monitor_update-no-settings
+  action: betterstack.monitor_update
+  args:
+    monitor_id: '101'
+  expect:
+    status: failure
+    stdout_not_empty: false
+  probes:
+  - name: Independent request and state postcondition
+    argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - probe
+    - no-provider-request
+    expect:
+      json:
+        /postcondition: true
+- name: betterstack.heartbeat_update-no-settings
+  action: betterstack.heartbeat_update
+  args:
+    heartbeat_id: '201'
+  expect:
+    status: failure
+    stdout_not_empty: false
+  probes:
+  - name: Independent request and state postcondition
+    argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - probe
+    - no-provider-request
+    expect:
+      json:
+        /postcondition: true
+- name: betterstack.monitor_create-userinfo
+  action: betterstack.monitor_create
+  args:
+    url: https://user:password@example.com/
+  expect:
+    status: failure
+    stdout_not_empty: false
+  probes:
+  - name: Independent request and state postcondition
+    argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - probe
+    - no-provider-request
+    expect:
+      json:
+        /postcondition: true
+- name: betterstack.monitor_create-query
+  action: betterstack.monitor_create
+  args:
+    url: https://example.com/?private=value
+  expect:
+    status: failure
+    stdout_not_empty: false
+  probes:
+  - name: Independent request and state postcondition
+    argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - probe
+    - no-provider-request
+    expect:
+      json:
+        /postcondition: true
+- name: betterstack.monitor_create-fragment
+  action: betterstack.monitor_create
+  args:
+    url: https://example.com/#private
+  expect:
+    status: failure
+    stdout_not_empty: false
+  probes:
+  - name: Independent request and state postcondition
+    argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - probe
+    - no-provider-request
+    expect:
+      json:
+        /postcondition: true
+- name: betterstack.monitor_create-private-address
+  action: betterstack.monitor_create
+  args:
+    url: https://127.0.0.1/
+  expect:
+    status: failure
+    stdout_not_empty: false
+  probes:
+  - name: Independent request and state postcondition
+    argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - probe
+    - no-provider-request
+    expect:
+      json:
+        /postcondition: true
+- name: betterstack.monitor_create-ipv6-private
+  action: betterstack.monitor_create
+  args:
+    url: https://[::1]/
+  expect:
+    status: failure
+    stdout_not_empty: false
+  probes:
+  - name: Independent request and state postcondition
+    argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - probe
+    - no-provider-request
+    expect:
+      json:
+        /postcondition: true
+- name: betterstack.monitor_create-decimal-address
+  action: betterstack.monitor_create
+  args:
+    url: https://2130706433/
+  expect:
+    status: failure
+    stdout_not_empty: false
+  probes:
+  - name: Independent request and state postcondition
+    argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - probe
+    - no-provider-request
+    expect:
+      json:
+        /postcondition: true
+- name: betterstack.monitor_create-shell-literal
+  action: betterstack.monitor_create
+  args:
+    url: https://example.com/$(touch%20/tmp/pwned)
+  expect:
+    json:
+      /id: '102'
+      /http_method: get
+  probes:
+  - name: Literal URL is data and no shell command ran
+    argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - probe
+    - url-literal
+    expect:
+      json:
+        /postcondition: true
+- name: betterstack.monitor_details-path-injection
+  action: betterstack.monitor_details
+  args:
+    monitor_id: 101/../../secrets
+  expect:
+    status: failure
+    stdout_not_empty: false
+    reason: argument_invalid
+- name: betterstack.monitor_details-shell-injection
+  action: betterstack.monitor_details
+  args:
+    monitor_id: 101;id
+  expect:
+    status: failure
+    stdout_not_empty: false
+    reason: argument_invalid
+- name: betterstack.monitor_availability-invalid-date
+  action: betterstack.monitor_availability
+  args:
+    monitor_id: '101'
+    from_date: '2026-02-30'
+    to_date: '2026-03-01'
+  expect:
+    status: failure
+    stdout_not_empty: false
+  probes:
+  - name: Independent request and state postcondition
+    argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - probe
+    - no-provider-request
+    expect:
+      json:
+        /postcondition: true
+- name: betterstack.monitor_availability-reverse
+  action: betterstack.monitor_availability
+  args:
+    monitor_id: '101'
+    from_date: '2026-11-07'
+    to_date: '2026-11-01'
+  expect:
+    status: failure
+    stdout_not_empty: false
+  probes:
+  - name: Independent request and state postcondition
+    argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - probe
+    - no-provider-request
+    expect:
+      json:
+        /postcondition: true
+- name: betterstack.monitor_availability-too-wide
+  action: betterstack.monitor_availability
+  args:
+    monitor_id: '101'
+    from_date: '2026-01-01'
+    to_date: '2026-02-01'
+  expect:
+    status: failure
+    stdout_not_empty: false
+  probes:
+  - name: Independent request and state postcondition
+    argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - probe
+    - no-provider-request
+    expect:
+      json:
+        /postcondition: true
+- name: betterstack.heartbeat_update-period-minimum
+  action: betterstack.heartbeat_update
+  args:
+    heartbeat_id: '201'
+    period: 29
+  expect:
+    status: failure
+    stdout_not_empty: false
+  probes:
+  - name: Independent request and state postcondition
+    argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - probe
+    - no-provider-request
+    expect:
+      json:
+        /postcondition: true
+- name: betterstack.heartbeat_update-period-year
+  action: betterstack.heartbeat_update
+  args:
+    heartbeat_id: '201'
+    period: 31536000
+  expect:
+    status: failure
+    stdout_not_empty: false
+    reason: argument_invalid
+- name: betterstack.monitors_list-codec-and-io
+  action: betterstack.monitors_list
+  expect:
+    json:
+      /items/0/id: '101'
+  probes:
+  - name: Independent codec, URL, byte/deadline and custody regressions
+    argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/codec_test.py
+    expect:
+      stderr_contains:
+      - OK
+- name: betterstack.monitor_update-no-url-surface
+  action: betterstack.monitor_update
+  args:
+    monitor_id: '101'
+    confirmation_period: 180
+    url: https://outside.example.com/
+  expect:
+    status: failure
+    reason: argument_invalid
+    stdout_not_empty: false
+  probes:
+  - name: No provider request for unexposed write field
+    argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - probe
+    - no-provider-request
+    expect:
+      json:
+        /postcondition: true
+- name: betterstack.monitor_update-no-request_headers-surface
+  action: betterstack.monitor_update
+  args:
+    monitor_id: '101'
+    confirmation_period: 180
+    request_headers:
+    - name: Authorization
+      value: new
+  expect:
+    status: failure
+    reason: argument_invalid
+    stdout_not_empty: false
+  probes:
+  - name: No provider request for unexposed write field
+    argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - probe
+    - no-provider-request
+    expect:
+      json:
+        /postcondition: true
+- name: betterstack.monitor_update-no-request_body-surface
+  action: betterstack.monitor_update
+  args:
+    monitor_id: '101'
+    confirmation_period: 180
+    request_body: new
+  expect:
+    status: failure
+    reason: argument_invalid
+    stdout_not_empty: false
+  probes:
+  - name: No provider request for unexposed write field
+    argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - probe
+    - no-provider-request
+    expect:
+      json:
+        /postcondition: true
+- name: betterstack.incident_acknowledge-false-receipt
+  action: betterstack.incident_acknowledge
+  args:
+    incident_id: '301'
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - false-receipt
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - did not confirm
+- name: betterstack.incident_resolve-false-receipt
+  action: betterstack.incident_resolve
+  args:
+    incident_id: '301'
+  arrange:
+  - argv:
+    - python3
+    - -I
+    - /packs/betterstack/test/fixture.py
+    - control
+    - false-receipt
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - did not confirm

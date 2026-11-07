@@ -1,0 +1,72 @@
+schema_version: 1
+id: betterstack
+name: Better Stack uptime operations
+version: 0.1.0
+description: Inspect bounded monitor, incident, heartbeat and status-page state, aggregate availability
+  and response-time metrics, and govern narrow monitor and incident lifecycle controls. Closed projections
+  exclude hidden credentials, URLs and arbitrary content.
+vendor: emisar
+homepage: https://emisar.dev/packs/betterstack
+requires:
+  os:
+  - linux
+  binaries:
+  - bash
+  - curl
+  - python3
+setup:
+  summary: Uses an inherited Better Stack API credential with HTTPS certificate verification. Requests
+    go only to incidents.betterstack.com:443; credentials enter curl through private stdin, never action
+    arguments or process argv.
+  env:
+  - name: BETTERSTACK_API_TOKEN
+    description: Create a dedicated team or global API token in Better Stack Incidents → Integrations
+      → API tokens. Grant access only to teams/resources needed by these actions; the same credential
+      must permit any enabled controls. Global tokens require team_name on monitor_create. Allowlist this
+      variable in execution.inherit_env.
+    example: <dedicated Better Stack API token>
+  - name: CURL_CA_BUNDLE
+    description: Optional administrator-managed CA bundle path for verified TLS; the system trust store
+      is used otherwise. Allowlist only when needed.
+    example: /etc/ssl/certs/ca-certificates.crt
+  notes:
+  - 'Install bash, curl 7.76 or newer, and Python 3.9 or newer using the operating-system package manager;
+    Debian/Ubuntu: apt-get install bash curl python3. The embedded Python runs in isolated mode and uses
+    only the standard library. No jq or Python package installation is needed.'
+  - No sudo, protected host socket or host-service authority is required. This remote API pack has no
+    host detection signal. The provider credential scope and Emisar action approval are separate boundaries.
+  - Every action uses a fixed HTTPS origin, no redirects or credential-bearing URL input, a 15-second
+    curl deadline, an independent 17-second client deadline and 4 MiB response cap. Output is bounded
+    to 8 KiB. No automatic retries, automatic paging or raw provider errors.
+  - Collection pages contain at most six rows; pass next_page back with unchanged selectors. Only a validated
+    next-page number is returned, never the response-supplied URL. IDs remain exact decimal strings. Missing
+    optional fields remain null; malformed types and unsupported enums fail explicitly.
+  - Monitor URLs, names, auth, headers, bodies, scripts and proxy settings; heartbeat pulse URLs; incident
+    causes and response bodies; and custom status-page content are never output. There are no application
+    payload, heartbeat pulse, arbitrary HTTP or status-page write actions.
+  - Monitor creation uses a new unauthenticated HTTP status check. Existing monitor URL changes are intentionally
+    unavailable because hidden auth could otherwise be forwarded to a new host. Timing updates send only
+    selected fields and use no atomic revision precondition.
+  - Terraform-managed resources can revert runtime edits during the next apply; reconcile approved changes
+    in their source owner. A successful mutation receipt confirms the returned provider state, not service
+    recovery or alert delivery.
+  verify: betterstack.monitors_list
+actions:
+- actions/monitors_list.yaml
+- actions/incidents_list.yaml
+- actions/heartbeats_list.yaml
+- actions/status_pages_list.yaml
+- actions/monitor_details.yaml
+- actions/incident_details.yaml
+- actions/heartbeat_details.yaml
+- actions/status_page_details.yaml
+- actions/monitor_create.yaml
+- actions/monitor_update.yaml
+- actions/monitor_pause.yaml
+- actions/monitor_resume.yaml
+- actions/monitor_delete.yaml
+- actions/incident_acknowledge.yaml
+- actions/incident_resolve.yaml
+- actions/heartbeat_update.yaml
+- actions/monitor_availability.yaml
+- actions/monitor_response_times.yaml

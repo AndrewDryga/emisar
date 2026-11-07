@@ -20,13 +20,14 @@ not an exemption for every `_supported` suffix. Credential fields such as
 through all credential and authored rules, including nested-field masking.
 
 **Why.** The runner's `json-secret-field` and `secret-assignment` default
-redaction rules rewrite any string under a secret-named key to `[REDACTED]`
+redaction rules rewrite string, numeric, boolean and null scalars under a secret-named key to `[REDACTED]`
 before output leaves the host — unconditionally, with no entropy or value
 check. A pagination token projected as `next_page_token` therefore reaches
 the model as `[REDACTED]` on every page, and paging past page one is
 impossible; the action looks green in any test that only asserts a null
 cursor. Fail-closed redaction is correct — the fix is naming, never weakening
-the rules.
+the rules. A non-secret protection boolean is affected too: emit `access_protected`,
+not `password_protected`, and assert that its boolean value survives redaction.
 
 **Messages too.** A script's own error text never puts a secret-named
 variable right before `:` or `=`, because `secret-assignment` masks the next

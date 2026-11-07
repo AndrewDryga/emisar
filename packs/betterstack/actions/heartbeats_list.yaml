@@ -1,0 +1,155 @@
+schema_version: 1
+id: betterstack.heartbeats_list
+title: List Better Stack heartbeats
+kind: script
+risk: low
+description: List one bounded page of selected heartbeat IDs, state and typed operational settings. Omit
+  names, URLs, hidden credentials, arbitrary content and raw provider errors. Continue with next_page
+  and unchanged selectors; unsupported pagination fails explicitly.
+side_effects:
+- One authenticated Better Stack HTTPS request; monitor timing updates perform a prior read. No automatic
+  retries or paging.
+args:
+- name: page
+  type: integer
+  required: false
+  description: Page number; the 100000 ceiling bounds one continuation selector.
+  validation:
+    min: 1
+    max: 100000
+  default: 1
+- name: per_page
+  type: integer
+  required: false
+  description: Rows per request; six keeps the full selected page within the 8 KiB result budget.
+  validation:
+    min: 1
+    max: 6
+  default: 6
+execution:
+  script:
+    path: scripts/betterstack.sh
+    interpreter: /bin/bash
+  argv:
+  - heartbeats_list
+  - '{{ args.page }}'
+  - '{{ args.per_page }}'
+  timeout: 40s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 4096
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required:
+    - items
+    - returned_count
+    - more_available
+    - next_page
+    properties:
+      items:
+        type: array
+        maxItems: 6
+        items:
+          type: object
+          additionalProperties: false
+          required:
+          - id
+          - state
+          - paused
+          - call
+          - sms
+          - email
+          - push
+          - critical_alert
+          - period
+          - grace
+          - paused_at
+          - created_at
+          - updated_at
+          properties:
+            id:
+              type: string
+              maxLength: 20
+            state:
+              type:
+              - string
+              - 'null'
+              maxLength: 16
+              enum:
+              - up
+              - down
+              - validating
+              - paused
+              - pending
+              - maintenance
+              - null
+            paused:
+              type:
+              - boolean
+              - 'null'
+            call:
+              type:
+              - boolean
+              - 'null'
+            sms:
+              type:
+              - boolean
+              - 'null'
+            email:
+              type:
+              - boolean
+              - 'null'
+            push:
+              type:
+              - boolean
+              - 'null'
+            critical_alert:
+              type:
+              - boolean
+              - 'null'
+            period:
+              type:
+              - integer
+              - 'null'
+              minimum: 0
+              maximum: 9007199254740991
+            grace:
+              type:
+              - integer
+              - 'null'
+              minimum: 0
+              maximum: 9007199254740991
+            paused_at:
+              type:
+              - string
+              - 'null'
+              maxLength: 40
+            created_at:
+              type:
+              - string
+              - 'null'
+              maxLength: 40
+            updated_at:
+              type:
+              - string
+              - 'null'
+              maxLength: 40
+      returned_count:
+        type: integer
+        minimum: 0
+        maximum: 6
+      more_available:
+        type: boolean
+      next_page:
+        type:
+        - integer
+        - 'null'
+        minimum: 1
+        maximum: 100000
+examples:
+- title: List Better Stack heartbeats
+  args: {}

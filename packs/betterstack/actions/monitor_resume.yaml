@@ -1,0 +1,196 @@
+schema_version: 1
+id: betterstack.monitor_resume
+title: Resume a Better Stack monitor
+kind: script
+risk: high
+description: Resume checks for one monitor; failures can create incidents and page responders. Send only
+  the fixed paused boolean. Reconcile runtime changes with Terraform.
+side_effects:
+- One authenticated Better Stack HTTPS request; monitor timing updates perform a prior read. No automatic
+  retries or paging.
+args:
+- name: monitor_id
+  type: string
+  required: true
+  description: Exact positive decimal resource ID; returned identifiers are preserved without clipping.
+  validation:
+    pattern: ^[1-9][0-9]{0,19}$
+    max_length: 20
+execution:
+  script:
+    path: scripts/betterstack.sh
+    interpreter: /bin/bash
+  argv:
+  - monitor_resume
+  - '{{ args.monitor_id }}'
+  timeout: 40s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 4096
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required:
+    - id
+    - monitor_type
+    - state
+    - paused
+    - verify_ssl
+    - call
+    - sms
+    - email
+    - push
+    - critical_alert
+    - check_frequency
+    - effective_check_frequency
+    - request_timeout
+    - confirmation_period
+    - recovery_period
+    - http_method
+    - regions
+    - last_checked_at
+    - paused_at
+    - created_at
+    - updated_at
+    properties:
+      id:
+        type: string
+        maxLength: 20
+      monitor_type:
+        type: string
+        maxLength: 24
+        enum:
+        - status
+        - expected_status_code
+        - keyword
+        - keyword_absence
+        - ping
+        - tcp
+        - udp
+        - smtp
+        - pop
+        - imap
+        - dns
+        - playwright
+      state:
+        type:
+        - string
+        - 'null'
+        maxLength: 16
+        enum:
+        - up
+        - down
+        - validating
+        - paused
+        - pending
+        - maintenance
+        - null
+      paused:
+        type:
+        - boolean
+        - 'null'
+      verify_ssl:
+        type:
+        - boolean
+        - 'null'
+      call:
+        type:
+        - boolean
+        - 'null'
+      sms:
+        type:
+        - boolean
+        - 'null'
+      email:
+        type:
+        - boolean
+        - 'null'
+      push:
+        type:
+        - boolean
+        - 'null'
+      critical_alert:
+        type:
+        - boolean
+        - 'null'
+      check_frequency:
+        type:
+        - integer
+        - 'null'
+        minimum: 0
+        maximum: 9007199254740991
+      effective_check_frequency:
+        type:
+        - integer
+        - 'null'
+        minimum: 0
+        maximum: 9007199254740991
+      request_timeout:
+        type:
+        - integer
+        - 'null'
+        minimum: 0
+        maximum: 9007199254740991
+      confirmation_period:
+        type:
+        - integer
+        - 'null'
+        minimum: 0
+        maximum: 9007199254740991
+      recovery_period:
+        type:
+        - integer
+        - 'null'
+        minimum: 0
+        maximum: 9007199254740991
+      http_method:
+        type:
+        - string
+        - 'null'
+        maxLength: 8
+        enum:
+        - get
+        - head
+        - post
+        - put
+        - patch
+        - options
+        - null
+      regions:
+        type: array
+        maxItems: 4
+        items:
+          type: string
+          maxLength: 2
+          enum:
+          - us
+          - eu
+          - as
+          - au
+      last_checked_at:
+        type:
+        - string
+        - 'null'
+        maxLength: 40
+      paused_at:
+        type:
+        - string
+        - 'null'
+        maxLength: 40
+      created_at:
+        type:
+        - string
+        - 'null'
+        maxLength: 40
+      updated_at:
+        type:
+        - string
+        - 'null'
+        maxLength: 40
+examples:
+- title: Resume a Better Stack monitor
+  args:
+    monitor_id: '101'

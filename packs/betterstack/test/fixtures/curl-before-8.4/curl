@@ -1,0 +1,25 @@
+#!/usr/bin/python3 -I
+"""Run the real curl, removing only its optional size optimization.
+
+Also retain boolean custody evidence. This is not an HTTP stub.
+"""
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+config = sys.stdin.buffer.read()
+args = sys.argv[1:]
+index = args.index("--max-filesize")
+args = args[:index] + args[index + 2:]
+value = {
+    "credential_stdin": b"Authorization: Bearer packtest-canary-betterstack-access-e391" in config,
+    "no_credential_argv": all("packtest-canary" not in a for a in args),
+    "no_credential_child_env": "BETTERSTACK_API_TOKEN" not in os.environ,
+    "unrelated_env_absent": "UNRELATED_CREDENTIAL" not in os.environ,
+    "fixed_origin": args[args.index("--url") + 1].startswith("https://incidents.betterstack.com/api/"),
+    "no_size_optimization": "--max-filesize" not in args,
+}
+Path("/tmp/betterstack-curl-audit.json").write_text(json.dumps(value))
+sys.exit(subprocess.run(["/usr/bin/curl", *args], input=config).returncode)
