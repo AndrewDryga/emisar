@@ -1,7 +1,7 @@
 ---
 name: release
 sources: [portal/apps/emisar_web/lib/emisar_web/changelog.ex, portal/config/config.exs, .github/workflows/runner-release.yml, .github/workflows/mcp-release.yml, .github/workflows/mcp-eval.yml, packs/PUBLISHING.md]
-updated: 2026-10-29
+updated: 2026-11-06
 ---
 
 # Cutting an emisar release
@@ -100,6 +100,13 @@ git tag -s runner-vX.Y.Z <commit> -m "runner vX.Y.Z"
 git tag -v runner-vX.Y.Z          # "Good signature"
 git push origin runner-vX.Y.Z     # starts the release jobs
 ```
+
+Push a component tag only after the release commit's `Required - CI` check is
+green. Its source-verification job waits about 15 minutes for that check, and
+the full CI run on a `main` push takes longer, so a tag pushed right after
+`main` times out with the check still `missing`. If that happens, wait for CI to
+pass and use **Re-run failed jobs** while `main` still points at the tagged
+commit.
 
 `git config --local tag.gpgsign true` (above) covers these too. Release workflows
 also verify GitHub's signature result and require the tag to target current
