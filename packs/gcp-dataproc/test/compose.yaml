@@ -14,8 +14,12 @@ services:
     entrypoint: [python3, /fixture/server.py]
     volumes:
       - ${EMISAR_ROOT}/packs/gcp-dataproc/test/fixtures/server.py:/fixture/server.py:ro
+      - ${EMISAR_ROOT}/packs/gcp-dataproc/test/fixtures/driver_fixture.py:/fixture/driver_fixture.py:ro
       - ${EMISAR_ROOT}/packs/gcp-dataproc/test/fixtures/server.crt:/fixture/server.crt:ro
       - ${EMISAR_ROOT}/packs/gcp-dataproc/test/fixtures/server-key.fixture:/fixture/server.key:ro
+    networks:
+      default:
+        aliases: [storage.googleapis.com]
     healthcheck:
       test: [CMD, python3, -c, "import ssl, urllib.request; urllib.request.urlopen('https://localhost:8443/health', context=ssl._create_unverified_context())"]
       interval: 2s

@@ -1,8 +1,8 @@
 schema_version: 1
 id: gcp-dataproc
 name: Google Cloud Dataproc operations
-version: 0.1.0
-description: Inspect classic Dataproc clusters, daemon metrics, jobs, failures, operations and regional
+version: 0.1.1
+description: Inspect classic Dataproc clusters, daemon metrics, jobs, failures, retained driver logs, operations and regional
   autoscaling policies, then govern narrow start, stop, resize, cancellation and deletion controls.
   Selected projections exclude arbitrary configuration and submitted job payloads. Serverless batches,
   cluster creation, job submission and policy writes are outside this pack.
@@ -16,11 +16,12 @@ requires:
   - gcloud
   - curl
   - jq
+  - python3
 setup:
   summary: Uses the runner host's gcloud identity. On Google Compute Engine, attach a dedicated
     service account with the cloud-platform OAuth scope and the permissions below; gcloud obtains
     its short-lived credential without a key file. The actions send it through curl stdin to the
-    Dataproc HTTPS API, never argv or output.
+    Dataproc and Cloud Storage HTTPS APIs, never argv or output.
   env:
   - name: CLOUDSDK_CONFIG
     description: Optional dedicated gcloud configuration directory.
@@ -33,6 +34,10 @@ setup:
   - Enable the Dataproc API in the target project. Ordinary metadata and daemon metric reads need
     dataproc.clusters.get/list, dataproc.jobs.get/list, dataproc.operations.get/list and dataproc.autoscalingPolicies.get/list.
     A custom role can grant exactly the actions the runner needs.
+  - Driver log tails additionally require storage.objects.list and storage.objects.get on the
+    provider-selected staging bucket. Python 3 runs the isolated bounded reader; caller arguments
+    never select a bucket or object. Logs may contain sensitive application text and follow the
+    account policy for medium-risk reads.
   - The controls additionally need dataproc.clusters.start/stop/update/delete and dataproc.jobs.cancel/delete.
     No cluster creation, job submission, service-account impersonation or iam.serviceAccounts.actAs
     grant is required by this action surface.
@@ -57,6 +62,7 @@ actions:
 - actions/jobs_list.yaml
 - actions/job_details.yaml
 - actions/job_errors.yaml
+- actions/job_driver_log.yaml
 - actions/operations_list.yaml
 - actions/operation_details.yaml
 - actions/autoscaling_policies_list.yaml

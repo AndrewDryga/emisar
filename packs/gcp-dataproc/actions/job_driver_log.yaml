@@ -1,0 +1,89 @@
+schema_version: 1
+id: gcp-dataproc.job_driver_log
+title: Tail a retained Dataproc job driver log
+kind: script
+risk: medium
+description: >
+  Tail raw application driver output, which can contain personal data, requests or credentials;
+  the runner applies its normal log redaction and account approval policy. Resolve the current
+  job's output-only driver URI internally, list at most five pages of 1,000 chunk metadata rows,
+  and read at most four newest nonempty, generation-pinned chunks from Cloud Storage. Return
+  at most the requested lines and UTF-8 bytes, with explicit truncation and partial-first-line
+  flags. JSON escaping can further reduce the tail; counts precede runner redaction. Support
+  classic ASCII gs:// driver prefixes and numeric chunk suffixes, including logs retained after
+  cluster deletion. Missing job metadata, unsupported URIs, incomplete listings, chunk gaps,
+  encoded objects and changed snapshots fail closed. No bucket, object or URL is caller-selected.
+side_effects:
+- Read one short-lived gcloud credential, one Dataproc job and at most five Cloud Storage object-list pages plus four bounded media ranges.
+- Capture at most 6 MiB of metadata and 4 KiB of log content (plus one overflow sentinel per bounded pipe); all client work has a shared 75-second deadline and independently bounded pipes.
+search_terms:
+- Spark traceback
+- Dataproc driver output
+- job failed after cluster deletion
+args:
+- name: project
+  type: string
+  required: true
+  description: Google Cloud project ID.
+  validation:
+    pattern: ^[a-z][a-z0-9-]{4,28}[a-z0-9]$
+    max_length: 30
+- name: region
+  type: string
+  required: true
+  description: Explicit Dataproc region, such as us-central1.
+  validation:
+    pattern: ^[a-z][a-z0-9-]{0,62}$
+    max_length: 63
+- name: job
+  type: string
+  required: true
+  description: Exact existing Dataproc job ID; the API selects its log location.
+  validation:
+    pattern: ^[A-Za-z0-9_-]{1,100}$
+    max_length: 100
+- name: lines
+  type: integer
+  default: 40
+  description: Maximum tail lines within the byte and encoded JSON budgets.
+  validation: {min: 1, max: 200}
+- name: bytes
+  type: integer
+  default: 4096
+  description: Maximum total fetched log bytes and returned UTF-8 text bytes.
+  validation: {min: 1, max: 4096}
+execution:
+  script:
+    path: scripts/driver_log.sh
+    interpreter: /bin/bash
+  argv:
+  - '{{ args.project }}'
+  - '{{ args.region }}'
+  - '{{ args.job }}'
+  - '{{ args.lines }}'
+  - '{{ args.bytes }}'
+  timeout: 90s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 4096
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [id, state, log_available, text, lines_returned, bytes_returned, bytes_read, chunks_read, truncated, partial_first_line]
+    properties:
+      id: {type: string, maxLength: 100}
+      state: {type: string, maxLength: 32}
+      log_available: {type: boolean}
+      text: {type: string, maxLength: 4096}
+      lines_returned: {type: integer, minimum: 0, maximum: 200}
+      bytes_returned: {type: integer, minimum: 0, maximum: 4096}
+      bytes_read: {type: integer, minimum: 0, maximum: 4096}
+      chunks_read: {type: integer, minimum: 0, maximum: 4}
+      truncated: {type: boolean}
+      partial_first_line: {type: boolean}
+examples:
+- title: Read the last traceback from a failed job
+  args: {project: example-prod, region: us-central1, job: job-20261107, lines: 40, bytes: 4096}
