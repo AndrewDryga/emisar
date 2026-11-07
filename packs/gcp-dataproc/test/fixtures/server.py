@@ -3,6 +3,8 @@ import copy
 import json
 import re
 import ssl
+import threading
+import driver_fixture
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -106,6 +108,8 @@ class Handler(BaseHTTPRequestHandler):
         # not serviceusage.services.use for an explicit quota override.
         if self.headers.get("X-Goog-User-Project") is not None:
             self.error(403, "Explicit quota project permission denied")
+            return
+        if driver_fixture.handle(self, method, REQUESTS):
             return
         m = re.fullmatch(r"/v1/projects/([^/]+)/regions/([^/]+)/(clusters|jobs|operations|autoscalingPolicies)(?:/([^/]+))?", u.path)
         if not m:
@@ -218,6 +222,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         if family == "jobs":
             name, _, action = (target or "").partition(":")
+            if method == "GET" and name.startswith("driver-"):
+                if self.headers.get("Accept-Encoding") != "identity":
+                    self.error(400, "Job metadata must request identity encoding")
+                    return
+                self.send(200, driver_fixture.driver_job(name, job))
+                return
             if name not in JOBS:
                 self.error(404, "Job not found")
                 return
@@ -254,8 +264,12 @@ class Handler(BaseHTTPRequestHandler):
         self.error(404, "Resource not found")
 
 
-server = ThreadingHTTPServer(("0.0.0.0", 8443), Handler)
 context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
 context.load_cert_chain("/fixture/server.crt", "/fixture/server.key")
-server.socket = context.wrap_socket(server.socket, server_side=True)
-server.serve_forever()
+def serve(port):
+    server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
+    server.socket = context.wrap_socket(server.socket, server_side=True)
+    server.serve_forever()
+
+threading.Thread(target=serve, args=(443,), daemon=True).start()
+serve(8443)

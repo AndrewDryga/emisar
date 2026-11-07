@@ -886,3 +886,1054 @@ cases:
     stdout_not_empty: false
     stderr_contains:
     - Dataproc response exceeds the 4 MiB byte budget
+- name: gcp-dataproc.job_driver_log-ok
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-ok
+  expect:
+    json:
+      /text: 'starting
+
+        Traceback (most recent call last):
+
+        ValueError: fixture-only failure
+
+        '
+      /state: ERROR
+      /log_available: true
+      /chunks_read: 2
+      /bytes_read: 77
+      /bytes_returned: 77
+      /lines_returned: 3
+      /truncated: false
+      /partial_first_line: false
+  probes:
+  - name: Exact bounded read-only provider requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{families:[.requests[].family],methods:[.requests[].method],generations:[.requests[]|select(.family=="storage_media")|.query.generation[0]],hosts:([.requests[]|select(.family=="storage_media")|.host]|unique)}'
+    expect:
+      json:
+        /families:
+        - jobs
+        - storage_list
+        - storage_media
+        - storage_media
+        /methods:
+        - GET
+        - GET
+        - GET
+        - GET
+        /generations:
+        - '9007199254740994'
+        - '9007199254740993'
+        /hosts:
+        - storage.googleapis.com
+- name: gcp-dataproc.job_driver_log-cross-chunk
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-cross-chunk
+  expect:
+    json:
+      /text: 'one
+
+        ValueError: split
+
+        '
+      /chunks_read: 2
+      /lines_returned: 2
+      /truncated: false
+  probes:
+  - name: Log read preserves job state and uses GET only
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{methods:([.requests[].method]|unique),state:.jobs["failed-job"].status.state}'
+    expect:
+      json:
+        /methods:
+        - GET
+        /state: ERROR
+- name: gcp-dataproc.job_driver_log-lines
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-lines
+    lines: 2
+  expect:
+    json:
+      /text: 'two
+
+        three
+
+        '
+      /lines_returned: 2
+      /truncated: true
+      /partial_first_line: false
+  probes:
+  - name: Log read preserves job state and uses GET only
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{methods:([.requests[].method]|unique),state:.jobs["failed-job"].status.state}'
+    expect:
+      json:
+        /methods:
+        - GET
+        /state: ERROR
+- name: gcp-dataproc.job_driver_log-ok-byte-tail
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-ok
+    bytes: 21
+  expect:
+    json:
+      /text: 'fixture-only failure
+
+        '
+      /bytes_read: 21
+      /bytes_returned: 21
+      /partial_first_line: true
+      /truncated: true
+  probes:
+  - name: Log read preserves job state and uses GET only
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{methods:([.requests[].method]|unique),state:.jobs["failed-job"].status.state}'
+    expect:
+      json:
+        /methods:
+        - GET
+        /state: ERROR
+- name: gcp-dataproc.job_driver_log-paged
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-paged
+  expect:
+    json:
+      /text: 'starting
+
+        Traceback (most recent call last):
+
+        ValueError: fixture-only failure
+
+        '
+      /chunks_read: 2
+      /truncated: false
+  probes:
+  - name: Exact bounded read-only provider requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{lists:([.requests[]|select(.family=="storage_list")]|length),token:.requests[2].query.pageToken[0]}'
+    expect:
+      json:
+        /lists: 2
+        /token: next-page
+- name: gcp-dataproc.job_driver_log-budget
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-budget
+  expect:
+    json:
+      /text: 'segment-1
+
+        segment-2
+
+        segment-3
+
+        segment-4
+
+        '
+      /chunks_read: 4
+      /truncated: true
+      /partial_first_line: true
+  probes:
+  - name: Exact bounded read-only provider requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{total:(.requests|length),lists:([.requests[]|select(.family=="storage_list")]|length),media:([.requests[]|select(.family=="storage_media")]|length),methods:([.requests[].method]|unique)}'
+    expect:
+      json:
+        /total: 10
+        /lists: 5
+        /media: 4
+        /methods:
+        - GET
+- name: gcp-dataproc.job_driver_log-numeric-order
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-numeric-order
+  expect:
+    json:
+      /text: 'older
+
+        newer
+
+        '
+      /chunks_read: 2
+      /truncated: true
+      /partial_first_line: true
+  probes:
+  - name: Log read preserves job state and uses GET only
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{methods:([.requests[].method]|unique),state:.jobs["failed-job"].status.state}'
+    expect:
+      json:
+        /methods:
+        - GET
+        /state: ERROR
+- name: gcp-dataproc.job_driver_log-empty
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-empty
+  expect:
+    json:
+      /log_available: false
+      /text: ''
+      /lines_returned: 0
+      /bytes_read: 0
+      /chunks_read: 0
+      /truncated: false
+  probes:
+  - name: Log read preserves job state and uses GET only
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{methods:([.requests[].method]|unique),state:.jobs["failed-job"].status.state}'
+    expect:
+      json:
+        /methods:
+        - GET
+        /state: ERROR
+- name: gcp-dataproc.job_driver_log-whole-200
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-whole-200
+  expect:
+    json:
+      /text: 'starting
+
+        Traceback (most recent call last):
+
+        ValueError: fixture-only failure
+
+        '
+      /chunks_read: 2
+      /truncated: false
+  probes:
+  - name: Log read preserves job state and uses GET only
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{methods:([.requests[].method]|unique),state:.jobs["failed-job"].status.state}'
+    expect:
+      json:
+        /methods:
+        - GET
+        /state: ERROR
+- name: gcp-dataproc.job_driver_log-secret
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-secret
+  expect:
+    json:
+      /text: 'Authorization: Bearer [REDACTED]
+
+        ValueError: fixture-only failure
+
+        '
+      /chunks_read: 1
+  probes:
+  - name: Log read preserves job state and uses GET only
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{methods:([.requests[].method]|unique),state:.jobs["failed-job"].status.state}'
+    expect:
+      json:
+        /methods:
+        - GET
+        /state: ERROR
+- name: gcp-dataproc.job_driver_log-worst-json
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-worst-json
+    bytes: 4096
+    lines: 200
+  expect:
+    json:
+      /bytes_read: 4096
+      /chunks_read: 1
+      /truncated: true
+      /partial_first_line: true
+  probes:
+  - name: Log read preserves job state and uses GET only
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{methods:([.requests[].method]|unique),state:.jobs["failed-job"].status.state}'
+    expect:
+      json:
+        /methods:
+        - GET
+        /state: ERROR
+- name: gcp-dataproc.job_driver_log-invalid-utf8
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-invalid-utf8
+    bytes: 4096
+    lines: 200
+  expect:
+    json:
+      /bytes_read: 4096
+      /chunks_read: 1
+      /truncated: true
+      /partial_first_line: true
+  probes:
+  - name: Log read preserves job state and uses GET only
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{methods:([.requests[].method]|unique),state:.jobs["failed-job"].status.state}'
+    expect:
+      json:
+        /methods:
+        - GET
+        /state: ERROR
+- name: gcp-dataproc.job_driver_log-pagination-cap
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-pagination-cap
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - five-page budget
+  probes:
+  - name: Exact bounded read-only provider requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{total:(.requests|length),media:([.requests[]|select(.family=="storage_media")]|length)}'
+    expect:
+      json:
+        /total: 6
+        /media: 0
+- name: gcp-dataproc.job_driver_log-repeated-token
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-repeated-token
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - repeated a page token
+  probes:
+  - name: Exact bounded read-only provider requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{total:(.requests|length),media:([.requests[]|select(.family=="storage_media")]|length)}'
+    expect:
+      json:
+        /total: 3
+        /media: 0
+- name: gcp-dataproc.job_driver_log-foreign-object
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-foreign-object
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - escaped the job driver-log prefix
+  probes:
+  - name: Exact bounded read-only provider requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{total:(.requests|length),media:([.requests[]|select(.family=="storage_media")]|length)}'
+    expect:
+      json:
+        /total: 2
+        /media: 0
+- name: gcp-dataproc.job_driver_log-invalid-generation
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-invalid-generation
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - invalid decimal string
+  probes:
+  - name: Exact bounded read-only provider requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{total:(.requests|length),media:([.requests[]|select(.family=="storage_media")]|length)}'
+    expect:
+      json:
+        /total: 2
+        /media: 0
+- name: gcp-dataproc.job_driver_log-encoded
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-encoded
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - Encoded driver-log objects
+  probes:
+  - name: Exact bounded read-only provider requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{total:(.requests|length),media:([.requests[]|select(.family=="storage_media")]|length)}'
+    expect:
+      json:
+        /total: 2
+        /media: 0
+- name: gcp-dataproc.job_driver_log-gap
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-gap
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - gap or an intermediate empty sentinel
+  probes:
+  - name: Exact bounded read-only provider requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{total:(.requests|length),media:([.requests[]|select(.family=="storage_media")]|length)}'
+    expect:
+      json:
+        /total: 2
+        /media: 0
+- name: gcp-dataproc.job_driver_log-middle-zero
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-middle-zero
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - gap or an intermediate empty sentinel
+  probes:
+  - name: Exact bounded read-only provider requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{total:(.requests|length),media:([.requests[]|select(.family=="storage_media")]|length)}'
+    expect:
+      json:
+        /total: 2
+        /media: 0
+- name: gcp-dataproc.job_driver_log-mismatched-job
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-mismatched-job
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - different project or job identity
+  probes:
+  - name: Exact bounded read-only provider requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{total:(.requests|length),media:([.requests[]|select(.family=="storage_media")]|length)}'
+    expect:
+      json:
+        /total: 1
+        /media: 0
+- name: gcp-dataproc.job_driver_log-mismatched-project
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-mismatched-project
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - different project or job identity
+  probes:
+  - name: Exact bounded read-only provider requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{total:(.requests|length),media:([.requests[]|select(.family=="storage_media")]|length)}'
+    expect:
+      json:
+        /total: 1
+        /media: 0
+- name: gcp-dataproc.job_driver_log-no-output
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-no-output
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - no supported, unambiguous provider driver-log URI
+  probes:
+  - name: Exact bounded read-only provider requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{total:(.requests|length),media:([.requests[]|select(.family=="storage_media")]|length)}'
+    expect:
+      json:
+        /total: 1
+        /media: 0
+- name: gcp-dataproc.job_driver_log-uri-http
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-uri-http
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - no supported, unambiguous provider driver-log URI
+  probes:
+  - name: Exact bounded read-only provider requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{total:(.requests|length),media:([.requests[]|select(.family=="storage_media")]|length)}'
+    expect:
+      json:
+        /total: 1
+        /media: 0
+- name: gcp-dataproc.job_driver_log-uri-query
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-uri-query
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - no supported, unambiguous provider driver-log URI
+  probes:
+  - name: Exact bounded read-only provider requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{total:(.requests|length),media:([.requests[]|select(.family=="storage_media")]|length)}'
+    expect:
+      json:
+        /total: 1
+        /media: 0
+- name: gcp-dataproc.job_driver_log-uri-percent
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-uri-percent
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - no supported, unambiguous provider driver-log URI
+  probes:
+  - name: Exact bounded read-only provider requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{total:(.requests|length),media:([.requests[]|select(.family=="storage_media")]|length)}'
+    expect:
+      json:
+        /total: 1
+        /media: 0
+- name: gcp-dataproc.job_driver_log-uri-glob
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-uri-glob
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - no supported, unambiguous provider driver-log URI
+  probes:
+  - name: Exact bounded read-only provider requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{total:(.requests|length),media:([.requests[]|select(.family=="storage_media")]|length)}'
+    expect:
+      json:
+        /total: 1
+        /media: 0
+- name: gcp-dataproc.job_driver_log-uri-traversal
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-uri-traversal
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - no supported, unambiguous provider driver-log URI
+  probes:
+  - name: Exact bounded read-only provider requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{total:(.requests|length),media:([.requests[]|select(.family=="storage_media")]|length)}'
+    expect:
+      json:
+        /total: 1
+        /media: 0
+- name: gcp-dataproc.job_driver_log-uri-userinfo
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-uri-userinfo
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - no supported, unambiguous provider driver-log URI
+  probes:
+  - name: Exact bounded read-only provider requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{total:(.requests|length),media:([.requests[]|select(.family=="storage_media")]|length)}'
+    expect:
+      json:
+        /total: 1
+        /media: 0
+- name: gcp-dataproc.job_driver_log-gone
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-gone
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - HTTP 404
+  probes:
+  - name: Exact bounded read-only provider requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{media:([.requests[]|select(.family=="storage_media")]|length),total:(.requests|length)}'
+    expect:
+      json:
+        /media: 1
+        /total: 3
+- name: gcp-dataproc.job_driver_log-416
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-416
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - HTTP 416
+  probes:
+  - name: Exact bounded read-only provider requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{media:([.requests[]|select(.family=="storage_media")]|length),total:(.requests|length)}'
+    expect:
+      json:
+        /media: 1
+        /total: 3
+- name: gcp-dataproc.job_driver_log-redirect
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-redirect
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - HTTP 302
+  probes:
+  - name: Exact bounded read-only provider requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{media:([.requests[]|select(.family=="storage_media")]|length),total:(.requests|length)}'
+    expect:
+      json:
+        /media: 1
+        /total: 3
+- name: gcp-dataproc.job_driver_log-response-encoded
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-response-encoded
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - Encoded driver-log responses
+  probes:
+  - name: Exact bounded read-only provider requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{media:([.requests[]|select(.family=="storage_media")]|length),total:(.requests|length)}'
+    expect:
+      json:
+        /media: 1
+        /total: 3
+- name: gcp-dataproc.job_driver_log-range-ignored
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-range-ignored
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - byte limit
+  probes:
+  - name: Exact bounded read-only provider requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{media:([.requests[]|select(.family=="storage_media")]|length),total:(.requests|length)}'
+    expect:
+      json:
+        /media: 1
+        /total: 3
+- name: gcp-dataproc.job_driver_log-unknown-overflow
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-unknown-overflow
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - byte limit
+  probes:
+  - name: Exact bounded read-only provider requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{media:([.requests[]|select(.family=="storage_media")]|length),total:(.requests|length)}'
+    expect:
+      json:
+        /media: 1
+        /total: 3
+- name: gcp-dataproc.job_driver_log-oversize-metadata
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-oversize-metadata
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - byte limit
+  probes:
+  - name: Exact bounded read-only provider requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{media:([.requests[]|select(.family=="storage_media")]|length),total:(.requests|length)}'
+    expect:
+      json:
+        /media: 0
+        /total: 2
+- name: gcp-dataproc.job_driver_log-bad-range
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-bad-range
+    bytes: 10
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - byte range did not match
+- name: gcp-dataproc.job_driver_log-invalid-job
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: ../driver-ok
+  expect:
+    status: failure
+    reason: argument_invalid
+    stdout_not_empty: false
+  probes:
+  - name: Exact bounded read-only provider requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{total:(.requests|length)}'
+    expect:
+      json:
+        /total: 0
+- name: gcp-dataproc.job_driver_log-line-overflow
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-line-overflow
+    lines: 201
+  expect:
+    status: failure
+    reason: argument_invalid
+    stdout_not_empty: false
+  probes:
+  - name: Exact bounded read-only provider requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{total:(.requests|length)}'
+    expect:
+      json:
+        /total: 0
+- name: gcp-dataproc.job_driver_log-byte-overflow
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-byte-overflow
+    bytes: 4097
+  expect:
+    status: failure
+    reason: argument_invalid
+    stdout_not_empty: false
+  probes:
+  - name: Exact bounded read-only provider requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{total:(.requests|length)}'
+    expect:
+      json:
+        /total: 0
+- name: gcp-dataproc.job_driver_log-zero-bytes
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-zero-bytes
+    bytes: 0
+  expect:
+    status: failure
+    reason: argument_invalid
+    stdout_not_empty: false
+  probes:
+  - name: Exact bounded read-only provider requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{total:(.requests|length)}'
+    expect:
+      json:
+        /total: 0
+- name: gcp-dataproc.job_driver_log-stream-cap-without-curl-size-optimization
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-unknown-overflow
+  env:
+    PATH: /packs/gcp-dataproc/test/fixtures/curl-before-8.4:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - byte limit
+- name: gcp-dataproc.job_driver_log-real-child-bounds
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-ok
+  expect:
+    json:
+      /log_available: true
+      /chunks_read: 2
+  probes:
+  - name: Actual child pipe/deadline regression and HTTP parser contract
+    argv:
+    - python3
+    - -I
+    - /packs/gcp-dataproc/test/fixtures/driver_client_regression.py
+    expect:
+      json:
+        /independent_body_limit_plus_one: true
+        /actual_child_deadline_and_reap: true
+        /repeatable_headers_accepted: true
+        /duplicate_range_rejected: true
+- name: gcp-dataproc.job_driver_log-short-secret-expansion
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-redaction-expansion
+    bytes: 4096
+    lines: 200
+  expect:
+    json:
+      /bytes_read: 4096
+      /chunks_read: 1
+      /truncated: true
+      /partial_first_line: true
+      /bytes_returned: 1024
+    stdout_contains:
+    - pwd=[REDACTED]
+    stdout_not_contains:
+    - pwd=x
+  probes:
+  - name: Only read calls reached provider
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{methods:([.requests[].method]|unique)}'
+    expect:
+      json:
+        /methods:
+        - GET
+- name: gcp-dataproc.job_driver_log-json-secret-expansion
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-json-secret-expansion
+    bytes: 4096
+    lines: 200
+  expect:
+    json:
+      /bytes_read: 4096
+      /chunks_read: 1
+      /truncated: true
+      /partial_first_line: true
+      /bytes_returned: 1024
+    stdout_contains:
+    - '[REDACTED]'
+    stdout_not_contains:
+    - '"pwd":0'
+  probes:
+  - name: Only read calls reached provider
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{methods:([.requests[].method]|unique)}'
+    expect:
+      json:
+        /methods:
+        - GET
