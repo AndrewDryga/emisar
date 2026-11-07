@@ -60,7 +60,7 @@ defmodule EmisarWeb.MixProject do
       {:telemetry_poller, "~> 1.3"},
       # Optional: error reporting via Sentry. Compiled out when
       # SENTRY_DSN isn't set (init/0 short-circuits on no-DSN).
-      {:sentry, "~> 13.3"},
+      {:sentry, "~> 14.0"},
       {:gettext, "~> 1.0"},
       {:emisar, in_umbrella: true},
       {:jason, "~> 1.4"},

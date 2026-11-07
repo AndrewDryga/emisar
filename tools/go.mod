@@ -5,8 +5,8 @@ go 1.27.3
 tool honnef.co/go/tools/cmd/staticcheck
 
 require (
-	github.com/chromedp/cdproto v0.158.6
-	github.com/chromedp/chromedp v0.21.0
+	github.com/chromedp/cdproto v0.159.2
+	github.com/chromedp/chromedp v0.23.0
 	go.yaml.in/yaml/v3 v3.0.6
 )
 
