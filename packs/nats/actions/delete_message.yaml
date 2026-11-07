@@ -1,0 +1,62 @@
+schema_version: 1
+id: nats.delete_message
+title: Delete one JetStream message
+kind: script
+risk: high
+description: Irreversibly delete one explicit stream sequence without reading its content. Preserve
+  all other messages; stream_info shows the new message count.
+side_effects:
+- One governed JetStream change; limit updates first read the current configuration.
+args:
+- name: stream
+  type: string
+  required: true
+  validation:
+    pattern: ^[A-Za-z0-9_-]{1,255}$
+    max_length: 255
+  description: Exact stream name; up to the server's 255-byte name limit, using ASCII letters, digits,
+    underscores or hyphens.
+- name: sequence
+  type: string
+  required: true
+  description: One positive uint64 stream sequence as a decimal string; full precision is preserved.
+  validation:
+    pattern: ^[1-9][0-9]{0,19}$
+    max_length: 20
+execution:
+  script:
+    path: scripts/nats.sh
+    interpreter: /bin/sh
+  argv:
+  - delete_message
+  - '{{ args.stream }}'
+  - '{{ args.sequence }}'
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required:
+    - accepted
+    - stream
+    - sequence
+    properties:
+      accepted:
+        const: true
+      stream:
+        type: string
+        maxLength: 255
+      sequence:
+        type: string
+        maxLength: 20
+        pattern: ^-?[0-9]{1,20}$
+examples:
+- title: Delete one JetStream message
+  args:
+    stream: ORDERS
+    sequence: '42'

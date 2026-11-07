@@ -1,0 +1,100 @@
+services:
+  runner-tools:
+    build:
+      context: ${EMISAR_ROOT}/packs/nats/test
+      dockerfile: Dockerfile
+      args:
+        PACKTEST_RUNNER_IMAGE: ${PACKTEST_RUNNER_IMAGE:-emisar-runner-tools:latest}
+    image: emisar-packtest-nats-tools:latest
+  nats-1:
+    image: nats:${PACKTEST_VERSION:-2.14.8-alpine}${PACKTEST_DIGEST-}
+    user: 65532:65532
+    command:
+    - -c
+    - /fixture/nats-1.json
+    volumes:
+    - ${EMISAR_ROOT}/packs/nats/test/fixtures:/fixture:ro
+    tmpfs:
+    - /data:uid=65532,gid=65532,mode=0700
+    healthcheck:
+      test:
+      - CMD
+      - wget
+      - -q
+      - -O
+      - '-'
+      - http://nats-1:8222/healthz
+      interval: 2s
+      start_period: 15s
+      start_interval: 1s
+      retries: 15
+    networks:
+      default:
+        aliases:
+        - wrong-host
+  nats-2:
+    image: nats:${PACKTEST_VERSION:-2.14.8-alpine}${PACKTEST_DIGEST-}
+    user: 65532:65532
+    command:
+    - -c
+    - /fixture/nats-2.json
+    volumes:
+    - ${EMISAR_ROOT}/packs/nats/test/fixtures:/fixture:ro
+    tmpfs:
+    - /data:uid=65532,gid=65532,mode=0700
+    healthcheck:
+      test:
+      - CMD
+      - wget
+      - -q
+      - -O
+      - '-'
+      - http://nats-2:8222/healthz
+      interval: 2s
+      start_period: 15s
+      start_interval: 1s
+      retries: 15
+  nats-3:
+    image: nats:${PACKTEST_VERSION:-2.14.8-alpine}${PACKTEST_DIGEST-}
+    user: 65532:65532
+    command:
+    - -c
+    - /fixture/nats-3.json
+    volumes:
+    - ${EMISAR_ROOT}/packs/nats/test/fixtures:/fixture:ro
+    tmpfs:
+    - /data:uid=65532,gid=65532,mode=0700
+    healthcheck:
+      test:
+      - CMD
+      - wget
+      - -q
+      - -O
+      - '-'
+      - http://nats-3:8222/healthz
+      interval: 2s
+      start_period: 15s
+      start_interval: 1s
+      retries: 15
+  nats-no-js:
+    image: nats:${PACKTEST_VERSION:-2.14.8-alpine}${PACKTEST_DIGEST-}
+    user: 65532:65532
+    command:
+    - -c
+    - /fixture/nats-no-js.json
+    volumes:
+    - ${EMISAR_ROOT}/packs/nats/test/fixtures:/fixture:ro
+    tmpfs:
+    - /data:uid=65532,gid=65532,mode=0700
+    healthcheck:
+      test:
+      - CMD
+      - wget
+      - -q
+      - -O
+      - '-'
+      - http://nats-no-js:8222/healthz
+      interval: 2s
+      start_period: 15s
+      start_interval: 1s
+      retries: 15

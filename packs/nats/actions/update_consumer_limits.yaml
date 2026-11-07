@@ -1,0 +1,239 @@
+schema_version: 1
+id: nats.update_consumer_limits
+title: Update JetStream consumer ack limits
+kind: script
+risk: high
+description: Update only selected maximum ack-pending, maximum delivery and ack-wait settings after
+  privately reading current configuration. Preserve identity, filters, delivery settings, unknown
+  fields and integer precision. At least one change is required. The API has no compare-and-swap guard;
+  concurrent edits can race. Terraform-managed definitions can be reconciled by the initializer.
+side_effects:
+- One governed JetStream change; limit updates first read the current configuration.
+args:
+- name: stream
+  type: string
+  required: true
+  validation:
+    pattern: ^[A-Za-z0-9_-]{1,255}$
+    max_length: 255
+  description: Exact stream name; up to the server's 255-byte name limit, using ASCII letters, digits,
+    underscores or hyphens.
+- name: consumer
+  type: string
+  required: true
+  validation:
+    pattern: ^[A-Za-z0-9_-]{1,255}$
+    max_length: 255
+  description: Exact consumer name with the same subject-safe 255-byte syntax as streams.
+- name: new_max_ack_pending
+  type: string
+  required: false
+  default: ''
+  description: Optional exact decimal int64; empty preserves the current value, -1 selects unlimited,
+    and positive values set the limit.
+  validation:
+    pattern: ^(?:-1|[1-9][0-9]{0,18})?$
+    max_length: 19
+- name: new_max_deliver
+  type: string
+  required: false
+  default: ''
+  description: Optional exact decimal int64; empty preserves the current value, -1 selects unlimited,
+    and positive values set the limit.
+  validation:
+    pattern: ^(?:-1|[1-9][0-9]{0,18})?$
+    max_length: 19
+- name: new_ack_wait_seconds
+  type: integer
+  required: false
+  default: 0
+  description: Zero preserves ack wait; positive seconds set it within signed-int64 nanoseconds.
+  validation:
+    min: 0
+    max: 9223372036
+execution:
+  script:
+    path: scripts/nats.sh
+    interpreter: /bin/sh
+  argv:
+  - update_consumer_limits
+  - '{{ args.stream }}'
+  - '{{ args.consumer }}'
+  - '{{ args.new_max_ack_pending }}'
+  - '{{ args.new_max_deliver }}'
+  - '{{ args.new_ack_wait_seconds }}'
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required:
+    - stream
+    - name
+    - created
+    - pull
+    - ack_policy
+    - deliver_policy
+    - filter_subject
+    - filter_subject_truncated
+    - filter_subjects
+    - filter_subjects_omitted
+    - ack_wait_ns
+    - max_deliver
+    - max_ack_pending
+    - pending
+    - ack_pending
+    - redelivered
+    - waiting
+    - delivered_sequence
+    - ack_floor_sequence
+    - paused
+    - pause_until
+    - cluster
+    properties:
+      stream:
+        type: string
+        maxLength: 255
+      name:
+        type: string
+        maxLength: 255
+      created:
+        type: string
+        maxLength: 40
+      pull:
+        type: boolean
+      ack_policy:
+        type: string
+        maxLength: 16
+      deliver_policy:
+        type: string
+        maxLength: 24
+      filter_subject:
+        type: string
+        maxLength: 96
+      filter_subject_truncated:
+        type: boolean
+      filter_subjects:
+        type: array
+        maxItems: 4
+        items:
+          type: object
+          additionalProperties: false
+          required:
+          - value
+          - truncated
+          properties:
+            value:
+              type: string
+              maxLength: 96
+            truncated:
+              type: boolean
+      filter_subjects_omitted:
+        type: integer
+        minimum: 0
+      ack_wait_ns:
+        type: string
+        maxLength: 20
+        pattern: ^-?[0-9]{1,20}$
+      max_deliver:
+        type: string
+        maxLength: 20
+        pattern: ^-?[0-9]{1,20}$
+      max_ack_pending:
+        type: string
+        maxLength: 20
+        pattern: ^-?[0-9]{1,20}$
+      pending:
+        type: string
+        maxLength: 20
+        pattern: ^-?[0-9]{1,20}$
+      ack_pending:
+        type: string
+        maxLength: 20
+        pattern: ^-?[0-9]{1,20}$
+      redelivered:
+        type: string
+        maxLength: 20
+        pattern: ^-?[0-9]{1,20}$
+      waiting:
+        type: string
+        maxLength: 20
+        pattern: ^-?[0-9]{1,20}$
+      delivered_sequence:
+        type: string
+        maxLength: 20
+        pattern: ^-?[0-9]{1,20}$
+      ack_floor_sequence:
+        type: string
+        maxLength: 20
+        pattern: ^-?[0-9]{1,20}$
+      paused:
+        type: boolean
+      pause_until:
+        type:
+        - string
+        - 'null'
+        maxLength: 40
+      cluster:
+        type: object
+        additionalProperties: false
+        required:
+        - name
+        - leader
+        - leader_truncated
+        - replicas
+        - replicas_omitted
+        properties:
+          name:
+            type: string
+            maxLength: 48
+          leader:
+            type: string
+            maxLength: 48
+          leader_truncated:
+            type: boolean
+          replicas:
+            type: array
+            maxItems: 5
+            items:
+              type: object
+              additionalProperties: false
+              required:
+              - name
+              - name_truncated
+              - current
+              - offline
+              - lag
+              - active_ns
+              properties:
+                name:
+                  type: string
+                  maxLength: 48
+                name_truncated:
+                  type: boolean
+                current:
+                  type: boolean
+                offline:
+                  type: boolean
+                lag:
+                  type: string
+                  maxLength: 20
+                  pattern: ^-?[0-9]{1,20}$
+                active_ns:
+                  type: string
+                  maxLength: 20
+                  pattern: ^-?[0-9]{1,20}$
+          replicas_omitted:
+            type: integer
+            minimum: 0
+examples:
+- title: Update JetStream consumer ack limits
+  args:
+    stream: ORDERS
+    consumer: worker
+    new_max_ack_pending: '2000'

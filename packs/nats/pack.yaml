@@ -1,0 +1,97 @@
+schema_version: 1
+id: nats
+name: NATS JetStream operations
+version: 0.1.0
+description: Inspect authenticated NATS connectivity and JetStream account, stream and consumer state,
+  then govern narrow topology, retention, delivery, leadership and deletion operations. Fixed API
+  subjects and typed bodies expose no arbitrary request, publication, subscription, message payload
+  read, server control or account administration.
+vendor: emisar
+homepage: https://emisar.dev/packs/nats
+requires:
+  os:
+  - linux
+  binaries:
+  - nats
+  - python3
+setup:
+  summary: Install the native NATS CLI and Python 3 on the runner, provision dedicated read/admin
+    username-password identities in the NATS server authorization.users configuration, and supply
+    the TLS endpoint and public CA. The script chooses credentials from its fixed action mode; credentials
+    enter only the native child environment and private configuration bodies use stdin, never argv.
+  env:
+  - name: NATS_URL
+    required: true
+    description: One to four comma-separated tls:// seed URLs, with no userinfo, path or query.
+    example: tls://nats.example.net:4222
+  - name: NATS_CA
+    required: true
+    description: Readable path to the public CA chain that verifies the NATS servers.
+    example: /etc/emisar/nats-ca.pem
+  - name: NATS_READ_USER
+    required: true
+    description: Dedicated metadata-reader username created in the NATS server user configuration.
+  - name: NATS_READ_PASSWORD
+    required: true
+    description: Original password for that reader from the deployment secret store; the server stores
+      its bcrypt hash.
+  - name: NATS_ADMIN_USER
+    description: Dedicated narrow JetStream-administrator username; required only for mutating actions.
+  - name: NATS_ADMIN_PASSWORD
+    description: Original administrator password from the deployment secret store; never reuse an
+      application or unrestricted server-admin identity.
+  notes:
+  - NATS CLI 0.5.1 is tested; install its checksum-verified binary from [official NATS CLI releases](https://github.com/nats-io/natscli/releases/tag/v0.5.1).
+    Install Python 3 using the runner distribution package manager. The pack declares both prerequisites;
+    installing a pack does not install native binaries.
+  - Create dedicated users in the NATS server authorization.users configuration with passwords managed
+    by the deployment secret store and bcrypt hashes on the server. The runner needs the original
+    passwords. Allowlist exactly NATS_URL, NATS_CA, NATS_READ_USER, NATS_READ_PASSWORD, NATS_ADMIN_USER
+    and NATS_ADMIN_PASSWORD in execution.inherit_env. TLS verification is mandatory; existing CLI
+    contexts, other native auth and proxy/TLS overrides are not inherited by the child.
+  - 'Reader publish allowlist: `$JS.API.INFO`, `$JS.API.STREAM.NAMES`, `$JS.API.STREAM.INFO.*`, `$JS.API.CONSUMER.NAMES.*`,
+    `$JS.API.CONSUMER.INFO.*.*`. Subscribe only to `_INBOX.emisar.read.>`; the script fixes its inbox
+    prefix to `_INBOX.emisar.read`.'
+  - Administrator publish allowlist adds `$JS.API.STREAM.CREATE.*`, `$JS.API.STREAM.UPDATE.*`, `$JS.API.STREAM.LEADER.STEPDOWN.*`,
+    `$JS.API.STREAM.MSG.DELETE.*`, `$JS.API.STREAM.PURGE.*`, `$JS.API.STREAM.DELETE.*`, `$JS.API.CONSUMER.CREATE.*.*`,
+    `$JS.API.CONSUMER.PAUSE.*.*`, `$JS.API.CONSUMER.LEADER.STEPDOWN.*.*`, `$JS.API.CONSUMER.DELETE.*.*`
+    to the reader subjects. Subscribe only to `_INBOX.emisar.admin.>`. These grants cover all resource
+    names admitted by each subject pattern. Direct application publication/subscription and `$SYS.>`
+    are excluded, but the administrator configuration API can arrange indirect message delivery into
+    its permitted inbox. Protect that credential as message-reading authority. The signed pack creates
+    only pull consumers and has no message payload read, publish or subscribe action.
+  - Python starts in isolated mode, ignoring user-site modules and PYTHON* startup variables. The
+    CLI uses --no-context, a fixed inbox prefix, a five-second protocol timeout and request templates
+    disabled. Empty output, unexpected response types, JSON API errors, false acknowledgements and
+    invalid RTT results fail even if the CLI exits zero. Capture is limited to 4 MiB; child deadlines
+    are eight seconds per RPC and 25 seconds for the connection check.
+  - Full int64/uint64 counters and capacities use decimal strings in results and relevant arguments
+    to preserve precision. Names use subject-safe ASCII letters, digits, underscores and hyphens up
+    to255bytes. Selected subjects and replica labels are bounded with explicit flags; descriptions,
+    metadata and message bodies never leave the host.
+  - Stream-limit changes, purge, stream deletion and consumer deletion are critical because they can
+    irreversibly discard data. Deleting the last consumer of an interest-retention stream purges all
+    stored messages. The shipped default policy denies critical actions. Terraform-managed runtime
+    changes can be reconciled by the initializer; durable desired-state changes belong in Terraform.
+  - This remote-target pack has no automatic host detection or protected-host grant recipe. Server-level
+    monitoring and system-account administration are outside its contract.
+  verify: nats.account_info
+actions:
+- actions/connection_check.yaml
+- actions/account_info.yaml
+- actions/stream_names.yaml
+- actions/stream_info.yaml
+- actions/consumer_names.yaml
+- actions/consumer_info.yaml
+- actions/create_stream.yaml
+- actions/create_consumer.yaml
+- actions/update_stream_limits.yaml
+- actions/update_consumer_limits.yaml
+- actions/pause_consumer.yaml
+- actions/resume_consumer.yaml
+- actions/step_down_stream_leader.yaml
+- actions/step_down_consumer_leader.yaml
+- actions/delete_message.yaml
+- actions/delete_consumer.yaml
+- actions/purge_stream.yaml
+- actions/delete_stream.yaml

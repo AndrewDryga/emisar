@@ -1,0 +1,70 @@
+schema_version: 1
+id: nats.stream_names
+title: List JetStream stream names
+kind: script
+risk: low
+description: List up to ten exact stream names from one native 1024-name page. Return total, server
+  offset, omitted-response count and next_offset advanced only by emitted names; no automatic page
+  fan-out. Names use the documented subject-safe syntax.
+side_effects:
+- One read-only JetStream metadata request.
+args:
+- name: offset
+  type: integer
+  required: false
+  default: 0
+  description: Server offset, up to the largest exact JSON integer; use next_offset from the prior
+    page.
+  validation:
+    min: 0
+    max: 9007199254740991
+execution:
+  script:
+    path: scripts/nats.sh
+    interpreter: /bin/sh
+  argv:
+  - stream_names
+  - '{{ args.offset }}'
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required:
+    - names
+    - offset
+    - total
+    - next_offset
+    - omitted_in_response
+    properties:
+      names:
+        type: array
+        maxItems: 10
+        items:
+          type: string
+          maxLength: 255
+      offset:
+        type: integer
+        minimum: 0
+        maximum: 9007199254740991
+      total:
+        type: string
+        maxLength: 20
+        pattern: ^-?[0-9]{1,20}$
+      next_offset:
+        type:
+        - integer
+        - 'null'
+        minimum: 0
+        maximum: 9007199254740991
+      omitted_in_response:
+        type: integer
+        minimum: 0
+examples:
+- title: List JetStream stream names
+  args: {}
