@@ -1,0 +1,89 @@
+schema_version: 1
+id: betterstack.incident_details
+title: Show a Better Stack incident
+kind: script
+risk: low
+description: Show one incident using a closed projection of exact IDs, state, timestamps and typed operational
+  settings. URLs, names, private authentication, request content, incident causes and page HTML are excluded.
+  Missing optional values remain null; malformed present values fail.
+side_effects:
+- One authenticated Better Stack HTTPS request; monitor timing updates perform a prior read. No automatic
+  retries or paging.
+args:
+- name: incident_id
+  type: string
+  required: true
+  description: Exact positive decimal resource ID; returned identifiers are preserved without clipping.
+  validation:
+    pattern: ^[1-9][0-9]{0,19}$
+    max_length: 20
+execution:
+  script:
+    path: scripts/betterstack.sh
+    interpreter: /bin/bash
+  argv:
+  - incident_details
+  - '{{ args.incident_id }}'
+  timeout: 40s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 4096
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required:
+    - id
+    - state
+    - monitor_id
+    - heartbeat_id
+    - started_at
+    - acknowledged_at
+    - resolved_at
+    properties:
+      id:
+        type: string
+        maxLength: 20
+      state:
+        type:
+        - string
+        - 'null'
+        maxLength: 16
+        enum:
+        - Started
+        - Acknowledged
+        - Validating
+        - Resolved
+        - Unconfirmed
+        - null
+      monitor_id:
+        type:
+        - string
+        - 'null'
+        maxLength: 20
+      heartbeat_id:
+        type:
+        - string
+        - 'null'
+        maxLength: 20
+      started_at:
+        type:
+        - string
+        - 'null'
+        maxLength: 40
+      acknowledged_at:
+        type:
+        - string
+        - 'null'
+        maxLength: 40
+      resolved_at:
+        type:
+        - string
+        - 'null'
+        maxLength: 40
+examples:
+- title: Show a Better Stack incident
+  args:
+    incident_id: '301'

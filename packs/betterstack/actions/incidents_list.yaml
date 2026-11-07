@@ -1,0 +1,164 @@
+schema_version: 1
+id: betterstack.incidents_list
+title: List Better Stack incidents
+kind: script
+risk: low
+description: List one bounded page of selected incident IDs, state and typed operational settings. Omit
+  names, URLs, hidden credentials, arbitrary content and raw provider errors. Continue with next_page
+  and unchanged selectors; unsupported pagination fails explicitly.
+side_effects:
+- One authenticated Better Stack HTTPS request; monitor timing updates perform a prior read. No automatic
+  retries or paging.
+args:
+- name: page
+  type: integer
+  required: false
+  description: Page number; the 100000 ceiling bounds one continuation selector.
+  validation:
+    min: 1
+    max: 100000
+  default: 1
+- name: per_page
+  type: integer
+  required: false
+  description: Rows per request; six keeps the full selected page within the 8 KiB result budget.
+  validation:
+    min: 1
+    max: 6
+  default: 6
+- name: monitor_id
+  type: string
+  required: false
+  description: Optional exact resource selector; empty includes every resource.
+  validation:
+    pattern: ^(?:[1-9][0-9]{0,19})?$
+    max_length: 20
+  default: ''
+- name: heartbeat_id
+  type: string
+  required: false
+  description: Optional exact resource selector; empty includes every resource.
+  validation:
+    pattern: ^(?:[1-9][0-9]{0,19})?$
+    max_length: 20
+  default: ''
+- name: resolved
+  type: string
+  required: false
+  description: Empty includes both states; true or false filters the provider query.
+  validation:
+    enum:
+    - ''
+    - 'true'
+    - 'false'
+    max_length: 5
+  default: ''
+- name: acknowledged
+  type: string
+  required: false
+  description: Empty includes both states; true or false filters the provider query.
+  validation:
+    enum:
+    - ''
+    - 'true'
+    - 'false'
+    max_length: 5
+  default: ''
+execution:
+  script:
+    path: scripts/betterstack.sh
+    interpreter: /bin/bash
+  argv:
+  - incidents_list
+  - '{{ args.page }}'
+  - '{{ args.per_page }}'
+  - '{{ args.monitor_id }}'
+  - '{{ args.heartbeat_id }}'
+  - '{{ args.resolved }}'
+  - '{{ args.acknowledged }}'
+  timeout: 40s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 4096
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required:
+    - items
+    - returned_count
+    - more_available
+    - next_page
+    properties:
+      items:
+        type: array
+        maxItems: 6
+        items:
+          type: object
+          additionalProperties: false
+          required:
+          - id
+          - state
+          - monitor_id
+          - heartbeat_id
+          - started_at
+          - acknowledged_at
+          - resolved_at
+          properties:
+            id:
+              type: string
+              maxLength: 20
+            state:
+              type:
+              - string
+              - 'null'
+              maxLength: 16
+              enum:
+              - Started
+              - Acknowledged
+              - Validating
+              - Resolved
+              - Unconfirmed
+              - null
+            monitor_id:
+              type:
+              - string
+              - 'null'
+              maxLength: 20
+            heartbeat_id:
+              type:
+              - string
+              - 'null'
+              maxLength: 20
+            started_at:
+              type:
+              - string
+              - 'null'
+              maxLength: 40
+            acknowledged_at:
+              type:
+              - string
+              - 'null'
+              maxLength: 40
+            resolved_at:
+              type:
+              - string
+              - 'null'
+              maxLength: 40
+      returned_count:
+        type: integer
+        minimum: 0
+        maximum: 6
+      more_available:
+        type: boolean
+      next_page:
+        type:
+        - integer
+        - 'null'
+        minimum: 1
+        maximum: 100000
+examples:
+- title: List Better Stack incidents
+  args: {}

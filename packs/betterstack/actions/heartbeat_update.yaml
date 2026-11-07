@@ -1,0 +1,155 @@
+schema_version: 1
+id: betterstack.heartbeat_update
+title: Update Better Stack heartbeat timing
+kind: script
+risk: high
+description: Update only selected period, grace or paused settings on one heartbeat. Minus one preserves
+  a numeric setting and empty preserves pause state. Pausing suppresses missed-heartbeat alerts; resuming
+  can page responders. Names, pulse URLs, routing and hidden data remain unchanged. This does not send
+  a heartbeat pulse. Reconcile runtime changes with Terraform.
+side_effects:
+- One authenticated Better Stack HTTPS request; monitor timing updates perform a prior read. No automatic
+  retries or paging.
+args:
+- name: heartbeat_id
+  type: string
+  required: true
+  description: Exact positive decimal resource ID; returned identifiers are preserved without clipping.
+  validation:
+    pattern: ^[1-9][0-9]{0,19}$
+    max_length: 20
+- name: period
+  type: integer
+  required: false
+  description: Expected seconds between beats; less than one year, or -1 to preserve.
+  validation:
+    min: -1
+    max: 31535999
+  default: -1
+- name: grace
+  type: integer
+  required: false
+  description: Late-arrival seconds; less than one year, or -1 to preserve.
+  validation:
+    min: -1
+    max: 31535999
+  default: -1
+- name: paused
+  type: string
+  required: false
+  description: Empty preserves pause state; true pauses and false resumes.
+  validation:
+    enum:
+    - ''
+    - 'true'
+    - 'false'
+    max_length: 5
+  default: ''
+execution:
+  script:
+    path: scripts/betterstack.sh
+    interpreter: /bin/bash
+  argv:
+  - heartbeat_update
+  - '{{ args.heartbeat_id }}'
+  - '{{ args.period }}'
+  - '{{ args.grace }}'
+  - '{{ args.paused }}'
+  timeout: 40s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 4096
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required:
+    - id
+    - state
+    - paused
+    - call
+    - sms
+    - email
+    - push
+    - critical_alert
+    - period
+    - grace
+    - paused_at
+    - created_at
+    - updated_at
+    properties:
+      id:
+        type: string
+        maxLength: 20
+      state:
+        type:
+        - string
+        - 'null'
+        maxLength: 16
+        enum:
+        - up
+        - down
+        - validating
+        - paused
+        - pending
+        - maintenance
+        - null
+      paused:
+        type:
+        - boolean
+        - 'null'
+      call:
+        type:
+        - boolean
+        - 'null'
+      sms:
+        type:
+        - boolean
+        - 'null'
+      email:
+        type:
+        - boolean
+        - 'null'
+      push:
+        type:
+        - boolean
+        - 'null'
+      critical_alert:
+        type:
+        - boolean
+        - 'null'
+      period:
+        type:
+        - integer
+        - 'null'
+        minimum: 0
+        maximum: 9007199254740991
+      grace:
+        type:
+        - integer
+        - 'null'
+        minimum: 0
+        maximum: 9007199254740991
+      paused_at:
+        type:
+        - string
+        - 'null'
+        maxLength: 40
+      created_at:
+        type:
+        - string
+        - 'null'
+        maxLength: 40
+      updated_at:
+        type:
+        - string
+        - 'null'
+        maxLength: 40
+examples:
+- title: Update Better Stack heartbeat timing
+  args:
+    heartbeat_id: '201'
+    period: 3600
+    grace: 600

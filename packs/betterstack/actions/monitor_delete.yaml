@@ -1,0 +1,49 @@
+schema_version: 1
+id: betterstack.monitor_delete
+title: Delete a Better Stack monitor
+kind: script
+risk: high
+description: Delete one monitor permanently, ending its future checks and notifications. The provider
+  may remove associated monitoring history; this does not repair the service. A successful empty HTTP
+  204 is the deletion receipt. Terraform may recreate an owned monitor on a later apply.
+side_effects:
+- One authenticated Better Stack HTTPS request; monitor timing updates perform a prior read. No automatic
+  retries or paging.
+args:
+- name: monitor_id
+  type: string
+  required: true
+  description: Exact positive decimal resource ID; returned identifiers are preserved without clipping.
+  validation:
+    pattern: ^[1-9][0-9]{0,19}$
+    max_length: 20
+execution:
+  script:
+    path: scripts/betterstack.sh
+    interpreter: /bin/bash
+  argv:
+  - monitor_delete
+  - '{{ args.monitor_id }}'
+  timeout: 40s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 4096
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required:
+    - id
+    - deleted
+    properties:
+      id:
+        type: string
+        maxLength: 20
+      deleted:
+        const: true
+examples:
+- title: Delete a Better Stack monitor
+  args:
+    monitor_id: '101'

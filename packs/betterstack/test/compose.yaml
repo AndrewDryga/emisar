@@ -1,0 +1,16 @@
+services:
+  betterstack-api:
+    image: python:${PACKTEST_VERSION:-3.14.7-alpine3.24}${PACKTEST_DIGEST-}
+    user: "65532:65532"
+    entrypoint: [python3, /fixture/server.py]
+    volumes:
+      - ${EMISAR_ROOT}/packs/betterstack/test/fixtures:/fixture:ro
+    networks:
+      default:
+        aliases: [incidents.betterstack.com]
+    healthcheck:
+      test: [CMD, python3, -c, "import ssl,urllib.request; urllib.request.urlopen('https://localhost/health',context=ssl.create_default_context(cafile='/fixture/server.crt'))"]
+      interval: 2s
+      start_period: 10s
+      start_interval: 1s
+      retries: 10
