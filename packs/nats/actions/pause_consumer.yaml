@@ -1,0 +1,82 @@
+schema_version: 1
+id: nats.pause_consumer
+title: Pause a JetStream consumer
+kind: script
+risk: high
+description: Pause one consumer until now plus the requested seconds. Stop new delivery while retaining
+  consumer state; already delivered messages can still be acknowledged. Return the server's pause
+  state without reading any message payload.
+side_effects:
+- One governed JetStream change; limit updates first read the current configuration.
+args:
+- name: stream
+  type: string
+  required: true
+  validation:
+    pattern: ^[A-Za-z0-9_-]{1,255}$
+    max_length: 255
+  description: Exact stream name; up to the server's 255-byte name limit, using ASCII letters, digits,
+    underscores or hyphens.
+- name: consumer
+  type: string
+  required: true
+  validation:
+    pattern: ^[A-Za-z0-9_-]{1,255}$
+    max_length: 255
+  description: Exact consumer name with the same subject-safe 255-byte syntax as streams.
+- name: pause_seconds
+  type: integer
+  required: true
+  description: Pause duration from now, bounded by the server's signed-int64 nanosecond duration.
+  validation:
+    min: 1
+    max: 9223372036
+execution:
+  script:
+    path: scripts/nats.sh
+    interpreter: /bin/sh
+  argv:
+  - pause_consumer
+  - '{{ args.stream }}'
+  - '{{ args.consumer }}'
+  - '{{ args.pause_seconds }}'
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required:
+    - stream
+    - consumer
+    - paused
+    - pause_until
+    - remaining_ns
+    properties:
+      stream:
+        type: string
+        maxLength: 255
+      consumer:
+        type: string
+        maxLength: 255
+      paused:
+        type: boolean
+      pause_until:
+        type:
+        - string
+        - 'null'
+        maxLength: 40
+      remaining_ns:
+        type: string
+        maxLength: 20
+        pattern: ^-?[0-9]{1,20}$
+examples:
+- title: Pause a JetStream consumer
+  args:
+    stream: ORDERS
+    consumer: worker
+    pause_seconds: 300

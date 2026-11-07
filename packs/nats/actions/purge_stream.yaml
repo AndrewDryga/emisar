@@ -1,0 +1,53 @@
+schema_version: 1
+id: nats.purge_stream
+title: Purge every message in a JetStream stream
+kind: script
+risk: critical
+description: Irreversibly purge all stored messages from one stream while retaining the stream and
+  consumer definitions. Return the acknowledged purge count; no content is read.
+side_effects:
+- One governed JetStream change; limit updates first read the current configuration.
+args:
+- name: stream
+  type: string
+  required: true
+  validation:
+    pattern: ^[A-Za-z0-9_-]{1,255}$
+    max_length: 255
+  description: Exact stream name; up to the server's 255-byte name limit, using ASCII letters, digits,
+    underscores or hyphens.
+execution:
+  script:
+    path: scripts/nats.sh
+    interpreter: /bin/sh
+  argv:
+  - purge_stream
+  - '{{ args.stream }}'
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required:
+    - accepted
+    - stream
+    - purged
+    properties:
+      accepted:
+        const: true
+      stream:
+        type: string
+        maxLength: 255
+      purged:
+        type: string
+        maxLength: 20
+        pattern: ^-?[0-9]{1,20}$
+examples:
+- title: Purge every message in a JetStream stream
+  args:
+    stream: ORDERS

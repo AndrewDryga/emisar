@@ -1,0 +1,63 @@
+schema_version: 1
+id: nats.connection_check
+title: Check NATS TLS connectivity
+kind: script
+risk: low
+description: Check authenticated TLS connectivity and one native RTT per resolved address of each
+  configured seed. Fail when a transport succeeds but RTT JSON contains a zero or absent result. This
+  is a connection check, not application delivery proof.
+side_effects:
+- One bounded native CLI operation over authenticated TLS.
+args: []
+execution:
+  script:
+    path: scripts/nats.sh
+    interpreter: /bin/sh
+  argv:
+  - connection_check
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required:
+    - connected
+    - endpoints
+    properties:
+      connected:
+        const: true
+      endpoints:
+        type: array
+        maxItems: 4
+        items:
+          type: object
+          additionalProperties: false
+          required:
+          - endpoint
+          - addresses_checked
+          - min_rtt_ns
+          - max_rtt_ns
+          properties:
+            endpoint:
+              type: string
+              maxLength: 512
+            addresses_checked:
+              type: integer
+              minimum: 1
+              maximum: 1024
+            min_rtt_ns:
+              type: string
+              maxLength: 20
+              pattern: ^-?[0-9]{1,20}$
+            max_rtt_ns:
+              type: string
+              maxLength: 20
+              pattern: ^-?[0-9]{1,20}$
+examples:
+- title: Check NATS TLS connectivity
+  args: {}

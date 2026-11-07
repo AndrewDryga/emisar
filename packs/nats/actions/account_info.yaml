@@ -1,0 +1,103 @@
+schema_version: 1
+id: nats.account_info
+title: Show JetStream account usage
+kind: script
+risk: low
+description: Show selected JetStream memory, storage, reservation, stream, consumer, quota and API
+  counters. Return exact decimal strings for 64-bit values; exclude account metadata and arbitrary
+  configuration.
+side_effects:
+- One read-only JetStream metadata request.
+args: []
+execution:
+  script:
+    path: scripts/nats.sh
+    interpreter: /bin/sh
+  argv:
+  - account_info
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required:
+    - memory_bytes
+    - storage_bytes
+    - reserved_memory_bytes
+    - reserved_storage_bytes
+    - streams
+    - consumers
+    - limits
+    - api_total
+    - api_errors
+    properties:
+      memory_bytes:
+        type: string
+        maxLength: 20
+        pattern: ^-?[0-9]{1,20}$
+      storage_bytes:
+        type: string
+        maxLength: 20
+        pattern: ^-?[0-9]{1,20}$
+      reserved_memory_bytes:
+        type: string
+        maxLength: 20
+        pattern: ^-?[0-9]{1,20}$
+      reserved_storage_bytes:
+        type: string
+        maxLength: 20
+        pattern: ^-?[0-9]{1,20}$
+      streams:
+        type: string
+        maxLength: 20
+        pattern: ^-?[0-9]{1,20}$
+      consumers:
+        type: string
+        maxLength: 20
+        pattern: ^-?[0-9]{1,20}$
+      limits:
+        type: object
+        additionalProperties: false
+        required:
+        - max_memory
+        - max_storage
+        - max_streams
+        - max_consumers
+        - max_ack_pending
+        properties:
+          max_memory:
+            type: string
+            maxLength: 20
+            pattern: ^-?[0-9]{1,20}$
+          max_storage:
+            type: string
+            maxLength: 20
+            pattern: ^-?[0-9]{1,20}$
+          max_streams:
+            type: string
+            maxLength: 20
+            pattern: ^-?[0-9]{1,20}$
+          max_consumers:
+            type: string
+            maxLength: 20
+            pattern: ^-?[0-9]{1,20}$
+          max_ack_pending:
+            type: string
+            maxLength: 20
+            pattern: ^-?[0-9]{1,20}$
+      api_total:
+        type: string
+        maxLength: 20
+        pattern: ^-?[0-9]{1,20}$
+      api_errors:
+        type: string
+        maxLength: 20
+        pattern: ^-?[0-9]{1,20}$
+examples:
+- title: Show JetStream account usage
+  args: {}

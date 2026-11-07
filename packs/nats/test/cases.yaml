@@ -1,0 +1,1040 @@
+services:
+- nats-1
+- nats-2
+- nats-3
+- nats-no-js
+workers: 2
+versions:
+- version: 2.14.8-alpine
+  digest: '@sha256:fce5fbf8b29ee0baa790e67bcd4abafebdd97363aa025f7d46a17489df002e30'
+  default: true
+- version: 2.15.2-alpine
+  digest: '@sha256:afae2fdbe2e326c65e1246cb83b9d05d319188734f3bd577ac8072daae78a10f'
+secret_env:
+- NATS_READ_PASSWORD
+- NATS_ADMIN_PASSWORD
+inherit_env:
+- NATS_URL
+- NATS_CA
+- NATS_READ_USER
+- NATS_READ_PASSWORD
+- NATS_ADMIN_USER
+- NATS_ADMIN_PASSWORD
+- PYTHONPATH
+env:
+  NATS_URL: tls://nats-1:4222
+  NATS_CA: /packs/nats/test/fixtures/ca.pem
+  NATS_READ_USER: emisar_read
+  NATS_READ_PASSWORD: packtest-canary-nats-read-password-2b67
+  NATS_ADMIN_USER: emisar_admin
+  NATS_ADMIN_PASSWORD: packtest-canary-nats-admin-password-2b67
+defaults:
+  expect:
+    stdout_not_empty: true
+    stdout_not_contains:
+    - packtest-canary-nats-read-password-2b67
+    - packtest-canary-nats-admin-password-2b67
+    - packtest-canary-nats-seed-password-2b67
+    - packtest-canary-nats-private-metadata-5172
+    - packtest-canary-nats-private-description-44a
+    - packtest-canary-nats-message-payload-896f
+    - packtest-canary-nats-wrong-password-91f7
+    - packtest-canary-nats-denied-password-e499
+    stderr_not_contains:
+    - packtest-canary-nats-read-password-2b67
+    - packtest-canary-nats-admin-password-2b67
+    - packtest-canary-nats-private-metadata-5172
+    - packtest-canary-nats-private-description-44a
+    - packtest-canary-nats-message-payload-896f
+    - packtest-canary-nats-wrong-password-91f7
+    - packtest-canary-nats-denied-password-e499
+cases:
+- name: nats.connection_check
+  action: nats.connection_check
+  args: {}
+  expect:
+    json:
+      /connected: true
+      /endpoints/0/addresses_checked: 1
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - empty
+- name: nats.account_info
+  action: nats.account_info
+  args: {}
+  expect:
+    json:
+      /streams: '1'
+      /consumers: '1'
+      /reserved_storage_bytes: '1048576'
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - default
+- name: nats.stream_names
+  action: nats.stream_names
+  args: {}
+  expect:
+    json:
+      /names/0: EMISAR_TEST
+      /total: '1'
+      /offset: 0
+      /next_offset: null
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - default
+- name: nats.stream_info
+  action: nats.stream_info
+  args:
+    stream: EMISAR_TEST
+  expect:
+    json:
+      /name: EMISAR_TEST
+      /messages: '3'
+      /first_sequence: '1'
+      /last_sequence: '3'
+      /max_age_ns: '9223372036000000000'
+      /replicas: 3
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - default
+- name: nats.consumer_names
+  action: nats.consumer_names
+  args:
+    stream: EMISAR_TEST
+  expect:
+    json:
+      /names/0: worker
+      /total: '1'
+      /next_offset: null
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - default
+- name: nats.consumer_info
+  action: nats.consumer_info
+  args:
+    stream: EMISAR_TEST
+    consumer: worker
+  expect:
+    json:
+      /pull: true
+      /pending: '3'
+      /ack_pending: '0'
+      /ack_wait_ns: '30000000000'
+      /paused: false
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - default
+- name: nats.create_stream
+  action: nats.create_stream
+  args:
+    stream: NEW_STREAM
+    subject: new.events.>
+    storage: file
+    retention: limits
+    max_bytes: '4096'
+    max_messages: '10'
+    replicas: 3
+    max_age_seconds: 3600
+  expect:
+    json:
+      /name: NEW_STREAM
+      /max_bytes: '4096'
+      /max_age_ns: '3600000000000'
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - default
+  probes:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - probe
+    - stream
+    - NEW_STREAM
+    expect:
+      json:
+        /name: NEW_STREAM
+        /messages: '0'
+        /max_bytes: '4096'
+        /max_messages: '10'
+        /max_age_ns: '3600000000000'
+- name: nats.create_consumer
+  action: nats.create_consumer
+  args:
+    stream: EMISAR_TEST
+    consumer: new_worker
+    filter_subject: emisar.test
+    max_ack_pending: '42'
+    max_deliver: '5'
+    replicas: 3
+  expect:
+    json:
+      /name: new_worker
+      /pull: true
+      /max_ack_pending: '42'
+      /max_deliver: '5'
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - default
+  probes:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - probe
+    - consumer
+    - new_worker
+    expect:
+      json:
+        /name: new_worker
+        /pull: true
+        /filter_subject: emisar.test
+        /max_ack_pending: '42'
+        /max_deliver: '5'
+- name: nats.update_stream_limits
+  action: nats.update_stream_limits
+  args:
+    stream: EMISAR_TEST
+    new_max_bytes: '2097152'
+  expect:
+    json:
+      /max_bytes: '2097152'
+      /max_age_ns: '9223372036000000000'
+      /messages: '3'
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - default
+  probes:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - probe
+    - stream
+    expect:
+      json:
+        /max_bytes: '2097152'
+        /max_messages: '100'
+        /max_age_ns: '9223372036000000000'
+        /messages: '3'
+        /other_configuration_preserved: true
+        /metadata_literal_preserved: true
+        /metadata_private_preserved: true
+- name: nats.update_consumer_limits
+  action: nats.update_consumer_limits
+  args:
+    stream: EMISAR_TEST
+    consumer: worker
+    new_max_ack_pending: '23'
+  expect:
+    json:
+      /max_ack_pending: '23'
+      /ack_wait_ns: '30000000000'
+      /max_deliver: '-1'
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - default
+  probes:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - probe
+    - consumer
+    expect:
+      json:
+        /max_ack_pending: '23'
+        /ack_wait_ns: '30000000000'
+        /max_deliver: '-1'
+        /other_configuration_preserved: true
+        /metadata_literal_preserved: true
+        /metadata_private_preserved: true
+- name: nats.pause_consumer
+  action: nats.pause_consumer
+  args:
+    stream: EMISAR_TEST
+    consumer: worker
+    pause_seconds: 300
+  expect:
+    json:
+      /paused: true
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - default
+  probes:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - probe
+    - consumer
+    expect:
+      json:
+        /paused: true
+- name: nats.resume_consumer
+  action: nats.resume_consumer
+  args:
+    stream: EMISAR_TEST
+    consumer: worker
+  expect:
+    json:
+      /paused: false
+      /pause_until: null
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - paused
+  probes:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - probe
+    - consumer
+    expect:
+      json:
+        /paused: false
+- name: nats.step_down_stream_leader
+  action: nats.step_down_stream_leader
+  args:
+    stream: EMISAR_TEST
+  expect:
+    json:
+      /accepted: true
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - default
+  probes:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - probe
+    - stream_leader
+    expect:
+      json:
+        /leader_changed: true
+        /caught_up: true
+- name: nats.step_down_consumer_leader
+  action: nats.step_down_consumer_leader
+  args:
+    stream: EMISAR_TEST
+    consumer: worker
+  expect:
+    json:
+      /accepted: true
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - default
+  probes:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - probe
+    - consumer_leader
+    expect:
+      json:
+        /leader_changed: true
+        /caught_up: true
+- name: nats.delete_message
+  action: nats.delete_message
+  args:
+    stream: EMISAR_TEST
+    sequence: '1'
+  expect:
+    json:
+      /accepted: true
+      /sequence: '1'
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - default
+  probes:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - probe
+    - stream
+    expect:
+      json:
+        /messages: '2'
+        /first_sequence: '2'
+- name: nats.delete_consumer
+  action: nats.delete_consumer
+  args:
+    stream: EMISAR_TEST
+    consumer: worker
+  expect:
+    json:
+      /accepted: true
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - default
+  probes:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - probe
+    - consumers
+    expect:
+      json:
+        /worker_present: false
+        /names: []
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - probe
+    - stream
+    expect:
+      json:
+        /name: EMISAR_TEST
+        /messages: '3'
+- name: nats.purge_stream
+  action: nats.purge_stream
+  args:
+    stream: EMISAR_TEST
+  expect:
+    json:
+      /accepted: true
+      /purged: '3'
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - default
+  probes:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - probe
+    - stream
+    expect:
+      json:
+        /name: EMISAR_TEST
+        /messages: '0'
+- name: nats.delete_stream
+  action: nats.delete_stream
+  args:
+    stream: EMISAR_TEST
+  expect:
+    json:
+      /accepted: true
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - default
+  probes:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - probe
+    - streams
+    expect:
+      json:
+        /test_stream_present: false
+        /names: []
+- name: nats.stream_names-empty
+  action: nats.stream_names
+  args: {}
+  expect:
+    json:
+      /names: []
+      /total: '0'
+      /next_offset: null
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - empty
+- name: nats.stream_names-max-name-page
+  action: nats.stream_names
+  args: {}
+  expect:
+    json:
+      /names/0: S00xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+      /names/9: S09xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+      /next_offset: 10
+      /total: '13'
+      /omitted_in_response: 3
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - names
+- name: nats.stream_names-continuation
+  action: nats.stream_names
+  args:
+    offset: 10
+  expect:
+    json:
+      /names/0: S10xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+      /total: '13'
+      /offset: 10
+      /next_offset: null
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - names
+- name: nats.consumer_names-max-name-page
+  action: nats.consumer_names
+  args:
+    stream: EMISAR_TEST
+  expect:
+    json:
+      /names/0: C00xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+      /next_offset: 10
+      /total: '14'
+      /omitted_in_response: 4
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - consumer_names
+- name: nats.consumer_names-continuation
+  action: nats.consumer_names
+  args:
+    stream: EMISAR_TEST
+    offset: 10
+  expect:
+    json:
+      /total: '14'
+      /offset: 10
+      /next_offset: null
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - consumer_names
+- name: nats.stream_info-worst-subjects-fit-cap
+  action: nats.stream_info
+  args:
+    stream: WORST
+  expect:
+    json:
+      /subjects/0/truncated: true
+      /subjects/3/truncated: true
+      /name: WORST
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - worst
+- name: nats.consumer_info-worst-filters-fit-cap
+  action: nats.consumer_info
+  args:
+    stream: WORST
+    consumer: worst_worker
+  expect:
+    json:
+      /filter_subjects/0/truncated: true
+      /filter_subjects/3/truncated: true
+      /name: worst_worker
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - worst
+- name: nats.account_info-reader-mutation-denied
+  action: nats.account_info
+  args: {}
+  expect:
+    json:
+      /streams: '1'
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - default
+  probes:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - probe
+    - reader_denial
+    expect:
+      json:
+        /denied: true
+        /forbidden_absent: true
+        /messages: '3'
+- name: nats.account_info-other-inbox-denied
+  action: nats.account_info
+  args: {}
+  expect:
+    json:
+      /streams: '1'
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - default
+  probes:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - probe
+    - inbox_denial
+    expect:
+      json:
+        /denied: true
+        /messages: '3'
+- name: nats.account_info-admin-application-publication-denied
+  action: nats.account_info
+  args: {}
+  expect:
+    json:
+      /streams: '1'
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - default
+  probes:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - probe
+    - admin_application_denial
+    expect:
+      json:
+        /denied: true
+        /messages: '3'
+- name: nats.account_info-codec-io-regressions
+  action: nats.account_info
+  args: {}
+  expect:
+    json:
+      /streams: '1'
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - default
+  - argv:
+    - python3
+    - /packs/nats/test/codec_test.py
+- name: nats.stream_info-missing-resource
+  action: nats.stream_info
+  args:
+    stream: MISSING
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - '"code"'
+    - '"err_code"'
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - default
+- name: nats.consumer_info-missing-resource
+  action: nats.consumer_info
+  args:
+    stream: EMISAR_TEST
+    consumer: missing
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - '"code"'
+    - '"err_code"'
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - default
+- name: nats.create_stream-provider-json-rejection
+  action: nats.create_stream
+  args:
+    stream: NEW_STREAM
+    subject: new.events
+    storage: file
+    retention: limits
+    max_bytes: '33554432'
+    max_messages: '10'
+    replicas: 3
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - '"code"'
+    - '"err_code"'
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - default
+  probes:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - probe
+    - streams
+    expect:
+      json:
+        /new_stream_present: false
+        /test_stream_present: true
+- name: nats.create_stream-readonly-identity-cannot-mutate
+  action: nats.create_stream
+  args:
+    stream: NEW_STREAM
+    subject: new.events
+    storage: file
+    retention: limits
+    max_bytes: '4096'
+    max_messages: '10'
+    replicas: 3
+  expect:
+    status: failure
+    stdout_not_empty: false
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - default
+  probes:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - probe
+    - streams
+    expect:
+      json:
+        /new_stream_present: false
+  env:
+    NATS_ADMIN_USER: emisar_denied
+    NATS_ADMIN_PASSWORD: packtest-canary-nats-denied-password-e499
+- name: nats.account_info-wrong-password
+  action: nats.account_info
+  args: {}
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - NATS authentication failed
+  env:
+    NATS_READ_PASSWORD: packtest-canary-nats-wrong-password-91f7
+- name: nats.connection_check-wrong-password
+  action: nats.connection_check
+  args: {}
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - NATS authentication failed
+  env:
+    NATS_READ_PASSWORD: packtest-canary-nats-wrong-password-91f7
+- name: nats.account_info-bad-ca
+  action: nats.account_info
+  args: {}
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - TLS verification failed
+  env:
+    NATS_CA: /packs/nats/test/fixtures/wrong-ca.pem
+- name: nats.account_info-wrong-hostname
+  action: nats.account_info
+  args: {}
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - TLS verification failed
+  env:
+    NATS_URL: tls://wrong-host:4222
+- name: nats.account_info-unreachable
+  action: nats.account_info
+  args: {}
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - no successful JSON
+  env:
+    NATS_URL: tls://nats-1:4223
+- name: nats.account_info-jetstream-disabled
+  action: nats.account_info
+  args: {}
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - no JetStream responder
+  env:
+    NATS_URL: tls://nats-no-js:4222
+- name: nats.account_info-reader-needs-no-admin
+  action: nats.account_info
+  args: {}
+  expect:
+    json:
+      /streams: '1'
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - default
+  unset_env:
+  - NATS_ADMIN_USER
+  - NATS_ADMIN_PASSWORD
+- name: nats.subject-injection
+  action: nats.stream_info
+  args:
+    stream: EMISAR_TEST.$JS.API.INFO
+  expect:
+    status: failure
+    reason: argument_invalid
+    stdout_not_empty: false
+- name: nats.path-injection
+  action: nats.stream_info
+  args:
+    stream: ../outside
+  expect:
+    status: failure
+    reason: argument_invalid
+    stdout_not_empty: false
+- name: nats.template-injection
+  action: nats.consumer_info
+  args:
+    stream: EMISAR_TEST
+    consumer: '{{Count}}'
+  expect:
+    status: failure
+    reason: argument_invalid
+    stdout_not_empty: false
+- name: nats.invalid-wildcard
+  action: nats.create_stream
+  args:
+    stream: NEW_STREAM
+    subject: new.>.tail
+    storage: file
+    retention: limits
+    max_bytes: '4096'
+    max_messages: '10'
+    replicas: 3
+  expect:
+    status: failure
+    reason: argument_invalid
+    stdout_not_empty: false
+- name: nats.zero-sequence
+  action: nats.delete_message
+  args:
+    stream: EMISAR_TEST
+    sequence: '0'
+  expect:
+    status: failure
+    reason: argument_invalid
+    stdout_not_empty: false
+- name: nats.duration-overflow
+  action: nats.pause_consumer
+  args:
+    stream: EMISAR_TEST
+    consumer: worker
+    pause_seconds: 9223372037
+  expect:
+    status: failure
+    reason: argument_invalid
+    stdout_not_empty: false
+- name: nats.uint64-overflow
+  action: nats.delete_message
+  args:
+    stream: EMISAR_TEST
+    sequence: '18446744073709551616'
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - integer range
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - default
+- name: nats.update_stream_limits-no-changes
+  action: nats.update_stream_limits
+  args:
+    stream: EMISAR_TEST
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - At least one
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - default
+- name: nats.update_consumer_limits-no-changes
+  action: nats.update_consumer_limits
+  args:
+    stream: EMISAR_TEST
+    consumer: worker
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - At least one
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - default
+- name: nats.account_info-no-userinfo-or-plaintext
+  action: nats.account_info
+  args: {}
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - TLS seed URLs
+  env:
+    NATS_URL: nats://user:password@nats-1:4222
+- name: nats.delete_consumer-last-interest-purges-messages
+  action: nats.delete_consumer
+  args:
+    stream: EMISAR_TEST
+    consumer: worker
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - interest
+  expect:
+    json:
+      /accepted: true
+  probes:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - probe
+    - consumers
+    expect:
+      json:
+        /worker_present: false
+        /names: []
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - probe
+    - stream
+    expect:
+      json:
+        /name: EMISAR_TEST
+        /messages: '0'
+- name: nats.account_info-isolated-python-startup
+  action: nats.account_info
+  args: {}
+  env:
+    PYTHONPATH: /tmp/nats-python-hooks
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - default
+  - argv:
+    - python3
+    - -I
+    - /packs/nats/test/isolation.py
+    - install
+  expect:
+    json:
+      /streams: '1'
+  probes:
+  - argv:
+    - python3
+    - -I
+    - /packs/nats/test/isolation.py
+    - probe
+    expect:
+      json:
+        /user_site_active: true
+        /pythonpath_active: true
+        /user_site_hook_ran: false
+        /pythonpath_hook_ran: false
+- name: nats.account_info-distinguishes-raw-admin-api-authority
+  action: nats.account_info
+  args: {}
+  arrange:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - seed
+    - default
+  expect:
+    json:
+      /streams: '1'
+  probes:
+  - argv:
+    - python3
+    - /packs/nats/test/fixture.py
+    - probe
+    - admin_indirect_authority
+    expect:
+      json:
+        /raw_admin_can_arrange_indirect_delivery: true
+        /payload_was_not_printed: true

@@ -1,0 +1,264 @@
+schema_version: 1
+id: nats.create_consumer
+title: Create a durable pull consumer
+kind: script
+risk: high
+description: Create one named durable pull consumer with an explicit filter, explicit acknowledgements
+  and bounded delivery settings. Never create a push-delivery subject or read a message. Use the server's
+  create-only consumer action. Terraform-managed definitions can be reconciled by the initializer.
+side_effects:
+- One governed JetStream change; limit updates first read the current configuration.
+args:
+- name: stream
+  type: string
+  required: true
+  validation:
+    pattern: ^[A-Za-z0-9_-]{1,255}$
+    max_length: 255
+  description: Exact stream name; up to the server's 255-byte name limit, using ASCII letters, digits,
+    underscores or hyphens.
+- name: consumer
+  type: string
+  required: true
+  validation:
+    pattern: ^[A-Za-z0-9_-]{1,255}$
+    max_length: 255
+  description: Exact consumer name with the same subject-safe 255-byte syntax as streams.
+- name: filter_subject
+  type: string
+  required: true
+  validation:
+    pattern: ^(?:>|(?:[A-Za-z0-9_-]{1,64}|\*)(?:\.(?:[A-Za-z0-9_-]{1,64}|\*)){0,15}(?:\.>)?)$
+    max_length: 255
+  description: Explicit pull-consumer subject filter; whole-token * and terminal > wildcards are allowed.
+- name: deliver_policy
+  type: string
+  required: false
+  default: all
+  description: Initial pull-consumer delivery policy.
+  validation:
+    enum:
+    - all
+    - new
+    - last
+- name: ack_wait_seconds
+  type: integer
+  required: false
+  default: 30
+  description: Explicit-ack deadline in seconds, bounded by signed-int64 nanoseconds.
+  validation:
+    min: 1
+    max: 9223372036
+- name: max_ack_pending
+  type: string
+  required: true
+  description: Positive maximum outstanding unacknowledged deliveries, as an exact decimal int64 string.
+  validation:
+    pattern: ^[1-9][0-9]{0,18}$
+    max_length: 19
+- name: max_deliver
+  type: string
+  required: false
+  default: '-1'
+  description: Maximum deliveries as an exact decimal int64 string, or -1 for unlimited.
+  validation:
+    pattern: ^(?:-1|[1-9][0-9]{0,18})$
+    max_length: 19
+- name: replicas
+  type: integer
+  required: true
+  description: Explicit replica count; JetStream supports one to five and requires enough servers.
+  validation:
+    min: 1
+    max: 5
+execution:
+  script:
+    path: scripts/nats.sh
+    interpreter: /bin/sh
+  argv:
+  - create_consumer
+  - '{{ args.stream }}'
+  - '{{ args.consumer }}'
+  - '{{ args.filter_subject }}'
+  - '{{ args.deliver_policy }}'
+  - '{{ args.ack_wait_seconds }}'
+  - '{{ args.max_ack_pending }}'
+  - '{{ args.max_deliver }}'
+  - '{{ args.replicas }}'
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required:
+    - stream
+    - name
+    - created
+    - pull
+    - ack_policy
+    - deliver_policy
+    - filter_subject
+    - filter_subject_truncated
+    - filter_subjects
+    - filter_subjects_omitted
+    - ack_wait_ns
+    - max_deliver
+    - max_ack_pending
+    - pending
+    - ack_pending
+    - redelivered
+    - waiting
+    - delivered_sequence
+    - ack_floor_sequence
+    - paused
+    - pause_until
+    - cluster
+    properties:
+      stream:
+        type: string
+        maxLength: 255
+      name:
+        type: string
+        maxLength: 255
+      created:
+        type: string
+        maxLength: 40
+      pull:
+        type: boolean
+      ack_policy:
+        type: string
+        maxLength: 16
+      deliver_policy:
+        type: string
+        maxLength: 24
+      filter_subject:
+        type: string
+        maxLength: 96
+      filter_subject_truncated:
+        type: boolean
+      filter_subjects:
+        type: array
+        maxItems: 4
+        items:
+          type: object
+          additionalProperties: false
+          required:
+          - value
+          - truncated
+          properties:
+            value:
+              type: string
+              maxLength: 96
+            truncated:
+              type: boolean
+      filter_subjects_omitted:
+        type: integer
+        minimum: 0
+      ack_wait_ns:
+        type: string
+        maxLength: 20
+        pattern: ^-?[0-9]{1,20}$
+      max_deliver:
+        type: string
+        maxLength: 20
+        pattern: ^-?[0-9]{1,20}$
+      max_ack_pending:
+        type: string
+        maxLength: 20
+        pattern: ^-?[0-9]{1,20}$
+      pending:
+        type: string
+        maxLength: 20
+        pattern: ^-?[0-9]{1,20}$
+      ack_pending:
+        type: string
+        maxLength: 20
+        pattern: ^-?[0-9]{1,20}$
+      redelivered:
+        type: string
+        maxLength: 20
+        pattern: ^-?[0-9]{1,20}$
+      waiting:
+        type: string
+        maxLength: 20
+        pattern: ^-?[0-9]{1,20}$
+      delivered_sequence:
+        type: string
+        maxLength: 20
+        pattern: ^-?[0-9]{1,20}$
+      ack_floor_sequence:
+        type: string
+        maxLength: 20
+        pattern: ^-?[0-9]{1,20}$
+      paused:
+        type: boolean
+      pause_until:
+        type:
+        - string
+        - 'null'
+        maxLength: 40
+      cluster:
+        type: object
+        additionalProperties: false
+        required:
+        - name
+        - leader
+        - leader_truncated
+        - replicas
+        - replicas_omitted
+        properties:
+          name:
+            type: string
+            maxLength: 48
+          leader:
+            type: string
+            maxLength: 48
+          leader_truncated:
+            type: boolean
+          replicas:
+            type: array
+            maxItems: 5
+            items:
+              type: object
+              additionalProperties: false
+              required:
+              - name
+              - name_truncated
+              - current
+              - offline
+              - lag
+              - active_ns
+              properties:
+                name:
+                  type: string
+                  maxLength: 48
+                name_truncated:
+                  type: boolean
+                current:
+                  type: boolean
+                offline:
+                  type: boolean
+                lag:
+                  type: string
+                  maxLength: 20
+                  pattern: ^-?[0-9]{1,20}$
+                active_ns:
+                  type: string
+                  maxLength: 20
+                  pattern: ^-?[0-9]{1,20}$
+          replicas_omitted:
+            type: integer
+            minimum: 0
+examples:
+- title: Create a durable pull consumer
+  args:
+    stream: ORDERS
+    consumer: worker
+    filter_subject: orders.>
+    max_ack_pending: '1000'
+    replicas: 3
