@@ -7,11 +7,16 @@ description: >
   Tail raw application driver output, which can contain personal data, requests or credentials;
   the runner applies its normal log redaction and account approval policy. Resolve the current
   job's output-only driver URI internally, list at most five pages of 1,000 chunk metadata rows,
-  and read at most four newest nonempty, generation-pinned chunks from Cloud Storage. Return
+  and read at most four nonempty, generation-pinned chunks ending at the selected tail offset
+  from Cloud Storage. Skip later chunks using metadata only and use explicit byte ranges for
+  windows ending before an object EOF. Return
   at most the requested lines and bytes, additionally capped at 1,024 UTF-8 bytes before
   redaction to leave room for expanding secret masks. Return explicit truncation and
   partial-first-line flags; JSON escaping can further reduce the tail, and counts precede
-  runner redaction. Support
+  runner redaction. A skipped tail is truncated but does not itself make the first line partial;
+  that flag describes a possibly incomplete prefix. Offsets select windows in the current listed
+  stream and are not gap-free continuation cursors; fetched bytes can exceed emitted bytes.
+  Window boundaries can split lines or UTF-8 characters; invalid UTF-8 is replaced. Support
   classic ASCII gs:// driver prefixes and numeric chunk suffixes, including logs retained after
   cluster deletion. Missing job metadata, unsupported URIs, incomplete listings, chunk gaps,
   encoded objects and changed snapshots fail closed. No bucket, object or URL is caller-selected.
@@ -54,6 +59,15 @@ args:
   default: 4096
   description: Maximum total fetched log bytes; the emitted UTF-8 tail is also capped at 1,024 bytes before redaction.
   validation: {min: 1, max: 4096}
+- name: skip_tail_bytes
+  type: integer
+  default: 0
+  description: >
+    Bytes to skip from the end of the current listed log stream before selecting this window.
+    Zero reads the newest window and preserves empty logs; a nonzero offset must be smaller
+    than the available byte count. The bound is the exact interoperable JSON integer limit.
+    The emitted tail may be narrower than the fetched window; this offset is not an automatic cursor.
+  validation: {min: 0, max: 9007199254740991}
 execution:
   script:
     path: scripts/driver_log.sh
@@ -64,6 +78,7 @@ execution:
   - '{{ args.job }}'
   - '{{ args.lines }}'
   - '{{ args.bytes }}'
+  - '{{ args.skip_tail_bytes }}'
   timeout: 90s
 output:
   parser: json
@@ -74,10 +89,11 @@ output:
     $schema: https://json-schema.org/draft/2020-12/schema
     type: object
     additionalProperties: false
-    required: [id, state, log_available, text, lines_returned, bytes_returned, bytes_read, chunks_read, truncated, partial_first_line]
+    required: [id, state, skip_tail_bytes, log_available, text, lines_returned, bytes_returned, bytes_read, chunks_read, truncated, partial_first_line]
     properties:
       id: {type: string, maxLength: 100}
       state: {type: string, maxLength: 32}
+      skip_tail_bytes: {type: integer, minimum: 0, maximum: 9007199254740991}
       log_available: {type: boolean}
       text: {type: string, maxLength: 4096}
       lines_returned: {type: integer, minimum: 0, maximum: 200}
@@ -89,3 +105,5 @@ output:
 examples:
 - title: Read the last traceback from a failed job
   args: {project: example-prod, region: us-central1, job: job-20261107, lines: 40, bytes: 4096}
+- title: Read an earlier bounded window before a long footer
+  args: {project: example-prod, region: us-central1, job: job-20261107, lines: 80, bytes: 4096, skip_tail_bytes: 1024}

@@ -1,6 +1,7 @@
 """Disposable storage JSON/media contract; uses actual gcloud and curl clients."""
 import copy
 import json
+import re
 import ssl
 from urllib.parse import parse_qs, unquote, urlparse
 
@@ -35,6 +36,18 @@ def driver_job(name, factory):
 
 
 def contents(name):
+    if name == "driver-window-footer":
+        return {0: b"ValueError: fixture-only failure\n" + b"F" * 8192, 1: b""}
+    if name == "driver-window-unicode":
+        return {0: "αβγ\nTAIL\n".encode(), 1: b""}
+    if name == "driver-window-many":
+        return {i: ("part-%d\n" % i).encode() for i in range(10)} | {10: b""}
+    if name == "driver-window-leading-missing":
+        return {5: b"0123456789", 6: b"abcdefghij", 7: b"KLMNOPQRST", 8: b""}
+    if name == "driver-window-long":
+        return {0: b"0123456789" * 500, 1: b""}
+    if name.startswith("driver-window"):
+        return {0: b"0123456789", 1: b"abcdefghij", 2: b"KLMNOPQRST", 3: b""}
     if name in ("driver-budget", "driver-tail"):
         return {i: ("segment-%d\n" % i).encode() for i in range(5)} | {5: b""}
     if name == "driver-cross-chunk":
@@ -121,10 +134,13 @@ def handle(handler, method, requests):
     if object_name != prefix(name) + ".%09d" % index or query != {"alt": ["media"], "generation": [str(int(GENERATION) + index)]}:
         handler.error(412, "Expected exact generation-pinned object")
         return True
+    if name == "driver-window-precondition":
+        handler.error(412, "Pinned generation changed after listing")
+        return True
     if name == "driver-gone":
         handler.error(404, "Pinned generation no longer exists")
         return True
-    if name == "driver-416":
+    if name in ("driver-416", "driver-window-416"):
         handler.send(416, {"error": {"code": 416}})
         return True
     if name == "driver-redirect":
@@ -134,9 +150,19 @@ def handle(handler, method, requests):
         handler.end_headers()
         return True
     body = data[index]
-    requested = int(handler.headers.get("Range", "bytes=-0").removeprefix("bytes=-"))
-    if requested <= 0 or handler.headers.get("Accept-Encoding") != "gzip":
-        handler.error(400, "Expected bounded suffix range without decompression")
+    header = handler.headers.get("Range", "")
+    suffix = re.fullmatch(r"bytes=-([1-9][0-9]*)", header)
+    interval = re.fullmatch(r"bytes=(0|[1-9][0-9]*)-(0|[1-9][0-9]*)", header)
+    if suffix:
+        lower, upper = max(0, len(body) - int(suffix[1])), len(body) - 1
+    elif interval:
+        lower, upper = int(interval[1]), int(interval[2])
+    else:
+        handler.error(400, "Expected a bounded single byte range")
+        return True
+    requested = upper - lower + 1
+    if not 0 <= lower <= upper < len(body) or handler.headers.get("Accept-Encoding") != "gzip":
+        handler.error(400, "Expected a satisfiable range without decompression")
         return True
     if name == "driver-unknown-overflow":
         handler.protocol_version = "HTTP/1.1"
@@ -152,13 +178,13 @@ def handle(handler, method, requests):
         except (BrokenPipeError, ConnectionResetError, ssl.SSLError):
             pass
         return True
-    status = 200 if name in ("driver-range-ignored", "driver-whole-200") else 206
-    tail = body if status == 200 else body[-requested:]
+    status = 200 if name in ("driver-range-ignored", "driver-whole-200", "driver-window-whole-200", "driver-window-ignored", "driver-window-ignored-subset") else 206
+    tail = body if status == 200 and name != "driver-window-ignored-subset" else body[lower:upper + 1]
     handler.send_response(status)
     handler.send_header("Content-Type", "text/plain")
     handler.send_header("Content-Length", str(len(tail)))
     if status == 206:
-        handler.send_header("Content-Range", "bytes %d-%d/%d" % (0 if name == "driver-bad-range" else len(body) - len(tail), len(body) - 1, len(body)))
+        handler.send_header("Content-Range", "bytes %d-%d/%d" % (0 if name == "driver-bad-range" else lower + 1 if name == "driver-window-malformed-range" else lower, upper, len(body)))
     if name == "driver-response-encoded":
         handler.send_header("Content-Encoding", "gzip")
     handler.end_headers()

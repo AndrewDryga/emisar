@@ -1937,3 +1937,768 @@ cases:
       json:
         /methods:
         - GET
+- name: gcp-dataproc.job_driver_log-window-oracle-0
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-window-stream
+    bytes: 8
+    skip_tail_bytes: 0
+  expect:
+    json:
+      /skip_tail_bytes: 0
+      /text: MNOPQRST
+      /truncated: true
+      /partial_first_line: true
+  probes:
+  - name: Exact bounded read-only window requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{ranges:[.requests[]|select(.family=="storage_media")|.range],generations:[.requests[]|select(.family=="storage_media")|.query.generation[0]],methods:([.requests[].method]|unique)}'
+    expect:
+      json:
+        /ranges:
+        - bytes=-8
+        /generations:
+        - '9007199254740995'
+        /methods:
+        - GET
+- name: gcp-dataproc.job_driver_log-window-oracle-3
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-window-stream
+    bytes: 8
+    skip_tail_bytes: 3
+  expect:
+    json:
+      /skip_tail_bytes: 3
+      /text: jKLMNOPQ
+      /truncated: true
+      /partial_first_line: true
+  probes:
+  - name: Exact bounded read-only window requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{ranges:[.requests[]|select(.family=="storage_media")|.range],generations:[.requests[]|select(.family=="storage_media")|.query.generation[0]],methods:([.requests[].method]|unique)}'
+    expect:
+      json:
+        /ranges:
+        - bytes=0-6
+        - bytes=-1
+        /generations:
+        - '9007199254740995'
+        - '9007199254740994'
+        /methods:
+        - GET
+- name: gcp-dataproc.job_driver_log-window-oracle-10
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-window-stream
+    bytes: 8
+    skip_tail_bytes: 10
+  expect:
+    json:
+      /skip_tail_bytes: 10
+      /text: cdefghij
+      /truncated: true
+      /partial_first_line: true
+  probes:
+  - name: Exact bounded read-only window requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{ranges:[.requests[]|select(.family=="storage_media")|.range],generations:[.requests[]|select(.family=="storage_media")|.query.generation[0]],methods:([.requests[].method]|unique)}'
+    expect:
+      json:
+        /ranges:
+        - bytes=-8
+        /generations:
+        - '9007199254740994'
+        /methods:
+        - GET
+- name: gcp-dataproc.job_driver_log-window-oracle-13
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-window-stream
+    bytes: 8
+    skip_tail_bytes: 13
+  expect:
+    json:
+      /skip_tail_bytes: 13
+      /text: 9abcdefg
+      /truncated: true
+      /partial_first_line: true
+  probes:
+  - name: Exact bounded read-only window requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{ranges:[.requests[]|select(.family=="storage_media")|.range],generations:[.requests[]|select(.family=="storage_media")|.query.generation[0]],methods:([.requests[].method]|unique)}'
+    expect:
+      json:
+        /ranges:
+        - bytes=0-6
+        - bytes=-1
+        /generations:
+        - '9007199254740994'
+        - '9007199254740993'
+        /methods:
+        - GET
+- name: gcp-dataproc.job_driver_log-window-oracle-20
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-window-stream
+    bytes: 4096
+    skip_tail_bytes: 20
+  expect:
+    json:
+      /skip_tail_bytes: 20
+      /text: "0123456789"
+      /truncated: true
+      /partial_first_line: false
+  probes:
+  - name: Exact bounded read-only window requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{ranges:[.requests[]|select(.family=="storage_media")|.range],generations:[.requests[]|select(.family=="storage_media")|.query.generation[0]],methods:([.requests[].method]|unique)}'
+    expect:
+      json:
+        /ranges:
+        - bytes=-10
+        /generations:
+        - '9007199254740993'
+        /methods:
+        - GET
+- name: gcp-dataproc.job_driver_log-window-oracle-29
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-window-stream
+    bytes: 8
+    skip_tail_bytes: 29
+  expect:
+    json:
+      /skip_tail_bytes: 29
+      /text: '0'
+      /truncated: true
+      /partial_first_line: false
+  probes:
+  - name: Exact bounded read-only window requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{ranges:[.requests[]|select(.family=="storage_media")|.range],generations:[.requests[]|select(.family=="storage_media")|.query.generation[0]],methods:([.requests[].method]|unique)}'
+    expect:
+      json:
+        /ranges:
+        - bytes=0-0
+        /generations:
+        - '9007199254740993'
+        /methods:
+        - GET
+- name: gcp-dataproc.job_driver_log-window-before-footer
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-window-footer
+    bytes: 4096
+    skip_tail_bytes: 8192
+  expect:
+    json:
+      /skip_tail_bytes: 8192
+      /text: 'ValueError: fixture-only failure
+
+        '
+      /truncated: true
+      /partial_first_line: false
+      /bytes_read: 33
+      /bytes_returned: 33
+      /chunks_read: 1
+  probes:
+  - name: Exact bounded read-only window requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{methods:([.requests[].method]|unique),media:([.requests[]|select(.family=="storage_media")]|length)}'
+    expect:
+      json:
+        /methods:
+        - GET
+        /media: 1
+- name: gcp-dataproc.job_driver_log-window-fetch-versus-emission
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-window-long
+    bytes: 4096
+    skip_tail_bytes: 1000
+  expect:
+    json:
+      /skip_tail_bytes: 1000
+      /text: '6789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789'
+      /truncated: true
+      /partial_first_line: true
+      /bytes_read: 4000
+      /bytes_returned: 1024
+      /chunks_read: 1
+  probes:
+  - name: Exact bounded read-only window requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{methods:([.requests[].method]|unique),media:([.requests[]|select(.family=="storage_media")]|length)}'
+    expect:
+      json:
+        /methods:
+        - GET
+        /media: 1
+- name: gcp-dataproc.job_driver_log-window-unicode-tail-only
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-window-unicode
+    bytes: 4096
+    skip_tail_bytes: 5
+  expect:
+    json:
+      /skip_tail_bytes: 5
+      /text: 'αβγ
+
+        '
+      /truncated: true
+      /partial_first_line: false
+      /bytes_read: 7
+      /bytes_returned: 7
+  probes:
+  - name: Exact bounded read-only window requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{methods:([.requests[].method]|unique),media:([.requests[]|select(.family=="storage_media")]|length)}'
+    expect:
+      json:
+        /methods:
+        - GET
+        /media: 1
+- name: gcp-dataproc.job_driver_log-window-unicode-midcharacter-tail
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-window-unicode
+    bytes: 4096
+    skip_tail_bytes: 7
+  expect:
+    json:
+      /skip_tail_bytes: 7
+      /text: αβ�
+      /truncated: true
+      /partial_first_line: false
+      /bytes_read: 5
+      /bytes_returned: 7
+  probes:
+  - name: Exact bounded read-only window requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{methods:([.requests[].method]|unique),media:([.requests[]|select(.family=="storage_media")]|length)}'
+    expect:
+      json:
+        /methods:
+        - GET
+        /media: 1
+- name: gcp-dataproc.job_driver_log-window-unicode-prefix-cut
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-window-unicode
+    bytes: 3
+    skip_tail_bytes: 7
+  expect:
+    json:
+      /skip_tail_bytes: 7
+      /text: �
+      /truncated: true
+      /partial_first_line: true
+      /bytes_read: 3
+      /bytes_returned: 3
+  probes:
+  - name: Exact bounded read-only window requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{methods:([.requests[].method]|unique),media:([.requests[]|select(.family=="storage_media")]|length)}'
+    expect:
+      json:
+        /methods:
+        - GET
+        /media: 1
+- name: gcp-dataproc.job_driver_log-window-missing-older-prefix
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-window-leading-missing
+    bytes: 4096
+    skip_tail_bytes: 20
+  expect:
+    json:
+      /skip_tail_bytes: 20
+      /text: "0123456789"
+      /truncated: true
+      /partial_first_line: true
+  probes:
+  - name: Exact bounded read-only window requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{methods:([.requests[].method]|unique),media:([.requests[]|select(.family=="storage_media")]|length)}'
+    expect:
+      json:
+        /methods:
+        - GET
+        /media: 1
+- name: gcp-dataproc.job_driver_log-window-many-skipped
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-window-many
+    bytes: 4096
+    skip_tail_bytes: 35
+  expect:
+    json:
+      /skip_tail_bytes: 35
+      /text: 'part-1
+
+        part-2
+
+        part-3
+
+        part-4
+
+        '
+      /truncated: true
+      /partial_first_line: true
+      /chunks_read: 4
+  probes:
+  - name: Exact bounded read-only window requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{total:(.requests|length),media:([.requests[]|select(.family=="storage_media")]|length),generations:[.requests[]|select(.family=="storage_media")|.query.generation[0]]}'
+    expect:
+      json:
+        /total: 6
+        /media: 4
+        /generations:
+        - '9007199254740997'
+        - '9007199254740996'
+        - '9007199254740995'
+        - '9007199254740994'
+- name: gcp-dataproc.job_driver_log-window-full-request-budget
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-budget
+    bytes: 4096
+    skip_tail_bytes: 10
+  expect:
+    json:
+      /skip_tail_bytes: 10
+      /text: 'segment-0
+
+        segment-1
+
+        segment-2
+
+        segment-3
+
+        '
+      /truncated: true
+      /partial_first_line: false
+      /chunks_read: 4
+  probes:
+  - name: Exact bounded read-only window requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{total:(.requests|length),lists:([.requests[]|select(.family=="storage_list")]|length),media:([.requests[]|select(.family=="storage_media")]|length)}'
+    expect:
+      json:
+        /total: 10
+        /lists: 5
+        /media: 4
+- name: gcp-dataproc.job_driver_log-window-whole-object-200
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-window-whole-200
+    bytes: 4096
+    skip_tail_bytes: 20
+  expect:
+    json:
+      /skip_tail_bytes: 20
+      /text: "0123456789"
+      /truncated: true
+      /partial_first_line: false
+  probes:
+  - name: Exact bounded read-only window requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{methods:([.requests[].method]|unique),media:([.requests[]|select(.family=="storage_media")]|length)}'
+    expect:
+      json:
+        /methods:
+        - GET
+        /media: 1
+- name: gcp-dataproc.job_driver_log-window-ignored-full-object
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-window-ignored
+    bytes: 8
+    skip_tail_bytes: 3
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - byte limit
+  probes:
+  - name: Exact bounded read-only window requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{total:(.requests|length),media:([.requests[]|select(.family=="storage_media")]|length),generation:.requests[-1].query.generation[0]}'
+    expect:
+      json:
+        /total: 3
+        /media: 1
+        /generation: '9007199254740995'
+- name: gcp-dataproc.job_driver_log-window-ignored-partial-200
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-window-ignored-subset
+    bytes: 8
+    skip_tail_bytes: 3
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - ignored the bounded byte range
+  probes:
+  - name: Exact bounded read-only window requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{total:(.requests|length),media:([.requests[]|select(.family=="storage_media")]|length),generation:.requests[-1].query.generation[0]}'
+    expect:
+      json:
+        /total: 3
+        /media: 1
+        /generation: '9007199254740995'
+- name: gcp-dataproc.job_driver_log-window-malformed-206
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-window-malformed-range
+    bytes: 8
+    skip_tail_bytes: 3
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - byte range did not match
+  probes:
+  - name: Exact bounded read-only window requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{total:(.requests|length),media:([.requests[]|select(.family=="storage_media")]|length),generation:.requests[-1].query.generation[0]}'
+    expect:
+      json:
+        /total: 3
+        /media: 1
+        /generation: '9007199254740995'
+- name: gcp-dataproc.job_driver_log-window-snapshot-changed
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-window-precondition
+    bytes: 8
+    skip_tail_bytes: 3
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - HTTP 412
+  probes:
+  - name: Exact bounded read-only window requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{total:(.requests|length),media:([.requests[]|select(.family=="storage_media")]|length),generation:.requests[-1].query.generation[0]}'
+    expect:
+      json:
+        /total: 3
+        /media: 1
+        /generation: '9007199254740995'
+- name: gcp-dataproc.job_driver_log-window-range-416
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-window-416
+    bytes: 8
+    skip_tail_bytes: 3
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - HTTP 416
+  probes:
+  - name: Exact bounded read-only window requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{total:(.requests|length),media:([.requests[]|select(.family=="storage_media")]|length),generation:.requests[-1].query.generation[0]}'
+    expect:
+      json:
+        /total: 3
+        /media: 1
+        /generation: '9007199254740995'
+- name: gcp-dataproc.job_driver_log-window-at-total
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-window-stream
+    bytes: 8
+    skip_tail_bytes: 30
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - outside the available driver-log bytes
+  probes:
+  - name: Exact bounded read-only window requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{total:(.requests|length),media:([.requests[]|select(.family=="storage_media")]|length)}'
+    expect:
+      json:
+        /total: 2
+        /media: 0
+- name: gcp-dataproc.job_driver_log-window-past-total
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-window-stream
+    bytes: 8
+    skip_tail_bytes: 31
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - outside the available driver-log bytes
+  probes:
+  - name: Exact bounded read-only window requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{total:(.requests|length),media:([.requests[]|select(.family=="storage_media")]|length)}'
+    expect:
+      json:
+        /total: 2
+        /media: 0
+- name: gcp-dataproc.job_driver_log-window-max-exact-json-integer
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-window-stream
+    bytes: 8
+    skip_tail_bytes: 9007199254740991
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - outside the available driver-log bytes
+  probes:
+  - name: Exact bounded read-only window requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{total:(.requests|length),media:([.requests[]|select(.family=="storage_media")]|length)}'
+    expect:
+      json:
+        /total: 2
+        /media: 0
+- name: gcp-dataproc.job_driver_log-window-empty-positive
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-empty
+    bytes: 8
+    skip_tail_bytes: 1
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - outside the available driver-log bytes
+  probes:
+  - name: Exact bounded read-only window requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{total:(.requests|length),media:([.requests[]|select(.family=="storage_media")]|length)}'
+    expect:
+      json:
+        /total: 2
+        /media: 0
+- name: gcp-dataproc.job_driver_log-window-empty-zero
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-empty
+    bytes: 4096
+    skip_tail_bytes: 0
+  expect:
+    json:
+      /skip_tail_bytes: 0
+      /text: ''
+      /truncated: false
+      /partial_first_line: false
+      /log_available: false
+      /bytes_read: 0
+      /chunks_read: 0
+  probes:
+  - name: Exact bounded read-only window requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{total:(.requests|length),media:([.requests[]|select(.family=="storage_media")]|length)}'
+    expect:
+      json:
+        /total: 2
+        /media: 0
+- name: gcp-dataproc.job_driver_log-window-negative
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-window-stream
+    bytes: 8
+    skip_tail_bytes: -1
+  expect:
+    status: failure
+    reason: argument_invalid
+    stdout_not_empty: false
+  probes:
+  - name: Exact bounded read-only window requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{total:(.requests|length)}'
+    expect:
+      json:
+        /total: 0
+- name: gcp-dataproc.job_driver_log-window-fraction
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-window-stream
+    bytes: 8
+    skip_tail_bytes: 0.5
+  expect:
+    status: failure
+    reason: argument_invalid
+    stdout_not_empty: false
+  probes:
+  - name: Exact bounded read-only window requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{total:(.requests|length)}'
+    expect:
+      json:
+        /total: 0
+- name: gcp-dataproc.job_driver_log-window-unsafe-json-integer
+  action: gcp-dataproc.job_driver_log
+  args:
+    project: example-prod
+    region: us-central1
+    job: driver-window-stream
+    bytes: 8
+    skip_tail_bytes: 9007199254740992
+  expect:
+    status: failure
+    reason: argument_invalid
+    stdout_not_empty: false
+  probes:
+  - name: Exact bounded read-only window requests
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-dataproc/test/fixtures/server.crt https://gcp-api:8443/probe/state
+      | jq -c '{total:(.requests|length)}'
+    expect:
+      json:
+        /total: 0

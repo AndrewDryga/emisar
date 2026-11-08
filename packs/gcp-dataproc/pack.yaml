@@ -1,7 +1,7 @@
 schema_version: 1
 id: gcp-dataproc
 name: Google Cloud Dataproc operations
-version: 0.1.1
+version: 0.1.2
 description: Inspect classic Dataproc clusters, daemon metrics, jobs, failures, retained driver logs, operations and regional
   autoscaling policies, then govern narrow start, stop, resize, cancellation and deletion controls.
   Selected projections exclude arbitrary configuration and submitted job payloads. Serverless batches,
@@ -50,6 +50,9 @@ setup:
   - Requires curl 7.76 or newer. Read pages contain at most six rows to stay within the 8 KiB structured-result
     budget; follow next_page_cursor with unchanged selectors. Long or unsupported provider cursors
     are omitted with cursor_omitted=true.
+  - Driver log reads accept an explicit byte offset from the current listed tail to inspect earlier
+    windows without fetching skipped objects. At most 4 KiB is fetched and 1 KiB is emitted before
+    redaction; the offset is not a gap-free cursor and fetched bytes are not a continuation step.
   - Lifecycle operations are asynchronous. A successful request is acceptance, not completion; inspect
     the returned operation or job until it reaches a terminal state. Start, stop and delete requests
     require the UUID from cluster_details to protect against a reused name. Worker resize uses the
