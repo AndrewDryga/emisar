@@ -17,6 +17,33 @@ defmodule EmisarWeb.Changelog do
 
   @entries [
     %{
+      date: ~D[2026-11-07],
+      slug: "dataproc-nats-and-better-stack-packs",
+      title: "Dataproc, NATS JetStream, and Better Stack packs",
+      tag: "v0.58.0",
+      summary:
+        "Three new packs bring Google Cloud Dataproc clusters and jobs, NATS JetStream streams and consumers, and Better Stack monitors, incidents, and heartbeats under the same approvals and audit as every other action. HCP Terraform can now show which paths of one resource a plan changes, and Traefik metrics reads stay bounded on busy ingress hosts.",
+      details: [
+        {"Packs",
+         [
+           "gcp-dataproc adds eighteen actions for clusters, jobs, operations, driver logs, and autoscaling policies, with narrow lifecycle controls such as start, stop, resize, and delete.",
+           "nats adds eighteen actions for JetStream streams, consumers, and messages over TLS with role-specific credentials.",
+           "betterstack adds eighteen actions for monitors, incidents, heartbeats, and status pages. Credentials never appear in arguments or results.",
+           "hcp-terraform compares one resource's planned values privately and returns only the changed paths, with complete counts.",
+           "traefik bounds a metrics scrape by time, size, and sample count, and fails without partial output on an upstream error.",
+           "gcp-secret-manager shows a secret version's state and metadata without ever reading its payload."
+         ]},
+        {"Runner",
+         [
+           "A runner can advertise up to 4 MB of installed packs, up from 2 MB, so a host with every pack installed still connects. Runner 0.32.1 ships with this release."
+         ]},
+        {"Platform",
+         [
+           "Every dependency is on its newest release, including Sentry 14, oidcc 3.9.2, libcluster 3.6.0, and chromedp 0.23.0. The admin runners run Runner 0.32.0."
+         ]}
+      ]
+    },
+    %{
       date: ~D[2026-11-06],
       slug: "medusa-backups-and-least-privilege-pack-recipes",
       title: "Medusa backups and least-privilege pack recipes",
