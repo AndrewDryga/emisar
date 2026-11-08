@@ -1,0 +1,1208 @@
+services:
+- metadata-api
+versions:
+- version: 587.0.0-slim
+  digest: '@sha256:be4876b4311056bf3ce236a14a7dea1288e70b7cfea2454ea15e4165c819921f'
+  default: true
+secret_env:
+- CLOUDSDK_AUTH_ACCESS_TOKEN
+inherit_env:
+- CLOUDSDK_AUTH_ACCESS_TOKEN
+- CURL_CA_BUNDLE
+env:
+  CLOUDSDK_AUTH_ACCESS_TOKEN: packtest-canary-secret-manager-access-882d
+  CURL_CA_BUNDLE: /packs/gcp-secret-manager/test/fixtures/server.crt
+defaults:
+  expect:
+    stdout_not_contains:
+    - packtest-canary-secret-manager-access-882d
+    - packtest-canary-secret-manager-invalid-access-7c22
+    - packtest-canary-secret-manager-private-extra-29ac
+    - packtest-canary-secret-manager-auth-noise-48f2
+    stderr_not_contains:
+    - packtest-canary-secret-manager-access-882d
+    - packtest-canary-secret-manager-invalid-access-7c22
+    - packtest-canary-secret-manager-private-extra-29ac
+    - packtest-canary-secret-manager-auth-noise-48f2
+cases:
+- name: gcp-secret-manager.version_details-numeric
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: enabled-secret
+    version: '7'
+  expect:
+    json:
+      /name: projects/example-prod/secrets/enabled-secret/versions/7
+      /state: ENABLED
+      /create_time: '2026-11-07T22:00:00.123456789Z'
+      /destroy_time: null
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called,method:.requests[0].method,body_length:.requests[0].body_length,fields:.requests[0].query.fields[0],encoding:.requests[0].accept_encoding,host:.requests[0].host}'
+    expect:
+      json:
+        /total: 1
+        /access: false
+        /method: GET
+        /body_length: 0
+        /fields: name,state,createTime,destroyTime
+        /encoding: identity
+        /host: secretmanager.googleapis.com
+- name: gcp-secret-manager.version_details-latest-canonical
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: canonical-secret
+  expect:
+    json:
+      /name: projects/133890521114/secrets/canonical-secret/versions/7
+      /state: ENABLED
+      /destroy_time: null
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called,method:.requests[0].method,body_length:.requests[0].body_length,fields:.requests[0].query.fields[0],encoding:.requests[0].accept_encoding,host:.requests[0].host}'
+    expect:
+      json:
+        /total: 1
+        /access: false
+        /method: GET
+        /body_length: 0
+        /fields: name,state,createTime,destroyTime
+        /encoding: identity
+        /host: secretmanager.googleapis.com
+- name: gcp-secret-manager.version_details-latest-disabled
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: disabled-secret
+  expect:
+    json:
+      /name: projects/133890521114/secrets/disabled-secret/versions/7
+      /state: DISABLED
+      /destroy_time: null
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called,method:.requests[0].method,body_length:.requests[0].body_length,fields:.requests[0].query.fields[0],encoding:.requests[0].accept_encoding,host:.requests[0].host}'
+    expect:
+      json:
+        /total: 1
+        /access: false
+        /method: GET
+        /body_length: 0
+        /fields: name,state,createTime,destroyTime
+        /encoding: identity
+        /host: secretmanager.googleapis.com
+- name: gcp-secret-manager.version_details-latest-destroyed
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: destroyed-secret
+  expect:
+    json:
+      /state: DESTROYED
+      /destroy_time: '2026-11-07T22:10:00Z'
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called,method:.requests[0].method,body_length:.requests[0].body_length,fields:.requests[0].query.fields[0],encoding:.requests[0].accept_encoding,host:.requests[0].host}'
+    expect:
+      json:
+        /total: 1
+        /access: false
+        /method: GET
+        /body_length: 0
+        /fields: name,state,createTime,destroyTime
+        /encoding: identity
+        /host: secretmanager.googleapis.com
+- name: gcp-secret-manager.version_details-null-destroy-time
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: null-destroy-time
+  expect:
+    json:
+      /state: ENABLED
+      /destroy_time: null
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called,method:.requests[0].method,body_length:.requests[0].body_length,fields:.requests[0].query.fields[0],encoding:.requests[0].accept_encoding,host:.requests[0].host}'
+    expect:
+      json:
+        /total: 1
+        /access: false
+        /method: GET
+        /body_length: 0
+        /fields: name,state,createTime,destroyTime
+        /encoding: identity
+        /host: secretmanager.googleapis.com
+- name: gcp-secret-manager.version_details-closed-projection
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: extra-fields
+  expect:
+    json:
+      /state: ENABLED
+      /destroy_time: null
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called,method:.requests[0].method,body_length:.requests[0].body_length,fields:.requests[0].query.fields[0],encoding:.requests[0].accept_encoding,host:.requests[0].host}'
+    expect:
+      json:
+        /total: 1
+        /access: false
+        /method: GET
+        /body_length: 0
+        /fields: name,state,createTime,destroyTime
+        /encoding: identity
+        /host: secretmanager.googleapis.com
+- name: gcp-secret-manager.version_details-max-selector-and-timestamp-fit-cap
+  action: gcp-secret-manager.version_details
+  args:
+    project: paaaaaaaaaaaaaaaaaaaaaaaaaaaaz
+    secret: SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS
+    version: '99999999999999999999999999999999'
+  expect:
+    json:
+      /name: projects/paaaaaaaaaaaaaaaaaaaaaaaaaaaaz/secrets/SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS/versions/99999999999999999999999999999999
+      /state: ENABLED
+      /create_time: '2026-11-07T22:00:00.123456789Z'
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called,method:.requests[0].method,body_length:.requests[0].body_length,fields:.requests[0].query.fields[0],encoding:.requests[0].accept_encoding,host:.requests[0].host}'
+    expect:
+      json:
+        /total: 1
+        /access: false
+        /method: GET
+        /body_length: 0
+        /fields: name,state,createTime,destroyTime
+        /encoding: identity
+        /host: secretmanager.googleapis.com
+- name: gcp-secret-manager.version_details-core-jq
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: enabled-secret
+  expect:
+    json:
+      /state: ENABLED
+      /destroy_time: null
+  env:
+    PATH: /opt/jq-without-regex:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called,method:.requests[0].method,body_length:.requests[0].body_length,fields:.requests[0].query.fields[0],encoding:.requests[0].accept_encoding,host:.requests[0].host}'
+    expect:
+      json:
+        /total: 1
+        /access: false
+        /method: GET
+        /body_length: 0
+        /fields: name,state,createTime,destroyTime
+        /encoding: identity
+        /host: secretmanager.googleapis.com
+- name: gcp-secret-manager.version_details-denied
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: denied-secret
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - PERMISSION_DENIED
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called,method:.requests[0].method,body_length:.requests[0].body_length,fields:.requests[0].query.fields[0],encoding:.requests[0].accept_encoding,host:.requests[0].host}'
+    expect:
+      json:
+        /total: 1
+        /access: false
+        /method: GET
+        /body_length: 0
+        /fields: name,state,createTime,destroyTime
+        /encoding: identity
+        /host: secretmanager.googleapis.com
+- name: gcp-secret-manager.version_details-missing-latest
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: missing-secret
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - NOT_FOUND
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called,method:.requests[0].method,body_length:.requests[0].body_length,fields:.requests[0].query.fields[0],encoding:.requests[0].accept_encoding,host:.requests[0].host}'
+    expect:
+      json:
+        /total: 1
+        /access: false
+        /method: GET
+        /body_length: 0
+        /fields: name,state,createTime,destroyTime
+        /encoding: identity
+        /host: secretmanager.googleapis.com
+- name: gcp-secret-manager.version_details-wrong-secret
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: wrong-secret
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - different secret ID
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called,method:.requests[0].method,body_length:.requests[0].body_length,fields:.requests[0].query.fields[0],encoding:.requests[0].accept_encoding,host:.requests[0].host}'
+    expect:
+      json:
+        /total: 1
+        /access: false
+        /method: GET
+        /body_length: 0
+        /fields: name,state,createTime,destroyTime
+        /encoding: identity
+        /host: secretmanager.googleapis.com
+- name: gcp-secret-manager.version_details-wrong-project
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: wrong-project
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - different project ID
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called,method:.requests[0].method,body_length:.requests[0].body_length,fields:.requests[0].query.fields[0],encoding:.requests[0].accept_encoding,host:.requests[0].host}'
+    expect:
+      json:
+        /total: 1
+        /access: false
+        /method: GET
+        /body_length: 0
+        /fields: name,state,createTime,destroyTime
+        /encoding: identity
+        /host: secretmanager.googleapis.com
+- name: gcp-secret-manager.version_details-wrong-version
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: wrong-version
+    version: '7'
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - different version ID
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called,method:.requests[0].method,body_length:.requests[0].body_length,fields:.requests[0].query.fields[0],encoding:.requests[0].accept_encoding,host:.requests[0].host}'
+    expect:
+      json:
+        /total: 1
+        /access: false
+        /method: GET
+        /body_length: 0
+        /fields: name,state,createTime,destroyTime
+        /encoding: identity
+        /host: secretmanager.googleapis.com
+- name: gcp-secret-manager.version_details-regional-resource
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: regional-secret
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - unsupported version resource name
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called,method:.requests[0].method,body_length:.requests[0].body_length,fields:.requests[0].query.fields[0],encoding:.requests[0].accept_encoding,host:.requests[0].host}'
+    expect:
+      json:
+        /total: 1
+        /access: false
+        /method: GET
+        /body_length: 0
+        /fields: name,state,createTime,destroyTime
+        /encoding: identity
+        /host: secretmanager.googleapis.com
+- name: gcp-secret-manager.version_details-extra-resource-segment
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: extra-path-secret
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - unsupported version resource name
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called,method:.requests[0].method,body_length:.requests[0].body_length,fields:.requests[0].query.fields[0],encoding:.requests[0].accept_encoding,host:.requests[0].host}'
+    expect:
+      json:
+        /total: 1
+        /access: false
+        /method: GET
+        /body_length: 0
+        /fields: name,state,createTime,destroyTime
+        /encoding: identity
+        /host: secretmanager.googleapis.com
+- name: gcp-secret-manager.version_details-invalid-state
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: invalid-state
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - invalid version state
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called,method:.requests[0].method,body_length:.requests[0].body_length,fields:.requests[0].query.fields[0],encoding:.requests[0].accept_encoding,host:.requests[0].host}'
+    expect:
+      json:
+        /total: 1
+        /access: false
+        /method: GET
+        /body_length: 0
+        /fields: name,state,createTime,destroyTime
+        /encoding: identity
+        /host: secretmanager.googleapis.com
+- name: gcp-secret-manager.version_details-invalid-timestamp
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: invalid-time
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - invalid creation timestamp
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called,method:.requests[0].method,body_length:.requests[0].body_length,fields:.requests[0].query.fields[0],encoding:.requests[0].accept_encoding,host:.requests[0].host}'
+    expect:
+      json:
+        /total: 1
+        /access: false
+        /method: GET
+        /body_length: 0
+        /fields: name,state,createTime,destroyTime
+        /encoding: identity
+        /host: secretmanager.googleapis.com
+- name: gcp-secret-manager.version_details-missing-timestamp
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: missing-time
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - invalid creation timestamp
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called,method:.requests[0].method,body_length:.requests[0].body_length,fields:.requests[0].query.fields[0],encoding:.requests[0].accept_encoding,host:.requests[0].host}'
+    expect:
+      json:
+        /total: 1
+        /access: false
+        /method: GET
+        /body_length: 0
+        /fields: name,state,createTime,destroyTime
+        /encoding: identity
+        /host: secretmanager.googleapis.com
+- name: gcp-secret-manager.version_details-timestamp-type
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: time-type
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - invalid creation timestamp
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called,method:.requests[0].method,body_length:.requests[0].body_length,fields:.requests[0].query.fields[0],encoding:.requests[0].accept_encoding,host:.requests[0].host}'
+    expect:
+      json:
+        /total: 1
+        /access: false
+        /method: GET
+        /body_length: 0
+        /fields: name,state,createTime,destroyTime
+        /encoding: identity
+        /host: secretmanager.googleapis.com
+- name: gcp-secret-manager.version_details-timestamp-length
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: long-time
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - invalid creation timestamp
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called,method:.requests[0].method,body_length:.requests[0].body_length,fields:.requests[0].query.fields[0],encoding:.requests[0].accept_encoding,host:.requests[0].host}'
+    expect:
+      json:
+        /total: 1
+        /access: false
+        /method: GET
+        /body_length: 0
+        /fields: name,state,createTime,destroyTime
+        /encoding: identity
+        /host: secretmanager.googleapis.com
+- name: gcp-secret-manager.version_details-inconsistent-destruction
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: wrong-destroy-time
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - invalid destruction timestamp
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called,method:.requests[0].method,body_length:.requests[0].body_length,fields:.requests[0].query.fields[0],encoding:.requests[0].accept_encoding,host:.requests[0].host}'
+    expect:
+      json:
+        /total: 1
+        /access: false
+        /method: GET
+        /body_length: 0
+        /fields: name,state,createTime,destroyTime
+        /encoding: identity
+        /host: secretmanager.googleapis.com
+- name: gcp-secret-manager.version_details-malformed-json-shape
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: malformed-secret
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - must be a JSON object
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called,method:.requests[0].method,body_length:.requests[0].body_length,fields:.requests[0].query.fields[0],encoding:.requests[0].accept_encoding,host:.requests[0].host}'
+    expect:
+      json:
+        /total: 1
+        /access: false
+        /method: GET
+        /body_length: 0
+        /fields: name,state,createTime,destroyTime
+        /encoding: identity
+        /host: secretmanager.googleapis.com
+- name: gcp-secret-manager.version_details-known-length-byte-budget
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: oversize-secret
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - 64 KiB byte budget
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called,method:.requests[0].method,body_length:.requests[0].body_length,fields:.requests[0].query.fields[0],encoding:.requests[0].accept_encoding,host:.requests[0].host}'
+    expect:
+      json:
+        /total: 1
+        /access: false
+        /method: GET
+        /body_length: 0
+        /fields: name,state,createTime,destroyTime
+        /encoding: identity
+        /host: secretmanager.googleapis.com
+- name: gcp-secret-manager.version_details-chunked-byte-budget
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: chunked-secret
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - 64 KiB byte budget
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called,method:.requests[0].method,body_length:.requests[0].body_length,fields:.requests[0].query.fields[0],encoding:.requests[0].accept_encoding,host:.requests[0].host}'
+    expect:
+      json:
+        /total: 1
+        /access: false
+        /method: GET
+        /body_length: 0
+        /fields: name,state,createTime,destroyTime
+        /encoding: identity
+        /host: secretmanager.googleapis.com
+- name: gcp-secret-manager.version_details-redirect-denied
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: redirect-secret
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - HTTP 302
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called,method:.requests[0].method,body_length:.requests[0].body_length,fields:.requests[0].query.fields[0],encoding:.requests[0].accept_encoding,host:.requests[0].host}'
+    expect:
+      json:
+        /total: 1
+        /access: false
+        /method: GET
+        /body_length: 0
+        /fields: name,state,createTime,destroyTime
+        /encoding: identity
+        /host: secretmanager.googleapis.com
+- name: gcp-secret-manager.version_details-invalid-credential
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: enabled-secret
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - PERMISSION_DENIED
+  env:
+    CLOUDSDK_AUTH_ACCESS_TOKEN: packtest-canary-secret-manager-invalid-access-7c22
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called,method:.requests[0].method,body_length:.requests[0].body_length,fields:.requests[0].query.fields[0],encoding:.requests[0].accept_encoding,host:.requests[0].host}'
+    expect:
+      json:
+        /total: 1
+        /access: false
+        /method: GET
+        /body_length: 0
+        /fields: name,state,createTime,destroyTime
+        /encoding: identity
+        /host: secretmanager.googleapis.com
+- name: gcp-secret-manager.version_details-stream-cap-without-curl-optimization
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: chunked-secret
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - 64 KiB byte budget
+  env:
+    PATH: /packs/gcp-secret-manager/test/fixtures/curl-before-8.4:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called,method:.requests[0].method,body_length:.requests[0].body_length,fields:.requests[0].query.fields[0],encoding:.requests[0].accept_encoding,host:.requests[0].host}'
+    expect:
+      json:
+        /total: 1
+        /access: false
+        /method: GET
+        /body_length: 0
+        /fields: name,state,createTime,destroyTime
+        /encoding: identity
+        /host: secretmanager.googleapis.com
+- name: gcp-secret-manager.version_details-project-path
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod/../other
+    secret: enabled-secret
+  expect:
+    status: failure
+    reason: argument_invalid
+    stdout_not_empty: false
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called}'
+    expect:
+      json:
+        /total: 0
+        /access: false
+- name: gcp-secret-manager.version_details-secret-access-suffix
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: enabled-secret:access
+  expect:
+    status: failure
+    reason: argument_invalid
+    stdout_not_empty: false
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called}'
+    expect:
+      json:
+        /total: 0
+        /access: false
+- name: gcp-secret-manager.version_details-secret-query
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: enabled-secret?fields=payload
+  expect:
+    status: failure
+    reason: argument_invalid
+    stdout_not_empty: false
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called}'
+    expect:
+      json:
+        /total: 0
+        /access: false
+- name: gcp-secret-manager.version_details-secret-path
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: ../enabled-secret
+  expect:
+    status: failure
+    reason: argument_invalid
+    stdout_not_empty: false
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called}'
+    expect:
+      json:
+        /total: 0
+        /access: false
+- name: gcp-secret-manager.version_details-zero-version
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: enabled-secret
+    version: '0'
+  expect:
+    status: failure
+    reason: argument_invalid
+    stdout_not_empty: false
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called}'
+    expect:
+      json:
+        /total: 0
+        /access: false
+- name: gcp-secret-manager.version_details-leading-zero-version
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: enabled-secret
+    version: '07'
+  expect:
+    status: failure
+    reason: argument_invalid
+    stdout_not_empty: false
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called}'
+    expect:
+      json:
+        /total: 0
+        /access: false
+- name: gcp-secret-manager.version_details-unsupported-alias
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: enabled-secret
+    version: active
+  expect:
+    status: failure
+    reason: argument_invalid
+    stdout_not_empty: false
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called}'
+    expect:
+      json:
+        /total: 0
+        /access: false
+- name: gcp-secret-manager.version_details-version-path
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: enabled-secret
+    version: 7:access
+  expect:
+    status: failure
+    reason: argument_invalid
+    stdout_not_empty: false
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called}'
+    expect:
+      json:
+        /total: 0
+        /access: false
+- name: gcp-secret-manager.version_details-version-overflow
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: enabled-secret
+    version: '999999999999999999999999999999999'
+  expect:
+    status: failure
+    reason: argument_invalid
+    stdout_not_empty: false
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called}'
+    expect:
+      json:
+        /total: 0
+        /access: false
+- name: gcp-secret-manager.version_details-secret-overflow
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS
+  expect:
+    status: failure
+    reason: argument_invalid
+    stdout_not_empty: false
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called}'
+    expect:
+      json:
+        /total: 0
+        /access: false
+- name: gcp-secret-manager.version_details-auth-failure
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: enabled-secret
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - Could not obtain a bounded gcloud access token
+  env:
+    PATH: /tmp/secret-manager-auth:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+  arrange:
+  - argv:
+    - /bin/sh
+    - -c
+    - 'mkdir -p /tmp/secret-manager-auth; cat > /tmp/secret-manager-auth/gcloud <<''GCLOUD''
+
+      #!/bin/sh
+
+      printf ''%s\n'' packtest-canary-secret-manager-auth-noise-48f2
+
+      exit 1
+
+      GCLOUD
+
+      chmod 755 /tmp/secret-manager-auth/gcloud'
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called}'
+    expect:
+      json:
+        /total: 0
+        /access: false
+- name: gcp-secret-manager.version_details-auth-byte-budget
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: enabled-secret
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - credential response exceeds
+  env:
+    PATH: /tmp/secret-manager-auth:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+  arrange:
+  - argv:
+    - /bin/sh
+    - -c
+    - 'mkdir -p /tmp/secret-manager-auth; cat > /tmp/secret-manager-auth/gcloud <<''GCLOUD''
+
+      #!/bin/sh
+
+      head -c 5000 /dev/zero | tr ''\000'' A
+
+      GCLOUD
+
+      chmod 755 /tmp/secret-manager-auth/gcloud'
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called}'
+    expect:
+      json:
+        /total: 0
+        /access: false
+- name: gcp-secret-manager.version_details-auth-deadline
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: enabled-secret
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - Could not obtain a bounded gcloud access token
+  env:
+    PATH: /tmp/secret-manager-auth:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+  arrange:
+  - argv:
+    - /bin/sh
+    - -c
+    - 'mkdir -p /tmp/secret-manager-auth; cat > /tmp/secret-manager-auth/gcloud <<''GCLOUD''
+
+      #!/bin/sh
+
+      sleep 60
+
+      GCLOUD
+
+      chmod 755 /tmp/secret-manager-auth/gcloud'
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called}'
+    expect:
+      json:
+        /total: 0
+        /access: false
+- name: gcp-secret-manager.version_details-max-name-post-redaction
+  action: gcp-secret-manager.version_details
+  args:
+    project: pppppppppppppp-xoxb-abcdefghij
+    secret: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-xoxb-abcdefghij
+    version: '99999999999999999999999999999999'
+  expect:
+    json:
+      /state: ENABLED
+      /name: projects/pppppppppppppp-[REDACTED_SLACK_TOKEN]/secrets/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-[REDACTED_SLACK_TOKEN]/versions/99999999999999999999999999999999
+    stdout_not_contains:
+    - xoxb-abcdefghij
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called,method:.requests[0].method,body_length:.requests[0].body_length,fields:.requests[0].query.fields[0],encoding:.requests[0].accept_encoding,host:.requests[0].host}'
+    expect:
+      json:
+        /total: 1
+        /access: false
+        /method: GET
+        /body_length: 0
+        /fields: name,state,createTime,destroyTime
+        /encoding: identity
+        /host: secretmanager.googleapis.com
+- name: gcp-secret-manager.version_details-newline-name
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: newline-name
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - invalid version resource name
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called,method:.requests[0].method,body_length:.requests[0].body_length,fields:.requests[0].query.fields[0],encoding:.requests[0].accept_encoding,host:.requests[0].host}'
+    expect:
+      json:
+        /total: 1
+        /access: false
+        /method: GET
+        /body_length: 0
+        /fields: name,state,createTime,destroyTime
+        /encoding: identity
+        /host: secretmanager.googleapis.com
+- name: gcp-secret-manager.version_details-nul-name
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: nul-name
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - invalid version resource name
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called,method:.requests[0].method,body_length:.requests[0].body_length,fields:.requests[0].query.fields[0],encoding:.requests[0].accept_encoding,host:.requests[0].host}'
+    expect:
+      json:
+        /total: 1
+        /access: false
+        /method: GET
+        /body_length: 0
+        /fields: name,state,createTime,destroyTime
+        /encoding: identity
+        /host: secretmanager.googleapis.com
+- name: gcp-secret-manager.version_details-newline-state
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: newline-state
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - invalid version state
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called,method:.requests[0].method,body_length:.requests[0].body_length,fields:.requests[0].query.fields[0],encoding:.requests[0].accept_encoding,host:.requests[0].host}'
+    expect:
+      json:
+        /total: 1
+        /access: false
+        /method: GET
+        /body_length: 0
+        /fields: name,state,createTime,destroyTime
+        /encoding: identity
+        /host: secretmanager.googleapis.com
+- name: gcp-secret-manager.version_details-newline-time
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: newline-time
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - invalid creation timestamp
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called,method:.requests[0].method,body_length:.requests[0].body_length,fields:.requests[0].query.fields[0],encoding:.requests[0].accept_encoding,host:.requests[0].host}'
+    expect:
+      json:
+        /total: 1
+        /access: false
+        /method: GET
+        /body_length: 0
+        /fields: name,state,createTime,destroyTime
+        /encoding: identity
+        /host: secretmanager.googleapis.com
+- name: gcp-secret-manager.version_details-nul-destroy-time
+  action: gcp-secret-manager.version_details
+  args:
+    project: example-prod
+    secret: nul-destroy-time
+  expect:
+    status: failure
+    stdout_not_empty: false
+    stderr_contains:
+    - invalid destruction timestamp
+  probes:
+  - name: Exact metadata-only provider request
+    argv:
+    - /bin/sh
+    - -c
+    - curl -fsS --cacert /packs/gcp-secret-manager/test/fixtures/server.crt https://metadata-api/probe/state
+      | jq -c '{total:(.requests|length),access:.access_called,method:.requests[0].method,body_length:.requests[0].body_length,fields:.requests[0].query.fields[0],encoding:.requests[0].accept_encoding,host:.requests[0].host}'
+    expect:
+      json:
+        /total: 1
+        /access: false
+        /method: GET
+        /body_length: 0
+        /fields: name,state,createTime,destroyTime
+        /encoding: identity
+        /host: secretmanager.googleapis.com

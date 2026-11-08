@@ -1,0 +1,13 @@
+#!/bin/bash
+set -euo pipefail
+# Model pre-8.4 unknown-length semantics while keeping the real curl TLS,
+# authentication, HTTP status and streaming paths. Only the optional size
+# optimization is removed, so the action must enforce its independent cap.
+args=()
+while (($#)); do
+  case "$1" in
+    --max-filesize) shift 2 ;;
+    *) args+=("$1"); shift ;;
+  esac
+done
+exec /usr/bin/curl "${args[@]}"

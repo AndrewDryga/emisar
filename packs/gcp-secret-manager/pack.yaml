@@ -1,0 +1,28 @@
+schema_version: 1
+id: gcp-secret-manager
+name: Google Secret Manager version metadata
+version: 0.1.0
+description: Inspect the availability and lifecycle timestamps of one exact global Secret Manager version without reading its payload, listing secrets or versions, or changing state.
+vendor: emisar
+homepage: https://emisar.dev/packs/gcp-secret-manager
+requires:
+  os: [linux]
+  binaries: [bash, gcloud, curl, jq, timeout]
+setup:
+  summary: Uses the runner host's gcloud identity and the cloud-platform OAuth scope. On Google Compute Engine, attach a dedicated service account; on another host, use a dedicated workload-identity gcloud configuration. The short-lived bearer is sent through curl stdin, never argv or output.
+  env:
+  - name: CLOUDSDK_CONFIG
+    description: Optional dedicated gcloud configuration directory.
+    example: /etc/emisar/gcloud
+  - name: CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE
+    description: Optional workload-identity credential configuration created in Google Cloud IAM and supplied to gcloud with auth login --cred-file.
+    example: /etc/emisar/google-workload-identity.json
+  notes:
+  - Enable the Secret Manager API. In Google Cloud Console, Secret Manager → the existing secret → Permissions, grant the runner identity a custom role containing only secretmanager.versions.get. Scope the grant to the secrets it operates. Metadata access does not require secretmanager.versions.access or Secret Accessor, and this pack never reads payloads.
+  - Requires curl 7.76 or newer and GNU coreutils timeout. One credential read is bounded to ten seconds plus a one-second kill grace; one metadata GET has a 35-second deadline and an independent 64 KiB response cap.
+  - The latest alias selects the most recently created version, including a disabled or destroyed version. An ENABLED state describes version state; it does not prove payload access, credential validity or enrollment usability. Missing versions and denied access remain failed actions with HTTP 404 or 403 respectively.
+  - Targets use explicit project IDs, secret IDs and latest or positive numeric version IDs up to 32 digits. Global version resource names may return the canonical project number. Regional secrets and arbitrary version aliases are outside this deliberately narrow surface.
+  - The fixed HTTPS API request selects only name, state, createTime and destroyTime. There is no endpoint override, host detection, protected-file grant, root requirement, listing or control action.
+  verify: gcp-secret-manager.version_details
+actions:
+- actions/version_details.yaml
