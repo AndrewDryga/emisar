@@ -21,6 +21,7 @@ HEADER_CAP = 16384
 # Reserve headroom for its decoded string and JSON/schema representation.
 EMITTED_TEXT_CAP = 1024
 I64 = 9223372036854775807
+JSON_MAX_INTEGER = 9007199254740991
 SAFE_ENV = {k: v for k, v in os.environ.items() if k in {
     "PATH", "HOME", "LANG", "LC_ALL", "TZ", "TMPDIR", "CLOUDSDK_CONFIG",
     "CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE", "CLOUDSDK_AUTH_ACCESS_TOKEN",
@@ -218,15 +219,18 @@ def number_arg(value, maximum):
 
 
 def main():
-    if len(sys.argv) != 6:
-        raise Failure("Expected project, region, job, lines and bytes.")
-    project, region, job, lines_arg, bytes_arg = sys.argv[1:]
+    if len(sys.argv) != 7:
+        raise Failure("Expected project, region, job, lines, bytes and skip_tail_bytes.")
+    project, region, job, lines_arg, bytes_arg, skip_arg = sys.argv[1:]
     if not (re.fullmatch(r"[a-z][a-z0-9-]{4,28}[a-z0-9]", project)
             and re.fullmatch(r"[a-z][a-z0-9-]{0,62}", region)
             and re.fullmatch(r"[A-Za-z0-9_-]{1,100}", job)):
         raise Failure("Invalid Dataproc job selector.")
     line_limit = number_arg(lines_arg, 200)
     byte_limit = number_arg(bytes_arg, 4096)
+    if not re.fullmatch(r"0|[1-9][0-9]{0,15}", skip_arg) or int(skip_arg) > JSON_MAX_INTEGER:
+        raise Failure("skip_tail_bytes is outside the supported integer range.")
+    skip_tail_bytes = int(skip_arg)
     endpoint = os.environ.get("CLOUDSDK_API_ENDPOINT_OVERRIDES_DATAPROC", "https://dataproc.googleapis.com").rstrip("/")
     if not re.fullmatch(r"https://[A-Za-z0-9.-]+(?::[0-9]{1,5})?", endpoint):
         raise Failure("Dataproc endpoint must be an HTTPS origin.")
@@ -293,32 +297,51 @@ def main():
     if any(b != a + 1 for a, b in zip(indices, indices[1:])) or any(chunks[i][2] == 0 for i in indices[:-1]):
         raise Failure("Driver-log chunks contain a gap or an intermediate empty sentinel.")
     nonempty = [i for i in indices if chunks[i][2]]
-    selected = nonempty[-4:]
+    total_bytes = sum(chunks[i][2] for i in nonempty)
+    if skip_tail_bytes and skip_tail_bytes >= total_bytes:
+        raise Failure("skip_tail_bytes is outside the available driver-log bytes.")
+    # The selected end is exclusive in the concatenated, listed byte stream.
+    # Skipped chunks cost metadata only, never a media fetch.
+    window_end = total_bytes - skip_tail_bytes
+    eligible = []
+    chunk_start = 0
+    for index in nonempty:
+        size = chunks[index][2]
+        if chunk_start < window_end:
+            eligible.append((index, chunk_start, min(size, window_end - chunk_start)))
+        chunk_start += size
     pieces = []
     bytes_read = 0
     fetched = 0
-    partial = False
-    for index in reversed(selected):
+    first_read_offset = window_end
+    for index, chunk_start, local_end in reversed(eligible[-4:]):
         name, generation, size = chunks[index]
-        count = min(size, byte_limit - bytes_read)
+        count = min(local_end, byte_limit - bytes_read)
         if count <= 0:
             break
+        local_start = local_end - count
+        # Preserve the EOF suffix contract; earlier ends require an explicit
+        # inclusive interval so no later bytes can enter the selected window.
+        byte_range = ("bytes=-%d" % count if local_end == size
+                      else "bytes=%d-%d" % (local_start, local_end - 1))
         media_url = "https://storage.googleapis.com/download/storage/v1/b/" + quote(bucket, safe="") + "/o/" + quote(name, safe="")
         media_url += "?" + urlencode({"alt": "media", "generation": generation})
-        status, headers, body = http(media_url, access, count, ("--header", "Range: bytes=-" + str(count)), media=True)
+        status, headers, body = http(media_url, access, count, ("--header", "Range: " + byte_range), media=True)
         if status == 206:
-            expected = "bytes %d-%d/%d" % (size - count, size - 1, size)
+            expected = "bytes %d-%d/%d" % (local_start, local_end - 1, size)
             if headers.get(b"content-range") != expected or len(body) != count:
                 raise Failure("Google driver-log byte range did not match the pinned object.")
-        elif status != 200 or size > count or len(body) != size or b"content-range" in headers:
+        elif status != 200 or local_start != 0 or local_end != size or len(body) != size or b"content-range" in headers:
             raise Failure("Google driver-log response ignored the bounded byte range.")
         pieces.insert(0, body)
         bytes_read += len(body)
         fetched += 1
-        partial = count < size
+        first_read_offset = chunk_start + local_start
     raw = b"".join(pieces)
-    truncated = partial or fetched < len(nonempty) or (bool(indices) and indices[0] != 0)
-    partial = partial or fetched < len(nonempty) or (bool(indices) and indices[0] != 0)
+    prefix_omitted = first_read_offset > 0 or (bool(indices) and indices[0] != 0)
+    truncated = prefix_omitted or skip_tail_bytes > 0
+    # A skipped tail truncates the window but cannot make its first line partial.
+    partial = prefix_omitted
     # Every retained segment is byte-concatenated before line selection. Preserve
     # the final newline and never invent one between provider chunks.
     text = raw.decode("utf-8", errors="replace")
@@ -331,7 +354,7 @@ def main():
         text = "".join(rows[-line_limit:])
         truncated = True
         partial = False
-    result = {"id": job, "state": state, "log_available": bool(nonempty), "text": text,
+    result = {"id": job, "state": state, "skip_tail_bytes": skip_tail_bytes, "log_available": bool(nonempty), "text": text,
               "lines_returned": len(text.splitlines()), "bytes_returned": len(text.encode("utf-8")),
               "bytes_read": bytes_read, "chunks_read": fetched, "truncated": truncated, "partial_first_line": partial}
     # Bound canonical structured JSON even for backslashes, quotes, U+2028/29 or
