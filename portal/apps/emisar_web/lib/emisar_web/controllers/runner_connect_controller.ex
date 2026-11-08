@@ -14,7 +14,7 @@ defmodule EmisarWeb.RunnerConnectController do
   alias Emisar.Runners
   alias EmisarWeb.{RequestContext, RunnerSocket}
 
-  @runner_frame_max_bytes 2 * 1_024 * 1_024
+  @runner_frame_max_bytes 4 * 1_024 * 1_024
 
   plug EmisarWeb.Plugs.RateLimit,
        [bucket: "runner_register", limit: 30, window_ms: 60_000, by: :ip]

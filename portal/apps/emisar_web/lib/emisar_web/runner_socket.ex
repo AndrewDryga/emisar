@@ -35,10 +35,10 @@ defmodule EmisarWeb.RunnerSocket do
   # that on the frames IT receives (`runner/internal/cloud/protocol.go`,
   # `jsonvalue.Limits{MaxDepth: 64}`); this is the portal half, which decoded
   # a runner's frame with no structural bound at all. `JSONValue.validate/2`
-  # takes both bounds, and the node one is the ceiling the 2 MiB
+  # takes both bounds, and the node one is the ceiling the 4 MiB
   # `max_frame_size` already implies: the cheapest node costs two bytes.
   @max_frame_depth 64
-  @max_frame_nodes 1_048_576
+  @max_frame_nodes 2_097_152
   @known_runner_message_types ~w(runner_state action_started action_progress action_result heartbeat error)
   @required_request_id_message_types ~w(action_started action_progress action_result)
 
@@ -114,7 +114,7 @@ defmodule EmisarWeb.RunnerSocket do
   # budget so an honest flapping host still reports.
   @max_error_frames_per_connection 100
 
-  # Every `runner_state` frame parses up to 2 MiB and runs a multi-row catalog
+  # Every `runner_state` frame parses up to 4 MiB and runs a multi-row catalog
   # upsert transaction against the shared database, then resumes the runner's
   # runs — the most expensive thing a runner can ask for, and until now the only
   # hostile-input path on this socket with no bound at all. An honest runner

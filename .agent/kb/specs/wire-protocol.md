@@ -1,7 +1,7 @@
 ---
 name: wire-protocol
 sources: [runner/internal/cloud, runner/internal/attest, mcp/internal/attest, portal/apps/emisar_web/lib/emisar_web/runner_socket.ex, portal/apps/emisar_web/lib/emisar_web/runner_socket_drain.ex]
-updated: 2026-11-05
+updated: 2026-11-07
 ---
 
 # Runner wire protocol
@@ -146,7 +146,7 @@ is terminal until the binary is upgraded.
 ## `runner_state`
 
 Sent after every connection and pack reload. The complete encoded frame must not
-exceed 2 MiB (2,097,152 bytes); runners validate that before sending. The
+exceed 4 MiB (4,194,304 bytes); runners validate that before sending. The
 message contains the runner version, hostname, group, labels, complete
 pack/action advertisement, signature-enforcement state, trusted CA IDs, and
 maximum attestation age. `enforce_signatures` and `max_attestation_age_seconds`
@@ -479,7 +479,7 @@ what a runner's peer really accepts:
 
 | Item | Limit | Past it |
 | --- | ---: | --- |
-| Any inbound frame | 2 MiB | the transport closes the connection |
+| Any inbound frame | 4 MiB | the transport closes the connection |
 | `request_id` on `action_started`, `action_progress`, `action_result`, and any `error` that carries one | exactly `req_` + 22 base64url characters | close 1002 |
 | `error` frames per connection | 100 | close 1008 |
 | `runner_state` frames per connection | 100 | close 1008 |

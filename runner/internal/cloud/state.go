@@ -14,7 +14,7 @@ import (
 	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
 )
 
-const maxRunnerStateBytes = 2 << 20
+const maxRunnerStateBytes = 4 << 20
 
 // maxDegradedReasonBytes bounds one degraded pack's load-failure reason on
 // the wire — the full detail stays in the host log and doctor.

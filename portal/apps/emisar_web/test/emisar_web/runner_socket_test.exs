@@ -1656,7 +1656,7 @@ defmodule EmisarWeb.RunnerSocketTest do
          %{state: state} do
       raw = runner_frame(%{"type" => "runner_state", "packs" => %{}, "actions" => []})
 
-      # Each frame parses up to 2 MiB and runs a catalog-sync transaction, so an
+      # Each frame parses up to 4 MiB and runs a catalog-sync transaction, so an
       # unbounded loop is a fleet-wide availability problem from one tenant's
       # host. A reconnect gets a fresh budget, exactly like the error path.
       final =
