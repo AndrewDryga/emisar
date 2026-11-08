@@ -1,0 +1,57 @@
+schema_version: 1
+id: gcp-secret-manager.version_details
+title: Show Secret Manager version metadata
+kind: script
+risk: low
+description: >
+  Show the resource name, state and creation/destruction timestamps of one global Secret Manager
+  version. Read metadata only; never request or return the secret payload, list resources or change
+  state. The latest alias means most recently created, including disabled and destroyed versions.
+  Missing versions and denied metadata access fail with their provider HTTP codes. An ENABLED
+  state does not prove payload access or that the stored credential is valid. Return a canonical
+  numeric project name when the API supplies one.
+side_effects:
+- Read one short-lived gcloud credential and perform one HTTPS Secret Manager v1 metadata GET with an empty body and a fixed four-field projection.
+search_terms:
+- secret version missing
+- enrollment version state
+- Secret Manager latest 404
+args:
+- name: project
+  type: string
+  required: true
+  description: Google Cloud project ID.
+  validation: {pattern: '^[a-z][a-z0-9-]{4,28}[a-z0-9]$', max_length: 30}
+- name: secret
+  type: string
+  required: true
+  description: Exact existing secret ID; this identifier is metadata, not its payload.
+  validation: {pattern: '^[A-Za-z0-9_-]{1,255}$', max_length: 255}
+- name: version
+  type: string
+  default: latest
+  description: Latest created version, or a positive decimal version ID up to 32 digits without leading zeroes.
+  validation: {pattern: '^(latest|[1-9][0-9]{0,31})$', max_length: 32}
+execution:
+  script: {path: scripts/version_details.sh, interpreter: /bin/bash}
+  argv: ['{{ args.project }}', '{{ args.secret }}', '{{ args.version }}']
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 2048
+  max_stderr_bytes: 2048
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [name, state, create_time, destroy_time]
+    properties:
+      # Raw resource names bind at345; leave space for expanding default token masks.
+      name: {type: string, maxLength: 512}
+      state: {type: string, enum: [ENABLED, DISABLED, DESTROYED]}
+      create_time: {type: string, minLength: 20, maxLength: 30, format: date-time}
+      destroy_time: {type: [string, 'null'], maxLength: 30, format: date-time}
+examples:
+- title: Inspect the latest version without reading its payload
+  args: {project: example-prod, secret: runner-enrollment, version: latest}
