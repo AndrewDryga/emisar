@@ -1,7 +1,7 @@
 schema_version: 1
 id: gcp-dataproc
 name: Google Cloud Dataproc operations
-version: 0.1.2
+version: 0.1.3
 description: Inspect classic Dataproc clusters, daemon metrics, jobs, failures, retained driver logs, operations and regional
   autoscaling policies, then govern narrow start, stop, resize, cancellation and deletion controls.
   Selected projections exclude arbitrary configuration and submitted job payloads. Serverless batches,
@@ -17,6 +17,8 @@ requires:
   - curl
   - jq
   - python3
+  - date
+  - sha256sum
 setup:
   summary: Uses the runner host's gcloud identity. On Google Compute Engine, attach a dedicated
     service account with the cloud-platform OAuth scope and the permissions below; gcloud obtains

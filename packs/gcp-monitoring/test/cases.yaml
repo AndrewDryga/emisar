@@ -650,3 +650,67 @@ cases:
       status: failure
       exit: [2]
       stderr_contains: [Monitoring API endpoint must use HTTPS]
+
+  # An investigation had to ask a person for a fourteen-minute historical VM
+  # window because the read only supported a trailing lookback without identity.
+  - name: gcp.log_entries-targets-a-historical-instance-window
+    action: gcp.log_entries
+    args:
+      project: example-prod
+      resource_type: gce_instance
+      instance_id: '1234567890123456789'
+      start_time: '2026-11-08T17:26:00Z'
+      end_time: '2026-11-08T17:40:00Z'
+    expect:
+      json: {/entries/0/severity: ERROR}
+    probes:
+      - name: exact historical interval and identity reach the provider
+        argv: [curl, -fsS, --cacert, /packs/gcp-monitoring/test/fixtures/server.crt, https://gcp-api:8443/probe/state]
+        expect:
+          stdout_contains:
+            - 'timestamp >= \"2026-11-08T17:26:00Z\" AND timestamp <= \"2026-11-08T17:40:00Z\"'
+            - 'resource.labels.instance_id = \"1234567890123456789\"'
+
+  - name: gcp.log_entries-preserves-historical-interval-across-pages
+    action: gcp.log_entries
+    args: &historical-log-query
+      project: example-prod
+      resource_type: gce_instance
+      instance_id: '1234567890123456789'
+      start_time: '2026-11-08T17:26:00Z'
+      end_time: '2026-11-08T17:40:00Z'
+    resolve_args: &historical-log-first-page
+      page_cursor:
+        argv: [/bin/sh, /packs/gcp-monitoring/test/fixtures/historical-first-page.sh, '2026-11-08T17:26:00Z', '2026-11-08T17:40:00Z', '1234567890123456789']
+    expect:
+      json: {/entries/0/job: continued-page, /next_page_cursor: null, /more_available: false}
+  - name: gcp.log_entries-rejects-changed-historical-interval
+    action: gcp.log_entries
+    args: {<<: *historical-log-query, start_time: '2026-11-08T17:25:00Z'}
+    resolve_args: *historical-log-first-page
+    expect: {status: failure, stdout_not_empty: false, stderr_contains: ['Invalid Cloud Logging continuation']}
+  - name: gcp.log_entries-rejects-changed-instance
+    action: gcp.log_entries
+    args: {<<: *historical-log-query, instance_id: '1234567890123456780'}
+    resolve_args: *historical-log-first-page
+    expect: {status: failure, stdout_not_empty: false, stderr_contains: ['Invalid Cloud Logging continuation']}
+  - name: gcp.log_entries-rejects-incomplete-interval
+    action: gcp.log_entries
+    args: {project: example-prod, start_time: '2026-11-08T17:26:00Z'}
+    expect: {status: failure, stdout_not_empty: false, stderr_contains: ['Invalid Cloud Logging interval']}
+  - name: gcp.log_entries-rejects-reversed-interval
+    action: gcp.log_entries
+    args: {project: example-prod, start_time: '2026-11-08T17:40:00Z', end_time: '2026-11-08T17:26:00Z'}
+    expect: {status: failure, stdout_not_empty: false, stderr_contains: ['Invalid Cloud Logging interval']}
+  - name: gcp.log_entries-rejects-impossible-date
+    action: gcp.log_entries
+    args: {project: example-prod, start_time: '2026-02-30T17:26:00Z', end_time: '2026-11-08T17:40:00Z'}
+    expect: {status: failure, stdout_not_empty: false, stderr_contains: ['Invalid Cloud Logging interval']}
+  - name: gcp.log_entries-refuses-instance-selector-for-another-resource
+    action: gcp.log_entries
+    args: {project: example-prod, resource_type: cloud_run_revision, instance_id: '12345'}
+    expect: {status: failure, stdout_not_empty: false, stderr_contains: ['Invalid Cloud Logging interval or instance selector']}
+  - name: gcp.log_entries-rejects-instance-filter-injection
+    action: gcp.log_entries
+    args: {project: example-prod, resource_type: gce_instance, instance_id: '12345 OR true'}
+    expect: {status: failure, reason: argument_invalid, error_contains: [must match pattern]}

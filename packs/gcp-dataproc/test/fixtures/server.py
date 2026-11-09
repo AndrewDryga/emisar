@@ -150,7 +150,23 @@ class Handler(BaseHTTPRequestHandler):
             rows = list(CLUSTERS.values()) if family == "clusters" else list(JOBS.values()) if family == "jobs" else [operation()] if family == "operations" else [policy()]
             if family == "jobs":
                 name = query.get("clusterName", [""])[0]
+                # A retained job outlives its cluster. The production API resolved
+                # clusterName first and returned 404, forcing 117 tiny list calls.
+                if name == "deleted-cluster":
+                    self.error(404, "Not found: Cluster projects/example-prod/regions/us-central1/clusters/deleted-cluster")
+                    return
+                if project in ("history-prod", "changed-prod"):
+                    rows = [job("unrelated-" + str(n), "DONE") for n in range(20)]
+                    for attempt in range(49, 57):
+                        retained = job("export-try-" + str(attempt), "DONE")
+                        retained["placement"]["clusterName"] = "deleted-cluster"
+                        rows.append(retained)
+                    if project == "changed-prod" and len(REQUESTS) > 1:
+                        rows[-1]["status"]["state"] = "ERROR"
                 matcher = query.get("jobStateMatcher", ["ALL"])[0]
+                selected_state = re.search(r"status.state = (ACTIVE|NON_ACTIVE)", query.get("filter", [""])[0])
+                if selected_state:
+                    matcher = selected_state[1]
                 rows = [r for r in rows if (not name or r["placement"]["clusterName"] == name) and (matcher == "ALL" or ((r["status"]["state"] == "RUNNING") == (matcher == "ACTIVE")))]
             if project == "empty-prod":
                 rows = []
@@ -178,6 +194,8 @@ class Handler(BaseHTTPRequestHandler):
                 rows = [flood(r) for r in rows]
             size = int(query.get("pageSize", ["8"])[0])
             continuation = "C" * 1024 if project == "worst-prod" else "cursor?unsupported" if project == "badcursor-prod" else "page-two" if rows and not cursor else ""
+            if project in ("history-prod", "changed-prod"):
+                continuation = ""
             self.send(200, {key: rows[:size], "nextPageToken": continuation, **({"unreachable": ["kms-job"]} if family == "jobs" else {})})
             return
         if family == "clusters":

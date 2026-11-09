@@ -1,12 +1,13 @@
 schema_version: 1
 id: gcp.log_entries
-title: Query recent Cloud Logging entries
+title: Query Cloud Logging entries
 kind: script
 risk: medium
 description: >
-  Query up to five recent Cloud Logging entries in a Google Cloud project or a
-  named view in its global _Default bucket, optionally narrowed by minimum
-  severity, resource type, exact log ID, and a jsonPayload.message event name,
+  Query up to five Cloud Logging entries in a trailing or exact historical interval
+  in a Google Cloud project or a named view in its global _Default bucket,
+  optionally narrowed by minimum severity, resource type, exact Compute Engine
+  instance ID, exact log ID, and a jsonPayload.message event name,
   matched as the whole message or its first word.
   Returns fixed, clipped diagnostic fields including jsonPayload.job and error,
   plus a continuation cursor; log content is arbitrary application
@@ -19,6 +20,7 @@ search_terms:
   - query gcp logs
   - find cloud logging errors
   - recent google cloud logs
+  - historical VM scheduler logs
 args:
   - name: project
     type: string
@@ -72,7 +74,7 @@ args:
     type: integer
     required: false
     default: 60
-    description: Trailing window in minutes ending at the first page's query time, up to 3650 days (5256000), the longest bucket retention; the _Default bucket keeps 30 days unless configured.
+    description: Trailing window in minutes ending at the first page's query time, up to 3650 days (5256000), the longest bucket retention. Ignored when start_time and end_time select an exact interval; the _Default bucket keeps 30 days unless configured.
     validation:
       min: 1
       max: 5256000
@@ -92,6 +94,30 @@ args:
     validation:
       pattern: "^[A-Za-z0-9+./=_~-]*$"
       max_length: 1152
+  - name: start_time
+    type: string
+    required: false
+    default: ""
+    description: Inclusive UTC start of a historical interval, paired with end_time. The interval may cover up to 3650 days, the longest bucket retention.
+    validation:
+      pattern: '^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z)?$'
+      max_length: 20
+  - name: end_time
+    type: string
+    required: false
+    default: ""
+    description: Inclusive UTC end of a historical interval, after start_time and no later than now. Both bounds must be supplied together.
+    validation:
+      pattern: '^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z)?$'
+      max_length: 20
+  - name: instance_id
+    type: string
+    required: false
+    default: ""
+    description: Exact numeric Compute Engine instance ID from retained resource evidence. Requires resource_type gce_instance; it does not resolve a current VM by name.
+    validation:
+      pattern: '^(?:[1-9][0-9]{0,19})?$'
+      max_length: 20
 execution:
   script:
     path: scripts/logging_api.sh
@@ -107,6 +133,9 @@ execution:
     - "{{ args.view_id }}"
     - "{{ args.json_message }}"
     - "{{ args.page_cursor }}"
+    - "{{ args.start_time }}"
+    - "{{ args.end_time }}"
+    - "{{ args.instance_id }}"
   timeout: 90s
 output:
   parser: json

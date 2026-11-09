@@ -114,16 +114,40 @@ case "$mode" in
     view_id=$8
     json_message=$9
     page_cursor=${10}
+    start_time=${11}
+    end_time=${12}
+    instance_id=${13}
+    invalid_interval() {
+      printf '%s\n' 'Invalid Cloud Logging interval or instance selector; supply both UTC bounds and use gce_instance for an instance ID.' >&2
+      exit 2
+    }
+    if [ -n "$instance_id" ] && [ "$resource_type" != gce_instance ]; then
+      invalid_interval
+    fi
+    absolute_end=''
+    if [ -n "$start_time" ] || [ -n "$end_time" ]; then
+      for timestamp in "$start_time" "$end_time"; do
+        [ -n "$timestamp" ] || invalid_interval
+        canonical=$(date -u -d "$timestamp" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null) || invalid_interval
+        [ "$canonical" = "$timestamp" ] || invalid_interval
+      done
+      start_epoch=$(date -u -d "$start_time" +%s)
+      absolute_end=$(date -u -d "$end_time" +%s)
+      [ "$start_epoch" -ge 0 ] && [ "$absolute_end" -gt "$start_epoch" ] || invalid_interval
+      [ "$((absolute_end - start_epoch))" -le 315360000 ] || invalid_interval
+    fi
     now_epoch=$(date -u +%s)
-    end_epoch=$now_epoch
+    end_epoch=${absolute_end:-$now_epoch}
+    [ "$end_epoch" -le "$now_epoch" ] || invalid_interval
     # A cursor is bounded query data, not authority. Bind every current argument
     # and rebuild the request here; never accept a cursor-supplied target/filter.
     query_fingerprint=$(jq -nc \
       --arg endpoint "$api_base" --arg project "$project" \
       --arg severity "$minimum_severity" --arg resource_type "$resource_type" \
       --arg log_id "$log_id" --arg view_id "$view_id" --arg message "$json_message" \
+      --arg start "$start_time" --arg until_time "$end_time" --arg instance "$instance_id" \
       --argjson window "$window_minutes" --argjson size "$page_size" \
-      '[$endpoint,$project,$severity,$resource_type,$log_id,$window,$size,$view_id,$message]' | sha256sum)
+      '[$endpoint,$project,$severity,$resource_type,$log_id,$window,$size,$view_id,$message,$start,$until_time,$instance]' | sha256sum)
     query_fingerprint=${query_fingerprint%% *}
     invalid_cursor() {
       printf '%s\n' 'Invalid Cloud Logging continuation; start a new query with an empty page_cursor.' >&2
@@ -141,17 +165,26 @@ case "$mode" in
       case "$end_epoch" in ''|0*|*[!0-9]*) invalid_cursor ;; esac
       [ "${#end_epoch}" -le 10 ] || invalid_cursor
       [ "$end_epoch" -le "$now_epoch" ] || invalid_cursor
-      [ "$end_epoch" -ge "$((window_minutes * 60))" ] || invalid_cursor
+      if [ -n "$absolute_end" ]; then
+        [ "$end_epoch" = "$absolute_end" ] || invalid_cursor
+      else
+        [ "$end_epoch" -ge "$((window_minutes * 60))" ] || invalid_cursor
+      fi
       [ "$fingerprint" = "$query_fingerprint" ] || invalid_cursor
       [ -n "$provider_cursor" ] && [ "${#provider_cursor}" -le 1024 ] || invalid_cursor
       case "$provider_cursor" in *[!A-Za-z0-9+./=_~-]*) invalid_cursor ;; esac
     fi
-    start_epoch=$((end_epoch - window_minutes * 60))
-    start_time=$(date -u -d "@$start_epoch" +%Y-%m-%dT%H:%M:%SZ)
-    end_time=$(date -u -d "@$end_epoch" +%Y-%m-%dT%H:%M:%SZ)
+    if [ -z "$absolute_end" ]; then
+      start_epoch=$((end_epoch - window_minutes * 60))
+      start_time=$(date -u -d "@$start_epoch" +%Y-%m-%dT%H:%M:%SZ)
+      end_time=$(date -u -d "@$end_epoch" +%Y-%m-%dT%H:%M:%SZ)
+    fi
     recent_filter="timestamp >= \"$start_time\" AND timestamp <= \"$end_time\" AND severity >= $minimum_severity"
     if [ -n "$resource_type" ]; then
       recent_filter="$recent_filter AND resource.type = \"$resource_type\""
+    fi
+    if [ -n "$instance_id" ]; then
+      recent_filter="$recent_filter AND resource.labels.instance_id = \"$instance_id\""
     fi
     if [ -n "$log_id" ]; then
       recent_filter="$recent_filter AND logName = \"projects/$project/logs/$log_id\""

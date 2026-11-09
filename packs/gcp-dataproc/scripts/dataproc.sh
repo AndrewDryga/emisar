@@ -145,22 +145,86 @@ emit() {
 }
 
 case "$mode" in
-  clusters_list|jobs_list|operations_list|autoscaling_policies_list)
+  clusters_list|operations_list|autoscaling_policies_list)
     size=$4 cursor=$5
     case "$mode" in
       clusters_list) family=clusters kind=clusters ;;
-      jobs_list) family=jobs kind=jobs ;;
       operations_list) family=operations kind=operations ;;
       autoscaling_policies_list) family=autoscalingPolicies kind=policies ;;
     esac
     query=("pageSize=$size")
     [[ -z $cursor ]] || query+=("pageToken=$cursor")
-    if [[ $mode == jobs_list ]]; then
-      [[ -z $6 ]] || query+=("clusterName=$6")
-      query+=("jobStateMatcher=$7")
-    fi
     request GET "$family" '' "${query[@]}"
     emit 'page($family; $kind; $size)' --arg family "$kind" --arg kind "$kind" --argjson size "$size"
+    ;;
+  jobs_list)
+    size=$4 cursor=$5 cluster_filter=$6 state=$7 start_time=$8 end_time=$9
+    invalid_query() {
+      printf '%s\n' 'Invalid Dataproc history query or continuation; start a new query with an empty page_cursor.' >&2
+      exit 2
+    }
+    if [[ -n $start_time || -n $end_time ]]; then
+      for timestamp in "$start_time" "$end_time"; do
+        [[ $timestamp =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || invalid_query
+        [[ $(date -u -d "$timestamp" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null) == "$timestamp" ]] || invalid_query
+      done
+      [[ $start_time < $end_time ]] || invalid_query
+    fi
+    fingerprint=$(jq -nc --arg endpoint "$api" --arg project "$project" --arg region "$region" \
+      --arg cluster "$cluster_filter" --arg state "$state" --arg start "$start_time" --arg until_time "$end_time" \
+      --argjson size "$size" '[$endpoint,$project,$region,$cluster,$state,$start,$until_time,$size]' | sha256sum)
+    fingerprint=${fingerprint%% *}
+    provider_cursor='' offset=0 previous_hash='-'
+    if [[ -n $cursor ]]; then
+      [[ ${#cursor} -le 1280 && $cursor == v1.* && $cursor != *[!A-Za-z0-9+./=_~-]* ]] || invalid_query
+      rest=${cursor#v1.}
+      [[ ${rest%%.*} == "$fingerprint" ]] || invalid_query
+      rest=${rest#*.} offset=${rest%%.*}
+      rest=${rest#*.} previous_hash=${rest%%.*} provider_cursor=${rest#*.}
+      [[ $offset =~ ^(0|[1-9][0-9]?)$ && ${#provider_cursor} -le 1024 ]] || invalid_query
+      if ((offset > 0)); then
+        [[ $previous_hash =~ ^[a-f0-9]{64}$ ]] || invalid_query
+      else
+        [[ $previous_hash == '-' && -n $provider_cursor ]] || invalid_query
+      fi
+    fi
+    # clusterName resolves a live cluster and fails after deletion. Scan one
+    # bounded regional provider page and select retained placement names here.
+    # Resume within that page when the six-row response fills, never drop matches.
+    provider_size=$size
+    [[ -z $cluster_filter ]] || provider_size=100
+    query=("pageSize=$provider_size")
+    [[ -z $provider_cursor ]] || query+=("pageToken=$provider_cursor")
+    filter=''
+    [[ $state == ALL ]] || filter="status.state = $state"
+    if [[ -n $start_time ]]; then
+      [[ -z $filter ]] || filter+=' AND '
+      filter+="insertTime >= \"$start_time\" AND insertTime <= \"$end_time\""
+    fi
+    [[ -z $filter ]] || query+=("filter=$filter")
+    request GET jobs '' "${query[@]}"
+    page_hash=$(sha256sum "$tmp/response") page_hash=${page_hash%% *}
+    if ((offset > 0)); then
+      [[ $previous_hash == "$page_hash" ]] || invalid_query
+    fi
+    emit '
+      object | list("jobs") as $rows | (.nextPageToken | cursor) as $next
+      | if ($rows | length) > $provider_size or $offset > ($rows | length)
+        then error("invalid Dataproc provider page") else . end
+      | [range($offset; $rows | length) | select($cluster == "" or $rows[.].placement.clusterName == $cluster)] as $matches
+      | $matches[:$size] as $selected
+      | (($matches | length) > $size) as $within_page
+      | (if $within_page then ($selected[-1] + 1) else 0 end) as $next_offset
+      | (if $within_page then $provider_cursor else $next.value end) as $token
+      | {items: [$selected[] | $rows[.] | job_summary], returned_count: ($selected | length),
+          scanned_count: (($rows | length) - $offset), omitted_in_response: 0,
+          more_available: ($within_page or $next.more), cursor_omitted: (($within_page | not) and $next.omitted),
+          next_page_cursor: (if $within_page or $next.value != null
+            then "v1." + $fingerprint + "." + ($next_offset | tostring) + "." +
+              (if $within_page then $page_hash else "-" end) + "." + $token else null end),
+          unreachable_count: (list("unreachable") | length)}' \
+      --arg cluster "$cluster_filter" --arg provider_cursor "$provider_cursor" --arg fingerprint "$fingerprint" \
+      --arg page_hash "$page_hash" --argjson offset "$offset" --argjson size "$size" --argjson provider_size "$provider_size"
     ;;
   cluster_details)
     request GET "clusters/$4" ''

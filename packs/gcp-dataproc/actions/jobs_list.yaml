@@ -3,9 +3,14 @@ id: gcp-dataproc.jobs_list
 title: List Dataproc jobs
 kind: script
 risk: low
-description: List Dataproc jobs in one region with optional exact cluster and active-state selectors.
-  Return job IDs, cluster, state and job type, a continuation and the count of unreachable encrypted
-  jobs. Job arguments, properties, driver output and submitted payloads are excluded.
+description: List retained Dataproc jobs in one region, including jobs from deleted clusters,
+  with optional exact cluster, state and insertion-time selectors. Each call reads one provider
+  page of up to 100 jobs when selecting a cluster and returns up to six matching summaries plus
+  a continuation, scanned count and unreachable count. An empty page with more_available is
+  partial coverage. Job arguments, properties, driver output and submitted payloads are excluded.
+search_terms:
+- deleted Dataproc cluster job history
+- historical analytics job retries
 side_effects:
 - One gcloud credential read and one authenticated Dataproc v1 GET.
 args:
@@ -35,16 +40,16 @@ args:
   type: string
   required: false
   default: ''
-  description: Continuation from the preceding result with the same project, region and selectors.
-    An omitted provider cursor requires a new query.
+  description: Exact continuation from the preceding result with all arguments unchanged.
+    A changed provider page or an omitted provider cursor requires a new query.
   validation:
     pattern: ^[A-Za-z0-9._~+/=-]*$
-    max_length: 1024
+    max_length: 1280
 - name: cluster_filter
   type: string
   required: false
   default: ''
-  description: Optional exact cluster name for the server-side job selector.
+  description: Optional exact retained placement name, including a deleted cluster. Selected locally from a bounded provider page.
   validation:
     pattern: ^(?:[a-z](?:[a-z0-9-]{0,49}[a-z0-9])?)?$
     max_length: 51
@@ -58,6 +63,22 @@ args:
     - ALL
     - ACTIVE
     - NON_ACTIVE
+- name: start_time
+  type: string
+  required: false
+  default: ''
+  description: Inclusive job insertion time in UTC, paired with end_time. Does not select jobs merely still running during the interval.
+  validation:
+    pattern: '^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z)?$'
+    max_length: 20
+- name: end_time
+  type: string
+  required: false
+  default: ''
+  description: Inclusive job insertion time in UTC, after start_time. Both bounds must be supplied together.
+  validation:
+    pattern: '^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z)?$'
+    max_length: 20
 execution:
   script:
     path: scripts/dataproc.sh
@@ -70,6 +91,8 @@ execution:
   - '{{ args.page_cursor }}'
   - '{{ args.cluster_filter }}'
   - '{{ args.state }}'
+  - '{{ args.start_time }}'
+  - '{{ args.end_time }}'
   timeout: 60s
 output:
   parser: json
@@ -83,6 +106,7 @@ output:
     required:
     - items
     - returned_count
+    - scanned_count
     - omitted_in_response
     - more_available
     - next_page_cursor
@@ -117,6 +141,10 @@ output:
             type:
               type: string
               maxLength: 24
+      scanned_count:
+        type: integer
+        minimum: 0
+        maximum: 100
       returned_count:
         type: integer
         minimum: 0
@@ -130,7 +158,7 @@ output:
         type:
         - string
         - 'null'
-        maxLength: 1024
+        maxLength: 1280
       cursor_omitted:
         type: boolean
       unreachable_count:
