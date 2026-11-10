@@ -105,6 +105,203 @@ case "$mode" in
         }' "$tmp/response.json"
     ;;
 
+  log-entry-detail)
+    log_id=$3
+    entry_time=$4
+    insert_id=$5
+    view_id=$6
+    page_cursor=$7
+    invalid_detail() {
+      printf '%s\n' 'Invalid Cloud Logging detail selector or continuation; use the exact log ID, UTC timestamp and unchanged arguments.' >&2
+      exit 2
+    }
+    second=${entry_time%%.*}
+    case "$entry_time" in *.*) second="${second}Z" ;; esac
+    canonical=$(date -u -d "$entry_time" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null) || invalid_detail
+    [ "$canonical" = "$second" ] || invalid_detail
+    selected_time=$(date -u -d "$entry_time" +%Y-%m-%dT%H:%M:%S.%NZ)
+    entry_epoch=$(date -u -d "$entry_time" +%s)
+    [ "$entry_epoch" -ge 0 ] && [ "$entry_epoch" -le "$(date -u +%s)" ] || invalid_detail
+    full_log_name="projects/$project/logs/$log_id"
+    resource="projects/$project"
+    if [ -n "$view_id" ]; then
+      resource="$resource/locations/global/buckets/_Default/views/$view_id"
+    fi
+    fingerprint=$(jq -nc --arg endpoint "$api_base" --arg resource "$resource" \
+      --arg log "$full_log_name" --arg timestamp "$entry_time" --arg id "$insert_id" \
+      '[$endpoint,$resource,$log,$timestamp,$id]' | sha256sum)
+    fingerprint=${fingerprint%% *}
+    cursor_kind=''
+    provider_cursor=''
+    first_source=''
+    first_digest=''
+    offset=0
+    if [ -n "$page_cursor" ]; then
+      [ "${#page_cursor}" -le 3072 ] || invalid_detail
+      case "$page_cursor" in v1.s.*) cursor_kind=s ;; v1.d.*) cursor_kind=d ;; *) invalid_detail ;; esac
+      encoded=${page_cursor#v1.}
+      encoded=${encoded#*.}
+      jq -nce --arg encoded "$encoded" --arg scope "$fingerprint" --arg kind "$cursor_kind" '
+        def hex: type == "string" and length == 64 and
+          (explode | all(.[]; (. >= 48 and . <= 57) or (. >= 97 and . <= 102)));
+        def provider:
+          type == "string" and utf8bytelength <= 1024 and
+          (explode | all(.[]; (. >= 48 and . <= 57) or (. >= 65 and . <= 90) or
+            (. >= 97 and . <= 122) or . == 43 or . == 45 or . == 46 or . == 47 or
+            . == 61 or . == 95 or . == 126));
+        ($encoded | @base64d | fromjson)
+        | select(type == "array" and length == 4 and .[0] == $scope)
+        | select(if $kind == "s" then
+            (.[1] | provider and length > 0) and
+            ((.[2] == null and .[3] == null) or ((.[2] | provider) and (.[3] | hex)))
+          else (.[1] | provider) and (.[2] | hex) and
+            (.[3] | type == "number" and . == floor and . > 0 and . <= 4194304) end)' \
+        >"$tmp/cursor.json" 2>/dev/null || invalid_detail
+      provider_cursor=$(jq -r '.[1]' "$tmp/cursor.json")
+      if [ "$cursor_kind" = s ]; then
+        first_source=$(jq -r '.[2] // ""' "$tmp/cursor.json")
+        first_digest=$(jq -r '.[3] // ""' "$tmp/cursor.json")
+      else
+        first_digest=$(jq -r '.[2]' "$tmp/cursor.json")
+        offset=$(jq -r '.[3]' "$tmp/cursor.json")
+      fi
+    fi
+    read_detail() {
+      jq -nce --arg resource "$resource" --arg log "$full_log_name" \
+        --arg timestamp "$entry_time" --arg id "$insert_id" --arg cursor "$1" '
+        {resourceNames: [$resource], orderBy: "timestamp desc", pageSize: 2,
+         filter: ("timestamp = " + ($timestamp | tojson) + " AND logName = " + ($log | tojson) +
+           (if $id == "" then "" else " AND insertId = " + ($id | tojson) end))}
+        | if $cursor == "" then . else . + {pageToken: $cursor} end' >"$tmp/request.json"
+      request_to "$2" --request POST --max-time 30 --header 'Content-Type: application/json' \
+        --data-binary "@$tmp/request.json" "$api_base/v2/entries:list"
+      jq -e --arg log "$full_log_name" --arg id "$insert_id" '
+        (.entries // []) as $entries
+        | ($entries | type == "array" and length <= 2) and
+          all($entries[]; type == "object" and .logName == $log and
+            (.timestamp | type == "string" and length <= 40) and
+            (if has("insertId") then (.insertId | type == "string") else true end) and
+            ($id == "" or .insertId == $id))' "$2" >/dev/null || invalid_detail
+      jq -r '.entries // [] | .[] | .timestamp' "$2" >"$tmp/timestamps"
+      while IFS= read -r returned_time; do
+        returned_time=$(date -u -d "$returned_time" +%Y-%m-%dT%H:%M:%S.%NZ 2>/dev/null) || invalid_detail
+        [ "$returned_time" = "$selected_time" ] || invalid_detail
+      done <"$tmp/timestamps"
+    }
+    canonical_entry() {
+      jq -jre --rawfile access_token "$tmp/access-token" '
+        def safe_text:
+          if $access_token == "" then . else split($access_token) | join("[REDACTED]") end
+          | . as $text | (ascii_downcase | index("bearer ")) as $position
+          | if $position == null then $text else $text[:$position + 7] + "[REDACTED]" end;
+        def sensitive_name:
+          ascii_downcase as $name
+          | ["password","passwd","secret","credential","authorization","token","apikey","api_key","privatekey","private_key"]
+          | any(.[]; . as $word | $name | contains($word));
+        def sanitized:
+          if type == "object" then to_entries | map(if (.key | sensitive_name) then .value = "[REDACTED]"
+            else .value |= sanitized end) | sort_by(.key) | from_entries
+          elif type == "array" then map(sanitized)
+          elif type == "string" then safe_text else . end;
+        .entries[0] | sanitized | tojson' "$1" >"$tmp/content.json"
+      digest=$(sha256sum "$tmp/content.json")
+      digest=${digest%% *}
+    }
+    printf '%s' "$access_token" >"$tmp/access-token"
+    read_detail "$provider_cursor" "$tmp/current.json"
+    count=$(jq -r '.entries // [] | length' "$tmp/current.json")
+    next_provider=$(jq -er '
+      (.nextPageToken // "") | select(type == "string" and utf8bytelength <= 1024 and
+        (explode | all(.[]; (. >= 48 and . <= 57) or (. >= 65 and . <= 90) or
+          (. >= 97 and . <= 122) or . == 43 or . == 45 or . == 46 or . == 47 or
+          . == 61 or . == 95 or . == 126)))' "$tmp/current.json") || invalid_detail
+    if [ -n "$next_provider" ] && [ "$next_provider" = "$provider_cursor" ]; then
+      invalid_detail
+    fi
+    selected="$tmp/current.json"
+    detail_cursor=''
+    status=not_found
+    if [ "$cursor_kind" = d ]; then
+      [ "$count" -eq 1 ] || invalid_detail
+      canonical_entry "$selected"
+      [ "$digest" = "$first_digest" ] || invalid_detail
+      status=found
+    elif [ -n "$first_digest" ] && { [ "$count" -gt 0 ] || [ -z "$next_provider" ]; }; then
+      # A search can yield its sole match before its last (empty) provider page.
+      # Re-read that exact page rather than lose the earlier payload or ask for an export.
+      read_detail "$first_source" "$tmp/first.json"
+      [ "$(jq -r '.entries // [] | length' "$tmp/first.json")" -eq 1 ] || invalid_detail
+      canonical_entry "$tmp/first.json"
+      [ "$digest" = "$first_digest" ] || invalid_detail
+      if [ "$count" -gt 0 ]; then
+        jq -n --slurpfile first "$tmp/first.json" --slurpfile current "$tmp/current.json" \
+          '{entries: [$first[0].entries[0],$current[0].entries[0]]}' >"$tmp/ambiguous.json"
+        selected="$tmp/ambiguous.json"
+        status=ambiguous
+      else
+        selected="$tmp/first.json"
+        provider_cursor=$first_source
+        status=found
+      fi
+    elif [ "$count" -gt 1 ]; then
+      status=ambiguous
+    elif [ -n "$next_provider" ]; then
+      status=incomplete
+      if [ "$count" -eq 1 ] && [ -z "$first_digest" ]; then
+        canonical_entry "$selected"
+        first_source=$provider_cursor
+        first_digest=$digest
+      fi
+      detail_cursor=$(jq -nr --arg scope "$fingerprint" --arg next "$next_provider" \
+        --arg source "$first_source" --arg digest "$first_digest" '
+        [$scope,$next, (if $digest == "" then null else $source end),
+          (if $digest == "" then null else $digest end)] | @base64 | "v1.s." + .')
+    elif [ "$count" -eq 1 ]; then
+      status=found
+      canonical_entry "$selected"
+    fi
+    jq -ce --arg status "$status" --arg log "$full_log_name" --arg timestamp "$entry_time" \
+      --arg cursor "$detail_cursor" --rawfile access_token "$tmp/access-token" '
+      def clip($n): .[:$n] | until(utf8bytelength <= $n; .[:-1]);
+      def safe_text: if $access_token == "" then . else split($access_token) | join("[REDACTED]") end;
+      {status: $status, log_name: $log, timestamp: $timestamp,
+       insert_id: (if $status == "found" then (.entries[0].insertId // "" | safe_text | clip(256)) else "" end),
+       identity_truncated: (if $status == "found" then ((.entries[0].insertId // "" | utf8bytelength) > 256) else false end),
+       candidate_insert_ids: (if $status == "ambiguous" or $status == "incomplete" then
+         [(.entries // [])[] | (.insertId // "" | safe_text) as $id
+          | if ($id | utf8bytelength) <= 256 then $id else null end] else [] end),
+       candidate_ids_omitted: (if $status == "ambiguous" or $status == "incomplete" then
+         any((.entries // [])[]; (.insertId // "" | utf8bytelength) > 256) else false end),
+       entry_json_excerpt: "", entry_json_characters: 0, excerpt_start: 0, excerpt_end: 0,
+       entry_complete: false, entry_sha256: null,
+       next_page_cursor: (if $cursor == "" then null else $cursor end)}' "$selected" >"$tmp/detail.json"
+    if [ "$status" != found ]; then
+      [ "$cursor_kind" != d ] || invalid_detail
+      cat "$tmp/detail.json"
+      exit 0
+    fi
+    jq -eRs 'length <= 4194304' "$tmp/content.json" >/dev/null
+    jq -ce --arg digest "$digest" --arg scope "$fingerprint" --arg page "$provider_cursor" \
+      --argjson offset "$offset" --rawfile content "$tmp/content.json" '
+      def wire_size:
+        tojson as $json | ($json | utf8bytelength) +
+        ([$json | explode[] | select(. == 8232 or . == 8233)] | length) * 3;
+      ($content | length) as $length
+      | if $offset >= $length then error("Cloud Logging detail continuation is past the entry") else . end
+      | .entry_sha256 = $digest | .entry_json_characters = $length | .excerpt_start = $offset
+      | .entry_json_excerpt = $content[$offset:$offset + 4096]
+      | def finish:
+          .excerpt_end = ($offset + (.entry_json_excerpt | length))
+          | .entry_complete = (.excerpt_end == $length)
+          | .next_page_cursor = (if .entry_complete then null
+              else ([$scope,$page,$digest,.excerpt_end] | @base64 | "v1.d." + .) end);
+      finish
+      | until((.entry_json_excerpt | utf8bytelength) <= 4096 and wire_size <= 8192;
+          .entry_json_excerpt = .entry_json_excerpt[:-1] | finish)
+      | if (.entry_json_excerpt | length) == 0 then error("Cloud Logging detail identity exceeds output budget") else . end' \
+      "$tmp/detail.json"
+    ;;
+
   log-entries)
     minimum_severity=$3
     resource_type=$4

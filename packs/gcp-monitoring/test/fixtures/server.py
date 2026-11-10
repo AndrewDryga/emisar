@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 import re
 import ssl
 from datetime import datetime
@@ -264,6 +265,66 @@ def log_entries(request_body, access_token):
     }
 
 
+def log_entry_detail(request_body, access_token):
+    # The nested probe fields were harvested from a production diagnostic that
+    # otherwise required six manual JSON requests. Identity is pseudonymized.
+    value = request_body.get("filter", "")
+    parts = re.findall(r'(timestamp|logName|insertId) = ("(?:\\.|[^"\\])*")', value)
+    selectors = {name: json.loads(raw) for name, raw in parts}
+    if not selectors.get("timestamp") or not selectors.get("logName") or request_body.get("pageSize") != 2:
+        raise InvalidFilter("Detail must use exact log/time selectors and a two-entry ambiguity bound")
+    if selectors["timestamp"] != "2026-11-08T01:17:13.871966957Z":
+        return {"entries": []}
+    entry = json.loads(Path("/fixture/healthcheck.json").read_text())
+    entry["logName"] = selectors["logName"]
+    log_id = selectors["logName"].split("/logs/", 1)[1]
+    provider_cursor = request_body.get("pageToken", "")
+    if log_id == "healthcheck-large-max-cursors":
+        if not provider_cursor:
+            return {"entries": [], "nextPageToken": "P" * 1024}
+        if provider_cursor == "Q" * 1024:
+            return {"entries": []}
+    if log_id in ("healthcheck-empty-first", "healthcheck-one-first-empty-last", "healthcheck-two-pages", "healthcheck-large-empty-last"):
+        if log_id == "healthcheck-empty-first" and not provider_cursor:
+            return {"entries": [], "nextPageToken": "detail-empty-first-next"}
+        if log_id in ("healthcheck-one-first-empty-last", "healthcheck-large-empty-last") and provider_cursor:
+            return {"entries": []}
+        if log_id == "healthcheck-two-pages" and provider_cursor:
+            entry["insertId"] = "harness-probe-002"
+    if log_id == "healthcheck-incomplete":
+        return {"entries": [], "nextPageToken": "query-in-progress"}
+    if log_id == "healthcheck-malformed":
+        return {"entries": {"unexpected": True}}
+    if log_id == "healthcheck-identity":
+        entry["insertId"] = ('"' + chr(92) + chr(0x2028)) * 600
+    if log_id == "healthcheck-missing":
+        return {"entries": []}
+    if log_id in ("healthcheck-large", "healthcheck-changing", "healthcheck-large-empty-last", "healthcheck-large-max-cursors"):
+        entry["jsonPayload"]["oversized"] = ('quoted "' + chr(92) + chr(0x2028)) * 1000
+        if log_id == "healthcheck-changing" and len(REQUESTS) > 1:
+            entry["jsonPayload"]["changed"] = True
+    if log_id == "healthcheck-sensitive":
+        entry["jsonPayload"]["apiKey"] = "packtest-canary-detail-apikey-9345"
+        entry["jsonPayload"]["password"] = "packtest-canary-detail-password-3184"
+        entry["jsonPayload"]["access_token"] = "packtest-canary-detail-token-9317"
+        entry["jsonPayload"]["message"] = f"before Authorization: Bearer packtest-canary-gcp-log-bearer-7498 after {access_token}"
+    entries = [entry]
+    if log_id == "healthcheck-ambiguous":
+        other = json.loads(json.dumps(entry));other["insertId"] = "harness-probe-002";entries.append(other)
+    if "insertId" in selectors:
+        entries = [entry for entry in entries if entry["insertId"] == selectors["insertId"]]
+    if log_id == "healthcheck-wrong-time" and entries:
+        entries[0]["timestamp"] = "2026-11-08T01:17:13.871966958Z"
+    if log_id == "healthcheck-wrong-id" and entries:
+        entries[0]["insertId"] = "not-the-requested-id"
+    result = {"entries": entries}
+    if log_id == "healthcheck-large-max-cursors" and provider_cursor == "P" * 1024:
+        result["nextPageToken"] = "Q" * 1024
+    if log_id in ("healthcheck-one-first-empty-last", "healthcheck-large-empty-last", "healthcheck-two-pages") and not provider_cursor:
+        result["nextPageToken"] = "detail-next-page"
+    return result
+
+
 def patch_response(raw_path, body):
     request = urlparse(raw_path)
     query = parse_qs(request.query, keep_blank_values=True)
@@ -352,7 +413,7 @@ class Handler(BaseHTTPRequestHandler):
         ]:
             self.write_json(403, {"error": {"code": 403, "message": "Permission denied for this log scope"}})
             return
-        if request_body.get("pageToken"):
+        if request_body.get("pageToken") and 'timestamp = "' not in request_body.get("filter", ""):
             current = {k: v for k, v in request_body.items() if k != "pageToken"}
             previous = {k: v for k, v in REQUESTS[-2].items() if k != "pageToken"} if len(REQUESTS) > 1 else None
             if current != previous:
@@ -364,8 +425,15 @@ class Handler(BaseHTTPRequestHandler):
                 {"error": {"code": 503, "message": "fixture unavailable"}},
             )
             return
-        payload = log_entries(request_body, self.headers["Authorization"].removeprefix("Bearer "))
-        if request_body.get("pageToken"):
+        try:
+            if 'timestamp = "' in request_body.get("filter", ""):
+                payload = log_entry_detail(request_body, self.headers["Authorization"].removeprefix("Bearer "))
+            else:
+                payload = log_entries(request_body, self.headers["Authorization"].removeprefix("Bearer "))
+        except InvalidFilter as error:
+            self.write_json(400, {"error": {"code": 400, "message": str(error)}})
+            return
+        if request_body.get("pageToken") and 'timestamp = "' not in request_body.get("filter", ""):
             payload["entries"][0]["jsonPayload"]["job"] = "continued-page"
             payload.pop("nextPageToken", None)
         self.write_json(200, payload)

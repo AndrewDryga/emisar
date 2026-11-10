@@ -10,7 +10,9 @@ description: >
   instance ID, exact log ID, and a jsonPayload.message event name,
   matched as the whole message or its first word.
   Returns fixed, clipped diagnostic fields including jsonPayload.job and error,
-  plus a continuation cursor; log content is arbitrary application
+  plus a continuation cursor. Use gcp.log_entry_detail with an exact log ID and
+  returned timestamp for full nested health-check, audit or container payloads
+  rather than asking someone to export the JSON. Log content is arbitrary application
   output, so redaction is best-effort and the result should be treated as
   sensitive diagnostics.
 side_effects:

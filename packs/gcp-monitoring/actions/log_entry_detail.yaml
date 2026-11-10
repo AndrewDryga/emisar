@@ -1,0 +1,128 @@
+schema_version: 1
+id: gcp.log_entry_detail
+title: Get complete Cloud Logging entry details
+kind: script
+risk: medium
+description: >
+  Get one exact Cloud Logging entry as canonical JSON text, including nested
+  jsonPayload, protoPayload, textPayload and resource identity rather than a
+  message-only projection. This returns arbitrary application-controlled log
+  content with best-effort secret redaction. Select the exact log ID and UTC
+  timestamp discovered by gcp.log_entries; add insert_id when the same log and
+  timestamp have several entries. An ambiguous result names bounded candidate
+  insert IDs and never silently chooses an entry. Large entries return text
+  excerpts with a query- and content-bound cursor; concatenate the excerpts in
+  order until entry_complete, preserving their Unicode text. A changed entry
+  refuses its old continuation. Scoped view IAM is unchanged; no export or
+  project-wide fallback is attempted. Follow an incomplete provider query with
+  its returned continuation. Provider search cursors preserve an earlier sole
+  match through a later empty page; a continuation may re-read its original provider page to verify the
+  unchanged payload. Each run makes at most two bounded API reads. The 4 MiB
+  provider-response limit remains; provider cursors over 1024 bytes are refused.
+side_effects:
+  - One gcloud token read and at most two read-only Cloud Logging API requests, each capped at 30 seconds.
+  - Returns sensitive application-controlled log payloads into the governed result and audit trail.
+search_terms:
+  - full cloud logging json
+  - expanded log entry payload
+  - healthCheckProbeResult diagnostic
+  - Airflow container log details
+  - kernel warning full payload
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation: {pattern: '^[a-z][a-z0-9-]{4,28}[a-z0-9]$'}
+  - name: log_id
+    type: string
+    required: true
+    description: Exact URL-encoded log ID without the projects/PROJECT/logs/ prefix.
+    validation:
+      pattern: '^[A-Za-z0-9][A-Za-z0-9._~%+/-]{0,511}$'
+      max_length: 512
+  - name: timestamp
+    type: string
+    required: true
+    description: Exact retained entry UTC timestamp, preserving up to nine fractional-second digits.
+    validation:
+      pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,9})?Z$'
+      max_length: 30
+  - name: insert_id
+    type: string
+    required: false
+    default: ""
+    description: Exact insert ID when needed to distinguish entries sharing a log and timestamp; never use a clipped candidate ID.
+    validation:
+      pattern: '^[^\x00-\x1F\x7F]*$'
+      max_length: 1024
+  - name: view_id
+    type: string
+    required: false
+    default: ""
+    description: Optional view ID in the project global _Default bucket, using exactly that view grant.
+    validation:
+      pattern: '^([A-Za-z][A-Za-z0-9_-]{0,99})?$'
+      max_length: 100
+  - name: page_cursor
+    type: string
+    required: false
+    default: ""
+    description: Returned detail continuation; keep every other selector unchanged. Refused if the entry changed.
+    validation:
+      pattern: '^[A-Za-z0-9+./=_~-]*$'
+      max_length: 3072
+execution:
+  script: {path: scripts/logging_api.sh, interpreter: /bin/sh}
+  argv:
+    - log-entry-detail
+    - "{{ args.project }}"
+    - "{{ args.log_id }}"
+    - "{{ args.timestamp }}"
+    - "{{ args.insert_id }}"
+    - "{{ args.view_id }}"
+    - "{{ args.page_cursor }}"
+  timeout: 90s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [status, log_name, timestamp, insert_id, identity_truncated, candidate_insert_ids, candidate_ids_omitted, entry_json_excerpt, entry_json_characters, excerpt_start, excerpt_end, entry_complete, entry_sha256, next_page_cursor]
+    properties:
+      status: {type: string, enum: [found, not_found, ambiguous, incomplete]}
+      log_name: {type: string, maxLength: 560}
+      timestamp: {type: string, maxLength: 30}
+      insert_id: {type: string, maxLength: 256}
+      identity_truncated: {type: boolean}
+      candidate_insert_ids:
+        type: array
+        maxItems: 2
+        items: {type: [string, "null"], maxLength: 256}
+      candidate_ids_omitted: {type: boolean}
+      entry_json_excerpt: {type: string, maxLength: 4096}
+      entry_json_characters: {type: integer, minimum: 0, maximum: 4194304}
+      excerpt_start: {type: integer, minimum: 0, maximum: 4194304}
+      excerpt_end: {type: integer, minimum: 0, maximum: 4194304}
+      entry_complete: {type: boolean}
+      entry_sha256:
+        type: [string, "null"]
+        maxLength: 64
+        description: Canonical source identity after pack redaction, used to bind continuations; additional configured runner redaction may change delivered text.
+      next_page_cursor: {type: [string, "null"], maxLength: 3072}
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 16384
+  redact:
+    - name: bearer-authorization
+      type: regex
+      pattern: '(?i)(authorization[":= ]+bearer[[:space:]]+)[A-Za-z0-9._~+/=-]{8,}'
+      replacement: '${1}[REDACTED]'
+examples:
+  - title: Expand one retained health probe
+    args:
+      project: example-prod
+      log_id: compute.googleapis.com%2Fhealthchecks
+      timestamp: "2026-11-08T01:17:13.871966957Z"
+      insert_id: harness-probe-001

@@ -20,6 +20,9 @@ defaults:
     stdout_not_contains:
       - packtest-canary-gcp-monitoring-access-token-281b
       - packtest-canary-gcp-log-bearer-7498
+      - packtest-canary-detail-password-3184
+      - packtest-canary-detail-token-9317
+      - packtest-canary-detail-apikey-9345
 cases:
   - action: gcp.log_names
     args:
@@ -47,6 +50,21 @@ cases:
         /cursor_omitted: false
       stdout_contains:
         - '"next_page_cursor":"CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC'
+  # Six requests for manual JSON followed this projection loss in one real
+  # investigation. The exact nested probe outcome must reach the diagnostic.
+  - name: gcp.log_entry_detail-preserves-nested-probe-diagnostics
+    action: gcp.log_entry_detail
+    args: &detail-query
+      project: example-prod
+      log_id: compute.googleapis.com%2Fhealthchecks
+      timestamp: "2026-11-08T01:17:13.871966957Z"
+      insert_id: harness-probe-001
+    expect:
+      json:
+        /status: found
+        /entry_complete: true
+        /next_page_cursor: null
+      stdout_contains: [healthCheckProbeResult, TIMEOUT, 0.001481s, 10.004587s]
   - action: gcp.log_entries
     args:
       project: example-prod
@@ -714,3 +732,169 @@ cases:
     action: gcp.log_entries
     args: {project: example-prod, resource_type: gce_instance, instance_id: '12345 OR true'}
     expect: {status: failure, reason: argument_invalid, error_contains: [must match pattern]}
+
+  - name: gcp.log_entry_detail-reports-ambiguous-timestamps-without-choosing
+    action: gcp.log_entry_detail
+    args: {<<: *detail-query, log_id: healthcheck-ambiguous, insert_id: ""}
+    expect:
+      json:
+        /status: ambiguous
+        /candidate_insert_ids/0: harness-probe-001
+        /candidate_insert_ids/1: harness-probe-002
+        /candidate_ids_omitted: false
+        /entry_json_excerpt: ""
+        /next_page_cursor: null
+  - name: gcp.log_entry_detail-selects-the-exact-insert-id
+    action: gcp.log_entry_detail
+    args: {<<: *detail-query, log_id: healthcheck-ambiguous, insert_id: harness-probe-002}
+    expect: {json: {/status: found, /insert_id: harness-probe-002, /entry_complete: true}}
+  - name: gcp.log_entry_detail-empty-is-not-a-projected-empty-payload
+    action: gcp.log_entry_detail
+    args: {<<: *detail-query, log_id: healthcheck-missing}
+    expect: {json: {/status: not_found, /entry_json_excerpt: "", /next_page_cursor: null}}
+  - name: gcp.log_entry_detail-distinguishes-provider-query-in-progress
+    action: gcp.log_entry_detail
+    args: {<<: *detail-query, log_id: healthcheck-incomplete}
+    expect:
+      json: {/status: incomplete, /entry_json_excerpt: ""}
+      stdout_contains: ['"next_page_cursor":"v1.s.']
+  - name: gcp.log_entry_detail-rejects-malformed-provider-entries
+    action: gcp.log_entry_detail
+    args: {<<: *detail-query, log_id: healthcheck-malformed}
+    expect: {status: failure, exit: [2], stderr_contains: [Invalid Cloud Logging detail selector or continuation]}
+  - name: gcp.log_entry_detail-redacts-before-slicing-structured-payloads
+    action: gcp.log_entry_detail
+    args: {<<: *detail-query, log_id: healthcheck-sensitive}
+    expect:
+      json: {/status: found, /entry_complete: true}
+      stdout_contains: [healthCheckProbeResult, TIMEOUT, '[REDACTED]']
+  - name: gcp.log_entry_detail-fits-escaped-payloads-and-reassembles-the-entire-entry
+    action: gcp.log_entry_detail
+    args: {<<: *detail-query, log_id: healthcheck-large}
+    expect:
+      json: {/status: found, /entry_complete: false, /excerpt_start: 0}
+      stdout_contains: ['"next_page_cursor":"v1.d.']
+    probes:
+      - argv: [/bin/sh, /packs/gcp-monitoring/test/fixtures/verify-detail.sh]
+        expect: {stdout_contains: [complete entry preserved across bounded excerpts]}
+  - name: gcp.log_entry_detail-fits-hostile-identity-and-payload-escaping
+    action: gcp.log_entry_detail
+    args: {<<: *detail-query, log_id: healthcheck-identity, insert_id: ""}
+    expect: {json: {/status: found, /identity_truncated: true}}
+  - name: gcp.log_entry_detail-continues-the-same-entry
+    action: gcp.log_entry_detail
+    args: {<<: *detail-query, log_id: healthcheck-large}
+    resolve_args: &detail-first-page
+      page_cursor:
+        argv: [/bin/sh, /packs/gcp-monitoring/test/fixtures/detail-first-page.sh, example-prod, healthcheck-large, "2026-11-08T01:17:13.871966957Z", harness-probe-001, ""]
+    expect:
+      json: {/status: found}
+      stdout_contains: ['"excerpt_start":']
+      stdout_not_contains: ['"excerpt_start":0']
+  - name: gcp.log_entry_detail-refuses-a-cursor-after-the-entry-changes
+    action: gcp.log_entry_detail
+    args: {<<: *detail-query, log_id: healthcheck-changing}
+    resolve_args:
+      page_cursor:
+        argv: [/bin/sh, /packs/gcp-monitoring/test/fixtures/detail-first-page.sh, example-prod, healthcheck-changing, "2026-11-08T01:17:13.871966957Z", harness-probe-001, ""]
+    expect: {status: failure, exit: [2], stderr_contains: [Invalid Cloud Logging detail selector or continuation]}
+  - name: gcp.log_entry_detail-refuses-a-cursor-for-another-project
+    action: gcp.log_entry_detail
+    args: {<<: *detail-query, project: another-prod, log_id: healthcheck-large}
+    resolve_args: *detail-first-page
+    expect: {status: failure, exit: [2], stderr_contains: [Invalid Cloud Logging detail selector or continuation]}
+  - name: gcp.log_entry_detail-refuses-a-cursor-for-another-insert-id
+    action: gcp.log_entry_detail
+    args: {<<: *detail-query, insert_id: another-entry, log_id: healthcheck-large}
+    resolve_args: *detail-first-page
+    expect: {status: failure, exit: [2], stderr_contains: [Invalid Cloud Logging detail selector or continuation]}
+  - name: gcp.log_entry_detail-refuses-a-cursor-for-another-view
+    action: gcp.log_entry_detail
+    args: {<<: *detail-query, view_id: other-workload, log_id: healthcheck-large}
+    resolve_args: *detail-first-page
+    expect: {status: failure, exit: [2], stderr_contains: [Invalid Cloud Logging detail selector or continuation]}
+  - name: gcp.log_entry_detail-uses-only-the-granted-view
+    action: gcp.log_entry_detail
+    env: *view-only-identity
+    args: {<<: *detail-query, view_id: emisar-vm-containers}
+    expect: {json: {/status: found, /entry_complete: true}}
+    probes:
+      - argv: [curl, -fsS, --cacert, /packs/gcp-monitoring/test/fixtures/server.crt, https://gcp-api:8443/probe/state]
+        expect: {json: {/requests/0/resourceNames/0: projects/example-prod/locations/global/buckets/_Default/views/emisar-vm-containers, /requests/0/pageSize: 2}}
+  - name: gcp.log_entry_detail-view-only-identity-refuses-project-without-fallback
+    action: gcp.log_entry_detail
+    env: *view-only-identity
+    args: *detail-query
+    expect: {status: failure, exit: [22], stderr_contains: [Permission denied for this log scope]}
+    probes:
+      - argv: [/bin/sh, -c, "curl -fsS --cacert /packs/gcp-monitoring/test/fixtures/server.crt https://gcp-api:8443/probe/state | jq -e '.requests | length == 1'"]
+        expect: {stdout_contains: ["true"]}
+  - name: gcp.log_entry_detail-refuses-future-timestamps
+    action: gcp.log_entry_detail
+    args: {<<: *detail-query, timestamp: "2999-11-08T01:17:13Z"}
+    expect: {status: failure, exit: [2], stderr_contains: [Invalid Cloud Logging detail selector or continuation]}
+  - name: gcp.log_entry_detail-refuses-impossible-calendar-dates
+    action: gcp.log_entry_detail
+    args: {<<: *detail-query, timestamp: "2026-02-31T01:17:13Z"}
+    expect: {status: failure, exit: [2], stderr_contains: [Invalid Cloud Logging detail selector or continuation]}
+  - name: gcp.log_entry_detail-refuses-malformed-continuations
+    action: gcp.log_entry_detail
+    args: {<<: *detail-query, page_cursor: v1.invalid.not-a-digest.0}
+    expect: {status: failure, exit: [2], stderr_contains: [Invalid Cloud Logging detail selector or continuation]}
+
+  - name: gcp.log_entry_detail-refuses-a-returned-timestamp-differing-by-one-nanosecond
+    action: gcp.log_entry_detail
+    args: {<<: *detail-query, log_id: healthcheck-wrong-time}
+    expect: {status: failure, exit: [2], stderr_contains: [Invalid Cloud Logging detail selector or continuation]}
+  - name: gcp.log_entry_detail-refuses-a-returned-insert-id-different-from-the-selector
+    action: gcp.log_entry_detail
+    args: {<<: *detail-query, log_id: healthcheck-wrong-id}
+    expect: {status: failure, exit: [2], stderr_contains: [Invalid Cloud Logging detail selector or continuation]}
+  - name: gcp.log_entry_detail-follows-an-empty-provider-page-to-the-exact-entry
+    action: gcp.log_entry_detail
+    args: {<<: *detail-query, log_id: healthcheck-empty-first}
+    resolve_args:
+      page_cursor:
+        argv: [/bin/sh, /packs/gcp-monitoring/test/fixtures/detail-first-page.sh, example-prod, healthcheck-empty-first, "2026-11-08T01:17:13.871966957Z", harness-probe-001, ""]
+    expect:
+      json: {/status: found, /entry_complete: true, /insert_id: harness-probe-001}
+      stdout_contains: [healthCheckProbeResult, TIMEOUT]
+  - name: gcp.log_entry_detail-keeps-the-sole-entry-when-the-final-provider-page-is-empty
+    action: gcp.log_entry_detail
+    args: {<<: *detail-query, log_id: healthcheck-one-first-empty-last}
+    resolve_args:
+      page_cursor:
+        argv: [/bin/sh, /packs/gcp-monitoring/test/fixtures/detail-first-page.sh, example-prod, healthcheck-one-first-empty-last, "2026-11-08T01:17:13.871966957Z", harness-probe-001, ""]
+    expect:
+      json: {/status: found, /entry_complete: true, /insert_id: harness-probe-001}
+      stdout_contains: [healthCheckProbeResult, TIMEOUT, 0.001481s, 10.004587s]
+  - name: gcp.log_entry_detail-reports-ambiguity-across-provider-pages
+    action: gcp.log_entry_detail
+    args: {<<: *detail-query, log_id: healthcheck-two-pages, insert_id: ""}
+    resolve_args:
+      page_cursor:
+        argv: [/bin/sh, /packs/gcp-monitoring/test/fixtures/detail-first-page.sh, example-prod, healthcheck-two-pages, "2026-11-08T01:17:13.871966957Z", "", ""]
+    expect:
+      json: {/status: ambiguous, /candidate_insert_ids/0: harness-probe-001, /candidate_insert_ids/1: harness-probe-002, /entry_json_excerpt: ""}
+  - name: gcp.log_entry_detail-can-finish-large-earlier-entries-after-an-empty-provider-page
+    action: gcp.log_entry_detail
+    args: {<<: *detail-query, log_id: healthcheck-large-empty-last}
+    expect:
+      json: {/status: incomplete}
+      stdout_contains: ['"next_page_cursor":"v1.s.']
+    probes:
+      - argv: [/bin/sh, /packs/gcp-monitoring/test/fixtures/verify-detail.sh, healthcheck-large-empty-last]
+        expect: {stdout_contains: [complete entry preserved across bounded excerpts]}
+
+  - name: gcp.log_entry_detail-fits-two-maximum-provider-cursors-and-large-content
+    action: gcp.log_entry_detail
+    args: {<<: *detail-query, log_id: healthcheck-large-max-cursors}
+    resolve_args:
+      page_cursor:
+        argv: [/bin/sh, /packs/gcp-monitoring/test/fixtures/detail-first-page.sh, example-prod, healthcheck-large-max-cursors, "2026-11-08T01:17:13.871966957Z", harness-probe-001, ""]
+    expect:
+      json: {/status: incomplete}
+      stdout_contains: ['"next_page_cursor":"v1.s.']
+    probes:
+      - argv: [/bin/sh, /packs/gcp-monitoring/test/fixtures/verify-detail.sh, healthcheck-large-max-cursors]
+        expect: {stdout_contains: [complete entry preserved across bounded excerpts]}

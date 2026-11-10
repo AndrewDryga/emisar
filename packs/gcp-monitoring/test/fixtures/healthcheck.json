@@ -1,0 +1,34 @@
+{
+  "insertId": "harness-probe-001",
+  "jsonPayload": {
+    "healthCheckProbeResult": {
+      "targetIp": "192.0.2.17",
+      "probeRequest": "/health",
+      "probeCompletionTimestamp": "2026-11-08T01:17:12.941023022Z",
+      "ipAddress": "192.0.2.17",
+      "previousHealthState": "HEALTHY",
+      "previousDetailedHealthState": "HEALTHY",
+      "detailedHealthState": "TIMEOUT",
+      "probeResultText": "HTTP response: , Error: Timeout waiting for data",
+      "probeSourceIp": "198.51.100.163",
+      "connectLatency": "0.001481s",
+      "healthCheckProtocol": "HTTP",
+      "targetPort": 8080,
+      "healthState": "UNHEALTHY",
+      "responseLatency": "10.004587s"
+    }
+  },
+  "resource": {
+    "type": "gce_instance_group",
+    "labels": {
+      "project_id": "example-prod",
+      "instance_group_name": "harness-scheduler",
+      "location": "us-central1-a",
+      "instance_group_id": "1001"
+    }
+  },
+  "timestamp": "2026-11-08T01:17:13.871966957Z",
+  "severity": "INFO",
+  "logName": "projects/example-prod/logs/compute.googleapis.com%2Fhealthchecks",
+  "receiveTimestamp": "2026-11-08T01:17:14.508670714Z"
+}
