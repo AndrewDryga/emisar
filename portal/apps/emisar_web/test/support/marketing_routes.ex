@@ -32,6 +32,7 @@ defmodule EmisarWeb.MarketingRoutes do
   @dynamic_representatives ~w(
     /packs/postgres
     /packs/cassandra
+    /guides/cli-vs-mcp-for-infrastructure-agents
     /guides/how-emisar-works
     /guides/give-ai-agents-safe-production-access
     /guides/prompt-injection-for-ops-teams

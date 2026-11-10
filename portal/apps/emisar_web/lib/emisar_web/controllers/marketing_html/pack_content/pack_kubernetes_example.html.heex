@@ -1,0 +1,26 @@
+<section aria-labelledby="kubernetes-ai-example">
+  <h2 id="kubernetes-ai-example">Example: investigate CrashLoopBackOff after a deployment</h2>
+  <blockquote class="mt-4 border-l-2 border-brand-500 pl-5 text-zinc-200">
+    Investigate the restarting containers in this namespace. Check pod state, warning
+    events, previous-container logs, and rollout history. Explain the failure before proposing a rollback.
+  </blockquote>
+  <ol class="mt-5 list-decimal space-y-3 pl-5">
+    <li>
+      Select the affected pod and container from the pod listing, then inspect <a href="#action-kubernetes.events_for_pod">events for that pod</a>.
+      Read previous-container logs when they are available.
+    </li>
+    <li>
+      Check the workload's rollout status and history. Use the deployment details and
+      container errors to decide whether to roll back or try another fix.
+    </li>
+    <li>
+      If a rollback is needed, request it through emisar. Your policy decides whether it
+      can run. Check the rollout and application health again when it finishes.
+    </li>
+  </ol>
+  <p>
+    Reading logs is medium risk because they can contain sensitive data. Reading workload
+    descriptions or YAML is high risk because environment variables can contain readable
+    passwords or other secrets. Review access to these reads as well as changes.
+  </p>
+</section>

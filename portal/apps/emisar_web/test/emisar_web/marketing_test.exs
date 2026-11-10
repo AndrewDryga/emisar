@@ -102,7 +102,7 @@ defmodule EmisarWeb.MarketingTest do
     assert html =~ "emisar"
     assert html =~ "Sign in"
     assert html =~ "Start free"
-    assert html =~ "Add capabilities through packs"
+    assert html =~ "One action catalog. CLI or MCP access."
     assert html =~ "Apache-2.0"
     refute html =~ "signed audit log"
     # A signed-out visitor gets the auth CTAs, not a dashboard link.
@@ -2081,8 +2081,8 @@ defmodule EmisarWeb.MarketingTest do
       refute html =~ "GET /api/mcp/runners"
 
       # The direct CLI uses the live descriptor surface and its installer-owned credential.
-      assert html =~ "Use MCP tools from the shell"
-      assert html =~ "owner-only local state"
+      assert html =~ "Use emisar tools from the shell"
+      assert html =~ "local files that only your user can read"
       assert html =~ "emisar-mcp auth"
       assert html =~ "emisar-mcp list_tools"
       assert html =~ "emisar-mcp help find_actions"
@@ -2098,13 +2098,13 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ ~s(&quot;include&quot;:&quot;all&quot;)
       assert html =~ "find_actions - --json"
       assert html =~ "structuredContent"
-      assert html =~ "makes one logical tool invocation"
-      assert html =~ "follows no continuations"
+      assert html =~ "calls a tool once"
+      assert html =~ "does not make follow-up calls"
       assert html =~ "Ctrl-C stops waiting"
       assert html =~ "data.operation_id"
       assert html =~ "never use direct-CLI account storage"
       assert html =~ "emisar-mcp -- help"
-      assert html =~ "emisar-mcp CLI and MCP API reference"
+      assert html =~ "emisar CLI and MCP reference: commands, tools and outputs"
     end
 
     test "the limits and runbooks pages state the shipped output range and runbook schema bounds",
@@ -2461,9 +2461,14 @@ defmodule EmisarWeb.MarketingTest do
          %{conn: conn} do
       html = conn |> get(~p"/use-cases/cassandra-migration") |> html_response(200)
 
+      code_text =
+        html
+        |> LazyHTML.from_document()
+        |> LazyHTML.query("code")
+        |> Enum.map(&LazyHTML.text/1)
+
       assert html =~ "Case study · Database migration"
-      assert html =~ "How I helped move Cassandra from GCP to bare metal"
-      assert html =~ "Moving Cassandra from GCP to bare metal: an AI operator"
+      assert html =~ "Cassandra migration from GCP to bare metal: field report"
       assert html =~ "Written by ChatGPT Sol"
       assert html =~ "Human review by the operator."
       assert html =~ "emisar connected the plan to the live systems"
@@ -2496,15 +2501,15 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Join, stream, cut over, and retire GCP"
       assert html =~ "gcp.interconnect_utilization"
       assert html =~ "The tools that mattered most"
-      assert html =~ "made this broad toolset feel like one reliable system"
-      assert html =~ "<code>cassandra.nodetool_status</code>"
-      assert html =~ "<code>cassandra.nodetool_decommission</code>"
-      assert html =~ "<code>cassandra.nodetool_setinterdcstreamthroughput</code>"
+      assert html =~ "Routine checks ran on their own"
+      assert "cassandra.nodetool_status" in code_text
+      assert "cassandra.nodetool_decommission" in code_text
+      assert "cassandra.nodetool_setinterdcstreamthroughput" in code_text
       assert html =~ "tfc.plan_summary"
       assert html =~ "tfc.run_diagnostics"
       assert html =~ "gh.workflow_run_view"
-      assert html =~ "<code>pure.arrays_performance</code>"
-      assert html =~ "<code>pure.network_interfaces_performance</code>"
+      assert "pure.arrays_performance" in code_text
+      assert "pure.network_interfaces_performance" in code_text
       assert html =~ "stream_entire_sstables=false"
       assert html =~ "Storage-Attached Index"
       assert html =~ "Risky work still belonged to a person"

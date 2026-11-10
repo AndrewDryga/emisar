@@ -1,0 +1,31 @@
+<section aria-labelledby="postgres-ai-tasks">
+  <h2 id="postgres-ai-tasks">What your agent can do</h2>
+  <div class="mt-5 space-y-6">
+    <div>
+      <h3>Find blocked queries and the sessions holding them up</h3>
+      <p>
+        Start with <a href="#action-postgres.lock_blocking_chains">blocking chains</a>,
+        then check <a href="#action-postgres.locks">locks</a>
+        and <a href="#action-postgres.activity_detail">session activity</a>.
+        These medium-risk reads expose query text, which can contain application data.
+      </p>
+    </div>
+    <div>
+      <h3>Check PostgreSQL replication lag</h3>
+      <p>
+        Run the <a href="#action-postgres.replication_lag">replication lag action</a>
+        on the primary to check data not yet sent and data not yet replayed by each replica.
+        Lag is measured in bytes, not seconds to catch up.
+      </p>
+    </div>
+    <div>
+      <h3>Inspect a query plan before choosing a change</h3>
+      <p>
+        <a href="#action-postgres.explain_query">Plan-only EXPLAIN</a>
+        shows the query plan without executing it.
+        <a href="#action-postgres.explain_analyze">EXPLAIN ANALYZE</a>
+        runs the query and is high risk because it can put heavy load on the database.
+      </p>
+    </div>
+  </div>
+</section>

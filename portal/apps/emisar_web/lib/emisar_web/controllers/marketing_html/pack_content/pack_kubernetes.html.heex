@@ -1,0 +1,30 @@
+<section aria-labelledby="kubernetes-ai-tasks">
+  <h2 id="kubernetes-ai-tasks">What your agent can do</h2>
+  <div class="mt-5 space-y-6">
+    <div>
+      <h3>Investigate unhealthy pods and container restarts</h3>
+      <p>
+        List <a href="#action-kubernetes.pods_list">pods</a>, check <a href="#action-kubernetes.events_warnings">warning events</a>, and read the
+        container's <a href="#action-kubernetes.pod_previous_logs">previous logs</a>.
+        Check the container state too: a pod can show Running while a container is in CrashLoopBackOff.
+      </p>
+    </div>
+    <div>
+      <h3>Check deployment progress and rollout history</h3>
+      <p>
+        Check <a href="#action-kubernetes.rollout_status">rollout status</a> for progress
+        and <a href="#action-kubernetes.rollout_history">rollout history</a> for earlier
+        revisions. Select the namespace, workload, and cluster context you want to investigate.
+      </p>
+    </div>
+    <div>
+      <h3>Request a rolling restart or rollback</h3>
+      <p>
+        <a href="#action-kubernetes.rollout_restart">Rolling restarts</a>
+        and <a href="#action-kubernetes.rollout_undo">rollbacks</a>
+        are high risk; a rollback starts a new rollout using a previous revision.
+        Check the rollout and application health afterwards.
+      </p>
+    </div>
+  </div>
+</section>

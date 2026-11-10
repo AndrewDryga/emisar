@@ -11,15 +11,17 @@
 
       <%!-- Header --%>
       <div class="mt-6 flex flex-wrap items-baseline justify-between gap-3">
-        <h1 class="text-3xl font-bold tracking-tight text-zinc-50 md:text-4xl">
-          {@pack.name}
+        <h1 class="max-w-2xl text-3xl font-bold tracking-tight text-zinc-50 text-balance md:text-4xl">
+          {if @pack_overview, do: @pack_overview.heading, else: @pack.name}
         </h1>
         <span class="rounded-full bg-zinc-900 px-2.5 py-1 font-mono text-xs text-zinc-300">
           v{@pack.version}
         </span>
       </div>
 
-      <p class="mt-4 text-lg leading-relaxed text-zinc-400 text-pretty">{@pack.description}</p>
+      <p class="mt-4 max-w-3xl text-lg leading-relaxed text-zinc-400 text-pretty">
+        {if @pack_overview, do: @pack_overview.intro, else: @pack.description}
+      </p>
 
       <%!-- Capabilities at a glance — the pack's shape derived from each action's
            risk tier under the DEFAULT policy (low/medium allowed, high gated,
@@ -48,6 +50,17 @@
           <.icon name="state.denied" class="h-3.5 w-3.5" /> {denied} denied by default
         </span>
       </div>
+
+      <nav
+        aria-label="On this pack page"
+        class="mt-6 flex flex-wrap gap-x-5 gap-y-2 text-sm text-brand-300 [&_a]:min-h-8 [&_a]:content-center [&_a:hover]:text-brand-200"
+      >
+        <a :if={@pack_overview} href="#pack-guide">What it can do</a>
+        <a href="#install">Install</a>
+        <a href="#setup">Setup</a>
+        <a :if={@pack_overview} href="#pack-example">Example</a>
+        <a href="#actions">Action reference</a>
+      </nav>
 
       <%!-- Meta strip: vendor, OS, requirements, source --%>
       <div class="mt-6 grid grid-cols-2 gap-3 rounded-xl border border-zinc-900 bg-zinc-950/40 p-4 text-sm sm:grid-cols-4">
@@ -88,44 +101,42 @@
         </div>
       </div>
 
-      <section class="mt-10">
-        <h2 class="text-xl font-semibold text-zinc-50">Use this pack with your agent</h2>
-        <p class="mt-3 text-base leading-7 text-zinc-400">
-          New to emisar? Start with the
-          <.link navigate={~p"/docs/quickstart"} class="text-brand-400 hover:text-brand-300">quickstart</.link>
-          to connect one Linux host and verify an action. With a runner connected,
-          review this pack's actions and host requirements,
-          then follow <.link
-            navigate={~p"/docs/use-a-published-pack"}
-            class="text-brand-400 hover:text-brand-300"
-          >installing and verifying a published pack</.link>.
-          Your policy decides which actions run, wait for approval, or are denied.
-        </p>
-        <p class="mt-3 text-base leading-7 text-zinc-400">
-          Connect <.link
-            navigate={~p"/docs/connect-cli-agent"}
-            class="text-brand-400 hover:text-brand-300"
-          >a CLI agent</.link>,
-          <.link
-            navigate={~p"/docs/connect-claude-ai"}
-            class="text-brand-400 hover:text-brand-300"
-          >Claude.ai</.link>
-          or
-          <.link navigate={~p"/docs/connect-chatgpt"} class="text-brand-400 hover:text-brand-300">ChatGPT</.link>
-          to discover the installed actions through the same infrastructure MCP.
-        </p>
-      </section>
+      <div
+        :if={@pack_overview}
+        id="pack-guide"
+        class="mt-10 max-w-3xl space-y-10 text-base leading-7 text-zinc-400 [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:text-zinc-50 [&_h3]:font-semibold [&_h3]:text-zinc-100 [&_p]:mt-3 [&_a]:text-brand-300 [&_a:hover]:text-brand-200 [&_code]:break-words [&_code]:text-sm [&_code]:text-zinc-300"
+      >
+        <%= case @pack.id do %>
+          <% "cassandra" -> %>
+            <.pack_cassandra />
+          <% "postgres" -> %>
+            <.pack_postgres />
+          <% "kubernetes" -> %>
+            <.pack_kubernetes />
+        <% end %>
+      </div>
 
       <%!-- Install snippet — copy-paste onto a runner host --%>
-      <section class="mt-10">
+      <section id="install" class="mt-10 scroll-mt-8">
         <h2 class="text-xl font-semibold text-zinc-50">Install</h2>
+        <p class="mt-3 text-sm leading-6 text-zinc-400">
+          New to emisar? Follow the
+          <.link navigate={~p"/docs/quickstart"} class="text-brand-400 hover:text-brand-300">quickstart</.link>
+          to connect your host and AI agent, then install this pack below. Agents can use its
+          actions through the
+          <.link
+            navigate={~p"/docs/mcp-reference#command-line"}
+            class="text-brand-400 hover:text-brand-300"
+          >CLI</.link>
+          or <.link navigate={~p"/docs/mcp-reference"} class="text-brand-400 hover:text-brand-300">MCP</.link>.
+        </p>
         <p class="mt-2 text-sm text-zinc-400">
           <code class="rounded-sm bg-zinc-900 px-1 py-0.5">emisar pack install</code>
-          fetches this pack, re-validates it, and verifies its content hash against the
+          downloads and checks the pack, then compares its content hash with the
           <code class="rounded-sm bg-zinc-900 px-1 py-0.5">--hash</code>
-          below before copying it into the runner's packs dir. That hash covers the exact bytes
-          this page was built from, so a tampered copy is rejected. The command reloads a
-          running daemon itself, so you don't need to restart it manually.
+          below before copying it into the runner's packs directory. The hash identifies
+          the exact pack shown on this page. If the download was changed, the command rejects
+          it. It also reloads a running runner, so you do not need to restart it yourself.
         </p>
         <div class="mt-4 overflow-hidden rounded-lg border border-zinc-800 bg-black/60">
           <div class="flex items-center justify-between gap-2 border-b border-zinc-800 px-4 py-2">
@@ -146,7 +157,7 @@
 
       <%!-- Setup — the pack's OWN authored block, carried through catalog.json,
            so this page and `emisar pack info` on the host cannot disagree. --%>
-      <section class="mt-12">
+      <section id="setup" class="mt-12 scroll-mt-8">
         <h2 class="text-xl font-semibold text-zinc-50">Setup</h2>
 
         <p
@@ -296,8 +307,23 @@
         </p>
       </section>
 
+      <div
+        :if={@pack_overview}
+        id="pack-example"
+        class="mt-12 max-w-3xl scroll-mt-8 text-base leading-7 text-zinc-400 [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:text-zinc-50 [&_p]:mt-3 [&_a]:text-brand-300 [&_a:hover]:text-brand-200 [&_code]:break-words [&_code]:text-sm [&_code]:text-zinc-300"
+      >
+        <%= case @pack.id do %>
+          <% "cassandra" -> %>
+            <.pack_cassandra_example />
+          <% "postgres" -> %>
+            <.pack_postgres_example />
+          <% "kubernetes" -> %>
+            <.pack_kubernetes_example />
+        <% end %>
+      </div>
+
       <%!-- Actions list — one row per action with link to source --%>
-      <section class="mt-12">
+      <section id="actions" class="mt-12 scroll-mt-8">
         <div class="flex items-baseline justify-between gap-3">
           <h2 class="text-xl font-semibold text-zinc-50">
             Actions

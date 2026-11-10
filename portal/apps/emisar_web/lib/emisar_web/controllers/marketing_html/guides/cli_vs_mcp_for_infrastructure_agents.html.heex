@@ -1,0 +1,159 @@
+<.guide_page
+  title={@guide_meta.title}
+  dek={@guide_meta.dek}
+  date={@guide_meta.date}
+  read_time={@guide_meta.read_time}
+>
+  <p>
+    Give a coding agent a terminal and a job, and it can get surprisingly far with tools
+    you already have. It runs a command, reads the result, pipes it through something else,
+    writes a small script, and keeps going. Nobody had to build a special AI integration
+    for <code>grep</code>.
+  </p>
+  <p>
+    Then we give the same agent a long menu of MCP tools and make it work through them one
+    call at a time. Fetch these records. Read them. Pick the interesting ones. Call another
+    tool. Read those results too. Somewhere in the middle, a model that can write a perfectly
+    good program has become the person manually copying cells between spreadsheets.
+  </p>
+  <p>
+    That's the appeal of CLI tools for AI agents. They give an agent room to compose a solution,
+    and they let ordinary programs do the parts that don't need a language model.
+  </p>
+
+  <h2 id="choose">Why developers are choosing CLI tools for agents</h2>
+  <p>
+    Peter Steinberger, <a href="https://x.com/steipete">@steipete</a> on X, put it bluntly
+    in his October 2025 workflow post:
+  </p>
+  <blockquote>
+    <p>Almost all MCPs really should be clis.</p>
+  </blockquote>
+  <p>
+    In <a href="https://steipete.me/posts/just-talk-to-it#what-about-mcps">Just Talk To It</a>,
+    he describes using familiar command-line tools and letting an agent read help when it
+    needs it, instead of loading a large tool catalog into the conversation. His example is
+    GitHub: why introduce another interface when the agent can already use <code>gh</code>?
+  </p>
+  <p>
+    The reason is easy to recognize. A terminal agent already has a way to run
+    programs, inspect files, and recover from errors. A CLI fits into that working environment
+    without asking it to learn a separate interaction pattern for each service.
+  </p>
+
+  <h2 id="compose">The useful part is what happens between commands</h2>
+  <p>
+    Suppose you want a short list of open pull requests, leaving out drafts. An agent
+    could fetch a page of results, read every entry, discard the drafts, and write out the
+    remaining numbers and titles. Or it could ask the computer to do that:
+  </p>
+  <.docs_code phx-no-format label="Filter pull requests before the agent reads them">set -o pipefail
+
+gh pr list --repo OWNER/REPO --state open --limit 100 \
+  --json number,title,isDraft |
+  jq -r '.[] | select(.isDraft == false) | [.number, .title] | @tsv'</.docs_code>
+  <p>
+    Replace <code>OWNER/REPO</code> with a repository you can read. This Bash pipeline needs
+    an authenticated GitHub CLI and <code>jq</code>; it checks up to 100 open pull requests,
+    not the entire history. GitHub documents the available fields in its <a href="https://cli.github.com/manual/gh_pr_list">pull-request CLI reference</a>.
+  </p>
+  <p>
+    The model gets a small list to reason about. The JSON parsing and filtering happen
+    outside its context window. Need to compare that list with a local release checklist?
+    Save it to a file and write a few lines of Python. Need the same check tomorrow? Keep
+    the script. You don't need somebody to build a tool for that exact combination.
+  </p>
+  <p>
+    This is where a narrow MCP wrapper can get in the way. It exposes the operations and
+    arguments its author chose. If the underlying CLI has a useful flag the wrapper doesn't
+    expose, the agent has to find a workaround or wait for the wrapper to catch up. With the
+    CLI, it can use the available commands and combine them with the rest of the environment.
+    The account's permissions still apply.
+  </p>
+
+  <h2 id="tokens">Where the token savings come from</h2>
+  <p>
+    There are two separate costs here. First, the agent needs to learn which tools exist and
+    how to call them. A client that puts every tool definition into the prompt pays that
+    context cost before the work begins. A CLI can let the agent read the relevant help as
+    it goes. Help text still costs tokens when the agent reads it, but unrelated commands
+    don't have to come along for the ride.
+  </p>
+  <p>
+    Second, there's the data moving between tools. If a command returns ten thousand log
+    lines and the next step is to count failures by service, a program can do the counting.
+    The agent needs the counts and a few representative failures. Sending it the whole log
+    first spends context on a job the computer already knows how to do.
+  </p>
+  <p>
+    A script can also handle a loop, combine several read-only checks, and stop on an error
+    without asking the model to choose every next call. That can reduce model round trips
+    as well as the amount of text it reads. The model still decides what to investigate and
+    what the findings mean. It just doesn't have to supervise every row.
+  </p>
+  <p>
+    Anthropic described the same problem in <a href="https://www.anthropic.com/engineering/code-execution-with-mcp">Code execution with MCP</a>.
+    Its November 2025 example reduced tool-loading context from 150,000 tokens to 2,000,
+    a 98.7% reduction, by loading tool definitions on demand. It also describes processing
+    intermediate results in code before returning selected information to the model.
+    That example used MCP underneath. It demonstrates why the execution pattern matters;
+    it is not a benchmark showing that every CLI is 98.7% cheaper than MCP.
+  </p>
+  <p>
+    You can lose the advantage by dumping huge command output straight back into the chat.
+    You can also spend it on repeated guesses at undocumented flags. A useful agent CLI has
+    discoverable help, structured output, predictable errors, and a way to run without
+    interactive prompts. The terminal alone doesn't provide those things.
+  </p>
+
+  <h2 id="compare">MCP can be part of the script too</h2>
+  <p>
+    MCP, the Model Context Protocol, standardizes how clients discover and call tools.
+    It doesn't require a model to read every intermediate result or forbid a client from
+    calling tools in code. A rigid menu is a limitation of that particular server and client,
+    not a rule that every MCP integration must follow.
+  </p>
+  <p>
+    Steinberger's <a href="https://github.com/openclaw/mcporter">MCPorter</a>
+    makes the overlap concrete: it lets developers call MCP tools from TypeScript or package
+    them as a CLI. You can keep an existing integration and change how the agent uses it.
+    Anthropic's code-execution approach makes the same point from the other direction.
+  </p>
+  <p>
+    MCP also earns its place when the client has no terminal, or when you want a shared tool
+    interface across several clients. A hosted assistant with connector support shouldn't
+    need a shell just to read a record. For a coding agent that already works in a terminal,
+    though, a good CLI is a sensible first choice. Try the tool it can already compose with.
+  </p>
+
+  <h2 id="production">Keep the flexibility. Limit the production access.</h2>
+  <p>
+    There's a catch when the commands reach production. The same freedom that lets an agent
+    combine three useful tools also lets it combine three dangerous ones. Giving it your
+    administrator credentials because it knows how to use the CLI is still giving it your
+    administrator credentials.
+  </p>
+  <p>
+    Let the agent write scripts and process results in its workspace. Give the remote account
+    only the operations you want it to perform. An MCP tool can expose an unrestricted shell;
+    a CLI can call a service that permits only specific actions. Neither name tells you how
+    much authority the agent actually has. We go through that progression in <.link navigate={
+      ~p"/guides/give-ai-agents-safe-production-access"
+    }>how to give an AI agent safe access to production</.link>.
+  </p>
+
+  <h2 id="emisar-example">Where emisar fits</h2>
+  <p>
+    This is why emisar offers both interfaces. A terminal agent can use the CLI, compose
+    read operations in scripts, and filter JSON results before bringing them back into the
+    conversation. A client that supports MCP can call the same infrastructure actions.
+    Both paths check access and apply your policy; using the CLI doesn't skip an approval.
+  </p>
+  <p>
+    The program is called <code>emisar-mcp</code>, but it also works directly from the terminal.
+    Its <.link navigate={~p"/docs/mcp-reference#command-line"}>CLI reference</.link>
+    covers discovery, JSON output, and following an operation to its result. Give the agent
+    room to write the script. Keep the rules about what it may do on your servers outside
+    that script.
+  </p>
+</.guide_page>

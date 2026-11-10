@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="quickstart"
-      updated="October 21, 2026"
+      updated="November 10, 2026"
       toc={[
         {"create-account", "Create your account"},
         {"install-runner", "Install the runner"},
@@ -267,6 +267,20 @@ Runner is connected and healthy.</.docs_code>
           href={~p"/app/agents"}
           class="text-brand-400 hover:text-brand-300"
         >AI agents</a>.
+      </p>
+
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        A terminal agent or script can also call the installed CLI directly. Run <code>emisar-mcp auth</code>, then
+        <code>emisar-mcp list_tools</code>
+        to see the tools.
+        The
+        <.link
+          href={~p"/docs/mcp-reference#command-line"}
+          class="text-brand-400 hover:text-brand-300"
+        >CLI reference</.link>
+        explains JSON output and how to get a result after losing a response.
+        CLI and MCP requests go through the same server and runner checks.
+        The key you use decides what you can access.
       </p>
 
       <.docs_h2 id="workflow">Choose the next task</.docs_h2>

@@ -9,10 +9,11 @@
           Custom MCP server vs emisar
         </.marketing_heading>
         <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
-          A custom MCP server makes sense when you need a small adapter over an API that already
-          handles authorization and audit. emisar fits ongoing agent work across real hosts,
-          through actions you can review and control. The decision is how much of that execution
-          system your team wants to build and maintain.
+          A custom MCP (Model Context Protocol) server makes sense when you need a small adapter
+          for an existing API. If that API already checks
+          permissions and records activity, you can reuse those controls. emisar fits ongoing
+          agent work across hosts, through actions you can review and control. Choose how
+          much of that system your team wants to build and maintain.
         </p>
       </div>
 
@@ -115,14 +116,14 @@
         {"Policy & approval", "Conditional logic in code plus a homemade approval queue",
          "Risk-tier defaults + per-action overrides, human approval, and standing grants that expire"},
         {"Per-user access", "Hand-rolled, and easy to get subtly wrong",
-         "Per-member runner scopes in UI, API, and dispatch; keys inherit the creator's scope at call time"},
+         "Member permissions limit runner access in the console, API, and action requests; keys use their creator's current permissions"},
         {"Multi-client access",
          "Auth and transport work per client (Claude, ChatGPT, Cursor, CLIs)",
          "OAuth 2.1 remote MCP plus a stdio bridge, one catalog behind both"},
         {"Output safety", "Your redaction regexes, your output caps, your bug if one leaks",
          "20 built-in patterns plus your own, masked on the host before egress; output bytes clamped"},
         {"Audit", "Logs you design, store, and have to prove weren't edited",
-         "Hash-chained host journal (emisar audit verify), searchable cloud audit, NDJSON SIEM export"},
+         "Searchable cloud audit and a separate hash-chained host journal checked with emisar audit verify. Export NDJSON to SIEM tools"},
         {"Failure modes", "You handle reconnects, orphaned runs, and leaked child processes",
          "Run-state reconciled on reconnect; a dropped socket keeps the run alive and replays its result; children reaped on cancel and timeout"}
       ] %>
@@ -192,7 +193,7 @@
           <h3 class="text-sm font-semibold text-zinc-100">A shared action model</h3>
           <p class="mt-2 text-base leading-7 text-zinc-400 text-pretty sm:mt-0">
             Actions are defined in YAML packs. Policy uses risk tiers and overrides,
-            and agents connect over MCP.
+            and agents connect through CLI or MCP.
           </p>
         </div>
         <div class="py-5 sm:grid sm:grid-cols-[14rem_1fr] sm:gap-8">

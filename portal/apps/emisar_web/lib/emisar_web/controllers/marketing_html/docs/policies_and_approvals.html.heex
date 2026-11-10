@@ -4,8 +4,9 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="policies-and-approvals"
-      updated="November 6, 2026"
+      updated="November 10, 2026"
       toc={[
+        {"access-layers", "Identity, policy, and host checks"},
         {"how-decisions", "How a decision is made"},
         {"first-policy", "A sensible first policy"},
         {"editing", "Editing the policy"},
@@ -21,6 +22,22 @@
           Set defaults by risk, then add rules for particular actions and hosts.
         </:dek>
       </.docs_header>
+
+      <.docs_h2 id="access-layers">Identity, policy, and host checks</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        AI agent access control starts with who is calling and which hosts they may use.
+        emisar checks their account membership, role, and runner access. Your action policy
+        decides whether the request runs, needs approval, or is denied. Before running it,
+        the runner checks the trusted pack, inputs, and host limits.
+      </p>
+      <p class="mt-4 text-base leading-7 text-zinc-400">
+        CLI and MCP calls go through these same checks. Clients can get different results
+        if their keys allow access to different hosts or actions. Set host access in <.link
+          href={~p"/docs/teams-and-access"}
+          class="text-brand-400 hover:text-brand-300"
+        >teams, roles, and access</.link>.
+        Use policy rules to control which actions run.
+      </p>
 
       <.docs_h2 id="how-decisions">How a decision is made</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -43,7 +60,7 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         If no override matches, the action's risk tier defaults
         (<.docs_risk tier="low" /> / <.docs_risk tier="medium" /> / <.docs_risk tier="high" /> /
-        <.docs_risk tier="critical" />) make the decision. In the policy, these decisions are <code class="text-brand-300">allow</code>, <code class="text-amber-300">require_approval</code>,
+        <.docs_risk tier="critical" />) are used to make the decision. In the policy, these decisions are <code class="text-brand-300">allow</code>, <code class="text-amber-300">require_approval</code>,
         and <code class="text-red-400">deny</code>. When the policy cannot answer (a missing
         policy, an unknown tier), it denies.
       </p>
@@ -265,19 +282,18 @@
 
       <.docs_h2 id="reason">The reason requirement</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Every dispatch, from the console or MCP, must include a <.docs_inline_code>reason</.docs_inline_code>.
+        Every dispatch, from the console, CLI, or MCP, must include a <.docs_inline_code>reason</.docs_inline_code>.
         Approvers see it, and the run and audit event keep it. For an agent, the reason says
         why it ran <.docs_inline_code>nomad job revert</.docs_inline_code>;
         the action name only says what.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        An MCP caller can also send
+        A CLI or MCP caller can also send
         <.docs_inline_code>evidence</.docs_inline_code>
         (earlier findings or run IDs that led to the call) and
         <.docs_inline_code>expected</.docs_inline_code>
-        (the outcome that confirms success). Together with the reason, they preserve what the
-        agent saw, why it acted, and what it expected. Operator and runbook dispatches leave
-        both empty.
+        (the outcome that confirms success). These fields record what the agent saw, why it acted, and what result it expected.
+        Console and runbook requests leave both empty.
       </p>
     </.docs_layout>
   </section>

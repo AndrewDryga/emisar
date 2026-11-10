@@ -38,9 +38,19 @@
           The three pieces.
         </h2>
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
-          Your AI agent connects to the emisar control plane over MCP. The runner opens an outbound
-          TLS WebSocket and exposes no inbound listener. The control plane relays requests and
-          results between them and enforces your policy.
+          Connect your agent to emisar through the
+          <.link
+            href={~p"/docs/mcp-reference#command-line"}
+            class="text-brand-300 hover:text-brand-200"
+          >CLI</.link>
+          for terminal use and scripts, or through
+          <.link
+            href={~p"/docs/mcp-reference"}
+            class="text-brand-300 hover:text-brand-200"
+          >MCP</.link>
+          if your AI client supports it. The runner opens an outbound TLS WebSocket
+          and exposes no inbound listener. The control plane relays requests and results between
+          them and enforces your policy.
         </p>
       </div>
     </div>

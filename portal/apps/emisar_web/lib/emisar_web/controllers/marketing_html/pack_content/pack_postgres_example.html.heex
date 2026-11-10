@@ -1,0 +1,29 @@
+<section aria-labelledby="postgres-ai-example">
+  <h2 id="postgres-ai-example">Example: diagnose a PostgreSQL lock incident</h2>
+  <blockquote class="mt-4 border-l-2 border-brand-500 pl-5 text-zinc-200">
+    Find the sessions blocking checkout queries. Report the blocking chain, query age,
+    and affected sessions. Suggest a query to cancel only if the findings support it, then wait for my decision.
+  </blockquote>
+  <ol class="mt-5 list-decimal space-y-3 pl-5">
+    <li>
+      Read the blocking chains and check the sessions they identify. Confirm the process
+      ID (PID) and current query before suggesting a change.
+    </li>
+    <li>
+      Consider <a href="#action-postgres.cancel_query">query cancellation</a>
+      if the findings support it. This stops the current query and keeps the connection open.
+      <a href="#action-postgres.terminate_backend">Terminating a backend</a>
+      disconnects
+      the session. Both are high-risk actions with different consequences.
+    </li>
+    <li>
+      Read the blocking chain again after the action finishes. Check whether the block
+      cleared and report which sessions still need attention.
+    </li>
+  </ol>
+  <p>
+    Set policy rules for the reads and changes the agent may make. Asking it to wait in a
+    prompt gives it guidance. Requiring approval in policy makes it wait before running
+    the action. See <.link navigate={~p"/docs/policies-and-approvals"}>how action policies and approvals work</.link>.
+  </p>
+</section>

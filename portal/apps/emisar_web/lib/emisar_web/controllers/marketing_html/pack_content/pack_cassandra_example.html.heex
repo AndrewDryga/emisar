@@ -1,0 +1,25 @@
+<section aria-labelledby="cassandra-ai-example">
+  <h2 id="cassandra-ai-example">Example: investigate a Cassandra node running out of disk</h2>
+  <blockquote class="mt-4 border-l-2 border-brand-500 pl-5 text-zinc-200">
+    Check cluster health, active streams, compaction backlog, and storage use on this node.
+    Explain what is using space and propose the next step. Wait for my decision before changing anything.
+  </blockquote>
+  <ol class="mt-5 list-decimal space-y-3 pl-5">
+    <li>
+      Check node status and streaming to see whether maintenance is already in progress.
+    </li>
+    <li>
+      Compare compaction statistics with disk use. If the runner cannot read a storage
+      directory, find out why before drawing conclusions about its size.
+    </li>
+    <li>
+      Review the suggested action and its inputs. After the approved change finishes,
+      run the same checks again to see what changed.
+    </li>
+  </ol>
+  <p>
+    Set policy rules to enforce what the agent can do, even when the prompt asks it to wait.
+    See how this worked in production in the <.link navigate={~p"/use-cases/cassandra-migration"}>Cassandra migration field report</.link>.
+    It explains what we measured and which decisions the operator made.
+  </p>
+</section>

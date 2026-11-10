@@ -17,8 +17,9 @@
           The best way to give your AI agents access to production.
         </.marketing_heading>
         <p class="rise-2 mt-6 max-w-2xl text-lg leading-relaxed text-zinc-300">
-          A Zero-Trust gateway connecting Claude, Cursor, ChatGPT, and other MCP agents
-          to your infrastructure. Give your agents the tools to investigate incidents,
+          A Zero-Trust gateway for infrastructure automation with AI agents.
+          Connect through CLI or MCP.
+          Give your agents the tools to investigate incidents,
           manage deployments, and handle daily operations. You control what runs,
           what needs approval, and what stays off-limits in one central place for your Team.
         </p>
@@ -146,12 +147,11 @@
       <div class="mx-auto max-w-3xl text-center">
         <p class="text-base font-semibold text-brand-400">How access works</p>
         <.marketing_heading tag="h2" scale={:section} class="mt-2">
-          Connect your infrastructure through one MCP server.
+          Connect your infrastructure to an AI agent.
         </.marketing_heading>
         <p class="mt-6 text-lg text-zinc-400 leading-relaxed">
-          Add capabilities through packs, without buying another access tool or setting up
-          agent access in another system. Your agents get one organized catalog, governed
-          by the same policies, through the MCP connection they already use.
+          Install packs for the software you run or create your own. Your agent can find and call their actions
+          through CLI or MCP. Both use the same policy, audit logging and runner checks.
         </p>
       </div>
 
@@ -517,7 +517,7 @@
         <%= for {number, title, detail} <- [
           {"01", "Install the runner", "Create a free account and copy the install command to your Linux host. The runner connects to emisar automatically."},
           {"02", "Choose your packs", "Use the packs suggested for your host. Set which actions run on their own and which need approval."},
-          {"03", "Connect your agent", "Add emisar to your MCP client. Ask your agent to investigate a service, check a deployment, or handle a routine task."}
+          {"03", "Connect your agent", "Use the direct CLI or connect your MCP client. Ask your agent to investigate a service, check a deployment, or handle a routine task."}
         ] do %>
           <li class="grid grid-cols-[2rem_minmax(0,1fr)] gap-4 py-6">
             <span class="pt-0.5 font-mono text-sm text-brand-400">{number}</span>

@@ -11,7 +11,7 @@
     <div class="mx-auto max-w-4xl px-6 lg:px-8">
       <p class="text-base font-semibold text-brand-400">Changelog</p>
       <.marketing_heading tag="h1" scale={:display} class="mt-2">
-        What's new
+        emisar release notes
       </.marketing_heading>
       <p class="mt-8 max-w-2xl text-lg leading-8 text-zinc-400">
         Shipping notes from the emisar team. Subscribe via
@@ -20,6 +20,17 @@
         </a>
         or watch the <.external_link href="https://github.com/andrewdryga/emisar">GitHub repo</.external_link>.
       </p>
+      <nav
+        aria-label="Current setup documentation"
+        class="mt-6 flex flex-wrap gap-x-6 gap-y-3 text-sm font-semibold"
+      >
+        <.link href={~p"/docs/quickstart"} class="text-brand-300 hover:text-brand-200">Set up a runner</.link>
+        <.link
+          href={~p"/docs/mcp-reference#command-line"}
+          class="text-brand-300 hover:text-brand-200"
+        >Use the CLI or MCP</.link>
+        <.link href={~p"/packs"} class="text-brand-300 hover:text-brand-200">Browse action packs</.link>
+      </nav>
     </div>
   </section>
 
@@ -75,6 +86,37 @@
                 </ul>
               </div>
             </div>
+            <nav
+              :if={
+                entry.slug in [
+                  "medusa-backups-and-least-privilege-pack-recipes",
+                  "operational-guides-and-nomad-diagnostics"
+                ]
+              }
+              aria-label="Related current documentation"
+              class="mt-6 flex flex-wrap gap-x-5 gap-y-3 text-sm"
+            >
+              <.link
+                :if={entry.slug == "medusa-backups-and-least-privilege-pack-recipes"}
+                href={~p"/packs/medusa"}
+                class="text-brand-300 hover:text-brand-200"
+              >Medusa backup actions</.link>
+              <.link
+                :if={entry.slug == "medusa-backups-and-least-privilege-pack-recipes"}
+                href={~p"/docs/use-a-published-pack"}
+                class="text-brand-300 hover:text-brand-200"
+              >Install and trust a pack</.link>
+              <.link
+                :if={entry.slug == "operational-guides-and-nomad-diagnostics"}
+                href={~p"/packs/nomad"}
+                class="text-brand-300 hover:text-brand-200"
+              >Nomad diagnostic actions</.link>
+              <.link
+                :if={entry.slug == "operational-guides-and-nomad-diagnostics"}
+                href={~p"/docs/runbooks"}
+                class="text-brand-300 hover:text-brand-200"
+              >Automate a runbook</.link>
+            </nav>
           </article>
         <% end %>
       </div>

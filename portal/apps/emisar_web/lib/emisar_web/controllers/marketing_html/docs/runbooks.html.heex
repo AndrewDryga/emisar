@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="runbooks"
-      updated="November 2, 2026"
+      updated="November 10, 2026"
       toc={[
         {"shortest-path", "The shortest path"},
         {"create", "1. Create or import a draft"},
@@ -15,15 +15,16 @@
         {"results", "6. Read the result"},
         {"definition", "Definition v1 reference"},
         {"failure", "Failure and safety"},
-        {"agents", "LLMs and MCP"},
+        {"agents", "Agents, CLI, and MCP"},
         {"limits", "Limits"}
       ]}
     >
       <.docs_header current="runbooks">
         <:dek>
-          Build a procedure from declared actions and publish it only when every target
-          resolves. A run executes one frozen plan through policy and approval, and stages
-          stop at the first failure. Each command, output, and decision remains reviewable.
+          A runbook automates a procedure you have reviewed. Build it from actions, arrange the
+          steps into stages, and publish it once emisar can find and check every target.
+          Each run keeps the plan it started with and follows your policy and approval rules.
+          A failure stops later stages. You can review every command, output, and decision.
         </:dek>
       </.docs_header>
 
@@ -504,7 +505,7 @@
         dispatches. A runbook that targets a signature-enforcing runner fails closed with <code>signed_runbook_unsupported</code>; use individually signed actions for that runner.
       </.docs_callout>
 
-      <.docs_h2 id="agents">LLMs and MCP</.docs_h2>
+      <.docs_h2 id="agents">Agents, CLI, and MCP</.docs_h2>
       <p class="mt-5 text-base text-zinc-400">
         An agent reads runbooks with
         <.docs_inline_code>list_runbooks</.docs_inline_code>
@@ -539,6 +540,34 @@
           href={~p"/docs/connect-claude-ai"}
           class="text-brand-400 hover:text-brand-300"
         >Connect a cloud LLM</.link>.
+      </p>
+
+      <.docs_h3 id="cli-runbook">Run the published procedure from the CLI</.docs_h3>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        You can also run the Caddy rollout from a terminal. Sign in with <code>emisar-mcp auth</code>, list your runbooks, and inspect the published version.
+        Replace the example slug and reference with the values returned for your account.
+        Supply the inputs the runbook needs. For this example, set the configuration path
+        only if you want to change its default.
+      </p>
+      <.docs_code phx-no-format label="shell">emisar-mcp list_runbooks --json
+emisar-mcp get_runbook '&#123;"slug":"&lt;your published slug&gt;"&#125;' --json
+emisar-mcp execute_runbook '&#123;"runbook_ref":"&lt;returned live reference&gt;","reason":"Run the reviewed demonstration procedure.","input_values":&#123;&#125;&#125;' --json</.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Leave <code>input_values</code> empty only when every required input has a default.
+        Check the plan and approval status before assuming the run has started. The runbook
+        can be <code>pending_approval</code>, <code>active</code>, <code>succeeded</code>, <code>halted</code>, or <code>cancelled</code>. A halted run may already have completed
+        some steps. It does not undo them.
+      </p>
+      <p class="mt-4 text-base leading-7 text-zinc-400">
+        JSON mode returns one tool result. If work is unfinished, use the follow-up call it
+        returns to check again. In readable output mode, Ctrl-C stops waiting but leaves
+        the runbook running. If you lose a response, use its operation ID to find out what
+        happened before sending another request. The
+        <.link
+          href={~p"/docs/mcp-reference#command-line"}
+          class="text-brand-400 hover:text-brand-300"
+        >CLI reference</.link>
+        explains exit codes, follow-up calls, and cancellation.
       </p>
 
       <.docs_h2 id="limits">Limits</.docs_h2>

@@ -14,6 +14,7 @@ defmodule EmisarWeb.MarketingHTML do
   embed_templates "marketing_html/guides/*"
   embed_templates "marketing_html/docs/integrations/*"
   embed_templates "marketing_html/use_cases/*"
+  embed_templates "marketing_html/pack_content/*"
 
   attr :signed_in?, :boolean, default: false
   attr :title, :string, required: true
@@ -1020,7 +1021,7 @@ defmodule EmisarWeb.MarketingHTML do
 
   @doc """
   The request-path figure in the technical guide. The AI agent calls the hosted control plane
-  over MCP, and the runner on the customer's server dials out to it before running declared
+  through CLI or MCP, and the runner on the customer's server dials out to it before running declared
   actions against local services. The network arrows point from the side that opens the
   connection. Stacks vertically below `md`.
   """
@@ -1031,7 +1032,7 @@ defmodule EmisarWeb.MarketingHTML do
     <figure class={@class}>
       <div class="flex flex-col md:grid md:py-3 md:pr-3 md:grid-cols-[minmax(0,1fr)_48px_minmax(0,1fr)_112px_minmax(0,1fr)_48px_minmax(0,1fr)]">
         <.diagram_node title="AI agent" items={["Claude", "ChatGPT", "Cursor"]} />
-        <.diagram_link direction={:forward} labels={["MCP"]} />
+        <.diagram_link direction={:forward} labels={["CLI / MCP"]} />
         <.diagram_node title="Control plane" items={["Identity", "Policy", "Approvals", "Audit"]} />
         <.diagram_link direction={:back} labels={["outbound", "WebSocket"]} crosses_boundary />
         <div class="relative -mx-3 flex flex-col rounded-xl border border-dashed border-zinc-700 p-[11px] md:col-span-3 md:-m-3 md:grid md:grid-cols-[minmax(0,1fr)_48px_minmax(0,1fr)]">

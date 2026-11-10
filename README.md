@@ -2,10 +2,11 @@
 
 **Leave the agent working. Keep production authority bounded.**
 
-emisar gives MCP-capable agents a catalog of declared infrastructure actions
-instead of a shell. Policy decides what runs, what waits for a person, and what
-is denied. A small outbound-only runner checks the action again on the host
-before it executes anything.
+emisar gives AI agents remote access to infrastructure through CLI or MCP.
+You choose the actions they can use. Your policy decides what runs automatically,
+what needs approval, and what is denied. A small runner connects out from each
+host and checks every request before running it. Agents call these actions
+without receiving a general production shell.
 
 Start with the public pack catalog and let emisar suggest the packs that match a
 host. Add your own actions without adding another MCP server to every
@@ -43,7 +44,8 @@ GitHub is the optional release fallback. If you want that fallback, also allow
    run is present in the audit trail.
 4. Open **AI agents** and connect your client. Remote MCP clients use OAuth;
    local stdio clients can use the `emisar-mcp` bridge and its browser approval
-   flow.
+   flow. Agents that work in a terminal can also call tools directly with the
+   [emisar-mcp CLI](https://emisar.dev/docs/mcp-reference#command-line).
 
 The complete walkthrough, including expected output and troubleshooting, is at
 [emisar.dev/docs/quickstart](https://emisar.dev/docs/quickstart). An agent can
@@ -54,7 +56,7 @@ perform and certify the setup with the public
 
 ```text
 AI client
-    |  MCP: discover actions, request one with typed arguments
+    |  CLI or MCP: discover actions, request one with typed arguments
     v
 emisar control plane
     |  authenticate, scope, apply policy, wait for approval when required

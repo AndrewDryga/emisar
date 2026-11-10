@@ -18,7 +18,7 @@
   </p>
   <p>
     For coding, the safe way to let go is isolation. Tools like
-    <a href="https://coop.dryga.com" target="_blank" rel="noopener noreferrer">coop</a>
+    <a href="https://coop.dryga.com" target="_blank" rel="noopener noreferrer">co:op</a>
     <i>(our founder built it, so we're biased)</i>
     run the agent inside a disposable container with full
     permissions and nothing valuable in reach: the worst it can do is wreck one repo you restore
@@ -45,10 +45,11 @@
     eventually "review" is just paste-and-Enter on a script you didn't really read. By then,
     generated code reaches your shell through a reflex. And the loop is still the babysitting mode
     from the top of this page: slow, manual, and capped by your patience. Here's
-    the <.link navigate={~p"/compare/copy-paste-ai-ops"}>full side-by-side</.link> if you want it.
+    the <.link navigate={~p"/compare/copy-paste-ai-ops"}>copy-paste AI ops comparison</.link>
+    if you want it.
   </p>
 
-  <h2 id="raw-ssh">Give it direct SSH access</h2>
+  <h2 id="raw-ssh">Give the AI agent direct SSH access</h2>
   <p>
     The obvious upgrade is a shell. And when agents run without a sandbox, sometimes you grant it
     without knowing: the agent finds your <code>gcloud</code>
@@ -100,10 +101,10 @@
     where you started.
   </p>
 
-  <h2 id="one-mcp">One MCP for all of infrastructure</h2>
+  <h2 id="one-mcp">One place for infrastructure actions</h2>
   <p>
     Follow that progression to its end and you get the idea behind emisar: instead of a server per
-    product, one MCP whose vocabulary is <strong>actions</strong>
+    product, one catalog whose vocabulary is <strong>actions</strong>
     (commands declared ahead of
     time, with typed arguments and validation). Read the service logs. Check replication lag.
     Restart this unit. An action is just a declared, validated command a host can run, so anything
@@ -115,9 +116,13 @@
   <p>
     Because everything goes through one door, you get the two things the server-per-tool world
     couldn't give you: one policy in front of every call, and one record behind it. The policy
-    allows a call, denies it, or holds it for a human, by rules you set once. The record keeps
-    every call with its inputs, its decision, and who asked, including the calls that were denied. It also keeps the redacted output of the calls that ran. The agent connects the way it connects to
-    any other MCP tool. On your side, a small runner on each host dials out, re-validates every
+    allows a call, denies it, or holds it for a human, by <.link navigate={
+      ~p"/docs/policies-and-approvals"
+    }>access-control rules you set once</.link>.
+    The record keeps
+    every call with its inputs, its decision, and who asked, including the calls that were denied. It also keeps the redacted output of the calls that ran. The agent can use the same actions through the CLI or MCP.
+    Use the <.link navigate={~p"/docs/mcp-reference#command-line"}>CLI</.link>
+    from a terminal or script, or connect an AI client that supports MCP tools. On your side, a small runner on each host dials out, re-validates every
     argument, and applies the configured redaction rules to the output before anything leaves the machine. The
     <.link navigate={~p"/security"}>security model</.link>
     explains why the host, not the cloud, gets the last word.

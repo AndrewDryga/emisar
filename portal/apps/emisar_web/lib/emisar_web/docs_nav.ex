@@ -354,7 +354,8 @@ defmodule EmisarWeb.DocsNav do
               title: "Policies & approvals",
               path: "/docs/policies-and-approvals",
               icon: "trust.policy_enforced",
-              keywords: "risk tier deny allow grant approve",
+              keywords:
+                "risk tier deny allow grant approve authorization permissions access control",
               desc: "Risk-tier defaults, per-action overrides, approvals, and standing grants."
             },
             %{
@@ -496,7 +497,7 @@ defmodule EmisarWeb.DocsNav do
           pages: [
             %{
               slug: "mcp-reference",
-              title: "MCP CLI & reference",
+              title: "CLI and MCP reference",
               path: "/docs/mcp-reference",
               icon: "interface.api",
               keywords:

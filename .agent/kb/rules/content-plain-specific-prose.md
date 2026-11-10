@@ -28,6 +28,10 @@ writer first.
 ## Good
 
 - Lead with the reader's actual job, question, or decision.
+- Preserve the author's voice, narrative order, examples, and rhythm when editing
+  existing prose. SEO work and plain-English cleanup call for focused edits, not
+  replacing a conversational guide with a checklist. Rewrite the whole piece only
+  when that change is requested.
 - Describe the supported workflow in navigation cards, search summaries, and
   introductions. Put a limitation beside the setup or buying decision it affects,
   state it once, and explain the available path. Keep material security, support,
@@ -38,9 +42,10 @@ writer first.
 - Explain a fact once, in the order the reader needs it. Do not follow an
   abstract summary with a paraphrase of the same behavior.
 - Use active verbs and the ordinary word when it is equally precise.
-- Preserve product-name styling in prose and UI: `co:op` is lowercase with a
-  colon, including in headings. Its executable, paths, URLs, and configuration
-  identifiers remain `coop`.
+- Preserve product-name styling in prose and UI: `emisar` is lowercase, including
+  in headings and at the start of a sentence. Keep code identifiers such as
+  `EmisarWeb` unchanged. `co:op` is lowercase with a colon, including in headings.
+  Its executable, paths, URLs, and configuration identifiers remain `coop`.
 - Call a standard operation by its standard name — a key is *exchanged* for a
   token (the industry's own term), never "traded". A coined verb reads cute
   once and costs a search hit forever.

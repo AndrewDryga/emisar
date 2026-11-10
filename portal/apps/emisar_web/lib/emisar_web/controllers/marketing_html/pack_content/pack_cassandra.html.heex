@@ -1,0 +1,31 @@
+<section aria-labelledby="cassandra-ai-tasks">
+  <h2 id="cassandra-ai-tasks">What your agent can do</h2>
+  <div class="mt-5 space-y-6">
+    <div>
+      <h3>Check cluster health before maintenance</h3>
+      <p>
+        Use <a href="#action-cassandra.nodetool_status">node status</a> to check the ring,
+        then <a href="#action-cassandra.nodetool_netstats">streaming status</a> to see data
+        transfers in progress before planning maintenance.
+      </p>
+    </div>
+    <div>
+      <h3>Investigate compaction and disk pressure</h3>
+      <p>
+        Read <a href="#action-cassandra.nodetool_compactionstats">compaction statistics</a>
+        and run <a href="#action-cassandra.analyze_disk_pressure">disk pressure analysis</a>
+        to compare queued work with disk use. Disk analysis needs access to the selected
+        Cassandra configuration and the storage directories it lists.
+      </p>
+    </div>
+    <div>
+      <h3>Review a repair before running it</h3>
+      <p>
+        The <a href="#action-cassandra.nodetool_repair">Cassandra repair action</a>
+        defaults to preview mode, which needs Cassandra 4.0 or later, and is high risk.
+        Review the node, keyspace, and timing: repairs can put heavy load on disks, CPUs,
+        and the network.
+      </p>
+    </div>
+  </div>
+</section>

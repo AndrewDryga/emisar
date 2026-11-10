@@ -55,6 +55,7 @@ defmodule EmisarWeb.MarketingLinkingTest do
     # must draw links from high-authority product pages — not sit one click deep
     # behind /guides alone. Assert each is linked from a page other than /guides.
     guides = ~w(
+      /guides/cli-vs-mcp-for-infrastructure-agents
       /guides/how-emisar-works
       /guides/give-ai-agents-safe-production-access
       /guides/prompt-injection-for-ops-teams
@@ -71,6 +72,15 @@ defmodule EmisarWeb.MarketingLinkingTest do
 
       assert linkers != [],
              "#{guide} is only reachable from /guides — give it an inbound link from a product page"
+    end
+  end
+
+  test "buyer pages link directly to the CLI and MCP reference", %{conn: conn} do
+    for path <- ["/", "/how-it-works", "/changelog"] do
+      html = conn |> get(path) |> html_response(200)
+
+      assert "/docs/mcp-reference" in links_from_html(html),
+             "#{path} needs a contextual link to the CLI and MCP reference"
     end
   end
 

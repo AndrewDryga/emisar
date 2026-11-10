@@ -25,7 +25,7 @@ defmodule EmisarWeb.MarketingController do
   @pages [
     {"/security", :security, :security, "Security & compliance",
      "emisar's security model: pre-approved actions, redacted output, searchable audit, a hash-chained runner journal, and no SSH."},
-    {"/docs", :docs, :docs, "Documentation — runner setup, action packs & MCP",
+    {"/docs", :docs, :docs, "Documentation — runners, action packs, CLI and MCP",
      "Documentation, action pack format, security model, and integration guides for emisar."},
     {"/about", :about, :about, "About", "Why emisar exists and how we built it."},
     {"/support", :support, :support, "Support",
@@ -39,7 +39,7 @@ defmodule EmisarWeb.MarketingController do
     {"/refund-policy", :refund_policy, :refund_policy, "Refund Policy",
      "emisar's refund policy: Free is free; Team is billed monthly or annually via Paddle and cancellable any time; duplicate charges and billing errors are refunded in full."},
     {"/docs/mcp-reference", :mcp_reference, :mcp_reference,
-     "emisar-mcp CLI and MCP API reference",
+     "emisar CLI and MCP reference: commands, tools and outputs",
      "Use the emisar-mcp CLI from shell scripts, then inspect MCP methods, live tool schemas, mutation recovery, signing, and errors."},
     {"/docs/connect-claude-ai", :connect_claude_ai, :connect_claude_ai, "Connect Claude.ai",
      "Add emisar to Claude.ai as a custom connector over remote MCP and OAuth."},
@@ -76,8 +76,8 @@ defmodule EmisarWeb.MarketingController do
      "Case study: a fleet-wide 502 traced through five layers — via emisar",
      "A real incident: every app behind one anycast edge threw intermittent 502 Connection refused, yet every backend was healthy. An agent on emisar traced it across five layers (FRR, Traefik, Nomad, Consul) to a Traefik OOM loop and a stuck node still advertising a dead ingress. The agent stopped the bleed behind gated approvals and named the durable fix: health-gate the anycast so a node withdraws itself instead of black-holing traffic."},
     {"/use-cases/cassandra-migration", :cassandra_migration, :cassandra_migration,
-     "Moving Cassandra from GCP to bare metal: an AI operator's field report",
-     "How an AI operator built a bare-metal Cassandra platform and used emisar to move 12 application jobs across 14 live keyspaces."},
+     "Cassandra migration from GCP to bare metal: AI agent field report",
+     "An AI agent's Cassandra 5 migration: six GCP nodes to three bare-metal servers, 6.3 TiB of data, continuous writes, validation, and cutover."},
     {"/use-cases/website-cache-stampede", :website_cache_stampede, :website_cache_stampede,
      "How ChatGPT Sol and Terra used emisar to trace and fix a website outage",
      "How ChatGPT Sol and Terra used emisar to investigate a website outage across Nomad, Consul, metrics, and logs, then fixed a missing server cache."},
@@ -91,11 +91,11 @@ defmodule EmisarWeb.MarketingController do
      "How ChatGPT Sol used emisar to deliver $1,800/month in Cassandra backup savings",
      "ChatGPT Sol used emisar to investigate Cassandra backup costs and deliver an estimated $1,800 in monthly savings."},
     {"/compare/raw-ssh-for-ai", :raw_ssh_for_ai, :raw_ssh_for_ai,
-     "Why not just give the LLM SSH?",
+     "Why not just give the AI agents SSH access?",
      "Compare SSH access and emisar action packs for AI agents: host permissions, command scope, approvals, audit, and when each approach fits."},
     {"/compare/custom-mcp-server", :custom_mcp_server, :custom_mcp_server,
      "Custom MCP server vs emisar",
-     "Compare a custom MCP server with emisar for infrastructure access: action validation, policy, host transport, audit, and the tradeoffs to test with one real task."},
+     "Compare a custom Model Context Protocol (MCP) server with emisar for AI infrastructure access: permissions, approvals, host connections, and audit."},
     {"/compare/copy-paste-ai-ops", :copy_paste_ai_ops, :copy_paste_ai_ops,
      "Copy-pasting between an LLM and your terminal",
      "See what changes when an LLM can use a small set of approved actions instead of waiting for you to paste logs, commands, and results back and forth."},
@@ -111,13 +111,12 @@ defmodule EmisarWeb.MarketingController do
     {"/docs/pack-registry", :pack_registry, :pack_registry, "Host your own pack registry",
      "Build a private static registry with packctl, host it over HTTPS, and install packs from immutable URLs."},
     {"/docs/policies-and-approvals", :policies_and_approvals, :policies_and_approvals,
-     "Policies & approvals — control what runs",
-     "Control actions with risk defaults, ordered rules, human approvals, and scoped standing grants."},
+     "AI agent access control: policies and approvals",
+     "Set AI agent access control with runner scope, action policies, risk defaults, approvals, and standing grants. Learn which layer makes each decision."},
     {"/docs/run-an-action", :run_an_action, :run_an_action, "Run an action",
      "Select a runner and action, enter its arguments and reason, dispatch it, and read the result."},
-    {"/docs/runbooks", :runbooks, :runbooks,
-     "Runbooks — build and run staged infrastructure procedures",
-     "Build and publish staged procedures with typed inputs, output extraction, conditions, waits, policy, and approval."},
+    {"/docs/runbooks", :runbooks, :runbooks, "Runbook automation with emisar",
+     "Automate infrastructure runbooks with declared actions, typed inputs, staged execution, approvals, and recorded results. Includes a Caddy rollout example."},
     {"/docs/authentication", :authentication, :authentication,
      "Authentication — sign-in, SSO, MFA & directory sync",
      "Choose magic links, OIDC, MFA, session controls, and SCIM provisioning for your team."},
@@ -204,6 +203,8 @@ defmodule EmisarWeb.MarketingController do
      "No. Set rules by risk tier, action, runner, or runner group. New accounts allow low- and medium-risk actions, require approval for high-risk actions, and deny critical actions. You can change these rules or create standing grants for repeated work."},
     {"What if my runner dies mid-run?",
      "On Linux, when the runner exits, it stops the action it started. If only the connection drops, the action keeps running while the runner is alive. After a host or runner failure, inspect the target before repeating a change: the action may have run even if you never received its result."},
+    {"Can an agent use emisar without an MCP client?",
+     "Yes. Agents and scripts can use emisar-mcp directly from a terminal, with JSON output. CLI and MCP calls use the same server and runner checks. The key you use decides which hosts and actions you can access."},
     {"Is this MCP-compatible?",
      "Yes. Claude.ai and ChatGPT connect through remote MCP with OAuth. Fifteen local clients, including Claude Code, Claude Desktop, Cursor, Windsurf, Zed, Copilot CLI, Gemini CLI, and Codex CLI, can use the emisar stdio bridge. The bridge also works with almost any other MCP agent."},
     {"Can I self-host the control plane?",
@@ -258,9 +259,9 @@ defmodule EmisarWeb.MarketingController do
       )
 
     render(conn, :home,
-      page_title: "Infrastructure access for AI agents through MCP",
+      page_title: "Infrastructure automation for AI agents — CLI and MCP",
       meta_description:
-        "Let your AI agent inspect and operate infrastructure through declared actions. Set the policy for routine work, approvals, and access.",
+        "Let AI agents automate infrastructure tasks through CLI or MCP. Set action permissions, run routine checks, and require approval for risky changes.",
       canonical_url: @base <> "/",
       faqs: @home_faqs,
       pack_count: Catalog.published_pack_count(),
@@ -326,7 +327,7 @@ defmodule EmisarWeb.MarketingController do
       "and #{member_limit(free_plan.members_limit)}; #{team_plan.name} is " <>
       "$#{dollars(team_plan.monthly_price_cents)} per runner per month with " <>
       "#{member_limit(team_plan.members_limit)} and #{team_plan.audit_retention_days}-day " <>
-      "audit retention; #{enterprise_plan.name} is " <>
+      "audit logs; #{enterprise_plan.name} is " <>
       "#{price_description(enterprise_plan.monthly_price_cents)}."
   end
 
@@ -500,9 +501,9 @@ defmodule EmisarWeb.MarketingController do
       )
 
     render(conn, :changelog,
-      page_title: "Changelog",
+      page_title: "emisar changelog: runner, CLI and action-pack releases",
       meta_description:
-        "emisar changelog: signed dispatch, SSO and SCIM, approvals, audit, and the action-pack catalog. emisar gives AI agents approved infrastructure actions.",
+        "emisar release notes for the runner, direct CLI, MCP tools, action packs, and access controls. Follow each release and find current setup documentation.",
       canonical_url: @base <> "/changelog",
       entries: EmisarWeb.Changelog.entries(),
       json_ld: json_ld
@@ -614,15 +615,20 @@ defmodule EmisarWeb.MarketingController do
   # this list drives the index cards, per-guide meta + TechArticle JSON-LD,
   # and the sitemap. {slug, action/template, title, dek, date, read_time, meta}.
   @guides [
+    {"cli-vs-mcp-for-infrastructure-agents", :cli_vs_mcp_for_infrastructure_agents,
+     "CLI vs MCP: why CLI tools work so well for AI agents",
+     "Your agent can write scripts. Let it. Why CLI tools compose well, keep intermediate data out of context, and make room for useful work.",
+     "November 10, 2026", "6 min read",
+     "CLI vs MCP for AI agents: how scripts, pipes, and on-demand tool discovery can save tokens, with examples and a clear role for MCP."},
     {"how-emisar-works", :how_emisar_works, "How emisar works: the technical guide",
-     "Follow a service restart from the agent's MCP request through policy, runner checks, execution, and audit.",
-     "Updated November 2, 2026", "6 min read",
-     "See how emisar checks and runs an infrastructure action, from the MCP request to the result and audit record."},
+     "Follow a service restart from a CLI or MCP request through policy, runner checks, execution, and audit.",
+     "Updated November 10, 2026", "7 min read",
+     "See how emisar checks infrastructure actions from CLI and MCP clients: pack trust, access control, execution, result recovery, and audit records."},
     {"give-ai-agents-safe-production-access", :give_ai_agents_safe_production_access,
      "How to give an AI agent safe access to production",
-     "Compare ways to give agents production access, and see how bounded operational actions and source-controlled changes fit together.",
-     "Updated November 2, 2026", "7 min read",
-     "Compare copy-paste, SSH, and MCP workflows for production access. Use bounded actions for operations and source control for lasting changes."},
+     "From copy-pasting logs to SSH and MCP: how to let an agent work on production without handing it the keys to everything.",
+     "Updated November 10, 2026", "7 min read",
+     "AI agent security in production: compare SSH and MCP, control permissions, and let agents investigate while fixes go through code review."},
     {"prompt-injection-for-ops-teams", :prompt_injection_for_ops_teams,
      "Prompt injection for ops teams: your logs are prompts now",
      "The moment an AI agent starts reading your production logs, everyone who can write to them can talk to it. Here is how the trick works, and why the defense that holds is a shorter list of things the agent can do, not a smarter prompt.",
@@ -926,13 +932,248 @@ defmodule EmisarWeb.MarketingController do
       grouped: EmisarWeb.PacksRegistry.grouped(packs),
       pack_count: Catalog.published_pack_count(),
       action_count: delimit_int(Catalog.published_action_count()),
-      page_title: "Action packs registry",
+      page_title: "Infrastructure action packs for AI agents",
       meta_description:
-        "Browse the registry of action packs for your emisar runner: Postgres, Cassandra, Linux, Docker, AWS, and more. Each pack is a typed catalog an AI agent can call.",
+        "Connect AI agents to PostgreSQL, Cassandra, Linux, Docker, AWS, and more through CLI or MCP. Browse action packs, setup requirements, and examples.",
       canonical_url: @base <> "/packs",
       json_ld: json_ld
     )
   end
+
+  # Editorial entry points sit above the published pack's full action contract.
+  @pack_overviews %{
+    "cassandra" => %{
+      title: "Cassandra AI access through CLI and MCP",
+      heading: "Give AI agents access to Cassandra operations",
+      intro:
+        "Connect your AI agent to Cassandra through emisar’s CLI or MCP server. Check cluster health, investigate compaction, and request repairs. Choose which actions can run automatically and which need your approval."
+    },
+    "postgres" => %{
+      title: "PostgreSQL AI access through CLI and MCP",
+      heading: "Give AI agents access to PostgreSQL operations",
+      intro:
+        "Connect your AI agent to PostgreSQL through emisar’s CLI or MCP server. Find blocked queries, check replication lag, and inspect query plans. Choose which actions can run automatically and which need your approval."
+    },
+    "kubernetes" => %{
+      title: "Kubernetes AI agent access through CLI and MCP",
+      heading: "Give AI agents access to Kubernetes operations",
+      intro:
+        "Connect your AI agent to Kubernetes through emisar’s CLI or MCP server. Investigate unhealthy pods, check rollouts, and request restarts or rollbacks. Both emisar policy and Kubernetes permissions control what it can do."
+    }
+  }
+
+  @pack_summaries %{
+    "airflow" =>
+      "Inspect Apache Airflow health, DAG runs, task logs, and import errors. Pause DAGs, trigger runs, and review actions for incident response.",
+    "apache-httpd" =>
+      "Inspect Apache HTTP Server status, configuration, virtual hosts, and logs. Give AI agents actions for syntax checks and graceful reloads.",
+    "artifactory" =>
+      "Inspect JFrog Artifactory health, storage use, repositories, and artifact download statistics with read-only actions for AI agents.",
+    "aws-cloudwatch" =>
+      "Read AWS CloudWatch metrics, alarms, log groups, and log queries through emisar CLI or MCP. Review credentials, action arguments, and installation.",
+    "aws-cost" =>
+      "Track AWS costs by service and account with read-only Cost Explorer actions. Check spending history and forecasts through CLI or MCP.",
+    "aws-iam" =>
+      "Inspect AWS IAM users, roles, policies, and access keys. Use policy-controlled actions to disable compromised keys or detach a user policy.",
+    "aws-rds" =>
+      "Diagnose AWS RDS instances and clusters with read-only actions for snapshots, parameter groups, maintenance, and recent events.",
+    "aws-s3" =>
+      "Inspect Amazon S3 buckets, access policies, encryption, replication, and object metadata. Read-only actions exclude object contents.",
+    "betterstack" =>
+      "Check Better Stack monitors, incidents, heartbeats, and uptime metrics. Let AI agents investigate outages and request monitor or incident changes.",
+    "bind" =>
+      "Check BIND DNS status, validate zones, and test local resolution. Review actions for cache flushes, reloads, and zone freeze or thaw.",
+    "bonding" =>
+      "Check Linux network bonding and LACP status. Inspect bond modes, member links, and partner state with read-only actions for AI agents.",
+    "bunnycdn" =>
+      "Manage bunny.net CDN Pull Zones through emisar. Inspect traffic and origin errors, purge caches, and review hostname and access-control actions.",
+    "caddy" =>
+      "Inspect Caddy upstream health, access logs, and runtime metrics. Validate a configuration before requesting a live reload.",
+    "cassandra" =>
+      "Give AI agents Cassandra access through CLI or MCP. Check cluster health, streaming, and compaction. Review repair actions, inputs, risks, and setup.",
+    "clickhouse" =>
+      "Investigate ClickHouse slow queries, replication queues, merges, and server errors. Review query cancellation and other operational actions.",
+    "cloud-init" =>
+      "Diagnose cloud-init boot failures with status, module timings, configuration, and logs. Review actions for rerunning modules or initialization.",
+    "cloudflare" =>
+      "Give AI agents Cloudflare tools to inspect DNS and tunnels, purge selected cache entries, and review or roll back Pages deployments.",
+    "cockroach" =>
+      "Check CockroachDB nodes, ranges, locks, and running queries. Inspect jobs and review actions to cancel work or decommission a node.",
+    "consul" =>
+      "Inspect Consul services, health checks, Raft state, and service mesh settings. Review actions for maintenance, snapshots, and cluster recovery.",
+    "databricks" =>
+      "Query Databricks data, browse Unity Catalog, and inspect failed jobs. Use separate actions to start warehouses, run jobs, or restart clusters.",
+    "debian" =>
+      "Inspect Debian and Ubuntu packages and patching status. Install or remove a named package through declared actions with policy checks.",
+    "debugging" =>
+      "Investigate Linux CPU, memory, disk, process, and network problems. Review diagnostics and actions for process signals and kernel settings.",
+    "dell-idrac" =>
+      "Dell iDRAC Redfish actions for hardware health, storage, firmware, logs, and controlled power operations. Review credentials, arguments, and limits.",
+    "dell-ipmi" =>
+      "Dell IPMI actions for BMC sensors, event logs, inventory, and power state, plus controlled power and boot operations. Inspect setup and risk tiers.",
+    "dnf-rpm" =>
+      "Inspect RPM packages and DNF updates on RHEL, Fedora, AlmaLinux, and Rocky Linux. Review actions to install, upgrade, or remove packages.",
+    "docker" =>
+      "Inspect Docker containers and Compose services through CLI or MCP. Read status and review actions to restart, stop, or remove unused resources.",
+    "elasticsearch" =>
+      "Inspect Elasticsearch and OpenSearch clusters and indexes. Review actions for cache clearing, force merges, flushes, and closing an index.",
+    "elixir-beam" =>
+      "Diagnose Elixir and Erlang BEAM applications: inspect memory, schedulers, supervisors, and mailboxes, or trace calls on a host or in Docker.",
+    "emqx" =>
+      "Check EMQX MQTT broker health, client sessions, subscriptions, and alarms. Review actions for client bans, listener restarts, and rule changes.",
+    "envoy" =>
+      "Inspect Envoy clusters, listeners, certificates, and runtime configuration. Review actions to drain traffic or change health and logging settings.",
+    "fail2ban" =>
+      "Inspect fail2ban jails, banned IPs, and logs. Let AI agents request bans, remove false positives, or reload filters under your policy.",
+    "firewall" =>
+      "Inspect iptables, nftables, connection tracking, and traffic control. Review inputs and risks for IP blocks and chain flushes.",
+    "frr" =>
+      "Inspect FRRouting BGP neighbors, BFD peers, routes, and interfaces. Request a policy-controlled BGP drain and restore advertisements afterward.",
+    "fs-search" =>
+      "Give AI agents read-only filesystem tools to find files, search text, inspect file metadata, and check disk use, hashes, or recent changes.",
+    "gcp-billing" =>
+      "Analyze Google Cloud costs by service, project, and SKU from BigQuery billing exports. Check daily spending, budgets, and export freshness.",
+    "gcp-certificates" =>
+      "Check Google Cloud SSL and Certificate Manager certificates, maps, and DNS authorizations with read-only actions that exclude private keys.",
+    "gcp-cloudsql" =>
+      "Diagnose Google Cloud SQL with instance, backup, operation, and Query Insights checks. Review separate actions for restart and failover.",
+    "gcp-compute" =>
+      "Inspect Google Cloud VMs and managed instance groups. Review actions to start, stop, or reset instances and resize groups through CLI or MCP.",
+    "gcp-dataproc" =>
+      "Investigate Google Cloud Dataproc clusters, jobs, failures, and driver logs. Review actions to start, stop, resize, or cancel existing work.",
+    "gcp-dns" =>
+      "Inspect Google Cloud DNS zones, policies, and record sets. Review actions to upsert or delete one exact DNS record set.",
+    "gcp-iam" =>
+      "Inspect Google Cloud IAM service-account policies and workload identity providers. Discover accessible projects with read-only actions.",
+    "gcp-load-balancing" =>
+      "Inspect Google Cloud load balancer topology, backend health, forwarding rules, and network endpoint groups through read-only diagnostic actions.",
+    "gcp-monitoring" =>
+      "Query Google Cloud logs and metrics, check Interconnect use, and inspect alert policies. Enable or disable a selected alert policy.",
+    "gcp-networking" =>
+      "Diagnose Google Cloud VPCs, subnets, firewall rules, routes, NAT, VPN, and Interconnect. Read-only actions show fixed network status fields.",
+    "gcp-secret-manager" =>
+      "Check the state and lifecycle timestamps of one Google Secret Manager version. Read-only metadata access never retrieves the secret payload.",
+    "gcp-storage" =>
+      "Inspect Google Cloud Storage buckets, access policies, object listings, and object metadata with read-only actions. No object body reads.",
+    "git-local" =>
+      "Inspect a Git checkout on a runner host: working-tree status, diffs, commit history, branches, and blame. All actions are read-only.",
+    "github-cli" =>
+      "Give AI agents GitHub actions for pull requests, issues, checks, and workflow runs. Review controls for merging PRs and rerunning workflows.",
+    "grafana" =>
+      "Give AI agents read-only Grafana tools to check data source health, find dashboards, inspect alert state, and review server settings.",
+    "haproxy" =>
+      "Inspect HAProxy statistics, frontends, backends, and sessions through its admin socket. Review actions to enable or disable backend servers.",
+    "hcp-terraform" =>
+      "Review HCP Terraform plan summaries and failed-run logs. Request speculative plans, retries, or policy-controlled run approval.",
+    "iperf3" =>
+      "Measure TCP bandwidth, UDP jitter, and packet loss between hosts with iperf3. Run a one-shot server, then test from another runner.",
+    "iscsi" =>
+      "Inspect Linux iSCSI sessions, target nodes, connections, and initiator interfaces. Read negotiated parameters without changing storage access.",
+    "java-jvm" =>
+      "Inspect JVM threads, memory, garbage collection, and flight recordings. Run diagnostics as the JVM process owner through emisar.",
+    "kafka" =>
+      "Check Kafka consumer lag, topics, and broker configuration. Review actions for offset resets, retention changes, and leader elections.",
+    "kubernetes" =>
+      "Give AI agents Kubernetes access through CLI or MCP. Check workloads, events, and logs. Review action inputs, risks, permissions, and setup.",
+    "linux-core" =>
+      "Give AI agents Linux access through CLI or MCP. Check host health and systemd services, then review the actions for service changes.",
+    "medusa" =>
+      "Cassandra Medusa actions for backup status, verification, retention, and node backup or restore. Inspect action risks and required host setup.",
+    "memcached" =>
+      "Check Memcached statistics, slab usage, and item counts through CLI or MCP. Review the separate critical-risk action for flushing the cache.",
+    "minio" =>
+      "Inspect MinIO clusters, buckets, and users through emisar. Review actions for bucket healing, user access changes, and cluster service restarts.",
+    "mongodb" =>
+      "Inspect MongoDB replication lag, slow queries, and collection statistics. Review actions to stop operations, compact collections, or drop indexes.",
+    "multipath" =>
+      "Inspect Linux device-mapper multipath topology, configuration, and live path status. Read-only actions help investigate storage connectivity.",
+    "mysql" =>
+      "Diagnose MySQL and MariaDB with read-only actions. Review controls for killing queries, flushing logs, and analyzing tables through CLI or MCP.",
+    "nats" =>
+      "Inspect NATS JetStream streams and consumers. Review actions for retention limits, consumer pauses, leadership changes, and deletion.",
+    "network-tls" =>
+      "Diagnose DNS, network reachability, TLS certificates, and HTTP timing with read-only actions. Check connectivity and certificate expiry.",
+    "nfs" =>
+      "Inspect NFS exports, mounted shares, RPC state, and client connections. Review actions to reload exports or remove access for one client.",
+    "nginx" =>
+      "Investigate Nginx errors, slow requests, connections, and TLS certificates. Check configuration before requesting a reload.",
+    "nic" =>
+      "Inspect Linux NIC drivers, firmware, link settings, hardware counters, and offload features with read-only ethtool actions for AI agents.",
+    "nodejs-pm2" =>
+      "Inspect Node.js applications managed by PM2, including processes, app details, and logs. Review actions for restarts, reloads, stops, and scaling.",
+    "nomad" =>
+      "Give AI agents Nomad access through CLI or MCP. Check jobs, deployments, allocations, and logs. Review the actions for changes and setup.",
+    "oidc-jwks" =>
+      "Check OpenID Connect discovery and JWKS endpoints, compare signing-key IDs, and inspect JWT headers with read-only diagnostics.",
+    "pfsense" =>
+      "Inspect pfSense firewall rules, gateways, VPN status, and logs through its REST API. Review actions to apply filters, flush states, or restart services.",
+    "php-fpm" =>
+      "Inspect PHP-FPM pool status, error and slow logs, OPcache, PHP modules, and Composer metadata with read-only actions for application diagnostics.",
+    "podman" =>
+      "Inspect Podman containers, logs, resource use, and images. Review separate actions to restart, stop, or kill containers and prune storage.",
+    "postfix" =>
+      "Inspect Postfix queues, configuration, and logs. Review actions to hold or delete individual messages, requeue mail, or flush the deferred queue.",
+    "postgres" =>
+      "Give AI agents PostgreSQL access through CLI or MCP. Check sessions, locks, and replication, then review the actions for database changes.",
+    "process-forensics" =>
+      "Investigate stuck or slow Linux processes with memory maps, thread state, strace, and gdb. Tracing is read-only but can slow the target process.",
+    "prometheus" =>
+      "Query Prometheus metrics, inspect targets and alerts, and check storage statistics. Review actions for reloads, snapshots, and series deletion.",
+    "pure-flasharray" =>
+      "Inspect Pure Storage FlashArray capacity, performance, hardware health, volumes, and replication through read-only Purity REST API actions.",
+    "python-app" =>
+      "Inspect Python virtual environments, installed packages, dependency conflicts, and import paths. Read-only actions leave the deployment unchanged.",
+    "rabbitmq" =>
+      "Inspect RabbitMQ cluster health, queues, consumers, and connections. Review actions to purge queues, sync queues, or close connections.",
+    "redis" =>
+      "Investigate Redis memory, latency, keyspace, and replication. Review cluster and Sentinel actions, persistence controls, and destructive operations.",
+    "rke2" =>
+      "Inspect RKE2 server hosts: embedded etcd health, snapshot history, certificate expiry, and containerd state beyond the Kubernetes API.",
+    "sentry" =>
+      "Triage Sentry issues, read error events, and inspect releases. Assign issues, change their status, or enable and disable project ingest keys.",
+    "shell" =>
+      "Run arbitrary shell scripts on staging hosts only. This critical-risk pack is denied by default. Never install it on production runners.",
+    "showcase" =>
+      "Explore emisar action-pack examples for argument types, validation, parsers, limits, and redaction. A reference for authors, not a production pack.",
+    "snmp" =>
+      "Read network device health, interfaces, BGP peers, and OSPF neighbors over SNMP. Query one OID or inspect a bounded subtree.",
+    "spark" =>
+      "Inspect Apache Spark jobs, stages, executors, and SQL executions. Diagnose live or completed applications and review controls to stop runaway work.",
+    "ssl-local" =>
+      "Inspect local SSL/TLS certificates, certificate chains, key matches, and PKCS#12 files with read-only actions for diagnosing certificate problems.",
+    "supertokens" =>
+      "Inspect SuperTokens health, tenants, users, and sessions. Review actions to revoke sessions, change user roles, or delete a user.",
+    "symbolicator" =>
+      "Debug native crashes with Symbolicator using stack traces, minidumps, or Apple crash reports. Check service health and preview cache cleanup.",
+    "systemd-deep" =>
+      "Inspect failed systemd units, timers, cgroups, journals, and boot timing. Review actions for daemon reloads, masking, signals, and resetting failures.",
+    "tailscale" =>
+      "Check Tailscale peers, connectivity, DNS, routes, and exit nodes with read-only actions through CLI or MCP. See setup, inputs, and limits.",
+    "terraform-readonly" =>
+      "Let AI agents inspect Terraform or OpenTofu configuration, plans, and state with read-only CLI actions. Keep applies in your deployment workflow.",
+    "time-sync" =>
+      "Diagnose Linux clock drift with Chrony and NTPsec checks. Inspect time sources and review actions to correct time or enable and disable NTP.",
+    "traefik" =>
+      "Diagnose Traefik routers, services, backend health, metrics, and certificate state. Use read-only readiness checks before routing traffic to a host.",
+    "typesense" =>
+      "Check Typesense health, request statistics, and collection schemas. Inspect node state, metrics, and slow requests with read-only actions.",
+    "vault" =>
+      "Inspect HashiCorp Vault health, seal state, mounts, tokens, and leases. Review actions to revoke leases, step down a leader, or seal Vault.",
+    "vector" =>
+      "Inspect Vector pipelines, validate configuration, view topology, and sample events. Read health and component counters without changing the pipeline.",
+    "victorialogs" =>
+      "Query VictoriaLogs with LogsQL to find log entries, chart hits, aggregate statistics, and discover fields within a bounded time window.",
+    "victoriametrics" =>
+      "Query VictoriaMetrics with PromQL or MetricsQL through CLI or MCP. Discover series and labels, inspect cardinality, and check active queries.",
+    "wireguard" =>
+      "Inspect WireGuard peers, handshakes, and traffic counters. Review actions to bring interfaces up or down and remove a peer from a live interface.",
+    "zfs" =>
+      "Inspect ZFS pools, datasets, snapshots, and ARC statistics. Review actions to scrub pools, clear errors, create snapshots, or roll back a dataset.",
+    "zookeeper" =>
+      "Inspect ZooKeeper cluster health, watches, and sessions with read-only actions. Review connection setup and the four-letter command whitelist.",
+    "zot" =>
+      "Inspect zot OCI registry repositories, tags, manifests, health, and metrics. Read repository sizes and vulnerability summaries without changing images."
+  }
 
   def pack_detail(conn, %{"id" => id}) do
     case Catalog.get_published_pack(id) do
@@ -944,6 +1185,9 @@ defmodule EmisarWeb.MarketingController do
 
       pack ->
         url = @base <> "/packs/" <> pack.id
+        name = String.replace(pack.name, ~r/\s+pack$/i, "")
+        summary = Map.get(@pack_summaries, pack.id, pack.description)
+        overview = Map.get(@pack_overviews, pack.id)
 
         json_ld =
           Jason.encode!(
@@ -961,7 +1205,7 @@ defmodule EmisarWeb.MarketingController do
                 },
                 %{
                   "@type" => "SoftwareApplication",
-                  "name" => "#{pack.name} action pack",
+                  "name" => "#{name} action pack",
                   "description" => pack.description,
                   "url" => url,
                   "applicationCategory" => "DeveloperApplication",
@@ -976,8 +1220,9 @@ defmodule EmisarWeb.MarketingController do
 
         render(conn, :pack_detail,
           pack: pack,
-          page_title: "#{pack.name} pack",
-          meta_description: pack.description,
+          pack_overview: overview,
+          page_title: if(overview, do: overview.title, else: "#{name} pack"),
+          meta_description: summary,
           canonical_url: url,
           json_ld: json_ld
         )

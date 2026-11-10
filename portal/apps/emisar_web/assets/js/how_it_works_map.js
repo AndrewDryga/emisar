@@ -76,7 +76,7 @@ const S = [null,
   // 5 Connect your agent
   {
     start: (m) => { m.focus = "c"; m.glow = 1; m.terse = 1; m.dimW = ["tls"] },
-    seq: (k) => [200, { w: "mcp", draw: 1, lit: 1 }, k.ports("pt-ag", "pt-cpl"), k.show("lb-mcp"), 120, k.show("m-oa1"), 70, k.show("m-oa2"), 70, k.show("m-br"), 200, k.dot("ag-dot", 1), k.text("ag1", "emisar"), k.text("ag2", "connected over MCP"), k.show("ag-st")] },
+    seq: (k) => [200, { w: "mcp", draw: 1, lit: 1 }, k.ports("pt-ag", "pt-cpl"), k.show("lb-mcp"), 120, k.show("m-oa1"), 70, k.show("m-oa2"), 70, k.show("m-br"), 200, k.dot("ag-dot", 1), k.text("ag1", "emisar"), k.text("ag2", "CLI or MCP connected"), k.show("ag-st")] },
   // 6 Add packs
   {
     start: (m, k) => { m.focus = "a b"; m.glow = 1; m.dimW = ["mcp"]; k.hide("m-oa1", "m-oa2", "m-br")() },
@@ -96,7 +96,7 @@ const S = [null,
   // 10 On the record
   { last: 1000,
     start: (m) => { m.focus = ""; m.glow = 1 },
-    seq: (k) => [300, k.lit("r-au"), k.lit("evs"), 180, k.lit("ev1"), 130, k.lit("ev2"), 130, k.lit("ev3"), 450, k.text("rl0", "journal · hash-chained"), k.text("rl1", '<span class="jd"></span>postgres.slow_queries'), k.text("rl2", '<span class="jd"></span>postgres.terminate_backend'), k.lit("term"), 300, k.text("ag1", "emisar"), k.text("ag2", "connected over MCP")] }
+    seq: (k) => [300, k.lit("r-au"), k.lit("evs"), 180, k.lit("ev1"), 130, k.lit("ev2"), 130, k.lit("ev3"), 450, k.text("rl0", "journal · hash-chained"), k.text("rl1", '<span class="jd"></span>postgres.slow_queries'), k.text("rl2", '<span class="jd"></span>postgres.terminate_backend'), k.lit("term"), 300, k.text("ag1", "emisar"), k.text("ag2", "CLI or MCP connected")] }
 ]
 
 function init(root) {

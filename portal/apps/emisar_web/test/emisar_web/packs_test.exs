@@ -38,6 +38,60 @@ defmodule EmisarWeb.PacksTest do
       end
     end
 
+    test "pack titles add the suffix once for names with and without it", %{conn: conn} do
+      for {id, expected} <- [
+            {"linux-core", "Linux core operations pack"},
+            {"nomad", "HashiCorp Nomad pack"}
+          ] do
+        html = conn |> get(~p"/packs/#{id}") |> html_response(200)
+        title = html |> LazyHTML.from_document() |> LazyHTML.query("title") |> LazyHTML.text()
+        assert title =~ expected
+        refute title =~ "pack pack"
+        refute html =~ "pack action pack"
+      end
+    end
+
+    test "AI access overviews retain the pack contract and link to published actions", %{
+      conn: conn
+    } do
+      for {id, system} <- [
+            {"cassandra", "Cassandra"},
+            {"postgres", "PostgreSQL"},
+            {"kubernetes", "Kubernetes"}
+          ] do
+        pack = PublishedRegistry.get(id)
+        html = conn |> get(~p"/packs/#{id}") |> html_response(200)
+        doc = LazyHTML.from_document(html)
+
+        assert doc |> LazyHTML.query("h1") |> LazyHTML.text() |> String.trim() ==
+                 "Give AI agents access to #{system} operations"
+
+        assert doc |> LazyHTML.query("title") |> LazyHTML.text() =~ "#{system} AI"
+        assert html =~ pack.content_hash
+
+        guide_links =
+          doc
+          |> LazyHTML.query("#pack-guide a[href^='#action-'], #pack-example a[href^='#action-']")
+          |> LazyHTML.attribute("href")
+
+        assert length(guide_links) >= 3
+
+        for "#action-" <> action_id <- guide_links do
+          assert Enum.any?(pack.actions, &(&1.id == action_id)),
+                 "#{id} guide links to unpublished action #{action_id}"
+        end
+
+        for action <- pack.actions do
+          assert html =~ ~s(id="action-#{action.id}")
+        end
+
+        assert doc |> LazyHTML.query("a[href='/docs/mcp-reference#command-line']") |> Enum.count() >
+                 0
+
+        assert doc |> LazyHTML.query("a[href='/docs/mcp-reference']") |> Enum.count() > 0
+      end
+    end
+
     test "renders each action's operator docs, crawlable while collapsed", %{conn: conn} do
       pack = hd(PublishedRegistry.list())
       action = Enum.find(pack.actions, &(&1.description != ""))
@@ -77,9 +131,13 @@ defmodule EmisarWeb.PacksTest do
       assert html =~ pack.content_hash
       assert html =~ "--hash"
 
-      # The page's <meta name="description"> is the pack's own description
-      # (so the SERP snippet describes this pack, not a generic blurb).
-      assert html =~ ~s(<meta name="description" content="#{pack.description}")
+      # A concise task summary serves search results; the full manifest stays visible.
+      doc = LazyHTML.from_document(html)
+      [summary] = doc |> LazyHTML.query("meta[name=description]") |> LazyHTML.attribute("content")
+      assert String.length(summary) <= 170
+      assert summary =~ "Cassandra"
+      assert summary =~ "streaming"
+      assert html =~ pack.description
     end
 
     test "the content hash lives in the install command's own scroll, not a page-wide row", %{

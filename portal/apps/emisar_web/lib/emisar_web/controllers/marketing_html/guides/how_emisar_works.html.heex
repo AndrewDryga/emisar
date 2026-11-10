@@ -19,9 +19,13 @@
     experience of stepping away and coming back to a finished job without handing over a shell.
   </p>
   <p>
-    The design separates a control plane (the cloud portal) that governs policy, a
-    runner that executes with minimal trust in the portal, and an MCP interface agents can use from
-    wherever they run.
+    The cloud portal applies your policy, and the runner checks and runs requests on the
+    host. Agents and scripts can use CLI or MCP. Both call the same actions and go through
+    the same checks. The key's permissions decide what it can access. The
+    <a href={~p"/guides/cli-vs-mcp-for-infrastructure-agents"}>CLI versus MCP guide</a>
+    explains how scripts and tool choice affect token use. The
+    <a href={~p"/docs/mcp-reference#command-line"}>reference</a>
+    lists the commands and their output.
   </p>
 
   <.request_path_diagram />

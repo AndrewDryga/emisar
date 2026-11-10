@@ -6,11 +6,11 @@
       <div class="max-w-3xl">
         <p class="text-sm font-semibold text-brand-400">Compare</p>
         <.marketing_heading tag="h1" scale={:hero} class="mt-2">
-          Why not just give the LLM SSH?
+          Why not just give the AI agents SSH access?
         </.marketing_heading>
         <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
-          SSH gives an agent the permissions of its host account. Emisar gives it named
-          operations, such as reading service logs or restarting a unit, so it can keep
+          SSH gives an agent the permissions of its host account. emisar gives it specific
+          actions, such as reading service logs or restarting a unit, so it can keep
           investigating while you control which changes run.
         </p>
       </div>
@@ -21,11 +21,10 @@
           Both approaches run real commands
         </h2>
         <p class="mt-4 text-base leading-7 text-zinc-400 text-pretty">
-          Both windows run the same rollback. Over SSH, the agent asks to run <code>ssh nomad-prod-1 'nomad job history api'</code>, and one "don't ask again for
-          ssh commands" answer lets it run any ssh command after that. With emisar, each call is
-          a declared action that emisar checks and records, and the risky
-          <code>nomad job revert</code>
-          waits until you approve that exact run.
+          Both examples roll back a Nomad job. The SSH example uses an account with broad
+          shell access and a client that lets you approve all future SSH commands.
+          The emisar example uses a policy that lets the agent investigate on its own
+          but requires approval for the rollback.
         </p>
       </div>
 
@@ -56,11 +55,11 @@
         the 3-way comparison reads without a horizontal scroll on phones. --%>
       <% rows = [
         {"What can the agent run?", "Anything the SSH account can run.",
-         "Only the actions in packs you installed. Anything else is rejected."},
+         "Only actions from installed packs, which group related operations. Anything else is rejected."},
         {"How are arguments checked?", "They aren't. The agent writes the whole command line.",
-         "Each argument has a type and limits that the runner checks. Sensitive values are masked in the console and API."},
+         "The runner, a service on your host, checks each argument against its allowed type and limits. Sensitive values are masked in the console and API."},
         {"What code runs?", "Whatever is installed on the host at that moment.",
-         "The exact pack you trusted. Changed files are blocked until an admin reviews them."},
+         "The trusted pack defines each action. Changed packs are blocked until an admin reviews them."},
         {"How does approval work?",
          "A prompt like \"Do you want to run ssh …?\" One \"don't ask again\" covers every later ssh command.",
          "Your policy decides which actions need approval. An approval covers that one run unless you allow reuse, and every decision is recorded."},
@@ -177,12 +176,14 @@
 
         <div class="border-t border-zinc-800 pt-10 lg:border-l lg:border-t-0 lg:pl-12 lg:pt-0">
           <p class="text-xs font-semibold text-brand-400">With emisar</p>
-          <h2 class="mt-2 text-3xl font-semibold text-zinc-50 text-balance">When it isn't</h2>
+          <h2 class="mt-2 text-3xl font-semibold text-zinc-50 text-balance">
+            When to use emisar
+          </h2>
           <p class="mt-4 max-w-2xl text-base leading-7 text-zinc-400 text-pretty">
-            Use Emisar to let your agent keep working with commands you have reviewed.
-            The runner checks the inputs on the host, and each run has a record you can
-            inspect. Your policy decides what runs automatically, what needs approval,
-            and what is denied. These controls work for a solo operator or a team.
+            Choose emisar when you want an agent to investigate production issues without
+            supervising every command. Start with the operations you are comfortable letting
+            it run on its own, then require approval for changes you want to review.
+            The same setup works for one operator or a team sharing access to production.
           </p>
 
           <div class="mt-8 max-w-2xl rounded-xl border border-brand-900/40 bg-brand-950/20 p-5 text-sm text-zinc-300">

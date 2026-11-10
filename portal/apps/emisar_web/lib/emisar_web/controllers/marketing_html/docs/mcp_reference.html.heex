@@ -4,10 +4,10 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="mcp-reference"
-      updated="October 21, 2026"
+      updated="November 10, 2026"
       toc={[
-        {"calling-the-endpoint", "Calling the endpoint"},
-        {"command-line", "Use tools from the shell"},
+        {"command-line", "Direct CLI commands"},
+        {"calling-the-endpoint", "Calling the MCP endpoint"},
         {"protocol-methods", "Protocol methods"},
         {"tools", "Fourteen fixed tools"},
         {"discovery", "Discovery"},
@@ -20,8 +20,11 @@
     >
       <.docs_header current="mcp-reference">
         <:dek>
-          The fixed tools, identifiers, and recovery rules of the emisar MCP server. For client
-          setup, see <.link
+          CLI commands, MCP tools, inputs, results, and steps to follow when a call fails.
+          To choose CLI or MCP, read <.link
+            href={~p"/guides/cli-vs-mcp-for-infrastructure-agents"}
+            class="font-medium text-brand-400 hover:text-brand-300"
+          >CLI vs MCP for infrastructure agents</.link>. For remote client setup, see <.link
             navigate={~p"/docs/connect-claude-ai"}
             class="font-medium text-brand-400 hover:text-brand-300"
           >Connect a cloud LLM</.link>.
@@ -29,22 +32,12 @@
       </.docs_header>
 
       <article class="mt-4 [&_h2]:mb-4 [&_h2]:mt-12 [&_h2]:scroll-mt-24 [&_h2]:text-xl [&_h2]:font-bold [&_h2]:text-zinc-50 [&_p]:my-4 [&_p]:leading-7 [&_p]:text-zinc-400 [&_code]:rounded-sm [&_code]:bg-zinc-900 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-[0.85em] [&_code]:text-brand-300 [&_a]:font-medium [&_a]:text-brand-300 [&_a:hover]:text-brand-200 [&_ul]:my-4 [&_ul]:list-disc [&_ul]:space-y-1.5 [&_ul]:pl-5 [&_li]:text-zinc-400">
-        <h2 id="calling-the-endpoint">Calling the endpoint</h2>
+        <h2 id="command-line">Use emisar tools from the shell</h2>
         <p>
-          A custom client uses an agent key with the <code>emk-</code>
-          prefix. Create one from <.link navigate={~p"/docs/agents-and-keys"}>Manage agents & keys</.link>. Send JSON-RPC
-          requests to the HTTPS endpoint below. Use the method sequence for your protocol version.
-        </p>
-        <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># This legacy-compatible request returns the tool list.</span>
-<span class="text-zinc-500">$</span> curl -X POST <span class="text-brand-300">https://emisar.dev/api/mcp/rpc</span> \
-    -H <span class="text-brand-300">"Authorization: Bearer $EMISAR_API_KEY"</span> \
-    -H <span class="text-brand-300">"Content-Type: application/json"</span> \
-    -d <span class="text-brand-300">'&#123;"jsonrpc":"2.0","id":1,"method":"tools/list"&#125;'</span></.docs_code>
-
-        <h2 id="command-line">Use MCP tools from the shell</h2>
-        <p>
-          The MCP bridge also exposes all tools as a CLI. This lets any LLM use emisar in
-          scripts too, without the usual limits of the MCP protocol.
+          The <code>emisar-mcp</code> program lets agents and scripts find actions, request work,
+          and read results from a terminal. They do not need an MCP client. CLI and MCP calls
+          go through the same server and runner checks. The key you use determines which
+          hosts and actions you can access.
         </p>
         <p>
           Authenticate once, with <code>emisar-mcp auth</code>
@@ -52,8 +45,8 @@
           <.link navigate={~p"/docs/connect-cli-agent#install-bridge"}>
             bridge install
           </.link>
-          step. After that, direct commands work with no environment exports. The credential is
-          stored in owner-only local state.
+          step. After that, commands work without setting environment variables.
+          The CLI saves the key in local files that only your user can read.
         </p>
         <p>
           Run <code>emisar-mcp</code>
@@ -106,21 +99,21 @@
         <.docs_callout kind={:note} title="Use --json in scripts and LLM workflows">
           <p>
             <code>--json</code>
-            makes one logical tool invocation, follows no continuations, and prints the exact
-            <code>structuredContent</code>
-            object with no styling. The transport may resend that identical request once under the
-            same operation ID after a network failure. Put <code>--json</code>
+            calls a tool once and prints its exact <code>structuredContent</code>
+            object with no styling. It does not make follow-up calls. After a network failure,
+            the CLI may send the same request once more with the same operation ID. Put
+            <code>--json</code>
             last, pass <code>-</code>
             to read one JSON object from stdin, and parse stdout as JSON. For conditional or
             mutually exclusive arguments, use <code>help &lt;tool&gt; --json</code>
-            and treat that complete schema as authoritative.
+            to see the full rules for valid inputs.
           </p>
         </.docs_callout>
 
         <.docs_h3 id="cli-fleet">Fleet</.docs_h3>
         <p>
-          These commands cover fleet inventory. Their default output is written for a person
-          scanning a terminal: runner records and compact pack summaries. Add <code>--json</code>
+          These commands list your runners and packs. By default, they print runner details
+          and short pack summaries for a person reading the terminal. Add <code>--json</code>
           to receive the exact MCP <code>structuredContent</code>
           object instead.
         </p>
@@ -153,19 +146,19 @@
         <p>
           <code>find_actions</code>
           accepts a plain-text task and shows ranked matches. <code>get_action</code>
-          shows the selected action's side effects, trusted arguments, and compatible runner refs.
+          shows what the action does, the inputs it accepts, and which runners can use it.
           Pass it the immutable <code>pack_ref</code>
           returned by <code>find_actions</code>. <code>recent_runs</code>
           and <code>get_operation</code>
-          provide run history and mutation recovery.
+          let you review runs and recover a request after losing its response.
         </p>
         <p>
-          Human <code>run_action</code>
+          In readable output mode, <code>run_action</code>
           prints the operation ID, then follows only exact <code>wait_for_run</code>
-          continuations tied to the returned runs. It waits on several runners concurrently and
-          shows approvals, terminal status, exit codes, and output. Ctrl-C stops waiting and exits
+          follow-up calls for those runs. It can wait on several runners at once and
+          shows approvals, final status, exit codes, and output. Ctrl-C stops waiting and exits
           130; it does not cancel the action. The diagnostic prints a <code>get_operation</code>
-          command for later recovery.
+          command you can use later to check what happened.
         </p>
         <.docs_code
           phx-no-format
@@ -184,11 +177,11 @@
           live release, and review link.
         </p>
         <p>
-          Human <code>execute_runbook</code>
-          follows only continuations tied to the returned execution, waits through approval or
-          expiry, and retrieves the available output for each action. It prints up to 16,384
+          In readable output mode, <code>execute_runbook</code>
+          follows only calls for that runbook execution. It waits for approval or expiry
+          and gets the available output for each action. It prints up to 16,384
           characters per action and links to the run page when more remains. Ctrl-C stops
-          observation only. Add <code>--json</code>
+          waiting only. Add <code>--json</code>
           when a script or LLM should receive the original execution response and decide whether
           to call <code>wait_for_run</code>
           itself.
@@ -210,18 +203,22 @@
     | emisar-mcp find_actions - --json &gt;actions.json
 <span class="text-zinc-500">$</span> jq -e <span class="text-brand-300">'.candidates'</span> actions.json</.docs_code>
         <p>
-          A successful tool call exits 0 and writes readable text, or exact JSON when
-          <code>--json</code>
-          is present. Tool, MCP, authentication, and post-send transport failures exit 1. Invalid
-          commands or JSON exit 2. In JSON mode, when the CLI cannot be sure whether the server received a
-          mutation, stdout includes <code>data.operation_id</code>. Recover it with
-          <code>get_operation</code>
-          before sending new work. Human <code>run_action</code>
-          exits 1 for any terminal status except <code>success</code>. Human
-          <code>execute_runbook</code>
+          A successful tool call exits 0 and prints readable text, or JSON with <code>--json</code>. In JSON mode, check the returned runs to see whether the host
+          work succeeded. Follow any returned calls needed to get the final result.
+        </p>
+        <p>
+          Tool, MCP, sign-in, and network failures after sending a request exit 1.
+          Invalid commands or JSON exit 2. If the CLI cannot tell whether the server received
+          a request that changes something, its JSON response includes <code>data.operation_id</code>.
+          Check that ID with <code>get_operation</code> before sending new work.
+        </p>
+        <p>
+          In readable output mode, <code>run_action</code>
+          exits 1 if the final status is anything
+          except <code>success</code>. In that mode, <code>execute_runbook</code>
           exits 1 for <code>halted</code>
-          or <code>cancelled</code>. Policy, approvals, signed
-          dispatch, and audit still apply.
+          or <code>cancelled</code>.
+          Policy, approvals, signed dispatch, and audit apply in both modes.
         </p>
         <p>
           Tool and MCP error objects stay on stdout in the selected format, so a script can read
@@ -286,6 +283,18 @@
           copy_text="emisar-mcp connect --all --auto-permit\nemisar-mcp disconnect --client cursor"
         ><span class="text-zinc-500">$</span> emisar-mcp connect --all --auto-permit
 <span class="text-zinc-500">$</span> emisar-mcp disconnect --client cursor</.docs_code>
+
+        <h2 id="calling-the-endpoint">Calling the endpoint</h2>
+        <p>
+          A custom client uses an agent key with the <code>emk-</code>
+          prefix. Create one from <.link navigate={~p"/docs/agents-and-keys"}>Manage agents & keys</.link>. Send JSON-RPC
+          requests to the HTTPS endpoint below. Use the method sequence for your protocol version.
+        </p>
+        <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># This legacy-compatible request returns the tool list.</span>
+<span class="text-zinc-500">$</span> curl -X POST <span class="text-brand-300">https://emisar.dev/api/mcp/rpc</span> \
+    -H <span class="text-brand-300">"Authorization: Bearer $EMISAR_API_KEY"</span> \
+    -H <span class="text-brand-300">"Content-Type: application/json"</span> \
+    -d <span class="text-brand-300">'&#123;"jsonrpc":"2.0","id":1,"method":"tools/list"&#125;'</span></.docs_code>
 
         <h2 id="protocol-methods">Protocol methods</h2>
         <p>

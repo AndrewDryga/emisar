@@ -13,9 +13,13 @@
         Action packs
       </.marketing_heading>
       <p class="mt-8 max-w-2xl text-lg leading-8 text-zinc-400 text-pretty">
-        Browse {@pack_count} packs with {@action_count} actions for the software you run.
-        Each pack shows what it can do, which credentials and permissions it needs, and how
-        to install it. Start with the <.link
+        Connect your AI agents to the databases, servers, and tools you use.
+        Browse {@pack_count} packs with {@action_count} actions, with rules for what agents
+        can run and what needs your approval. Each pack lists its actions, setup requirements,
+        and installation steps.
+      </p>
+      <p class="mt-4 text-sm leading-6 text-zinc-400">
+        Start with the <.link
           navigate={~p"/docs/use-a-published-pack"}
           class="text-brand-300 hover:text-brand-200"
         >pack installation guide</.link>, or <.link
@@ -81,7 +85,7 @@
           <article
             :for={pack <- packs}
             data-pack-name={EmisarWeb.PacksRegistry.search_terms(pack)}
-            class="group relative flex flex-col rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6 transition hover:border-brand-500/40"
+            class="group relative flex min-w-0 flex-col rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6 transition hover:border-brand-500/40"
           >
             <header class="flex items-start justify-between gap-3">
               <div class="min-w-0">
@@ -104,7 +108,7 @@
               </span>
             </header>
 
-            <p class="mt-3 flex-1 text-sm leading-relaxed text-zinc-400">
+            <p class="mt-3 flex-1 text-sm leading-relaxed text-zinc-400 [overflow-wrap:anywhere]">
               {pack.description}
             </p>
 

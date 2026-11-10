@@ -66,7 +66,7 @@ defmodule EmisarWeb.HowItWorksMap do
                 </p>
                 <p class="hiw-cap-size" data-hiw-cap-n="5" aria-hidden="true">
                   <strong class="hiw-cap-t">Connect your agent.</strong>
-                  <span class="hiw-cap-s">Your agent connects to emisar over MCP. It no longer needs the SSH key or any other way into your infrastructure.</span>
+                  <span class="hiw-cap-s">Your agent uses the emisar CLI or MCP tools. It no longer needs the SSH key or any other way into your infrastructure.</span>
                 </p>
                 <p class="hiw-cap-size" data-hiw-cap-n="6" aria-hidden="true">
                   <strong class="hiw-cap-t">Packs extend the agent's toolset.</strong>
@@ -174,7 +174,7 @@ defmodule EmisarWeb.HowItWorksMap do
                   <div class="hiw-status">
                     <span class="hiw-dot is-on" data-k="ag-dot"></span>
                     <span class="hiw-swap hiw-mono hiw-s1" data-k="ag1"><span class="on">emisar</span><span></span></span>
-                    <span class="hiw-swap hiw-s2" data-k="ag2"><span class="on">connected over MCP</span><span></span></span>
+                    <span class="hiw-swap hiw-s2" data-k="ag2"><span class="on">CLI or MCP connected</span><span></span></span>
                   </div>
                 </div>
               </div>
@@ -208,7 +208,7 @@ defmodule EmisarWeb.HowItWorksMap do
             </div>
 
             <div class="hiw-col hiw-ln1" data-k="col-l1">
-              <span class="hiw-lane-t hiw-mono hiw-fx is-off" data-k="lb-mcp">MCP</span>
+              <span class="hiw-lane-t hiw-mono hiw-fx is-off" data-k="lb-mcp">CLI / MCP</span>
               <span class="hiw-badge hiw-badge-key is-rose hiw-fx is-off" data-k="key"><.icon
                 name="identity.credential"
                 class="h-3.5 w-3.5"
