@@ -13,7 +13,8 @@ RUN sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.s
        ca-certificates curl chrony dmidecode ethtool iproute2 iputils-ping \
        jq lvm2 mdadm procps python3-ntp smartmontools sysstat util-linux \
        build-essential dpkg-dev autoconf zlib1g-dev \
-    && mkdir /ntp-source /sysstat-source /python-source \
+       bison pkg-config libbsd-dev libcap-dev libmnl-dev libselinux1-dev \
+    && mkdir /ntp-source /sysstat-source /python-source /iproute-source \
     && cd /ntp-source && apt-get download ntpsec \
     && dpkg-deb --extract ntpsec_*.deb extracted \
     && install -m 0755 extracted/usr/bin/ntpq /usr/local/bin/ntpq \
@@ -21,11 +22,12 @@ RUN sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.s
     && cd sysstat-* && ./configure --disable-nls --disable-documentation --disable-sensors \
     && make -j2 SA_LIB_DIR=/run/emisar-admin-runner/diagnostics/bin sar sadc iostat \
     && install -m 0755 sar sadc iostat /usr/local/bin/ \
-    && cd /python-source && apt-get source "python3.11=$(dpkg-query -W -f='${source:Version}' python3.11-minimal)"
+    && cd /python-source && apt-get source "python3.11=$(dpkg-query -W -f='${source:Version}' python3.11-minimal)" \
+    && cd /iproute-source && apt-get source "iproute2=$(dpkg-query -W -f='${source:Version}' iproute2)"
 COPY infra/runtime/admin-runner/diagnostics/ /build/
 COPY --from=compose /compose /compose-source-build
 ARG SOURCE_REVISION
-RUN /bin/bash /build/build-python.sh && /bin/bash /build/build.sh "$SOURCE_REVISION"
+RUN /bin/bash /build/build-ss.sh && /bin/bash /build/build-python.sh && /bin/bash /build/build.sh "$SOURCE_REVISION"
 
 FROM scratch
 ARG SOURCE_REVISION

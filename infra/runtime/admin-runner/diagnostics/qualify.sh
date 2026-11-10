@@ -31,10 +31,27 @@ export PYTHONHOME="$bundle/python"
 export PYTHONPATH="$bundle/python/lib/python3/dist-packages"
 "$bundle/lib/loader" --library-path "$bundle/lib" "$bundle/libexec/python3" -B -P -S -c \
   'import importlib.util, ntp.packet, ntp.control, ntp.ntpc; print(ntp.ntpc.statustoa(0, 0)); assert all(importlib.util.find_spec(name) is None for name in ("sqlite3", "_sqlite3", "xml", "pyexpat", "_elementtree", "ssl", "_ssl", "tarfile", "nis"))'
-# NIS is unused by ntpq; its RPC and Kerberos dependencies must not ship.
+# Neither NTP nor numeric socket diagnostics need NIS, RPC or Kerberos.
 for library in libnsl libtirpc libgssapi_krb5 libk5crypto libkrb5 libkrb5support; do
   test -z "$(find "$bundle/lib" -name "$library.so*" -print)"
 done
+"$bundle/bin/ss" -s
+"$bundle/lib/loader" --library-path "$bundle/lib" "$bundle/libexec/python3" -B -P -S - "$bundle/bin/ss" <<'PY'
+import os
+import socket
+import subprocess
+import sys
+
+with socket.socket() as listener:
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    port = listener.getsockname()[1]
+    output = subprocess.check_output(
+        [sys.argv[1], "-H", "-tlnp", "sport", "=", str(port)], text=True
+    )
+    assert f"127.0.0.1:{port}" in output, output
+    assert f"pid={os.getpid()}," in output, output
+PY
 "$bundle/bin/ntpq" --version
 "$bundle/lib/loader" --library-path "$bundle/lib" "$bundle/libexec/python3" -B -P -S \
   /qualification/qualify-ntpq.py "$bundle/bin/ntpq"

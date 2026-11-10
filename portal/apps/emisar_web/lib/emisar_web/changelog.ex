@@ -32,7 +32,7 @@ defmodule EmisarWeb.Changelog do
          ]},
         {"Platform",
          [
-           "The native diagnostics bundle omits Python's unused NIS extension and its RPC and Kerberos dependencies. Qualification checks that they remain absent and verifies the supported NTP diagnostics."
+           "The native diagnostics bundle removes unused NIS and RPC support, along with their Kerberos dependencies. Qualification checks that these files remain absent and verifies NTP queries and numeric socket diagnostics."
          ]},
         {"Website",
          [

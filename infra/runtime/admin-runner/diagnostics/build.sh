@@ -31,20 +31,27 @@ ntp_identity=$(printf '%s\t%s\t%s\t%s\t%s' "$ntp_package" "$ntp_version" \
 sysstat_identity=$(diagnostics_package_identity sysstat)
 sysstat_source=(/sysstat-source/sysstat-*/)
 [ "${#sysstat_source[@]}" -eq 1 ]
+iproute_identity=$(diagnostics_package_identity iproute2)
+iproute_source=(/iproute-source/iproute2-*/)
+[ "${#iproute_source[@]}" -eq 1 ]
 while IFS= read -r command; do
   source=$(command -v "$command")
   case "$command" in
     sar|sadc|iostat) cmp "${sysstat_source[0]}$command" "$source" ;;
     ntpq) cmp /ntp-source/extracted/usr/bin/ntpq "$source" ;;
+    ss) cmp "${iproute_source[0]}misc/ss" "$source" ;;
   esac
   install -m 0755 "$(readlink -f "$source")" "/bundle/libexec/$command"
   case "$command" in
     sar|sadc|iostat) diagnostics_record_origin "/bundle/libexec/$command" debian-source "${sysstat_source[0]}$command" "$sysstat_identity" ;;
     ntpq) diagnostics_record_origin /bundle/libexec/ntpq debian-extracted /ntp-source/extracted/usr/bin/ntpq "$ntp_identity" ;;
+    ss) diagnostics_record_origin /bundle/libexec/ss debian-source "${iproute_source[0]}misc/ss" "$iproute_identity" ;;
     *) diagnostics_record_debian "$source" "/bundle/libexec/$command" ;;
   esac
   ln -s ../run-tool "/bundle/bin/$command"
 done < /build/commands.txt
+cp /iproute-source/private-build.txt /bundle/ss-private-build.txt
+diagnostics_record_origin /bundle/ss-private-build.txt debian-source /iproute-source/private-build.txt "$iproute_identity"
 install -m 0755 /python-source/private-python /bundle/libexec/python3
 python_identity=$(diagnostics_package_identity python3.11-minimal)
 diagnostics_record_origin /bundle/libexec/python3 debian-source /python-source/private-python "$python_identity"
@@ -112,6 +119,11 @@ printf 'sysstat\t%s\tDebian-signed-source; dsc_sha256=%s; SA_LIB_DIR=/run/emisar
   "$source_version" "$(sha256sum "${source_dsc[0]}" | cut -d' ' -f1)" > /bundle/source-builds.tsv
 printf 'ntpsec\t%s\tDebian-signed-package; deb_sha256=%s\n' \
   "$ntp_source_version" "$(sha256sum "${deb[0]}" | cut -d' ' -f1)" >> /bundle/source-builds.tsv
+iproute_dsc=(/iproute-source/iproute2_*.dsc)
+[ "${#iproute_dsc[@]}" -eq 1 ]
+printf 'iproute2\t%s\tDebian-signed-source; dsc_sha256=%s; ss without RPC; ss-private-build.txt\n' \
+  "$(dpkg-query -W -f='${source:Version}' iproute2)" \
+  "$(sha256sum "${iproute_dsc[0]}" | cut -d' ' -f1)" >> /bundle/source-builds.tsv
 python_dsc=(/python-source/python3.11_*.dsc)
 [ "${#python_dsc[@]}" -eq 1 ]
 printf 'python3.11\t%s\tDebian-signed-source; dsc_sha256=%s; private interpreter; pyexpat/_elementtree disabled\n' \
