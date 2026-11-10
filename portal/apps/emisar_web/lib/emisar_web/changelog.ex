@@ -17,6 +17,32 @@ defmodule EmisarWeb.Changelog do
 
   @entries [
     %{
+      date: ~D[2026-11-10],
+      slug: "historical-cloud-diagnostics-and-cli-guides",
+      title: "Historical cloud diagnostics and CLI guides",
+      tag: "v0.59.0",
+      summary:
+        "Investigate older failures without asking someone to export logs. Dataproc can read earlier driver-log windows and find retained jobs from deleted clusters. Cloud Logging can query exact historical intervals and return the nested contents of a selected entry. Updated guides explain CLI and MCP access, and pack pages make setup and available actions easier to find.",
+      details: [
+        {"Packs",
+         [
+           "Dataproc 0.1.3 adds historical job selectors and byte offsets for reading earlier driver-log windows. Reads stay bounded, and the offset is not a gap-free continuation cursor.",
+           "Google Cloud Logging and Monitoring 0.3.16 adds historical time ranges, exact VM instance selectors, and entry details returned in bounded excerpts. It reports ambiguous matches instead of choosing one silently.",
+           "Full log payloads can contain sensitive data. Log-view permissions still apply, and redaction is best-effort."
+         ]},
+        {"Platform",
+         [
+           "The native diagnostics bundle omits Python's unused NIS extension and its RPC and Kerberos dependencies. Qualification checks that they remain absent and verifies the supported NTP diagnostics."
+         ]},
+        {"Website",
+         [
+           "A new CLI-vs-MCP guide explains scripts, pipes, filtered output, token use, and where each interface fits.",
+           "PostgreSQL, Cassandra, and Kubernetes pack pages pair short operational examples with setup instructions and the full action reference.",
+           "CLI documentation and comparisons are clearer, and every pack has a concise search description."
+         ]}
+      ]
+    },
+    %{
       date: ~D[2026-11-07],
       slug: "dataproc-nats-and-better-stack-packs",
       title: "Dataproc, NATS JetStream, and Better Stack packs",

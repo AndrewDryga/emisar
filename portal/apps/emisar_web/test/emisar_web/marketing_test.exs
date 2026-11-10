@@ -102,7 +102,7 @@ defmodule EmisarWeb.MarketingTest do
     assert html =~ "emisar"
     assert html =~ "Sign in"
     assert html =~ "Start free"
-    assert html =~ "One action catalog. CLI or MCP access."
+    assert html =~ "Connect your infrastructure to an AI agent."
     assert html =~ "Apache-2.0"
     refute html =~ "signed audit log"
     # A signed-out visitor gets the auth CTAs, not a dashboard link.
@@ -1649,6 +1649,8 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Medusa backups and least-privilege pack recipes"
       assert html =~ "v0.58.0"
       assert html =~ "Dataproc, NATS JetStream, and Better Stack packs"
+      assert html =~ "v0.59.0"
+      assert html =~ "Historical cloud diagnostics and CLI guides"
       assert html =~ "v0.15.0"
 
       # The first-party RSS feed, the repo, and the "see all" out-link.

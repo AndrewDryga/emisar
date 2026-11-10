@@ -82,7 +82,7 @@ diagnostics_copy_python_tree() {
     # This private interpreter runs ntpq, not arbitrary Python applications.
     # Omit unsupported consumers before measuring ELF closure, not afterwards.
     case "$relative" in
-      sqlite3/*|xml/*|ssl.py|tarfile.py|__pycache__/ssl.cpython-311*.pyc|__pycache__/tarfile.cpython-311*.pyc|lib-dynload/_sqlite3*.so|lib-dynload/_ssl*.so|lib-dynload/pyexpat*.so|lib-dynload/_elementtree*.so) continue ;;
+      sqlite3/*|xml/*|ssl.py|tarfile.py|__pycache__/ssl.cpython-311*.pyc|__pycache__/tarfile.cpython-311*.pyc|lib-dynload/_sqlite3*.so|lib-dynload/_ssl*.so|lib-dynload/pyexpat*.so|lib-dynload/_elementtree*.so|lib-dynload/nis*.so) continue ;;
     esac
     install -d "$(dirname "$destination/$relative")" || return 1
     diagnostics_copy_debian "$file" "$destination/$relative" || return 1

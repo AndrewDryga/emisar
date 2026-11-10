@@ -30,7 +30,11 @@ done < <(find "$bundle/python" -type f -name '*.so*' -print0)
 export PYTHONHOME="$bundle/python"
 export PYTHONPATH="$bundle/python/lib/python3/dist-packages"
 "$bundle/lib/loader" --library-path "$bundle/lib" "$bundle/libexec/python3" -B -P -S -c \
-  'import importlib.util, ntp.packet, ntp.control, ntp.ntpc; print(ntp.ntpc.statustoa(0, 0)); assert all(importlib.util.find_spec(name) is None for name in ("sqlite3", "_sqlite3", "xml", "pyexpat", "_elementtree", "ssl", "_ssl", "tarfile"))'
+  'import importlib.util, ntp.packet, ntp.control, ntp.ntpc; print(ntp.ntpc.statustoa(0, 0)); assert all(importlib.util.find_spec(name) is None for name in ("sqlite3", "_sqlite3", "xml", "pyexpat", "_elementtree", "ssl", "_ssl", "tarfile", "nis"))'
+# NIS is unused by ntpq; its RPC and Kerberos dependencies must not ship.
+for library in libnsl libtirpc libgssapi_krb5 libk5crypto libkrb5 libkrb5support; do
+  test -z "$(find "$bundle/lib" -name "$library.so*" -print)"
+done
 "$bundle/bin/ntpq" --version
 "$bundle/lib/loader" --library-path "$bundle/lib" "$bundle/libexec/python3" -B -P -S \
   /qualification/qualify-ntpq.py "$bundle/bin/ntpq"
