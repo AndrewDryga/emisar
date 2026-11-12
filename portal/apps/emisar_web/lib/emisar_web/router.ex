@@ -188,6 +188,7 @@ defmodule EmisarWeb.Router do
     get "/docs/connect-chatgpt", MarketingController, :connect_chatgpt
     get "/docs/connect-cli-agent", MarketingController, :connect_cli_agent
     get "/docs/connect-a-cli-client", DocsRedirectController, :connect_cli_client
+    get "/packs/time-sync-ntpsec", DocsRedirectController, :time_sync_ntpsec
     get "/docs/connect-agent-sandboxes", MarketingController, :connect_agent_sandboxes
     get "/docs/connect-coop", DocsRedirectController, :connect_coop
     get "/docs/connect-docker-sandboxes", DocsRedirectController, :connect_docker_sandboxes

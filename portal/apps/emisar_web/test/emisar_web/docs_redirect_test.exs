@@ -24,6 +24,16 @@ defmodule EmisarWeb.DocsRedirectTest do
     end
   end
 
+  test "the consolidated NTPsec pack page redirects to the time-sync pack", %{conn: conn} do
+    response =
+      get(conn, "/packs/time-sync-ntpsec", %{"next" => "https://example.invalid/"})
+
+    assert redirected_to(response, :moved_permanently) == "/packs/time-sync"
+
+    html = conn |> recycle() |> get("/packs/time-sync") |> html_response(200)
+    assert html =~ ~s(<link rel="canonical" href="https://emisar.dev/packs/time-sync">)
+  end
+
   test "discovery surfaces publish canonical documentation URLs", %{conn: conn} do
     for source <- ["/docs", "/sitemap.xml"] do
       body = conn |> recycle() |> get(source) |> response(200)

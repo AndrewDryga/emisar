@@ -254,6 +254,18 @@ resource "google_compute_url_map" "https" {
   path_matcher {
     name            = "pack-registry"
     default_service = google_compute_backend_bucket.pack_registry.id
+
+    # The bucket serves objects, not a directory listing. Send people and
+    # crawlers at its root to the registry contract instead of a GCS 403.
+    path_rule {
+      paths = ["/"]
+      url_redirect {
+        host_redirect          = var.domain
+        path_redirect          = "/docs/pack-registry"
+        redirect_response_code = "MOVED_PERMANENTLY_DEFAULT"
+        strip_query            = true
+      }
+    }
   }
 
   path_matcher {
@@ -307,6 +319,20 @@ resource "google_compute_url_map" "https" {
     description = "Binary releases bypass the Portal application"
     host        = var.domain
     path        = "/releases/runner/latest.json"
+    service     = google_compute_backend_bucket.pack_registry.id
+  }
+
+  test {
+    description = "Pack catalog requests remain on the registry bucket"
+    host        = "registry.${var.domain}"
+    path        = "/v1/catalog.json"
+    service     = google_compute_backend_bucket.pack_registry.id
+  }
+
+  test {
+    description = "Immutable pack downloads remain on the registry bucket"
+    host        = "registry.${var.domain}"
+    path        = "/v1/packs/example/1.0.0/pack.tar.gz"
     service     = google_compute_backend_bucket.pack_registry.id
   }
 
