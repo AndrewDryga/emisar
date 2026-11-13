@@ -1,5 +1,5 @@
 # Extraction-only artifact. The privileged host never starts this container.
-FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine3.24@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb AS compose
+FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine3.24@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18 AS compose
 COPY infra/runtime/admin-runner/diagnostics/build-compose.sh /build-compose.sh
 RUN --mount=type=cache,id=emisar-diagnostics-compose-go1.27.3-modules,target=/go/pkg/mod,sharing=locked \
     /bin/sh /build-compose.sh
