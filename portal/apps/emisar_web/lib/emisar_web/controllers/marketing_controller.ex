@@ -627,7 +627,7 @@ defmodule EmisarWeb.MarketingController do
     {"give-ai-agents-safe-production-access", :give_ai_agents_safe_production_access,
      "How to give an AI agent safe access to production",
      "From copy-pasting logs to SSH and MCP: how to let an agent work on production without handing it the keys to everything.",
-     "Updated November 10, 2026", "7 min read",
+     "Updated November 16, 2026", "7 min read",
      "AI agent security in production: compare SSH and MCP, control permissions, and let agents investigate while fixes go through code review."},
     {"prompt-injection-for-ops-teams", :prompt_injection_for_ops_teams,
      "Prompt injection for ops teams: your logs are prompts now",
