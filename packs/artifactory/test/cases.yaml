@@ -1,8 +1,7 @@
 services: [artifactory]
-# 7.161.26 (2026-09) never reports ready inside the matrix's hostile
-# 1-CPU / 1536-MiB budget — its access router keeps retrying the cluster
-# join past the 16-minute case deadline — so the fixture stays on 7.146.39
-# until the SUT budget grows with it.
+# 7.161.26 did not complete startup under the former 1-CPU / 1536-MiB
+# limit. Retain the qualified 7.146.39 compatibility row; a newer SUT
+# needs its full behavior qualification.
 versions:
   - version: "7.146.39"
     digest: "@sha256:10887713cc3a62f3ef1560d9c70fad39ff2bd324027cce30769dd2613433a628"

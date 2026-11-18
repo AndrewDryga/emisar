@@ -26,7 +26,8 @@ defmodule EmisarWeb.Changelog do
       details: [
         {"Security",
          [
-           "Plug 1.20.4 fixes CVE-2026-120287 in multipart request parsing. The portal already disables multipart parsing."
+           "Plug 1.20.4 fixes CVE-2026-120287 in multipart request parsing. The portal already disables multipart parsing.",
+           "Go builds use 1.27.4, which fixes CVE-2026-97054 in net/http. The portal runtime removes unused PAM and login utilities affected by CVE-2025-6020."
          ]},
         {"Platform",
          [

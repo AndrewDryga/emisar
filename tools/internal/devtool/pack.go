@@ -688,11 +688,17 @@ func writePackTestHostileOverride(reports string, plan packtest.PlanRef) (string
 }
 
 func packTestHostileMemory(pack string) string {
-	if pack == "airflow" {
+	switch pack {
+	case "airflow":
 		// Standalone runs several Airflow components plus the seed CLI. At
 		// 1536 MiB the CLI was OOM-killed before actions could run. Keep the
 		// one-CPU pressure with Airflow's recommended 4 GiB memory baseline:
 		// https://airflow.apache.org/docs/apache-airflow/3.3.2/installation/prerequisites.html
+		return "4g"
+	case "artifactory":
+		// The JVM was OOM-killed during setup at 1536 MiB. Preserve CPU
+		// pressure with JFrog's 4 GiB evaluation/test memory baseline:
+		// https://docs.jfrog.com/installation/docs/system-requirements
 		return "4g"
 	}
 	return "1536m"

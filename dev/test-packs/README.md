@@ -258,9 +258,9 @@ PACKTEST_VERSION=17.6 \
 ```
 
 `--hostile` writes a case-local Compose override that limits each SUT service to
-one CPU, 1536 MiB of memory, and 4096 PIDs. Airflow receives 4 GiB of memory
-because its standalone fixture runs several components plus the seed CLI; the
-default limit killed setup before actions could run. CI uses these limits to
+one CPU, 1536 MiB of memory, and 4096 PIDs. Airflow and Artifactory receive
+4 GiB of memory: the default limit killed Airflow's seed CLI and Artifactory's
+JVM during setup before actions could run. CI uses these limits to
 make startup races and expensive readiness probes visible on every behavior row.
 It does not emulate
 Linux ownership or AppArmor on Docker Desktop, so a local pass remains feedback,

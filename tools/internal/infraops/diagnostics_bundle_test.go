@@ -54,7 +54,7 @@ func diagnosticsFixture(t *testing.T) string {
 		case "cli-plugins/docker-compose", "compose/LICENSE", "compose/NOTICE":
 			kind, source, owner = "github-source", "https://codeload.github.com/docker/compose/tar.gz/5bceecf985347fcf6dd23029ce440b502a0d4301", "docker-compose\t5.7.0\tamd64\tdocker/compose\tv5.7.0"
 		case "compose/GO-LICENSE":
-			kind, source, owner = "compiler-image", "golang:1.27.3-alpine3.24@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18", "stdlib\tv1.27.3\tall\tgolang/go\tgo1.27.3"
+			kind, source, owner = "compiler-image", "golang:1.27.4-alpine3.24@sha256:70bd7ddea8b6cbe5d6943cde279d6b67feb10cc924fb9100d1d8757c1575b280", "stdlib\tv1.27.4\tall\tgolang/go\tgo1.27.4"
 		}
 		origins = append(origins, "./"+path+"\t"+kind+"\t"+source+"\t"+owner+"\n")
 	}
@@ -84,8 +84,8 @@ func diagnosticsFixture(t *testing.T) string {
 	build := fmt.Sprintf(`source_url=https://codeload.github.com/docker/compose/tar.gz/5bceecf985347fcf6dd23029ce440b502a0d4301
 source_sha256=f21c00230b32c4b01dcf516e37a195f166798443eaadfbdd635d86079f16fcb9
 source_commit=5bceecf985347fcf6dd23029ce440b502a0d4301
-toolchain_image=golang:1.27.3-alpine3.24@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18
-toolchain_version=go1.27.3
+toolchain_image=golang:1.27.4-alpine3.24@sha256:70bd7ddea8b6cbe5d6943cde279d6b67feb10cc924fb9100d1d8757c1575b280
+toolchain_version=go1.27.4
 go_mod_sha256=add1d3fc58082dc40ea0ebcc3d2c80b1f4bf99a5452aab2026e8997b511cfb09
 go_sum_sha256=742b5078110f95e2a78eb36cc17c13b340111297d574f140e7134c341bf0e3b2
 module_update=go get golang.org/x/net@v0.62.0
@@ -161,7 +161,7 @@ func TestDiagnosticsManifestRejectsWrongIdentityAndIncompleteClosure(t *testing.
 			if err != nil {
 				return err
 			}
-			err = os.WriteFile(path, []byte(strings.ReplaceAll(string(data), "toolchain_version=go1.27.3", "toolchain_version=go1.26.8")), 0o600)
+			err = os.WriteFile(path, []byte(strings.ReplaceAll(string(data), "toolchain_version=go1.27.4", "toolchain_version=go1.26.8")), 0o600)
 			sealDiagnosticsFixture(t, dir)
 			return err
 		}},

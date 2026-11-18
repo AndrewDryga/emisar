@@ -1,6 +1,6 @@
 module github.com/andrewdryga/emisar/tools
 
-go 1.27.3
+go 1.27.4
 
 tool honnef.co/go/tools/cmd/staticcheck
 

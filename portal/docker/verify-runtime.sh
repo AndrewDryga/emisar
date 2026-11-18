@@ -2,11 +2,11 @@
 set -eu
 
 installed=$(dpkg-query -W -f='${Package}\t${db:Status-Abbrev}\n')
-if printf '%s\n' "$installed" | awk -F '\t' '$2 == "ii " && ($1 == "apt" || $1 == "libgnutls30") {found=1} END {exit !found}'; then
-  echo 'unused apt/GnuTLS is still installed in the runtime image' >&2
+if printf '%s\n' "$installed" | awk -F '\t' '$2 == "ii " && ($1 == "apt" || $1 == "libgnutls30" || $1 ~ /^libpam/) {found=1} END {exit !found}'; then
+  echo 'unused apt/GnuTLS/PAM is still installed in the runtime image' >&2
   exit 1
 fi
-test -z "$(find /app /usr/lib -name '*gnutls*' -print)"
+test -z "$(find /app /usr/lib \( -name '*gnutls*' -o -name 'libpam*.so*' -o -name 'pam_*.so' \) -print)"
 test -s /etc/ssl/certs/ca-certificates.crt
 files=$(mktemp)
 trap 'rm -f "$files"' EXIT
@@ -17,7 +17,7 @@ while IFS= read -r file; do
   [ "$magic" = 7f454c46 ] || continue
   if linkage=$(ldd "$file" 2>&1); then
     case "$linkage" in
-      *'not found'*|*gnutls*) echo 'release ELF has missing or unexpected GnuTLS linkage' >&2; exit 1 ;;
+      *'not found'*|*gnutls*|*libpam*) echo 'release ELF has missing or unexpected GnuTLS/PAM linkage' >&2; exit 1 ;;
     esac
   else
     case "$linkage" in

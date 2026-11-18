@@ -7,8 +7,8 @@ set -eu
 source_commit=5bceecf985347fcf6dd23029ce440b502a0d4301
 source_url=https://codeload.github.com/docker/compose/tar.gz/$source_commit
 source_sha256=f21c00230b32c4b01dcf516e37a195f166798443eaadfbdd635d86079f16fcb9
-compiler_image=golang:1.27.3-alpine3.24@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18
-test "$(go env GOVERSION)" = go1.27.3
+compiler_image=golang:1.27.4-alpine3.24@sha256:70bd7ddea8b6cbe5d6943cde279d6b67feb10cc924fb9100d1d8757c1575b280
+test "$(go env GOVERSION)" = go1.27.4
 mkdir /compose /compose-src
 wget -O /compose-source.tar.gz "$source_url"
 printf '%s  %s\n' "$source_sha256" /compose-source.tar.gz | sha256sum -c -
@@ -36,7 +36,7 @@ cp /usr/local/go/LICENSE /compose/GO-LICENSE
 go version -m /compose/docker-compose > /compose/buildinfo.txt
 {
   printf 'source_url=%s\nsource_sha256=%s\nsource_commit=%s\n' "$source_url" "$source_sha256" "$source_commit"
-  printf 'toolchain_image=%s\ntoolchain_version=go1.27.3\n' "$compiler_image"
+  printf 'toolchain_image=%s\ntoolchain_version=go1.27.4\n' "$compiler_image"
   printf '%s\n' \
     'go_mod_sha256=add1d3fc58082dc40ea0ebcc3d2c80b1f4bf99a5452aab2026e8997b511cfb09' \
     'go_sum_sha256=742b5078110f95e2a78eb36cc17c13b340111297d574f140e7134c341bf0e3b2' \

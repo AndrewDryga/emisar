@@ -102,8 +102,8 @@ done
 # from the Compose source archive.
 cp /compose-source-build/GO-LICENSE /bundle/compose/GO-LICENSE
 diagnostics_record_origin /bundle/compose/GO-LICENSE compiler-image \
-  golang:1.27.3-alpine3.24@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18 \
-  $'stdlib\tv1.27.3\tall\tgolang/go\tgo1.27.3'
+  golang:1.27.4-alpine3.24@sha256:70bd7ddea8b6cbe5d6943cde279d6b67feb10cc924fb9100d1d8757c1575b280 \
+  $'stdlib\tv1.27.4\tall\tgolang/go\tgo1.27.4'
 # Retain all signed build dependencies honestly, separately from shipped bytes.
 dpkg-query -W -f='${db:Status-Abbrev}\t${Package}\t${Version}\t${Architecture}\t${source:Package}\t${source:Version}\n' | \
   awk -F '\t' '$1 == "ii " {print $2 "\t" $3 "\t" $4 "\t" $5 "\t" $6}' | sort > /bundle/debian-builder.tsv
@@ -129,7 +129,7 @@ python_dsc=(/python-source/python3.11_*.dsc)
 printf 'python3.11\t%s\tDebian-signed-source; dsc_sha256=%s; private interpreter; pyexpat/_elementtree disabled\n' \
   "$(dpkg-query -W -f='${source:Version}' python3.11-minimal)" \
   "$(sha256sum "${python_dsc[0]}" | cut -d' ' -f1)" >> /bundle/source-builds.tsv
-printf 'docker/compose\tv5.7.0\tcommit=5bceecf985347fcf6dd23029ce440b502a0d4301; pinned Go1.27.3; compose-build.txt/compose-buildinfo.txt\n' >> /bundle/source-builds.tsv
+printf 'docker/compose\tv5.7.0\tcommit=5bceecf985347fcf6dd23029ce440b502a0d4301; pinned Go1.27.4; compose-build.txt/compose-buildinfo.txt\n' >> /bundle/source-builds.tsv
 find /bundle -type f -exec chmod a-s,go-w {} +
 cd /bundle
 find . -type f ! -path ./SHA256SUMS ! -path ./manifest -print0 | sort -z | xargs -0 sha256sum > /tmp/bundle-SHA256SUMS

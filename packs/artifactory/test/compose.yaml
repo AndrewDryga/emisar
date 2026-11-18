@@ -43,7 +43,7 @@ services:
           curl -fsS -m 3 http://localhost:8082/artifactory/api/system/ping >/dev/null
       interval: 5s
       # Artifactory-OSS is a multi-service JVM app; under the --hostile matrix's
-      # 1-CPU/1536-MiB limits its access router can still be registering past 7
+      # one-CPU limit its access router can still be registering past 7
       # minutes, so give startup a wider grace than a normally-resourced boot.
       start_period: 900s
       start_interval: 2s

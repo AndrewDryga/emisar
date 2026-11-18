@@ -63,8 +63,8 @@ test -s compose-build.txt && test -s compose-buildinfo.txt && test -s compose/LI
   read -r line; [ "$line" = source_url=https://codeload.github.com/docker/compose/tar.gz/5bceecf985347fcf6dd23029ce440b502a0d4301 ]
   read -r line; [ "$line" = source_sha256=f21c00230b32c4b01dcf516e37a195f166798443eaadfbdd635d86079f16fcb9 ]
   read -r line; [ "$line" = source_commit=5bceecf985347fcf6dd23029ce440b502a0d4301 ]
-  read -r line; [ "$line" = toolchain_image=golang:1.27.3-alpine3.24@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18 ]
-  read -r line; [ "$line" = toolchain_version=go1.27.3 ]
+  read -r line; [ "$line" = toolchain_image=golang:1.27.4-alpine3.24@sha256:70bd7ddea8b6cbe5d6943cde279d6b67feb10cc924fb9100d1d8757c1575b280 ]
+  read -r line; [ "$line" = toolchain_version=go1.27.4 ]
   read -r line; [ "$line" = go_mod_sha256=add1d3fc58082dc40ea0ebcc3d2c80b1f4bf99a5452aab2026e8997b511cfb09 ]
   read -r line; [ "$line" = go_sum_sha256=742b5078110f95e2a78eb36cc17c13b340111297d574f140e7134c341bf0e3b2 ]
   read -r line; [ "$line" = 'module_update=go get golang.org/x/net@v0.62.0' ]
@@ -100,7 +100,7 @@ awk -F '\t' -v revision="$revision" '
     next
   }
   $2 == "compiler-image" {
-    if ($1 != "./compose/GO-LICENSE" || $3 != "golang:1.27.3-alpine3.24@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18" || $4 != "stdlib" || $5 != "v1.27.3" || $6 != "all" || $7 != "golang/go" || $8 != "go1.27.3") exit 1
+    if ($1 != "./compose/GO-LICENSE" || $3 != "golang:1.27.4-alpine3.24@sha256:70bd7ddea8b6cbe5d6943cde279d6b67feb10cc924fb9100d1d8757c1575b280" || $4 != "stdlib" || $5 != "v1.27.4" || $6 != "all" || $7 != "golang/go" || $8 != "go1.27.4") exit 1
     next
   }
   {exit 1}

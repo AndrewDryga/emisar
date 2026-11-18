@@ -29,7 +29,9 @@ func TestFramesSurviveNavigationAndRecreation(t *testing.T) {
 	}))
 	origin = server.URL
 	defer server.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// CI allows up to 90 seconds for a cold Chrome startup. Keep that
+	// budget inside the test deadline; frame assertions remain bounded below.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	session, err := browser.New(browser.Config{InBox: os.Getenv("COOP_BOX") == "1" || os.Getenv("CI") != ""}).Session(ctx, origin, true)
 	if err != nil {

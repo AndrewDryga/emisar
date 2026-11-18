@@ -10,8 +10,8 @@ import (
 )
 
 const composeSourceURL = "https://codeload.github.com/docker/compose/tar.gz/5bceecf985347fcf6dd23029ce440b502a0d4301"
-const composeToolchain = "go1.27.3"
-const composeCompilerImage = "golang:1.27.3-alpine3.24@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18"
+const composeToolchain = "go1.27.4"
+const composeCompilerImage = "golang:1.27.4-alpine3.24@sha256:70bd7ddea8b6cbe5d6943cde279d6b67feb10cc924fb9100d1d8757c1575b280"
 
 var composeBuildInputs = []string{
 	"source_url=" + composeSourceURL,
