@@ -17,12 +17,12 @@
 # carry it.)
 ARG ELIXIR_VERSION=1.20.5
 ARG OTP_VERSION=29.1.2
-ARG DEBIAN_VERSION=bookworm-20261027-slim
+ARG DEBIAN_VERSION=bookworm-20261104-slim
 
-ARG BUILDER_IMAGE="hexpm/elixir:${ELIXIR_VERSION}-erlang-${OTP_VERSION}-debian-${DEBIAN_VERSION}@sha256:f67f023a5c40388f01ff074a9de1732d9b42a5ff28cc60e7482e0d946c6bb34c"
+ARG BUILDER_IMAGE="hexpm/elixir:${ELIXIR_VERSION}-erlang-${OTP_VERSION}-debian-${DEBIAN_VERSION}@sha256:99d1775b9f8f0fdd16e4e64923d2f62273352b22d68bd1e99bb202a511f419a0"
 # The runtime base needs to match the builder's libc/ssl; use the same
 # debian snapshot so any compiled NIFs link against compatible libs.
-ARG RUNNER_IMAGE="debian:${DEBIAN_VERSION}@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3"
+ARG RUNNER_IMAGE="debian:${DEBIAN_VERSION}@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc"
 
 # --- Build stage ---------------------------------------------------
 FROM ${BUILDER_IMAGE} AS builder
@@ -35,7 +35,7 @@ RUN apt-get update -y \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-ARG HEX_VERSION=2.6.0
+ARG HEX_VERSION=2.7.0
 ARG REBAR3_VERSION=3.28.0
 ARG REBAR3_SHA512=33bbd38c624f179a507ea0db611217aa3e9d99b6e65a96cdaebd933224e73af271c4d348171698f69c907dcf4f246757c8ea925a4153048bfdb6c7c5ca0835cf
 RUN mix local.hex "${HEX_VERSION}" --force \

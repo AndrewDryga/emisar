@@ -1,10 +1,10 @@
 # Extraction-only artifact. The privileged host never starts this container.
-FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine3.24@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb AS compose
+FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine3.24@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18 AS compose
 COPY infra/runtime/admin-runner/diagnostics/build-compose.sh /build-compose.sh
 RUN --mount=type=cache,id=emisar-diagnostics-compose-go1.27.3-modules,target=/go/pkg/mod,sharing=locked \
     /bin/sh /build-compose.sh
 
-FROM debian:bookworm-20261027-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3 AS build
+FROM debian:bookworm-20261104-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc AS build
 COPY portal/docker/debian.sources /etc/apt/sources.list.d/debian.sources
 COPY portal/docker/debian-snapshot.pref /etc/apt/preferences.d/debian-snapshot.pref
 RUN sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources \

@@ -90,19 +90,19 @@ install -m 0755 /compose-source-build/docker-compose /bundle/cli-plugins/docker-
 install -d /bundle/compose
 cp /compose-source-build/build.txt /bundle/compose-build.txt
 cp /compose-source-build/buildinfo.txt /bundle/compose-buildinfo.txt
-compose_source=https://codeload.github.com/docker/compose/tar.gz/5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de
+compose_source=https://codeload.github.com/docker/compose/tar.gz/5bceecf985347fcf6dd23029ce440b502a0d4301
 diagnostics_record_origin /bundle/cli-plugins/docker-compose github-source "$compose_source" \
-  $'docker-compose\t5.5.1\tamd64\tdocker/compose\tv5.5.1'
+  $'docker-compose\t5.7.0\tamd64\tdocker/compose\tv5.7.0'
 for license in LICENSE NOTICE; do
   cp "/compose-source-build/$license" "/bundle/compose/$license"
   diagnostics_record_origin "/bundle/compose/$license" github-source "$compose_source" \
-    $'docker-compose\t5.5.1\tamd64\tdocker/compose\tv5.5.1'
+    $'docker-compose\t5.7.0\tamd64\tdocker/compose\tv5.7.0'
 done
 # The embedded Go runtime's notice comes from the pinned compiler image, not
 # from the Compose source archive.
 cp /compose-source-build/GO-LICENSE /bundle/compose/GO-LICENSE
 diagnostics_record_origin /bundle/compose/GO-LICENSE compiler-image \
-  golang:1.27.3-alpine3.24@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb \
+  golang:1.27.3-alpine3.24@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18 \
   $'stdlib\tv1.27.3\tall\tgolang/go\tgo1.27.3'
 # Retain all signed build dependencies honestly, separately from shipped bytes.
 dpkg-query -W -f='${db:Status-Abbrev}\t${Package}\t${Version}\t${Architecture}\t${source:Package}\t${source:Version}\n' | \
@@ -129,7 +129,7 @@ python_dsc=(/python-source/python3.11_*.dsc)
 printf 'python3.11\t%s\tDebian-signed-source; dsc_sha256=%s; private interpreter; pyexpat/_elementtree disabled\n' \
   "$(dpkg-query -W -f='${source:Version}' python3.11-minimal)" \
   "$(sha256sum "${python_dsc[0]}" | cut -d' ' -f1)" >> /bundle/source-builds.tsv
-printf 'docker/compose\tv5.5.1\tcommit=5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de; pinned Go1.27.3; compose-build.txt/compose-buildinfo.txt\n' >> /bundle/source-builds.tsv
+printf 'docker/compose\tv5.7.0\tcommit=5bceecf985347fcf6dd23029ce440b502a0d4301; pinned Go1.27.3; compose-build.txt/compose-buildinfo.txt\n' >> /bundle/source-builds.tsv
 find /bundle -type f -exec chmod a-s,go-w {} +
 cd /bundle
 find . -type f ! -path ./SHA256SUMS ! -path ./manifest -print0 | sort -z | xargs -0 sha256sum > /tmp/bundle-SHA256SUMS

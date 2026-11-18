@@ -84,7 +84,7 @@ const (
   packs <name> --case <id>   run one isolated behavior case
   packs <name> --shard <i>/<n>
                              run one declared shard of a slow pack's cases
-  packs [name] --hostile    add one-CPU, 1536-MiB, and PID limits per SUT
+  packs [name] --hostile    add one-CPU, memory, and PID limits per SUT
   packs --names a,b          run an exact set of pack behavior plans
   pack-access [names...]     prove exact host-access recipes on systemd hosts
   install <runner|mcp>       exercise a public installer in an isolated harness

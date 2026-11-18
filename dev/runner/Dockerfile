@@ -7,7 +7,7 @@
 # Base images are digest-pinned for reproducible builds. Refresh with:
 #   docker buildx imagetools inspect golang:1.27.3-alpine3.24 --format '{{.Manifest.Digest}}'
 
-FROM golang:1.27.3-alpine3.24@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb AS builder
+FROM golang:1.27.3-alpine3.24@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18 AS builder
 
 WORKDIR /src
 
@@ -25,7 +25,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     .
 
 # Debian provides the GNU utilities expected by the demo's Linux packs.
-FROM debian:bookworm-20261027-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3
+FROM debian:bookworm-20261104-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc
 
 RUN apt-get update -y \
     && apt-get upgrade -y --no-install-recommends \

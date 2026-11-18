@@ -386,7 +386,7 @@ func readDiagnosticsOrigins(bundle string) (map[string][]string, error) {
 		case "repository":
 		case "github-source":
 			if (fields[0] != "./cli-plugins/docker-compose" && fields[0] != "./compose/LICENSE" && fields[0] != "./compose/NOTICE") ||
-				fields[2] != composeSourceURL || strings.Join(fields[3:], "\t") != "docker-compose\t5.5.1\tamd64\tdocker/compose\tv5.5.1" {
+				fields[2] != composeSourceURL || strings.Join(fields[3:], "\t") != "docker-compose\t5.7.0\tamd64\tdocker/compose\tv5.7.0" {
 				return nil, fmt.Errorf("unexpected Compose source origin")
 			}
 		case "compiler-image":

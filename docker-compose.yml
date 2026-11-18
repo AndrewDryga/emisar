@@ -89,8 +89,8 @@ services:
   keycloak:
     # Pinned to the exact multi-arch index so a republished tag can't change the
     # SSO e2e stack. Refresh with:
-    #   docker buildx imagetools inspect quay.io/keycloak/keycloak:26.8.1 --format '{{.Manifest.Digest}}'
-    image: quay.io/keycloak/keycloak:26.8.1@sha256:a78d6b79572168cb25886b80a8b5b8d4ed4390743e3eecb810538683e209dd6b
+    #   docker buildx imagetools inspect quay.io/keycloak/keycloak:26.8.2 --format '{{.Manifest.Digest}}'
+    image: quay.io/keycloak/keycloak:26.8.2@sha256:c68e286cacd87b942ac1939a0a1481461109d6acd3a57dc496969a319a76bbf0
     # Network SIDECAR of the portal: shares the portal's namespace (loopback +
     # published ports) so the portal reaches Keycloak at the SAME localhost:8443
     # the host browser uses — making the OIDC issuer one consistent localhost

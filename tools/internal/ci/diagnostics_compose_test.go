@@ -20,7 +20,7 @@ func composeBinaryFixture(t *testing.T, bundle string) {
 		t.Fatal(err)
 	}
 	binary := filepath.Join(bundle, "cli-plugins/docker-compose")
-	command := exec.Command("go", "build", "-mod=readonly", "-trimpath", "-tags=e2e", "-ldflags=-w -X github.com/docker/compose/v5/internal.Version=v5.5.1", "-o", binary, "./cmd")
+	command := exec.Command("go", "build", "-mod=readonly", "-trimpath", "-tags=e2e", "-ldflags=-w -X github.com/docker/compose/v5/internal.Version=v5.7.0", "-o", binary, "./cmd")
 	command.Dir = source
 	command.Env = append(os.Environ(), "GOTOOLCHAIN=local", "CGO_ENABLED=0", "GOOS=linux", "GOARCH=amd64")
 	if output, err := command.CombinedOutput(); err != nil {
@@ -71,11 +71,11 @@ func TestComposeRejectsFalseSourceCompilerAndResealedNonGoBytes(t *testing.T) {
 	for _, tc := range []struct{ name, old, replacement string }{
 		{"foreign source", composeSourceURL, "https://example.invalid/source"},
 		{"old compiler", "toolchain_version=go1.27.3", "toolchain_version=go1.26.8"},
-		{"changed source inputs", "go_mod_sha256=cdf5424", "go_mod_sha256=0000000"},
+		{"changed source inputs", "go_mod_sha256=add1d3f", "go_mod_sha256=0000000"},
 		{"unpatched module selection", "module_update=go get golang.org/x/net@v0.62.0", "module_update=go get golang.org/x/net@v0.58.0"},
-		{"unpatched containerd selection", "github.com/containerd/containerd/v2@v2.3.6", "github.com/containerd/containerd/v2@v2.3.4"},
-		{"changed derived module graph", "derived_go_mod_sha256=ef49767", "derived_go_mod_sha256=0000000"},
-		{"changed derived checksums", "derived_go_sum_sha256=01fe088", "derived_go_sum_sha256=0000000"},
+		{"unpatched containerd selection", "module_update=go get golang.org/x/net@v0.62.0", "module_update=go get golang.org/x/net@v0.62.0 github.com/containerd/containerd/v2@v2.3.4"},
+		{"changed derived module graph", "derived_go_mod_sha256=3f1cbe9", "derived_go_mod_sha256=0000000"},
+		{"changed derived checksums", "derived_go_sum_sha256=3b18e94", "derived_go_sum_sha256=0000000"},
 		{"extra provenance", "\nbinary_sha256=", "\nunknown=allowed\nbinary_sha256="},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -134,9 +134,9 @@ func TestHostComposeReceiptRejectsStaleAndTamperedProvenance(t *testing.T) {
 	}
 	for _, tc := range []struct{ name, old, replacement string }{
 		{"old module selection", "module_update=go get golang.org/x/net@v0.62.0", "module_update=go get golang.org/x/net@v0.58.0"},
-		{"old containerd selection", "github.com/containerd/containerd/v2@v2.3.6", "github.com/containerd/containerd/v2@v2.3.4"},
-		{"foreign derived graph", "derived_go_mod_sha256=ef49767", "derived_go_mod_sha256=0000000"},
-		{"foreign derived sums", "derived_go_sum_sha256=01fe088", "derived_go_sum_sha256=0000000"},
+		{"old containerd selection", "module_update=go get golang.org/x/net@v0.62.0", "module_update=go get golang.org/x/net@v0.62.0 github.com/containerd/containerd/v2@v2.3.4"},
+		{"foreign derived graph", "derived_go_mod_sha256=3f1cbe9", "derived_go_mod_sha256=0000000"},
+		{"foreign derived sums", "derived_go_sum_sha256=3b18e94", "derived_go_sum_sha256=0000000"},
 		{"unbound workspace setting", "build_flags=GOWORK=off ", "build_flags="},
 		{"extra provenance", "\nbinary_sha256=", "\nunknown=allowed\nbinary_sha256="},
 		{"reordered provenance", "build_info_sha256=", "unexpected=allowed\nbuild_info_sha256="},

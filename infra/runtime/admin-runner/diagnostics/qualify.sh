@@ -61,7 +61,7 @@ PY
 "$bundle/bin/free" -b
 "$bundle/bin/vmstat" 1 2
 "$bundle/cli-plugins/docker-compose" version
-test "$("$bundle/cli-plugins/docker-compose" version --short)" = 5.5.1
+test "$("$bundle/cli-plugins/docker-compose" version --short)" = 5.7.0
 "$bundle/cli-plugins/docker-compose" docker-cli-plugin-metadata
 # Exercise the real plugin's parser without a daemon or host configuration.
 printf '%s\n' 'services:' '  probe:' '    image: example.invalid/qualification:fixed' | \

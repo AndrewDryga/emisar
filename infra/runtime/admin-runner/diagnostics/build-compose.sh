@@ -1,14 +1,13 @@
 #!/bin/sh
 set -eu
 
-# The upstream release asset embeds an affected Go runtime. Preserve its exact
-# signed source, then bind the minimal x/net and containerd security updates and
-# compile with our patched, pinned image. A patched compiler alone leaves
-# Compose's separately linked golang.org/x/net vulnerable.
-source_commit=5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de
+# Build the signed upstream source with the pinned compiler and the x/net
+# security update. The compiler alone does not patch Compose's separately
+# linked networking dependency.
+source_commit=5bceecf985347fcf6dd23029ce440b502a0d4301
 source_url=https://codeload.github.com/docker/compose/tar.gz/$source_commit
-source_sha256=c72877db37172d8ee55f565e4fed20067af89015e986b190768fd4ee621025f2
-compiler_image=golang:1.27.3-alpine3.24@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb
+source_sha256=f21c00230b32c4b01dcf516e37a195f166798443eaadfbdd635d86079f16fcb9
+compiler_image=golang:1.27.3-alpine3.24@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18
 test "$(go env GOVERSION)" = go1.27.3
 mkdir /compose /compose-src
 wget -O /compose-source.tar.gz "$source_url"
@@ -16,22 +15,22 @@ printf '%s  %s\n' "$source_sha256" /compose-source.tar.gz | sha256sum -c -
 tar -xzf /compose-source.tar.gz -C /compose-src --strip-components=1
 cd /compose-src
 printf '%s  %s\n' \
-  cdf5424bec2a7c75fa955a56efc88fb1731db5cca019cf63d4a1980a218e0868 go.mod \
-  8e96090883306abcd19ed57025a3e108b0b1cf6a6dff220c73d1aa77bb408a10 go.sum | sha256sum -c -
+  add1d3fc58082dc40ea0ebcc3d2c80b1f4bf99a5452aab2026e8997b511cfb09 go.mod \
+  742b5078110f95e2a78eb36cc17c13b340111297d574f140e7134c341bf0e3b2 go.sum | sha256sum -c -
 export GOWORK=off GOTOOLCHAIN=local CGO_ENABLED=0 GOOS=linux GOARCH=amd64
-go get golang.org/x/net@v0.62.0 github.com/containerd/containerd/v2@v2.3.6
+go get golang.org/x/net@v0.62.0
 printf '%s  %s\n' \
-  ef497676896c4982d9edca4a782127cb363388129e7a819cf4deb35ab30a7b14 go.mod \
-  01fe0885018328a640a0e32e0e85f9c59dec938642fcb2d96febec28effce3b7 go.sum | sha256sum -c -
+  3f1cbe9c14f71355628c968b58f064d0ff81201b8637ca0389c9c7f746244b74 go.mod \
+  3b18e947c444627b533d810db6fd0cf1a9d153c3e36a43bf15bb6169d9cf9a2b go.sum | sha256sum -c -
 go build -mod=readonly -trimpath -tags=e2e \
-  -ldflags='-w -X github.com/docker/compose/v5/internal.Version=v5.5.1' \
+  -ldflags='-w -X github.com/docker/compose/v5/internal.Version=v5.7.0' \
   -o /compose/docker-compose ./cmd
 # The download cache is only an optimization, never source-integrity evidence.
 go mod verify
 # The build must not rewrite the reviewed, hash-bound derived module inputs.
 printf '%s  %s\n' \
-  ef497676896c4982d9edca4a782127cb363388129e7a819cf4deb35ab30a7b14 go.mod \
-  01fe0885018328a640a0e32e0e85f9c59dec938642fcb2d96febec28effce3b7 go.sum | sha256sum -c -
+  3f1cbe9c14f71355628c968b58f064d0ff81201b8637ca0389c9c7f746244b74 go.mod \
+  3b18e947c444627b533d810db6fd0cf1a9d153c3e36a43bf15bb6169d9cf9a2b go.sum | sha256sum -c -
 cp LICENSE NOTICE /compose/
 cp /usr/local/go/LICENSE /compose/GO-LICENSE
 go version -m /compose/docker-compose > /compose/buildinfo.txt
@@ -39,13 +38,13 @@ go version -m /compose/docker-compose > /compose/buildinfo.txt
   printf 'source_url=%s\nsource_sha256=%s\nsource_commit=%s\n' "$source_url" "$source_sha256" "$source_commit"
   printf 'toolchain_image=%s\ntoolchain_version=go1.27.3\n' "$compiler_image"
   printf '%s\n' \
-    'go_mod_sha256=cdf5424bec2a7c75fa955a56efc88fb1731db5cca019cf63d4a1980a218e0868' \
-    'go_sum_sha256=8e96090883306abcd19ed57025a3e108b0b1cf6a6dff220c73d1aa77bb408a10' \
-    'module_update=go get golang.org/x/net@v0.62.0 github.com/containerd/containerd/v2@v2.3.6' \
-    'module_update_advisories=CVE-2026-78661 / GO-2026-6860; CVE-2026-78669 / GO-2026-6611; CVE-2026-53493 / GO-2026-6597; CVE-2026-53495 / GO-2026-6444' \
-    'derived_go_mod_sha256=ef497676896c4982d9edca4a782127cb363388129e7a819cf4deb35ab30a7b14' \
-    'derived_go_sum_sha256=01fe0885018328a640a0e32e0e85f9c59dec938642fcb2d96febec28effce3b7' \
-    'build_flags=GOWORK=off GOTOOLCHAIN=local CGO_ENABLED=0 GOOS=linux GOARCH=amd64 -mod=readonly -trimpath -tags=e2e -ldflags=-w -X github.com/docker/compose/v5/internal.Version=v5.5.1'
+    'go_mod_sha256=add1d3fc58082dc40ea0ebcc3d2c80b1f4bf99a5452aab2026e8997b511cfb09' \
+    'go_sum_sha256=742b5078110f95e2a78eb36cc17c13b340111297d574f140e7134c341bf0e3b2' \
+    'module_update=go get golang.org/x/net@v0.62.0' \
+    'module_update_advisories=CVE-2026-78661 / GO-2026-6860' \
+    'derived_go_mod_sha256=3f1cbe9c14f71355628c968b58f064d0ff81201b8637ca0389c9c7f746244b74' \
+    'derived_go_sum_sha256=3b18e947c444627b533d810db6fd0cf1a9d153c3e36a43bf15bb6169d9cf9a2b' \
+    'build_flags=GOWORK=off GOTOOLCHAIN=local CGO_ENABLED=0 GOOS=linux GOARCH=amd64 -mod=readonly -trimpath -tags=e2e -ldflags=-w -X github.com/docker/compose/v5/internal.Version=v5.7.0'
   printf 'binary_sha256=%s\n' "$(sha256sum /compose/docker-compose | cut -d' ' -f1)"
   printf 'build_info_sha256=%s\n' "$(sha256sum /compose/buildinfo.txt | cut -d' ' -f1)"
 } > /compose/build.txt

@@ -5,8 +5,8 @@ locals {
     mailer_from_email        = "hello@example.test"
     app_port                 = 4000
     container_image          = "ghcr.io/andrewdryga/emisar@sha256:0000000000000000000000000000000000000000000000000000000000000000"
-    cloud_sql_proxy_image    = "gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.26.3@sha256:f333a9c59890c3c67b8505166c5dbdcc0b29fca9173a2e09ca0446ab6997a736"
-    gcloud_image             = "gcr.io/google.com/cloudsdktool/google-cloud-cli:591.0.0-stable@sha256:d3f74bb21280869467e4e901c66280d4610e0bda81bab1cd7d9c112ccd1d2276"
+    cloud_sql_proxy_image    = "gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.27.0@sha256:7d156a5c466e31596afd6c8ed134f19c207a297418392fdad2686524ca4e7a3c"
+    gcloud_image             = "gcr.io/google.com/cloudsdktool/google-cloud-cli:593.0.0-stable@sha256:54e711173abf8aebf025d0a20815088bfb6ab627eae39d8d0ab6df6ec114cbf6"
     cluster_value            = "emisar"
     database_user            = "emisar-vm@test-project.iam"
     database_name            = "emisar"

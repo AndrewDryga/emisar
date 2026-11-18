@@ -60,18 +60,18 @@ test -s compose-build.txt && test -s compose-buildinfo.txt && test -s compose/LI
 # These fixed source/compiler inputs and the measured output hashes are bound
 # by the manifest. Never accept the old upstream binary under rebuilt provenance.
 {
-  read -r line; [ "$line" = source_url=https://codeload.github.com/docker/compose/tar.gz/5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de ]
-  read -r line; [ "$line" = source_sha256=c72877db37172d8ee55f565e4fed20067af89015e986b190768fd4ee621025f2 ]
-  read -r line; [ "$line" = source_commit=5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de ]
-  read -r line; [ "$line" = toolchain_image=golang:1.27.3-alpine3.24@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb ]
+  read -r line; [ "$line" = source_url=https://codeload.github.com/docker/compose/tar.gz/5bceecf985347fcf6dd23029ce440b502a0d4301 ]
+  read -r line; [ "$line" = source_sha256=f21c00230b32c4b01dcf516e37a195f166798443eaadfbdd635d86079f16fcb9 ]
+  read -r line; [ "$line" = source_commit=5bceecf985347fcf6dd23029ce440b502a0d4301 ]
+  read -r line; [ "$line" = toolchain_image=golang:1.27.3-alpine3.24@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18 ]
   read -r line; [ "$line" = toolchain_version=go1.27.3 ]
-  read -r line; [ "$line" = go_mod_sha256=cdf5424bec2a7c75fa955a56efc88fb1731db5cca019cf63d4a1980a218e0868 ]
-  read -r line; [ "$line" = go_sum_sha256=8e96090883306abcd19ed57025a3e108b0b1cf6a6dff220c73d1aa77bb408a10 ]
-  read -r line; [ "$line" = 'module_update=go get golang.org/x/net@v0.62.0 github.com/containerd/containerd/v2@v2.3.6' ]
-  read -r line; [ "$line" = 'module_update_advisories=CVE-2026-78661 / GO-2026-6860; CVE-2026-78669 / GO-2026-6611; CVE-2026-53493 / GO-2026-6597; CVE-2026-53495 / GO-2026-6444' ]
-  read -r line; [ "$line" = derived_go_mod_sha256=ef497676896c4982d9edca4a782127cb363388129e7a819cf4deb35ab30a7b14 ]
-  read -r line; [ "$line" = derived_go_sum_sha256=01fe0885018328a640a0e32e0e85f9c59dec938642fcb2d96febec28effce3b7 ]
-  read -r line; [ "$line" = 'build_flags=GOWORK=off GOTOOLCHAIN=local CGO_ENABLED=0 GOOS=linux GOARCH=amd64 -mod=readonly -trimpath -tags=e2e -ldflags=-w -X github.com/docker/compose/v5/internal.Version=v5.5.1' ]
+  read -r line; [ "$line" = go_mod_sha256=add1d3fc58082dc40ea0ebcc3d2c80b1f4bf99a5452aab2026e8997b511cfb09 ]
+  read -r line; [ "$line" = go_sum_sha256=742b5078110f95e2a78eb36cc17c13b340111297d574f140e7134c341bf0e3b2 ]
+  read -r line; [ "$line" = 'module_update=go get golang.org/x/net@v0.62.0' ]
+  read -r line; [ "$line" = 'module_update_advisories=CVE-2026-78661 / GO-2026-6860' ]
+  read -r line; [ "$line" = derived_go_mod_sha256=3f1cbe9c14f71355628c968b58f064d0ff81201b8637ca0389c9c7f746244b74 ]
+  read -r line; [ "$line" = derived_go_sum_sha256=3b18e947c444627b533d810db6fd0cf1a9d153c3e36a43bf15bb6169d9cf9a2b ]
+  read -r line; [ "$line" = 'build_flags=GOWORK=off GOTOOLCHAIN=local CGO_ENABLED=0 GOOS=linux GOARCH=amd64 -mod=readonly -trimpath -tags=e2e -ldflags=-w -X github.com/docker/compose/v5/internal.Version=v5.7.0' ]
   read -r line; [ "$line" = "binary_sha256=$(sha256sum cli-plugins/docker-compose | cut -d' ' -f1)" ]
   read -r line; [ "$line" = "build_info_sha256=$(sha256sum compose-buildinfo.txt | cut -d' ' -f1)" ]
   if read -r line; then exit 1; fi
@@ -96,11 +96,11 @@ awk -F '\t' -v revision="$revision" '
     next
   }
   $2 == "github-source" {
-    if (($1 != "./cli-plugins/docker-compose" && $1 != "./compose/LICENSE" && $1 != "./compose/NOTICE") || $3 != "https://codeload.github.com/docker/compose/tar.gz/5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de" || $4 != "docker-compose" || $5 != "5.5.1" || $6 != "amd64" || $7 != "docker/compose" || $8 != "v5.5.1") exit 1
+    if (($1 != "./cli-plugins/docker-compose" && $1 != "./compose/LICENSE" && $1 != "./compose/NOTICE") || $3 != "https://codeload.github.com/docker/compose/tar.gz/5bceecf985347fcf6dd23029ce440b502a0d4301" || $4 != "docker-compose" || $5 != "5.7.0" || $6 != "amd64" || $7 != "docker/compose" || $8 != "v5.7.0") exit 1
     next
   }
   $2 == "compiler-image" {
-    if ($1 != "./compose/GO-LICENSE" || $3 != "golang:1.27.3-alpine3.24@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb" || $4 != "stdlib" || $5 != "v1.27.3" || $6 != "all" || $7 != "golang/go" || $8 != "go1.27.3") exit 1
+    if ($1 != "./compose/GO-LICENSE" || $3 != "golang:1.27.3-alpine3.24@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18" || $4 != "stdlib" || $5 != "v1.27.3" || $6 != "all" || $7 != "golang/go" || $8 != "go1.27.3") exit 1
     next
   }
   {exit 1}

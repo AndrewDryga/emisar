@@ -52,9 +52,9 @@ func diagnosticsFixture(t *testing.T) string {
 		case "run-tool", "commands.txt":
 			kind, source, owner = "repository", "/build/"+path, "emisar\t"+diagnosticsRevision+"\tall\temisar\t"+diagnosticsRevision
 		case "cli-plugins/docker-compose", "compose/LICENSE", "compose/NOTICE":
-			kind, source, owner = "github-source", "https://codeload.github.com/docker/compose/tar.gz/5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de", "docker-compose\t5.5.1\tamd64\tdocker/compose\tv5.5.1"
+			kind, source, owner = "github-source", "https://codeload.github.com/docker/compose/tar.gz/5bceecf985347fcf6dd23029ce440b502a0d4301", "docker-compose\t5.7.0\tamd64\tdocker/compose\tv5.7.0"
 		case "compose/GO-LICENSE":
-			kind, source, owner = "compiler-image", "golang:1.27.3-alpine3.24@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb", "stdlib\tv1.27.3\tall\tgolang/go\tgo1.27.3"
+			kind, source, owner = "compiler-image", "golang:1.27.3-alpine3.24@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18", "stdlib\tv1.27.3\tall\tgolang/go\tgo1.27.3"
 		}
 		origins = append(origins, "./"+path+"\t"+kind+"\t"+source+"\t"+owner+"\n")
 	}
@@ -81,18 +81,18 @@ func diagnosticsFixture(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	build := fmt.Sprintf(`source_url=https://codeload.github.com/docker/compose/tar.gz/5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de
-source_sha256=c72877db37172d8ee55f565e4fed20067af89015e986b190768fd4ee621025f2
-source_commit=5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de
-toolchain_image=golang:1.27.3-alpine3.24@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb
+	build := fmt.Sprintf(`source_url=https://codeload.github.com/docker/compose/tar.gz/5bceecf985347fcf6dd23029ce440b502a0d4301
+source_sha256=f21c00230b32c4b01dcf516e37a195f166798443eaadfbdd635d86079f16fcb9
+source_commit=5bceecf985347fcf6dd23029ce440b502a0d4301
+toolchain_image=golang:1.27.3-alpine3.24@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18
 toolchain_version=go1.27.3
-go_mod_sha256=cdf5424bec2a7c75fa955a56efc88fb1731db5cca019cf63d4a1980a218e0868
-go_sum_sha256=8e96090883306abcd19ed57025a3e108b0b1cf6a6dff220c73d1aa77bb408a10
-module_update=go get golang.org/x/net@v0.62.0 github.com/containerd/containerd/v2@v2.3.6
-module_update_advisories=CVE-2026-78661 / GO-2026-6860; CVE-2026-78669 / GO-2026-6611; CVE-2026-53493 / GO-2026-6597; CVE-2026-53495 / GO-2026-6444
-derived_go_mod_sha256=ef497676896c4982d9edca4a782127cb363388129e7a819cf4deb35ab30a7b14
-derived_go_sum_sha256=01fe0885018328a640a0e32e0e85f9c59dec938642fcb2d96febec28effce3b7
-build_flags=GOWORK=off GOTOOLCHAIN=local CGO_ENABLED=0 GOOS=linux GOARCH=amd64 -mod=readonly -trimpath -tags=e2e -ldflags=-w -X github.com/docker/compose/v5/internal.Version=v5.5.1
+go_mod_sha256=add1d3fc58082dc40ea0ebcc3d2c80b1f4bf99a5452aab2026e8997b511cfb09
+go_sum_sha256=742b5078110f95e2a78eb36cc17c13b340111297d574f140e7134c341bf0e3b2
+module_update=go get golang.org/x/net@v0.62.0
+module_update_advisories=CVE-2026-78661 / GO-2026-6860
+derived_go_mod_sha256=3f1cbe9c14f71355628c968b58f064d0ff81201b8637ca0389c9c7f746244b74
+derived_go_sum_sha256=3b18e947c444627b533d810db6fd0cf1a9d153c3e36a43bf15bb6169d9cf9a2b
+build_flags=GOWORK=off GOTOOLCHAIN=local CGO_ENABLED=0 GOOS=linux GOARCH=amd64 -mod=readonly -trimpath -tags=e2e -ldflags=-w -X github.com/docker/compose/v5/internal.Version=v5.7.0
 binary_sha256=%x
 build_info_sha256=%x
 `, sha256.Sum256(binary), sha256.Sum256(info))

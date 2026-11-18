@@ -104,7 +104,7 @@ config :esbuild,
 
 # Configure tailwind (the version is required)
 config :tailwind,
-  version: "4.3.3",
+  version: "4.3.5",
   emisar_web: [
     args: ~w(
       --input=css/app.css

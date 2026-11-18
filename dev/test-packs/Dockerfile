@@ -17,7 +17,7 @@
 # --disable-shared is what makes the result portable: a libtool build leaves
 # `jq` linked against the libjq it just built, and that binary copied into the
 # final image silently resolves Debian's libjq — Oniguruma and all.
-FROM debian:trixie-20261027-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4 AS jq-without-regex
+FROM debian:trixie-20261104-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS jq-without-regex
 
 ARG JQ_VERSION=1.8.2
 ARG JQ_SHA256=71b8d6e8f5fe81f6c6d0d110e3892251f6ce76ed095abd315e26e6e1193af3af
@@ -33,7 +33,7 @@ RUN apt-get update \
     && make -j"$(nproc)" \
     && install -D -m 0755 jq /out/jq
 
-FROM debian:trixie-20261027-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4
+FROM debian:trixie-20261104-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2
 
 ENV DEBIAN_FRONTEND=noninteractive
 

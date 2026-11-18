@@ -15,7 +15,7 @@
 # Base images are digest-pinned for reproducible builds. Refresh with:
 #   docker buildx imagetools inspect debian:bookworm-slim --format '{{.Manifest.Digest}}'
 
-FROM debian:bookworm-20261027-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3 AS packset
+FROM debian:bookworm-20261104-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc AS packset
 
 COPY runner/release/container-packs.txt /src/container-packs.txt
 COPY packs /src/packs
@@ -29,7 +29,7 @@ RUN mkdir -p /out/packs \
         cp -R "/src/packs/${pack}" "/out/packs/${pack}"; \
     done < /src/container-packs.txt
 
-FROM debian:bookworm-20261027-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3
+FROM debian:bookworm-20261104-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc
 
 # Only what the baked packs execute (see container-packs.txt), plus CA
 # roots for the TLS dial-out and tini as PID 1. Anything more belongs in

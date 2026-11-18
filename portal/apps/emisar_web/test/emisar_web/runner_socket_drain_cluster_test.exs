@@ -35,15 +35,17 @@ defmodule EmisarWeb.RunnerSocketDrainClusterTest do
       Enum.flat_map(:code.get_path(), &[~c"-pa", &1]) ++
         [~c"-setcookie", Atom.to_charlist(Node.get_cookie())]
 
+    # on_exit runs after the test process exits; keep the peer alive until
+    # that callback shuts it down synchronously.
     {:ok, peer, node} =
-      :peer.start_link(%{
+      :peer.start(%{
         name: :drain_peer,
         host: ~c"127.0.0.1",
         longnames: true,
         args: args
       })
 
-    on_exit(fn -> catch_exit(:peer.stop(peer)) end)
+    on_exit(fn -> :ok = :peer.stop(peer) end)
 
     # The test module only exists in this VM, so the peer runs evaluated
     # code. The PubSub must outlive the call, hence the spawned holder.

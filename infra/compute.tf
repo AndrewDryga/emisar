@@ -4,8 +4,8 @@ locals {
   # was skipped in the 2026-09-15 bump because it lives in a different file and
   # is a TFC variable; keep it on this same cadence so the host layer does not
   # drift while the app and proxy layers stay current.
-  cloud_sql_proxy_image = "gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.26.3@sha256:f333a9c59890c3c67b8505166c5dbdcc0b29fca9173a2e09ca0446ab6997a736"
-  gcloud_image          = "gcr.io/google.com/cloudsdktool/google-cloud-cli:591.0.0-stable@sha256:d3f74bb21280869467e4e901c66280d4610e0bda81bab1cd7d9c112ccd1d2276"
+  cloud_sql_proxy_image = "gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.27.0@sha256:7d156a5c466e31596afd6c8ed134f19c207a297418392fdad2686524ca4e7a3c"
+  gcloud_image          = "gcr.io/google.com/cloudsdktool/google-cloud-cli:593.0.0-stable@sha256:54e711173abf8aebf025d0a20815088bfb6ab627eae39d8d0ab6df6ec114cbf6"
   # Boot verifies this release against SHA256SUMS from the same release, which
   # proves the bytes match a list published beside them and nothing about who
   # built either. The Sigstore provenance that does prove it cannot be checked

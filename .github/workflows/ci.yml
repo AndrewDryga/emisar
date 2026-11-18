@@ -173,7 +173,7 @@ jobs:
 
       - name: Install Hex and Rebar
         env:
-          HEX_VERSION: "2.6.0"
+          HEX_VERSION: "2.7.0"
           REBAR3_VERSION: "3.28.0"
           REBAR3_SHA512: 33bbd38c624f179a507ea0db611217aa3e9d99b6e65a96cdaebd933224e73af271c4d348171698f69c907dcf4f246757c8ea925a4153048bfdb6c7c5ca0835cf
         # The tooling gate's release-toolchain phase holds portal/Dockerfile's ARG
@@ -435,8 +435,8 @@ jobs:
       # nor the feed exists at gate time.
       - name: Install Trivy (pinned, checksum-verified)
         env:
-          TRIVY_VERSION: "0.76.1"
-          TRIVY_SHA256: c7cbe3137fb8a48a17574bede3dd6beb16742d1e9772929940fc90082c39d9c0
+          TRIVY_VERSION: "0.76.2"
+          TRIVY_SHA256: bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf
         run: |
           set -euo pipefail
           artifact="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
@@ -524,8 +524,8 @@ jobs:
         run: ./run ops qualify-admin-diagnostics --prebuilt "$GITHUB_SHA" emisar/admin-diagnostics:ci
       - name: Install Trivy (pinned, checksum-verified)
         env:
-          TRIVY_VERSION: "0.76.1"
-          TRIVY_SHA256: c7cbe3137fb8a48a17574bede3dd6beb16742d1e9772929940fc90082c39d9c0
+          TRIVY_VERSION: "0.76.2"
+          TRIVY_SHA256: bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf
         run: |
           set -euo pipefail
           artifact="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
@@ -897,8 +897,8 @@ jobs:
     env:
       TERRAFORM_VERSION: 1.17.1
       TERRAFORM_SHA256: 4638628058e71a55212b1c563712eac03b902128f40740f3dc8174df12135061
-      TFLINT_VERSION: v0.65.0
-      TFLINT_SHA256: d4c545ed2e29d6338604b586f34f544f380f70f243aa72f7b484713835eaec61
+      TFLINT_VERSION: v0.66.0
+      TFLINT_SHA256: 22be11cadc25cd02401e94c0ccc91aa63467debb8485c2a755d98f4c0a9d1e2e
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

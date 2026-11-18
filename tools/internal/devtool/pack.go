@@ -189,7 +189,7 @@ func (a *App) packTest(ctx context.Context, pattern string, names []string, case
 				return err
 			}
 			overrides[plan.Name] = override
-			fmt.Fprintf(a.Out, "Hostile limits: %s (1 CPU, 1536 MiB, %d PIDs per SUT)\n", plan.Name, packTestHostilePIDs)
+			fmt.Fprintf(a.Out, "Hostile limits: %s (1 CPU, %s memory, %d PIDs per SUT)\n", plan.Name, packTestHostileMemory(plan.Name), packTestHostilePIDs)
 		}
 		resolved, err := a.preparePackTestPlan(ctx, baseCompose, overrides[plan.Name], invocationID, runnerImage, plan, versionEnv)
 		if err != nil {
@@ -674,7 +674,7 @@ const packTestHostilePIDs = 4096
 func writePackTestHostileOverride(reports string, plan packtest.PlanRef) (string, error) {
 	services := make(map[string]hostilePackTestService, len(plan.Services))
 	for _, service := range plan.Services {
-		services[service] = hostilePackTestService{CPUs: "1.0", MemLimit: "1536m", PidsLimit: packTestHostilePIDs}
+		services[service] = hostilePackTestService{CPUs: "1.0", MemLimit: packTestHostileMemory(plan.Name), PidsLimit: packTestHostilePIDs}
 	}
 	data, err := yaml.Marshal(hostilePackTestCompose{Services: services})
 	if err != nil {
@@ -685,6 +685,17 @@ func writePackTestHostileOverride(reports string, plan packtest.PlanRef) (string
 		return "", err
 	}
 	return path, nil
+}
+
+func packTestHostileMemory(pack string) string {
+	if pack == "airflow" {
+		// Standalone runs several Airflow components plus the seed CLI. At
+		// 1536 MiB the CLI was OOM-killed before actions could run. Keep the
+		// one-CPU pressure with Airflow's recommended 4 GiB memory baseline:
+		// https://airflow.apache.org/docs/apache-airflow/3.3.2/installation/prerequisites.html
+		return "4g"
+	}
+	return "1536m"
 }
 
 type packTestComposeFile struct {
