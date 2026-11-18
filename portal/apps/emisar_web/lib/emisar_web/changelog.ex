@@ -17,6 +17,30 @@ defmodule EmisarWeb.Changelog do
 
   @entries [
     %{
+      date: ~D[2026-11-17],
+      slug: "dependency-updates-and-clearer-access-guidance",
+      title: "Dependency updates and clearer access guidance",
+      tag: "v0.60.0",
+      summary:
+        "Updated dependencies and build images include the Plug 1.20.4 security fix and Docker Compose 5.7.0 for native diagnostics. The production-access guide explains the limits of coding sandboxes, SSH brokers, and MCP tools, with a clearer account of where emisar fits.",
+      details: [
+        {"Security",
+         [
+           "Plug 1.20.4 fixes CVE-2026-120287 in multipart request parsing. The portal already disables multipart parsing."
+         ]},
+        {"Platform",
+         [
+           "The native diagnostics bundle moves to Docker Compose 5.7.0, retaining the x/net security update and verification of its source, compiler, and output.",
+           "Updates include WebSock Adapter 0.7.2, Tailwind 4.3.5, Keycloak 26.8.2, Cloud SQL Auth Proxy 2.27.0, and refreshed build, infrastructure, and CI dependencies."
+         ]},
+        {"Website",
+         [
+           "The production-access guide explains what each access model permits and where production permissions still need limits.",
+           "The registry homepage redirects to its documentation. The old NTPsec pack URL redirects to the combined time-sync pack."
+         ]}
+      ]
+    },
+    %{
       date: ~D[2026-11-10],
       slug: "historical-cloud-diagnostics-and-cli-guides",
       title: "Historical cloud diagnostics and CLI guides",

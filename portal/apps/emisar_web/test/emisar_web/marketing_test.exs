@@ -1649,8 +1649,8 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Medusa backups and least-privilege pack recipes"
       assert html =~ "v0.58.0"
       assert html =~ "Dataproc, NATS JetStream, and Better Stack packs"
-      assert html =~ "v0.59.0"
-      assert html =~ "Historical cloud diagnostics and CLI guides"
+      assert html =~ "v0.60.0"
+      assert html =~ "Dependency updates and clearer access guidance"
       assert html =~ "v0.15.0"
 
       # The first-party RSS feed, the repo, and the "see all" out-link.
