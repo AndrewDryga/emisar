@@ -131,10 +131,10 @@ resource "betteruptime_monitor" "portal" {
   remember_cookies = false
   verify_ssl       = true
 
-  # Independent of the GCP-side cert-renewal alert (monitoring_platform.tf): these watch
-  # expiry on whatever is actually serving the domain, from outside.
+  # Independent of the GCP-side cert-renewal alert (monitoring_platform.tf): watch
+  # the certificate actually served to external clients.
   ssl_expiration    = 7
-  domain_expiration = 14
+  domain_expiration = -1
 }
 
 # The unauthenticated `emisar pack install` path. HEAD, not a keyword GET:
@@ -159,7 +159,7 @@ resource "betteruptime_monitor" "pack_registry" {
   ip_version       = "ipv4"
 
   ssl_expiration    = 7
-  domain_expiration = 14
+  domain_expiration = -1
 }
 
 resource "betteruptime_monitor" "pack_registry_ipv6" {
@@ -178,8 +178,8 @@ resource "betteruptime_monitor" "pack_registry_ipv6" {
   ip_version       = "ipv6"
 
   # No expiry watch here on purpose: both address families are served by the one
-  # registry certificate, so the IPv4 monitor's ssl_expiration/domain_expiration
-  # already cover it and a second copy would page twice for the same renewal.
+  # registry certificate, so the IPv4 monitor's ssl_expiration already covers it
+  # and a second copy would page twice for the same renewal.
 }
 
 # ── Public status page ────────────────────────────────────────────────────────
