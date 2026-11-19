@@ -8,7 +8,11 @@ inherit_env:
   - CLOUDSDK_API_ENDPOINT_OVERRIDES_CLOUDRESOURCEMANAGER
   - CLOUDSDK_API_ENDPOINT_OVERRIDES_IAM
   - CLOUDSDK_AUTH_ACCESS_TOKEN
+  - CLOUDSDK_API_ENDPOINT_OVERRIDES_POLICYTROUBLESHOOTER
+  - CURL_CA_BUNDLE
 env:
+  CLOUDSDK_API_ENDPOINT_OVERRIDES_POLICYTROUBLESHOOTER: https://gcp-api:8443
+  CURL_CA_BUNDLE: /packs/gcp-iam/test/fixtures/server.crt
   CLOUDSDK_API_ENDPOINT_OVERRIDES_IAM: http://gcp-api:8080/
   CLOUDSDK_API_ENDPOINT_OVERRIDES_CLOUDRESOURCEMANAGER: http://gcp-api:8080/
   CLOUDSDK_AUTH_ACCESS_TOKEN: packtest-canary-gcp-iam-access-token-093f
@@ -16,6 +20,7 @@ defaults:
   expect:
     stdout_not_empty: true
     stdout_not_contains: [packtest-canary-gcp-iam-access-token-093f]
+    stderr_not_contains: [packtest-canary-gcp-iam-access-token-093f]
 cases:
   - name: gcp.projects-discovers-across-pages
     action: gcp.projects
@@ -104,3 +109,69 @@ cases:
       stdout_contains:
         - roles/iam.workloadIdentityUser
         - principalSet://iam.googleapis.com/projects/1001/locations/global/workloadIdentityPools/harness-pool/*
+  - name: gcp.policy_troubleshoot-grant
+    action: gcp.policy_troubleshoot
+    args: {"project": "example-prod", "principal": "airflow@example.com", "permission": "bigquery.tables.create", "resource": "//bigquery.googleapis.com/projects/example-prod/datasets/prod_modeled", "resource_name": "projects/example-prod/datasets/prod_modeled", "resource_service": "bigquery.googleapis.com", "resource_type": "bigquery.googleapis.com/Dataset"}
+    expect: {"json": {"/overallAccessState": "CAN_ACCESS", "/allowPolicyExplanation/allowAccessState": "ALLOW_ACCESS_STATE_GRANTED", "/allowPolicyExplanation/explainedPolicies/0/bindingExplanations/0/conditionExplanation/value": true, "/denyPolicyExplanation/denyAccessState": "DENY_ACCESS_STATE_NOT_DENIED"}}
+  - name: gcp.policy_troubleshoot-denied
+    action: gcp.policy_troubleshoot
+    args: {"project": "example-prod", "principal": "denied@example.com", "permission": "bigquery.tables.create", "resource": "//bigquery.googleapis.com/projects/example-prod/datasets/prod_modeled", "resource_name": "projects/example-prod/datasets/prod_modeled", "resource_service": "bigquery.googleapis.com", "resource_type": "bigquery.googleapis.com/Dataset"}
+    expect: {"json": {"/overallAccessState": "CANNOT_ACCESS", "/allowPolicyExplanation/allowAccessState": "ALLOW_ACCESS_STATE_NOT_GRANTED"}}
+  - name: gcp.policy_troubleshoot-deny-overrides-grant
+    action: gcp.policy_troubleshoot
+    args: {"project": "example-prod", "principal": "deny-policy@example.com", "permission": "bigquery.tables.create", "resource": "//bigquery.googleapis.com/projects/example-prod/datasets/prod_modeled", "resource_name": "projects/example-prod/datasets/prod_modeled", "resource_service": "bigquery.googleapis.com", "resource_type": "bigquery.googleapis.com/Dataset"}
+    expect: {"json": {"/overallAccessState": "CANNOT_ACCESS", "/allowPolicyExplanation/allowAccessState": "ALLOW_ACCESS_STATE_GRANTED", "/denyPolicyExplanation/denyAccessState": "DENY_ACCESS_STATE_DENIED"}}
+  - name: gcp.policy_troubleshoot-unknown-condition
+    action: gcp.policy_troubleshoot
+    args: {"project": "example-prod", "principal": "airflow@example.com", "permission": "bigquery.tables.create", "resource": "//bigquery.googleapis.com/projects/example-prod/datasets/prod_modeled"}
+    expect: {"json": {"/overallAccessState": "UNKNOWN_CONDITIONAL", "/allowPolicyExplanation/explainedPolicies/0/bindingExplanations/0/conditionExplanation/errors/0/message": "resource context missing"}}
+  - name: gcp.policy_troubleshoot-unknown-policy
+    action: gcp.policy_troubleshoot
+    args: {"project": "example-prod", "principal": "unknown@example.com", "permission": "bigquery.tables.create", "resource": "//bigquery.googleapis.com/projects/example-prod/datasets/prod_modeled", "resource_name": "projects/example-prod/datasets/prod_modeled", "resource_service": "bigquery.googleapis.com", "resource_type": "bigquery.googleapis.com/Dataset"}
+    expect: {"json": {"/overallAccessState": "UNKNOWN_INFO", "/allowPolicyExplanation/allowAccessState": "ALLOW_ACCESS_STATE_GRANTED", "/denyPolicyExplanation/denyAccessState": "DENY_ACCESS_STATE_UNKNOWN_INFO"}}
+  - name: gcp.policy_troubleshoot-context
+    action: gcp.policy_troubleshoot
+    args: {"project": "example-prod", "principal": "context@example.com", "permission": "bigquery.tables.create", "resource": "//bigquery.googleapis.com/projects/example-prod/datasets/prod_modeled", "resource_name": "projects/example-prod/datasets/prod_modeled", "resource_service": "bigquery.googleapis.com", "resource_type": "bigquery.googleapis.com/Dataset", "request_time": "2026-11-19T12:00:00Z", "destination_ip": "2001:db8::1", "destination_port": 443}
+    expect: {"json": {"/overallAccessState": "CAN_ACCESS", "/accessTuple/conditionContext/destination/port": "443", "/accessTuple/conditionContext/request/receiveTime": "2026-11-19T12:00:00Z"}}
+  - name: gcp.policy_troubleshoot-api-denied
+    action: gcp.policy_troubleshoot
+    args: {"project": "example-prod", "principal": "api-denied@example.com", "permission": "bigquery.tables.create", "resource": "//bigquery.googleapis.com/projects/example-prod/datasets/prod_modeled"}
+    expect: {"status": "failure", "exit": [22], "stdout_not_empty": false, "stderr_contains": ["PERMISSION_DENIED", "Policy inspection denied"]}
+  - name: gcp.policy_troubleshoot-oversized
+    action: gcp.policy_troubleshoot
+    args: {"project": "example-prod", "principal": "oversized@example.com", "permission": "bigquery.tables.create", "resource": "//bigquery.googleapis.com/projects/example-prod/datasets/prod_modeled"}
+    expect: {"status": "failure", "exit": [1], "stdout_not_empty": false, "stderr_contains": ["1 MiB byte budget"]}
+  - name: gcp.policy_troubleshoot-malformed
+    action: gcp.policy_troubleshoot
+    args: {"project": "example-prod", "principal": "malformed@example.com", "permission": "bigquery.tables.create", "resource": "//bigquery.googleapis.com/projects/example-prod/datasets/prod_modeled"}
+    expect: {"status": "failure", "exit": [5], "stdout_not_empty": false, "stderr_contains": ["invalid Policy Troubleshooter response"]}
+  - name: gcp.policy_troubleshoot-resource-injection
+    action: gcp.policy_troubleshoot
+    args: {"project": "example-prod", "principal": "airflow@example.com", "permission": "bigquery.tables.create", "resource": "//bigquery.googleapis.com/projects/example-prod/datasets/prod_modeled;id"}
+    expect: {"status": "failure", "stdout_not_empty": false, "reason": "argument_invalid"}
+  - name: gcp.policy_troubleshoot-principal-prefix
+    action: gcp.policy_troubleshoot
+    args: {"project": "example-prod", "principal": "serviceAccount:airflow@example.com", "permission": "bigquery.tables.create", "resource": "//bigquery.googleapis.com/projects/example-prod/datasets/prod_modeled"}
+    expect: {"status": "failure", "stdout_not_empty": false, "reason": "argument_invalid"}
+  - name: gcp.policy_troubleshoot-project-flag
+    action: gcp.policy_troubleshoot
+    args: {"project": "--log-http", "principal": "airflow@example.com", "permission": "bigquery.tables.create", "resource": "//bigquery.googleapis.com/projects/example-prod/datasets/prod_modeled"}
+    expect: {"status": "failure", "stdout_not_empty": false, "reason": "argument_invalid"}
+  - name: gcp.policy_troubleshoot-port-overflow
+    action: gcp.policy_troubleshoot
+    args: {"project": "example-prod", "principal": "airflow@example.com", "permission": "bigquery.tables.create", "resource": "//bigquery.googleapis.com/projects/example-prod/datasets/prod_modeled", "destination_port": 65536}
+    expect: {"status": "failure", "stdout_not_empty": false, "reason": "argument_invalid"}
+  - name: gcp.policy_troubleshoot-context-newline
+    action: gcp.policy_troubleshoot
+    args: {"project": "example-prod", "principal": "airflow@example.com", "permission": "bigquery.tables.create", "resource": "//bigquery.googleapis.com/projects/example-prod/datasets/prod_modeled", "resource_name": "projects/example-prod\nother"}
+    expect: {"status": "failure", "stdout_not_empty": false, "reason": "argument_invalid"}
+  - name: gcp.policy_troubleshoot-refuses-unsafe-endpoint
+    action: gcp.policy_troubleshoot
+    args: {"project": "example-prod", "principal": "airflow@example.com", "permission": "bigquery.tables.create", "resource": "//bigquery.googleapis.com/projects/example-prod/datasets/prod_modeled"}
+    env: {"CLOUDSDK_API_ENDPOINT_OVERRIDES_POLICYTROUBLESHOOTER": "http://gcp-api:8080"}
+    expect: {"status": "failure", "exit": [2], "stdout_not_empty": false, "stderr_contains": ["HTTPS origin"]}
+  - name: gcp.policy_troubleshoot-core-jq
+    action: gcp.policy_troubleshoot
+    args: {"project": "example-prod", "principal": "airflow@example.com", "permission": "bigquery.tables.create", "resource": "//bigquery.googleapis.com/projects/example-prod/datasets/prod_modeled", "resource_name": "projects/example-prod/datasets/prod_modeled", "resource_service": "bigquery.googleapis.com", "resource_type": "bigquery.googleapis.com/Dataset"}
+    env: {"PATH": "/opt/jq-without-regex:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"}
+    expect: {"json": {"/overallAccessState": "CAN_ACCESS"}}

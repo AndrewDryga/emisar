@@ -1,0 +1,114 @@
+schema_version: 1
+id: gcp.policy_troubleshoot
+title: Troubleshoot a Google Cloud IAM permission
+kind: script
+risk: low
+description: >
+  Check why a Google Account or service account can or cannot use one permission
+  on one full resource name using Policy Troubleshooter v3. Return the overall
+  access state and complete allow, deny, membership and condition explanations,
+  including unknown states and evaluation errors. Missing context or policy
+  visibility can leave access unknown even when an allow binding grants it.
+  Optional context models a supplied request; this is policy analysis, not an
+  impersonated resource operation or proof that an application can run it.
+  V3 evaluates allow and deny policies; Principal Access Boundary policies
+  require Google's v3beta API and are outside this action.
+  Responses over 1 MiB fail without emitting a partial verdict.
+side_effects:
+  - One gcloud credential read and one read-only Policy Troubleshooter HTTPS POST; no policy or target resource changes.
+  - Returns principal identities, IAM bindings and condition expressions visible to the runner.
+  - Uses private temporary request and response files, removed on exit.
+search_terms:
+  - access denied
+  - permission denied
+  - conditional IAM grant
+  - missing GCP permissions
+args:
+  - name: project
+    type: string
+    required: true
+    description: Quota project with Policy Troubleshooter API enabled; the caller needs serviceusage.services.use here.
+    validation: {pattern: '^[a-z][a-z0-9-]{4,28}[a-z0-9]$', max_length: 30}
+  - name: principal
+    type: string
+    required: true
+    description: Google Account or service-account email, without a user or serviceAccount prefix.
+    validation: {pattern: '^[A-Za-z0-9][A-Za-z0-9._%+\-]*@[A-Za-z0-9][A-Za-z0-9.\-]*\.[A-Za-z]{2,63}$', max_length: 254}
+  - name: permission
+    type: string
+    required: true
+    description: Exact IAM permission in v1 or v2 format, such as bigquery.tables.create or bigquery.googleapis.com/tables.create.
+    validation: {pattern: '^[a-z][A-Za-z0-9.\-]*/?[A-Za-z0-9.]+$', max_length: 256}
+  - name: resource
+    type: string
+    required: true
+    description: Full Google Cloud resource name, such as //bigquery.googleapis.com/projects/example-prod/datasets/prod_modeled.
+    validation: {pattern: '^//[a-z][a-z0-9.\-]*/[A-Za-z0-9_./:@%+~\-]+$', max_length: 2048}
+  - name: resource_name
+    type: string
+    default: ''
+    description: Optional resource.name condition value without the //service prefix; omitted when empty.
+    validation: {pattern: '^([A-Za-z0-9_./:@%+~\-]+)?$', max_length: 2048}
+  - name: resource_service
+    type: string
+    default: ''
+    description: Optional resource.service condition value, such as bigquery.googleapis.com; omitted when empty.
+    validation: {pattern: '^([a-z][a-z0-9.\-]*)?$', max_length: 253}
+  - name: resource_type
+    type: string
+    default: ''
+    description: Optional resource.type condition value, such as bigquery.googleapis.com/Dataset; omitted when empty.
+    validation: {pattern: '^([a-z][a-z0-9.\-]*/[A-Za-z][A-Za-z0-9]*)?$', max_length: 256}
+  - name: request_time
+    type: string
+    default: ''
+    description: Optional RFC3339 request timestamp for time conditions; omitted when empty rather than inferred from the current time.
+    validation: {pattern: '^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2}))?$', max_length: 35}
+  - name: destination_ip
+    type: string
+    default: ''
+    description: Optional IPv4 or IPv6 destination for network conditions; the API validates the address.
+    validation: {pattern: '^([0-9A-Fa-f:.]+)?$', max_length: 45}
+  - name: destination_port
+    type: integer
+    default: 0
+    description: Destination port for network conditions, from 1 to 65535; zero omits it.
+    validation: {min: 0, max: 65535}
+execution:
+  script: {path: scripts/policy_troubleshoot.sh, interpreter: /bin/bash}
+  argv:
+    - '{{ args.project }}'
+    - '{{ args.principal }}'
+    - '{{ args.permission }}'
+    - '{{ args.resource }}'
+    - '{{ args.resource_name }}'
+    - '{{ args.resource_service }}'
+    - '{{ args.resource_type }}'
+    - '{{ args.request_time }}'
+    - '{{ args.destination_ip }}'
+    - '{{ args.destination_port }}'
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+  redact:
+    - name: bearer-credential
+      type: regex
+      pattern: '(?i)Bearer\s+[A-Za-z0-9._~+/-]+=*'
+      replacement: '[REDACTED]'
+    - name: google-access-token
+      type: regex
+      pattern: 'ya29\.[A-Za-z0-9._~+/-]+'
+      replacement: '[REDACTED]'
+examples:
+  - title: Diagnose table creation in an existing dataset
+    args:
+      project: example-prod
+      principal: airflow@example-prod.iam.gserviceaccount.com
+      permission: bigquery.tables.create
+      resource: //bigquery.googleapis.com/projects/example-prod/datasets/prod_modeled
+      resource_name: projects/example-prod/datasets/prod_modeled
+      resource_service: bigquery.googleapis.com
+      resource_type: bigquery.googleapis.com/Dataset
