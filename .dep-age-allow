@@ -22,3 +22,6 @@
 # decision rather than a permanent hole.
 
 hex plug 1.20.4 2026-11-25 CVE-2026-120287; user-approved early security patch; application disables multipart parsing
+hex idna 8.0.0 2026-12-13 CVE-2026-117678; first fixed release for hostname processing, required to restore Portal CI
+hex jsonschex 0.11.3 2026-11-27 CVE-2026-117678; first compatible release for schema validation with idna 8
+hex swoosh 1.30.0 2026-12-03 CVE-2026-117678; first compatible release for email rendering with idna 8
