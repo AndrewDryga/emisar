@@ -17,7 +17,7 @@ import (
 // MCP exercises install-mcp.sh, including atomic multi-target activation and
 // the interactive direct-CLI and LLM-client configuration flow.
 func MCP(root string, out io.Writer) error {
-	h, err := newHarness(root, out)
+	h, err := newHarness(root)
 	if err != nil {
 		return err
 	}
@@ -31,6 +31,7 @@ func MCP(root string, out io.Writer) error {
 		{"portal origin display safety", mcpPortalOrigin},
 		{"install directory discovery", mcpInstallDirs},
 		{"install confirmation prompt", mcpConfirmPrompt},
+		{"connect and uninstall hints reach this install", mcpHints},
 		{"interactive connection handoff", mcpInteractiveConnect},
 		{"GitHub token argv hygiene", func(h *harness) error { return githubTokenHygiene(h, "install-mcp.sh") }},
 		{"signed checksum", mcpChecksumSignature},
@@ -313,6 +314,21 @@ resolve_latest_version
 	if got := strings.TrimSpace(string(output)); got != "mcp-v0.12.0\nmcp-v0.10.0" {
 		return fmt.Errorf("resolved latest = %q, want mirror then GitHub fallback", got)
 	}
+	// A successful API call listing no MCP release must fail, not resolve to "".
+	none := h.functions(h.repoPath("install-mcp.sh"), []string{"resolve_latest_from_github", "resolve_latest_version"}, `
+github_api() { printf '%s' "$RELEASES"; }
+REPO=example/emisar
+OFFICIAL_REPO=andrewdryga/emisar
+if version=$(resolve_latest_version); then
+  printf 'resolved %s\n' "$version"
+  exit 0
+fi
+printf 'NO MCP RELEASE REFUSED\n' >&2
+exit 1
+`, map[string]string{"RELEASES": `[{"tag_name":"runner-v9.9.9","draft":false,"prerelease":false}]`})
+	if err := expectFailure(none, "NO MCP RELEASE REFUSED"); err != nil {
+		return fmt.Errorf("a release list without MCP releases: %w", err)
+	}
 	invalid := h.functions(h.repoPath("install-mcp.sh"), []string{"resolve_latest_version"}, `
 die() { printf '%s\n' "$1" >&2; exit 1; }
 warn() { :; }
@@ -464,8 +480,8 @@ activate_installations
 
 // mcpAlreadyCurrent reruns the whole script where the bridge is already the
 // latest release, which is how adding a second client or repairing one starts.
-// The run must stop before any download, name `emisar-mcp connect` as the next
-// step, and exit 0. The fake curl answers only the release mirror's
+// The run must stop before any download, name `emisar-mcp connect` with this
+// run's portal origin as the next step, and exit 0. The fake curl answers only the release mirror's
 // latest.json, and both fakes record what they were asked for, so a download
 // or a connect that the exit should have prevented fails the check.
 func mcpAlreadyCurrent(h *harness) error {
@@ -508,7 +524,7 @@ fi
 	}
 	for _, want := range []string{
 		bridge + " 1.0.0 is already current\n",
-		"Connect a client with the installed bridge: emisar-mcp connect\n",
+		"Connect a client with the installed bridge: emisar-mcp connect --url https://control.example\n",
 	} {
 		if !strings.Contains(string(output), want) {
 			return fmt.Errorf("already-current output lacks %q:\n%s", want, output)
@@ -547,6 +563,51 @@ func mcpInstallDirs(h *harness) error {
 	expected := homeBin + "\n" + systemBin + "\n"
 	if string(output) != expected {
 		return fmt.Errorf("resolved directories = %q, expected %q", output, expected)
+	}
+	return nil
+}
+
+// mcpHints proves the printed follow-up commands reach this install: the
+// connect hint names a non-default portal origin, which the operator's shell
+// does not inherit, and the uninstall hint names an explicit --install-dir,
+// without which --uninstall searches only the conventional directories.
+func mcpHints(h *harness) error {
+	for origin, want := range map[string]string{
+		"https://emisar.dev":      "emisar-mcp connect",
+		"https://control.example": "emisar-mcp connect --url https://control.example",
+		"https://[::1]:4000":      `emisar-mcp connect --url https://\[::1\]:4000`,
+	} {
+		output, err := requireOutput(h.functions(h.repoPath("install-mcp.sh"), []string{"connect_command"},
+			"connect_command\n", map[string]string{"EMISAR_URL": origin}))
+		if err != nil {
+			return err
+		}
+		if got := strings.TrimSuffix(string(output), "\n"); got != want {
+			return fmt.Errorf("connect hint for %s = %q, want %q", origin, got, want)
+		}
+	}
+
+	const uninstall = "curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash -s -- --uninstall"
+	custom := h.path("hint dir", "bin")
+	output, err := requireOutput(h.functions(h.repoPath("install-mcp.sh"), []string{"uninstall_command"}, `
+uninstall_command ""
+uninstall_command "$CUSTOM"
+`, map[string]string{"CUSTOM": custom}))
+	if err != nil {
+		return err
+	}
+	lines := strings.Split(strings.TrimSuffix(string(output), "\n"), "\n")
+	if len(lines) != 2 || lines[0] != uninstall {
+		return fmt.Errorf("default uninstall hint = %q, want %q", output, uninstall)
+	}
+	// Run the printed arguments through the shell, as the operator would.
+	parsed, err := requireOutput(h.command(h.root, nil, "bash", "-c",
+		`eval "set -- ${1#*bash -s -- }"; printf '%s\n' "$@"`, "hint", lines[1]))
+	if err != nil {
+		return err
+	}
+	if got, want := string(parsed), "--uninstall\n--install-dir\n"+custom+"\n"; got != want {
+		return fmt.Errorf("custom uninstall hint %q parses to %q, want %q", lines[1], got, want)
 	}
 	return nil
 }
@@ -1193,22 +1254,25 @@ func mcpConnectCommand(h *harness) error {
 		return err
 	}
 
-	server := newDeviceServer("")
+	server := newDeviceServer()
 	defer server.close()
-	environment := map[string]string{"HOME": home, "USERPROFILE": home, "APPDATA": appConfig}
+	environment := map[string]string{"HOME": home}
 	if _, err := h.successful(h.root, environment, bridge,
 		"connect", "--all", "--url", server.server.URL); err != nil {
 		return err
 	}
 
+	// The direct CLI plus every client whose marker exists above, exactly.
 	requested := server.requestedClients()
-	if !slices.Contains(requested, "emisar-mcp-cli") {
-		return fmt.Errorf("the direct CLI was not part of the approval: %v", requested)
+	slices.Sort(requested)
+	want := []string{
+		"emisar-mcp-cli", "claude-code", "claude-desktop", "cursor", "vscode",
+		"gemini", "codex", "openclaw", "opencode", "windsurf", "pi",
+		"copilot-cli", "zed", "hermes", "goose", "grok",
 	}
-	for _, client := range []string{"claude-code", "cursor", "vscode", "codex", "zed", "goose", "grok"} {
-		if !slices.Contains(requested, client) {
-			return fmt.Errorf("%s was not part of the approval: %v", client, requested)
-		}
+	slices.Sort(want)
+	if !slices.Equal(requested, want) {
+		return fmt.Errorf("approval requested %v, want %v", requested, want)
 	}
 
 	cursor, err := jsonFile(cursorConfig)
@@ -1296,10 +1360,7 @@ func mcpUninstallWithAnOlderBridge(h *harness) error {
 		return err
 	}
 
-	result := h.command(h.root, map[string]string{
-		"HOME":            home,
-		"XDG_CONFIG_HOME": filepath.Join(home, ".config"),
-	}, "bash", h.repoPath("install-mcp.sh"), "--uninstall", "--yes", "--install-dir", bin)
+	result := h.command(h.root, map[string]string{"HOME": home}, "bash", h.repoPath("install-mcp.sh"), "--uninstall", "--yes", "--install-dir", bin)
 	if result.err != nil {
 		return fmt.Errorf("uninstall failed outright: %w\n%s", result.err, result.output)
 	}
@@ -1324,9 +1385,9 @@ func mcpUninstall(h *harness) error {
 	home := h.path("uninstall-home")
 	bin := h.path("uninstall-bin")
 	// The bridge stores the CLI credential and rotation state under Go's
-	// os.UserConfigDir (mcp/rotate.go), which ignores XDG on darwin — the fixture must live
-	// where the script's darwin branch actually looks, or the removal is
-	// only ever tested on Linux.
+	// os.UserConfigDir, which ignores XDG_CONFIG_HOME on darwin. The fixture
+	// must live where the bridge's `disconnect --forget` looks (mcp/connect.go),
+	// or the removal is only ever tested on Linux.
 	credentials := filepath.Join(mcpUserConfigDir(home), "emisar", "credentials")
 	vscodeConfig := filepath.Join(home, ".config", "Code", "User", "mcp.json")
 	if runtime.GOOS == "darwin" {
@@ -1408,10 +1469,7 @@ func mcpUninstall(h *harness) error {
 		return err
 	}
 
-	environment := map[string]string{
-		"HOME":            home,
-		"XDG_CONFIG_HOME": filepath.Join(home, ".config"),
-	}
+	environment := map[string]string{"HOME": home}
 	if _, err := h.successful(h.root, environment,
 		"bash", h.repoPath("install-mcp.sh"), "--uninstall", "--yes", "--install-dir", bin); err != nil {
 		return err
@@ -1517,6 +1575,7 @@ func mcpDownloadChecksum(h *harness) error {
 die() { printf '%s\n' "$*" >&2; exit 1; }
 tarball=emisar-mcp-9.9.9-linux-amd64.tar.gz
 tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
 printf 'payload\n' >"${tmp}/${tarball}"
 digest_of() {
   if command -v sha256sum >/dev/null 2>&1; then

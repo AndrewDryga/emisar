@@ -136,9 +136,9 @@ Flags:
                      For unattended provisioning.
   --help             This message.
 
-Internal flag. `emisar update` passes it; it is not for hand use, and an
-already-installed runner of any age calls whatever install.sh emisar.dev
-serves today, so its meaning is a live contract between two artifacts:
+Internal flag. `emisar update` passes it to the install.sh inside the release
+bundle it is updating to; it is not for hand use. An installed runner of any
+age hands it to that newer script, so its meaning is a contract between the two:
   --preverified-bundle DIR
                      Install from an absolute DIR that `emisar update` has
                      already downloaded and verified against the signed
@@ -355,7 +355,8 @@ confirm() {
   # actually answer. No controlling terminal means there is nobody who can
   # consent, so the safe answer is no; unattended callers must pass --yes.
   if [ -t 0 ]; then
-    printf '%s [y/N] ' "$1"
+    # stderr, not stdout: a caller inside $(...) would capture the prompt.
+    printf '%s [y/N] ' "$1" >&2
     read -r reply || reply=""
   elif { exec 3</dev/tty; } 2>/dev/null; then
     printf '%s [y/N] ' "$1" >/dev/tty
@@ -496,10 +497,14 @@ detect_target() {
   fi
 }
 
-require_root_and_tools() {
+require_root() {
   if [ "$(id -u)" != "0" ]; then
     die "must run as root (use sudo). detected uid=$(id -u)"
   fi
+}
+
+require_root_and_tools() {
+  require_root
   local tools=(tar)
   [ -n "${PREVERIFIED_BUNDLE}" ] || tools+=(curl)
   for tool in "${tools[@]}"; do
@@ -700,13 +705,13 @@ runner:
   # group is the console's auto-grouping key. Defaults to the host's
   # short hostname; override by editing this line or by passing
   # EMISAR_GROUP=... to install.sh next time.
-  group: ${group}
+  group: "${group}"
 EOF
   if [ -n "${EMISAR_RUNNER_ID:-}" ]; then
     cat <<EOF
   # id is this runner's declared name + identity in the console; it
   # defaults to the hostname when unset.
-  id: ${EMISAR_RUNNER_ID}
+  id: "${EMISAR_RUNNER_ID}"
 EOF
   fi
   cat <<EOF
@@ -841,7 +846,7 @@ write_enrollment_key() {
   fi
 
   chmod 600 "${staged}"
-  chown "root:${SERVICE_GROUP}" "${staged}" 2>/dev/null || chown root:root "${staged}"
+  chown "root:${SERVICE_GROUP}" "${staged}" 2>/dev/null || chown 0:0 "${staged}"
   mv -f "${staged}" "${env}" || {
     rm -f "${staged}"
     die "could not activate updated ${env}"
@@ -917,15 +922,9 @@ github_api() {
 }
 
 resolve_latest_from_github() {
-  # The runner ships under the `runner-v*` tag prefix; the MCP bridge
-  # uses `mcp-v*` and shouldn't be picked up here. We use the GitHub
-  # releases API and grep the first matching tag. Callers that share an
-  # egress IP can provide EMISAR_GITHUB_TOKEN to avoid anonymous API
-  # rate limits. The /releases/latest
-  # redirect would only work if we made the runner the "latest" via
-  # `make_latest: legacy`, which we do, BUT the bridge release stream
-  # might still claim it temporarily — filtering by prefix is more
-  # robust than trusting the Latest pointer.
+  # The releases list mixes `runner-v*` and the MCP bridge's `mcp-v*`
+  # tags, so filter for the runner prefix. Callers that share an egress IP
+  # can provide EMISAR_GITHUB_TOKEN to avoid anonymous API rate limits.
   local out
   out=$(github_api \
     "https://api.github.com/repos/${REPO}/releases?per_page=100") \
@@ -1238,7 +1237,7 @@ drop_config_skeleton() {
     if [ -n "${EMISAR_GROUP:-}" ] && \
        printf '%s' "${EMISAR_GROUP}" | grep -qE '^[A-Za-z0-9._-]+$'; then
       if grep -qE '^[[:space:]]*group:[[:space:]]' "${cfg}"; then
-        sed -i.bak "s|^\([[:space:]]*\)group:[[:space:]].*|\1group: ${EMISAR_GROUP}|" "${cfg}"
+        sed -i.bak "s|^\([[:space:]]*\)group:[[:space:]].*|\1group: \"${EMISAR_GROUP}\"|" "${cfg}"
         rm -f "${cfg}.bak"
         log "config exists at ${cfg}; set runner.group=${EMISAR_GROUP} (rest untouched)"
       else
@@ -1273,7 +1272,7 @@ drop_config_skeleton() {
     config_preexisted=1
   fi
   chmod 640 "${cfg}"
-  chown "root:${SERVICE_GROUP}" "${cfg}" 2>/dev/null || chown root:root "${cfg}"
+  chown "root:${SERVICE_GROUP}" "${cfg}" 2>/dev/null || chown 0:0 "${cfg}"
 
   local env="${ETC_DIR}/runner.env"
   if [ ! -f "${env}" ]; then
@@ -1287,7 +1286,7 @@ drop_config_skeleton() {
     write_enrollment_key
   fi
   chmod 600 "${env}"
-  chown "root:${SERVICE_GROUP}" "${env}" 2>/dev/null || chown root:root "${env}"
+  chown "root:${SERVICE_GROUP}" "${env}" 2>/dev/null || chown 0:0 "${env}"
 
 }
 
@@ -2132,6 +2131,14 @@ Edit ${ETC_DIR}/config.yaml to tighten runner.group / labels later.
 EOF
   fi
 
+  # The service steps continue the numbered list only when steps 1-2 were
+  # printed above; on a configured host they stand alone after a blank line.
+  local start_step="" check_step=""
+  if [ "${needs_configuration}" = "1" ]; then
+    start_step="3. "
+    check_step="4. "
+  fi
+
   case "${INIT}" in
     systemd)
       if [ "${SERVICE_STARTED}" = "1" ]; then
@@ -2141,12 +2148,13 @@ The service is running. Check the runner connection:
   sudo ${BIN_DIR}/emisar status
 EOF
       else
+        [ "${needs_configuration}" = "1" ] || echo
         cat <<EOF
-  3. Start the service:
+  ${start_step}Start the service:
        sudo systemctl start emisar
      Or restart after editing config:
        sudo systemctl restart emisar
-  4. Check the runner connection:
+  ${check_step}Check the runner connection:
        sudo ${BIN_DIR}/emisar status
 EOF
       fi
@@ -2182,10 +2190,11 @@ EOF
        tail -f ${LOG_DIR}/emisar.err.log ${LOG_DIR}/emisar.out.log
 EOF
       else
+        [ "${needs_configuration}" = "1" ] || echo
         cat <<EOF
-  3. Load the LaunchDaemon:
+  ${start_step}Load the LaunchDaemon:
        sudo launchctl bootstrap system /Library/LaunchDaemons/com.emisar.runner.plist
-  4. Check logs:
+  ${check_step}Check logs:
        tail -f ${LOG_DIR}/emisar.err.log ${LOG_DIR}/emisar.out.log
 EOF
       fi
@@ -2227,7 +2236,9 @@ EOF
 }
 
 do_uninstall() {
-  require_root_and_tools
+  # Root only: uninstall downloads and extracts nothing, so a host without
+  # curl or tar can still run `sudo bash install.sh --uninstall`.
+  require_root
   log "uninstall target: ${OS}/${ARCH} via ${INIT}"
   if ! confirm "remove emisar binary, service unit, and (with --purge) data?"; then
     die "aborted"

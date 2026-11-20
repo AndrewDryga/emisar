@@ -28,15 +28,14 @@ import (
 type harness struct {
 	root string
 	temp string
-	out  io.Writer
 }
 
-func newHarness(root string, out io.Writer) (*harness, error) {
+func newHarness(root string) (*harness, error) {
 	temp, err := os.MkdirTemp("", "emisar-installtest-*")
 	if err != nil {
 		return nil, fmt.Errorf("creating temporary directory: %w", err)
 	}
-	return &harness{root: root, temp: temp, out: out}, nil
+	return &harness{root: root, temp: temp}, nil
 }
 
 func (h *harness) close() {
@@ -516,22 +515,19 @@ func argvHolders(secret string) []string {
 	return holders
 }
 
-// errorCode, when set, makes every token poll fail with HTTP 400 and that
-// OAuth error code; "" serves the happy path: a code-less 502 blip, a 429
-// rate limit, a malformed 400 error value, one pending, a proxy's 200 page,
-// a 200 JSON body without client_keys, then success — every retryable
-// response class the installer must survive without announcing approval.
+// deviceServer serves the device grant the bridge's connect polls: a code-less
+// 502 blip, a 429 rate limit, a malformed 400 error value, one pending, a
+// proxy's 200 page, a 200 JSON body without client_keys, then success — every
+// retryable response class the bridge must survive without announcing approval.
 type deviceServer struct {
 	server      *httptest.Server
 	polls       atomic.Int32
 	requestedMu sync.Mutex
 	requested   []string
-	delivered   map[string]string
-	errorCode   string
 }
 
-func newDeviceServer(errorCode string) *deviceServer {
-	device := &deviceServer{errorCode: errorCode}
+func newDeviceServer() *deviceServer {
+	device := &deviceServer{}
 	device.server = httptest.NewServer(http.HandlerFunc(device.handle))
 	return device
 }
@@ -566,11 +562,6 @@ func (d *deviceServer) handle(response http.ResponseWriter, request *http.Reques
 				`"expires_in":60,"interval":1}`, d.server.URL, d.server.URL))
 	case "/api/mcp/device_token":
 		poll := d.polls.Add(1)
-		if d.errorCode != "" {
-			response.WriteHeader(http.StatusBadRequest)
-			_, _ = io.WriteString(response, fmt.Sprintf(`{"error":%q}`, d.errorCode))
-			return
-		}
 		switch poll {
 		case 1: // a gateway blip with no OAuth error code must keep the poll alive
 			response.WriteHeader(http.StatusBadGateway)
@@ -596,12 +587,9 @@ func (d *deviceServer) handle(response http.ResponseWriter, request *http.Reques
 			_, _ = io.WriteString(response, `{"status":"ok"}`)
 			return
 		}
-		keys := d.delivered
-		if keys == nil {
-			keys = make(map[string]string)
-			for _, client := range d.requestedClients() {
-				keys[client] = fixtureAPIKey(client)
-			}
+		keys := make(map[string]string)
+		for _, client := range d.requestedClients() {
+			keys[client] = fixtureAPIKey(client)
 		}
 		_ = json.NewEncoder(response).Encode(map[string]any{
 			"account_id":   "018f0000-0000-7000-8000-000000000001",
@@ -614,12 +602,8 @@ func (d *deviceServer) handle(response http.ResponseWriter, request *http.Reques
 	}
 }
 
-// requirePrivateMode asserts a credential file is owner-only. Windows carries
-// its own DACL instead, which the native lane checks separately.
+// requirePrivateMode asserts a credential file is owner-only.
 func requirePrivateMode(path string) error {
-	if runtime.GOOS == "windows" {
-		return nil
-	}
 	info, err := os.Stat(path)
 	if err != nil {
 		return err

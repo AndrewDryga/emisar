@@ -163,8 +163,9 @@ curl -fsS https://registry.emisar.dev/v1/catalog.json \
   | jq -r '.packs[] | select(.id=="redis") | .content_hash'
 
 # Round-trip the published tarball back to the same hash.
-curl -fsS "$(curl -fsS .../v1/catalog.json | jq -r '.packs[]|select(.id=="redis").tarball_url')" \
-  | tar -xz -C /tmp/redis && emisar pack validate /tmp/redis
+pack_verify_dir=$(mktemp -d) &&
+  curl -fsS "$(curl -fsS https://registry.emisar.dev/v1/catalog.json | jq -r '.packs[]|select(.id=="redis").tarball_url')" \
+  | tar -xz -C "$pack_verify_dir" && emisar pack validate "$pack_verify_dir"
 ```
 
 ## Retiring older versions (security / critical fix)
@@ -226,19 +227,26 @@ cp ./dist/packs/v1/catalog.json ./portal/apps/emisar/priv/packs/catalog.json
 The build keeps the floor monotonic relative to the catalog supplied through
 `--previous`: once `retired_below` is present there, the build refuses to lower
 or drop it. That is why the procedure above always fetches the live catalog.
-The portal does not re-enforce the floor at runtime: it logs a structurally
-valid catalog that lowers or drops a floor as a regression and still
-serves it. The publication procedure and write access to the bucket are
+The portal does not re-enforce or detect the floor at runtime: a structurally
+valid catalog that lowers or drops a floor is served as is, with no warning.
+The publication procedure and write access to the bucket are
 what hold the floor.
 
 ## Installing a specific version
 
 `emisar pack install <name>=<version>` installs one published version by name,
-resolving `<registry>/packs/<name>/versions/<version>/pack.tar.gz`:
+resolving `<registry>/packs/<name>/versions/<version>/pack.tar.gz`. The registry
+resolves only the version in the pack's current catalog entry and the versions
+still in its history (`previous_versions`, normally up to three eligible prior
+versions); anything older returns 404. Take the version and its hash from the
+current catalog:
 
 ```bash
-emisar pack install redis=0.2.3 --hash sha256:… --dest /etc/emisar/packs
+emisar pack install redis=<version> --hash sha256:<hash> --dest /etc/emisar/packs
 ```
+
+A version outside that window installs from its immutable tarball URL with the
+matching hash: `emisar pack install <tarball_url> --hash sha256:<hash>`.
 
 The version window keeps the last few published versions of each pack
 auto-trusted, so a runner on a slightly older shipped version dispatches

@@ -88,6 +88,16 @@ function Test-SafePortalOrigin([string]$Value) {
     return $uri.Scheme -eq "http" -and ($uri.IsLoopback -or (Test-Truthy $env:EMISAR_ALLOW_INSECURE))
 }
 
+# The operator's shell does not inherit -PortalOrigin or this run's EMISAR_URL,
+# and a bare `emisar-mcp connect` falls back to https://emisar.dev, so a hint
+# for any other portal names its origin.
+function Get-ConnectCommand {
+    if ($script:PortalOrigin -eq "https://emisar.dev") { return "emisar-mcp connect" }
+    $origin = $script:PortalOrigin
+    if ($origin -notmatch '^[A-Za-z0-9:/.\[\]-]+$') { $origin = "'" + $origin.Replace("'", "''") + "'" }
+    return "emisar-mcp connect --url $origin"
+}
+
 function Normalize-Version([string]$Value) {
     if ($Value -match '^mcp-v') { return $Value }
     if ($Value -match '^v') { return "mcp-$Value" }
@@ -452,7 +462,7 @@ function Add-UserPath([string]$Directory) {
     $current = [Environment]::GetEnvironmentVariable("Path", "User")
     $entries = @()
     if ($current) { $entries = @($current.Split(';') | Where-Object { $_ }) }
-    if (-not ($entries | Where-Object { $_.TrimEnd('\\') -ieq $Directory.TrimEnd('\\') })) {
+    if (-not ($entries | Where-Object { $_.TrimEnd('\') -ieq $Directory.TrimEnd('\') })) {
         $entries += $Directory
         [Environment]::SetEnvironmentVariable("Path", ($entries -join ';'), "User")
         $marker = Join-Path $Directory ".emisar-mcp-path-added"
@@ -592,11 +602,6 @@ function Install-Bridge([string]$Destination, [string]$Source, [string]$Expected
     }
 }
 
-# The reverse of the install path. The bridge removes its own entry, and the
-# backup it wrote, from every detected LLM client config and drops the stored
-# direct-CLI accounts and rotation state; then the executable goes. That order
-# is load-bearing: once the executable is gone nothing can clean a client
-# config, so a missing or older bridge is reported, never skipped.
 # The version an already-installed bridge reports (`emisar-mcp X.Y.Z`), or
 # $null when none is installed or it cannot answer.
 function Get-InstalledVersion([string]$Executable) {
@@ -612,6 +617,11 @@ function Get-InstalledVersion([string]$Executable) {
     return [Version]$Matches[1]
 }
 
+# The reverse of the install path. The bridge removes its own entry, and the
+# backup it wrote, from every detected LLM client config and drops the stored
+# direct-CLI accounts and rotation state; then the executable goes. That order
+# is load-bearing: once the executable is gone nothing can clean a client
+# config, so a missing or older bridge is reported, never skipped.
 function Uninstall-Bridge([string]$Executable, [string]$AppDataDirectory) {
     $credentials = Join-Path $AppDataDirectory "emisar\credentials"
     if (Test-Path -LiteralPath $credentials) {
@@ -649,7 +659,7 @@ function Uninstall-Bridge([string]$Executable, [string]$AppDataDirectory) {
 
 if ($env:OS -ne "Windows_NT") { Stop-Install "this installer requires Windows" }
 $releaseArchitecture = Get-WindowsReleaseArchitecture
-if (-not (Test-SafePortalOrigin $script:PortalOrigin)) { Stop-Install "EMISAR_URL must be an HTTPS origin without credentials, path, query, or fragment" }
+if (-not (Test-SafePortalOrigin $script:PortalOrigin)) { Stop-Install "the portal origin (-PortalOrigin or EMISAR_URL) must be an HTTPS origin, or HTTP for loopback or with EMISAR_ALLOW_INSECURE, without credentials, path, query, or fragment" }
 
 $appDataDirectory = $env:APPDATA
 $localAppDataDirectory = $env:LOCALAPPDATA
@@ -687,7 +697,7 @@ if ($null -ne $installedVersion) {
     if (-not $Version -and $installedVersion -ge [Version]$versionNumber) {
         Write-Info "emisar-mcp $installedVersion is already current"
         Write-Host ""
-        Write-Host "Connect a client with the installed bridge: emisar-mcp connect"
+        Write-Host "Connect a client with the installed bridge: $(Get-ConnectCommand)"
         Write-Host "Manual client snippets: $($script:PortalOrigin)/app/agents/connect"
         return
     }
@@ -752,7 +762,7 @@ Write-Host "  $executable"
 # the operator picks, and writes each client's own configuration shape.
 if ($Yes) {
     Write-Host ""
-    Write-Host "Connect this machine and your LLM clients: emisar-mcp connect"
+    Write-Host "Connect this machine and your LLM clients: $(Get-ConnectCommand)"
     Write-Host "Manual client snippets: $($script:PortalOrigin)/app/agents/connect"
 } else {
     $connectArguments = @("connect", "--url", $script:PortalOrigin)
@@ -782,7 +792,7 @@ if ($Yes) {
             }
         }
         if ($connectExitCode -ne 0) {
-            Write-WarningLine "connection setup did not finish; run 'emisar-mcp connect', or use the manual snippets at $($script:PortalOrigin)/app/agents/connect"
+            Write-WarningLine "connection setup did not finish; run '$(Get-ConnectCommand)', or use the manual snippets at $($script:PortalOrigin)/app/agents/connect"
         }
     }
 }

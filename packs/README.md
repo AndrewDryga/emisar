@@ -32,7 +32,7 @@ use for verification.
 For a repeatable rollout, pin both version and hash from the registry page:
 
 ```sh
-sudo emisar pack install redis=0.2.3 --hash sha256:...
+sudo emisar pack install redis=<version> --hash sha256:<hash>
 ```
 
 The same command accepts a local directory or an HTTPS tarball:

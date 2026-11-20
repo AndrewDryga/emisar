@@ -83,9 +83,6 @@ func windowsClientIDs() []string {
 // Windows PowerShell host and current pwsh. It uses a loopback release mirror
 // and device-grant server, but runs the real bridge binary and installer.
 func MCPWindows(root string, out io.Writer) error {
-	if runtime.GOOS != "windows" {
-		return fmt.Errorf("mcp-windows installer tests require Windows")
-	}
 	for _, shell := range []string{"powershell.exe", "pwsh.exe"} {
 		path, err := exec.LookPath(shell)
 		if err != nil {
@@ -348,7 +345,7 @@ func testWindowsMCPInstaller(root, shell string) error {
 	if !bytes.Contains(output, []byte("install target: windows/"+runtime.GOARCH)) {
 		return fmt.Errorf("installer did not select windows/%s\n%s", runtime.GOARCH, output)
 	}
-	if !bytes.Contains(output, []byte("Connect this machine and your LLM clients: emisar-mcp connect")) {
+	if !bytes.Contains(output, []byte("Connect this machine and your LLM clients: emisar-mcp connect --url "+server.URL)) {
 		return fmt.Errorf("a -Yes install did not name the connect step\n%s", output)
 	}
 	// -Yes only places the binary. The connection phase is the bridge's own
@@ -421,7 +418,7 @@ func testWindowsMCPInstaller(root, shell string) error {
 		return fmt.Errorf("rerun with inherited environment: %w\n%s", err, output)
 	}
 	if !bytes.Contains(output, []byte("emisar-mcp "+windowsMCPVersion+" is already current")) ||
-		!bytes.Contains(output, []byte("Connect a client with the installed bridge: emisar-mcp connect")) ||
+		!bytes.Contains(output, []byte("Connect a client with the installed bridge: emisar-mcp connect --url "+server.URL)) ||
 		bytes.Contains(output, []byte("install target:")) {
 		return fmt.Errorf("an already-current rerun did not stop at the connect step\n%s", output)
 	}

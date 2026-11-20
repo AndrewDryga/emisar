@@ -219,6 +219,11 @@ require_immutable_release() {
     die "release ${version} is mutable and is no longer trusted; install the latest immutable MCP release"
 }
 
+# Take the HIGHEST version, not the first: the API orders by creation, so a
+# patch backported to an older line after a newer minor shipped sits at the
+# top. Sorted numerically field by field, because `sort -V` is not portable to
+# every host this runs on and a lexical sort puts v0.9.0 above v0.10.0. No
+# matching release fails the pipeline under pipefail, like a failed API call.
 resolve_latest_from_github() {
   local releases
   releases=$(github_api "https://api.github.com/repos/${REPO}/releases?per_page=100") || return 1
@@ -372,7 +377,8 @@ confirm() {
   # actually answer. No controlling terminal means there is nobody who can
   # consent, so the safe answer is no; unattended callers must pass --yes.
   if [ -t 0 ]; then
-    printf '%s [y/N] ' "$1"
+    # stderr, not stdout: a caller inside $(...) would capture the prompt.
+    printf '%s [y/N] ' "$1" >&2
     read -r reply || reply=""
   elif { exec 3</dev/tty; } 2>/dev/null; then
     printf '%s [y/N] ' "$1" >/dev/tty
@@ -539,6 +545,25 @@ select_upgrade_install_dirs() {
   install_dirs="${selected}"
 }
 
+# The operator's shell does not inherit this run's EMISAR_URL, and a bare
+# `emisar-mcp connect` falls back to https://emisar.dev, so a hint for any other
+# portal names its origin.
+connect_command() {
+  if [ "${EMISAR_URL}" = "https://emisar.dev" ]; then
+    printf 'emisar-mcp connect\n'
+  else
+    printf 'emisar-mcp connect --url %q\n' "${EMISAR_URL}"
+  fi
+}
+
+# A bare --uninstall searches only the conventional directories, so a bridge
+# installed with --install-dir needs the same flag to be found and removed.
+uninstall_command() {
+  local flags=""
+  [ -z "${1:-}" ] || flags=" --install-dir $(printf '%q' "$1")"
+  printf 'curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash -s -- --uninstall%s\n' "${flags}"
+}
+
 do_uninstall() {
   local dir bin_dst bridge
 
@@ -607,18 +632,7 @@ version_pinned=1
 if [ -z "${VERSION}" ]; then
   version_pinned=0
   log "querying latest mcp-v* release"
-  # Take the HIGHEST version, not the first. The API orders by CREATION, so a
-  # patch backported to an older line after a newer minor shipped sat at the top
-  # and silently DOWNGRADED the bridge on every fresh install — while printing
-  # "latest release: mcp-v0.9.1", which was simply untrue. install.sh carries
-  # this fix and the incident that produced it; this stream never got it.
-  # Sorted numerically field by field: `sort -V` is not portable to every host
-  # this runs on, and a lexical sort puts v0.9.0 above v0.10.0.
-  #
-  # Assign first, then pipe, so a failed API call is distinguishable from a
-  # successful one with no matching release.
   VERSION=$(resolve_latest_version) || die "could not resolve latest MCP release"
-  [ -n "${VERSION}" ] || die "no mcp-v* release found yet"
   log "latest release: ${VERSION}"
 else
   log "pinned release: ${VERSION}"
@@ -632,7 +646,7 @@ fi
 # for the runner. An explicit --version stays the deliberate rollback route.
 select_upgrade_install_dirs
 if [ -z "${install_dirs}" ]; then
-  log "Connect a client with the installed bridge: emisar-mcp connect"
+  log "Connect a client with the installed bridge: $(connect_command)"
   log "Manual client snippets: ${EMISAR_URL}/app/agents/connect"
   exit 0
 fi
@@ -960,13 +974,13 @@ if interactive_connect_available; then
     if [ "${OS}" = linux ]; then
       config_roots="XDG_CONFIG_HOME, HERMES_HOME, or GOOSE_PATH_ROOT"
     fi
-    dim "sudo normally clears ${config_roots}. If you set one, run 'emisar-mcp connect' again in your own shell, without sudo."
+    dim "sudo normally clears ${config_roots}. If you set one, run '$(connect_command)' again in your own shell, without sudo."
   fi
   run_cli_as_invoking_user connect --url "${EMISAR_URL}" </dev/tty ||
-    warn "connection setup did not finish — run 'emisar-mcp connect', or use the manual snippets at ${EMISAR_URL}/app/agents/connect"
+    warn "connection setup did not finish — run '$(connect_command)', or use the manual snippets at ${EMISAR_URL}/app/agents/connect"
 else
   out ""
-  out "Connect this machine and your LLM clients: emisar-mcp connect"
+  out "Connect this machine and your LLM clients: $(connect_command)"
   out "Manual client snippets: ${EMISAR_URL}/app/agents/connect"
 fi
 
@@ -975,4 +989,6 @@ dim "Verify install:"
 dim "  ${first_bin} --help"
 out ""
 dim "Uninstall:"
-dim "  curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash -s -- --uninstall"
+uninstall_dir=""
+[ "${INSTALL_DIR_EXPLICIT}" = "0" ] || uninstall_dir="${install_dirs}"
+dim "  $(uninstall_command "${uninstall_dir}")"

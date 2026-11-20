@@ -1,7 +1,7 @@
 ---
 name: compatibility
 sources: [runner/pkg/packspec, runner/pkg/actionspec, runner/testdata/cli_surface.golden, portal/apps/emisar_web/priv/mcp/api-schemas.json, portal/apps/emisar/lib/emisar/canonical_json.ex, install.sh, install-mcp.sh, runner/release/container-packs.txt]
-updated: 2026-11-17
+updated: 2026-11-20
 ---
 
 # Compatibility and deprecation policy
@@ -130,10 +130,10 @@ fields. Schema versions are exact-match gates, not ranges. The catalog keeps
 the current pack plus up to `K=3` previous published versions in
 `previous_versions` for the trust window. `packctl catalog build --previous`
 keeps a pack's `retired_below` watermark monotonic in the normal publication
-path by refusing to lower or drop an already-published one; the portal runtime
-logs a lowered or dropped watermark as a regression and still serves the
-catalog, so that monotonicity is a publisher guarantee rather than a runtime
-invariant.
+path by refusing to lower or drop an already-published one. The portal runtime
+uses the accepted catalog's watermarks as published and neither compares them
+with the previous snapshot nor warns on a lowered or dropped one, so that
+monotonicity is a publisher guarantee rather than a runtime invariant.
 
 **What happens on skew.** A runner that cannot read a newer pack or action
 schema rejects it closed and does not advertise it. A consumer that sees a
@@ -324,7 +324,7 @@ every active successor; the operator must reconnect the client to establish a fr
 provider, where we cannot rotate them: the fixed OIDC redirect URI
 `GET /sign_in/sso/callback` for SSO sign-in, and the SCIM 2.0 base URL
 `<base>/scim/v2` plus a per-provider `ems-` bearer token for directory
-provisioning (Okta, Entra, JumpCloud, Keycloak, Google).
+provisioning (Okta, Entra, JumpCloud, Keycloak).
 
 **How they are versioned today.** SCIM is path-versioned at `/scim/v2`
 (RFC 7643/7644). Discovery serves `ServiceProviderConfig`, `ResourceTypes`,
@@ -339,12 +339,15 @@ honor RFC 7644's one-based `startIndex` and `count`, return at most 100 resource
 per page, and report the filtered collection's full count in `totalResults`;
 malformed pagination values fail with 400 `invalidValue`. Users support idempotent
 create/reconcile and `userName eq`/`externalId eq` filters only. PATCH accepts
-`replace` and `add` on exactly five paths (`active`, `displayName`,
-`name.formatted`, `name.givenName`, `name.familyName`), matched case-insensitively,
-plus Entra's pathless form, whose value object may carry `active` and `displayName`
-and nothing else. PUT requires a boolean `active` and takes the name from
-`displayName`, else `name.givenName` and `name.familyName` joined, else
-`name.formatted`.
+`replace` and `add` on exactly eight paths (`active`, `displayName`,
+`name.formatted`, `name.givenName`, `name.familyName`, `emails`,
+`emails[type eq "work"].value`, and `emails[primary eq true].value`), matched
+case-insensitively, plus Entra's pathless form, whose value object may carry
+`active`, `displayName`, and `emails` and nothing else. PUT requires a boolean
+`active` and takes the name from `displayName`, else `name.givenName` and
+`name.familyName` joined, else `name.formatted`. It takes the address from the
+primary email, else the first usable email, else an email-like `userName`; a PUT
+without one keeps the current address.
 Users also support DELETE as membership suspension plus wire-resource retirement: the User is
 omitted from lists and its GET/PATCH/PUT/DELETE routes return 404, while a later
 POST with the same `externalId` restores the same resource and person. An
@@ -376,15 +379,16 @@ deprecation path, and already-issued `ems-` tokens must keep authenticating.
 (`application/x-ndjson`, one event object per line) for SIEM collectors,
 authenticated by a bearer `emk-` API key of the dedicated `audit_export`
 kind. The console also serves a CSV download of the same trail.
-The console CSV is bounded to 100,000 events or 256 MiB, whichever comes
-first. It is prepared before download headers are sent; an empty, changed,
-failed, or oversized attempt sends no CSV, and a complete prepared export is
-available through Support.
+The console CSV is bounded to 100,000 events by default. One count runs
+before download headers are sent: an empty view or one over the limit sends no
+CSV, and the over-limit message points to Support for help with a larger
+export. The file then streams page by page; a page that fails mid-stream ends
+the response without its terminating chunk rather than as a clean file.
 
 **How it is versioned today.** There is no path version; the contract is the
 parameter and field names. Query parameters are `since` (ISO 8601 inclusive
 lower bound), `cursor` (opaque resume point, wins over `since`),
-`event_type` (repeatable or comma-separated), and `limit` (default 100,
+`event_type` (repeatable as `event_type[]=` or comma-separated), and `limit` (default 100,
 cap 1000). Any non-empty page returns `X-Next-Cursor`; a full page also
 returns `Link: <…>; rel="next"`; an empty page returns neither. Each exported
 event today carries the 15 top-level fields `id`, `occurred_at`,
@@ -540,14 +544,14 @@ and `--key-name` is a certificate common name. They freeze as they are.
 
 The runner BINARY reads exactly `EMISAR_CONFIG` (selects the config file),
 `EMISAR_URL`, `EMISAR_GROUP`, `EMISAR_RUNNER_ID`, `EMISAR_PACKS_REGISTRY`,
-`EMISAR_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`, `NO_COLOR`, and `TERM`.
-`EMISAR_GITHUB_TOKEN` is credential-bearing, was listed only under
-install-mcp.sh though the runner reads it directly, and is what `emisar update`
-sends with its release lookups. `GH_TOKEN` and `GITHUB_TOKEN` are the GitHub
-CLI's own spellings, which `emisar update` honours when it shells out to verify
-the release attestation: an exported `GH_TOKEN` or `GITHUB_TOKEN` wins, and
-`EMISAR_GITHUB_TOKEN` only fills the gap when neither is set, so a CI host that
-already exports one gets that token used, and setting ours does not change anything.
+`EMISAR_GITHUB_TOKEN`, `NO_COLOR`, `TERM`, and the variable that
+`cloud.enrollment_key_env` names (normally `EMISAR_ENROLLMENT_KEY`; see the
+runner configuration below). `EMISAR_GITHUB_TOKEN` is credential-bearing, was
+listed only under install-mcp.sh though the runner reads it directly, and is
+what `emisar update` sends with its GitHub release API lookups. `emisar update`
+verifies the release checksum bundle offline and deliberately strips
+`GH_TOKEN`, `GITHUB_TOKEN`, and `EMISAR_GITHUB_TOKEN` from the GitHub CLI's
+environment, so none of the three reaches that verification.
 `NO_COLOR` set to any value, and `TERM=dumb`, turn ANSI color off in every
 command's output; that is the pair a log pipeline or CI job configures, and
 `NO_COLOR` is a published cross-vendor convention we honour rather than own.
@@ -792,14 +796,15 @@ environment-based, not protocol-negotiated. `install.sh` accepts runner tags
 in `runner-vX.Y.Z`, `vX.Y.Z`, or `X.Y.Z` form and flags including `--yes`,
 `--uninstall`, `--purge`, `--no-start`, `--no-service`,
 `--bin-dir`, `--etc-dir`, `--data-dir`, `--log-dir`, `--user`, `--packs`, and
-`--preverified-bundle`. That last one is internal and absent from `--help`, but
-it freezes hardest of all: `emisar update` verifies a release bundle on the host
-and then re-runs the installer with `--preverified-bundle <dir> --version <tag>`,
-which makes install.sh use those extracted bytes and skip the download, the
-`SHA256SUMS` check, and the attestation check that already ran. The installer
-being handed the flag is whatever emisar.dev serves today; the binary composing
-it can be any deployed version, so renaming or re-scoping the flag breaks
-`emisar update` on every fielded runner at once. Its
+`--preverified-bundle`. That last one is internal, and `--help` labels it so,
+but it freezes hardest of all: `emisar update` verifies a release bundle on the
+host and then runs the `install.sh` inside that bundle with
+`--preverified-bundle <dir> --version <tag>`, which makes it use those extracted
+bytes and skip the download, the `SHA256SUMS` check, and the attestation check
+that already ran. The script being handed the flag ships in the target release;
+the binary composing it can be any deployed version, so a release whose bundled
+installer renames or re-scopes the flag breaks `emisar update` to that release
+on every fielded runner. Its
 environment is `VERSION`, `BIN_DIR`, `ETC_DIR`, `DATA_DIR`, `LOG_DIR`,
 `SERVICE_USER`, `SERVICE_GROUP`, `ASSUME_YES`, `NO_START`, `NO_SERVICE`,
 `EMISAR_PACKS`, `EMISAR_URL`, `EMISAR_ENROLLMENT_KEY`, `EMISAR_REPO`,

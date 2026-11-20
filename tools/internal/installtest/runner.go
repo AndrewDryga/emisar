@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
+
+	"go.yaml.in/yaml/v3"
 )
 
 type runnerCheck struct {
@@ -26,7 +29,7 @@ func Runner(root string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	h, err := newHarness(root, out)
+	h, err := newHarness(root)
 	if err != nil {
 		return err
 	}
@@ -75,6 +78,9 @@ func runnerChecks() []runnerCheck {
 		{"staged binary rejects the config", false, runnerStagedConfigPreflight},
 		{"runner id override in config skeleton", false, runnerIDOverride},
 		{"uninstall hint names custom directories", false, runnerUninstallHint},
+		{"next steps numbered only after configuration steps", false, runnerNextStepsNumbering},
+		{"config ownership without the service group", false, runnerConfigOwnership},
+		{"uninstall without download tools", false, runnerUninstallWithoutDownloadTools},
 	}
 }
 
@@ -696,10 +702,8 @@ cleanup_stage_dir
 	if err != nil {
 		return err
 	}
-	if err := exactFile(filepath.Join(bin, "emisar"), "echo \"emisar version 9.9.9\"\n"); err != nil {
-		if err := containsFile(filepath.Join(bin, "emisar"), `echo "emisar version 9.9.9"`); err != nil {
-			return fmt.Errorf("activation did not install the staged binary: %w", err)
-		}
+	if err := containsFile(filepath.Join(bin, "emisar"), `echo "emisar version 9.9.9"`); err != nil {
+		return fmt.Errorf("activation did not install the staged binary: %w", err)
 	}
 	renames, err := os.ReadFile(calls)
 	if err != nil {
@@ -2048,9 +2052,12 @@ rollback_service
 	return nil
 }
 
-// runnerIDOverride proves EMISAR_RUNNER_ID lands as runner.id in the generated
-// config — the runner's declared name and identity — and that an unset
-// variable emits no id line at all.
+// runnerIDOverride proves EMISAR_GROUP and EMISAR_RUNNER_ID land as the exact
+// runner.group and runner.id strings in the generated config — the runner's
+// declared name and identity — and that an unset id emits no id line at all.
+// safe_config_value admits a leading `@` and a trailing `:`, which are YAML
+// errors in a plain scalar, and `null`, which a plain scalar turns into no
+// value; the skeleton must quote them so the runner still parses its config.
 func runnerIDOverride(h *harness) error {
 	script := "config_skeleton\n"
 	base := map[string]string{
@@ -2058,28 +2065,42 @@ func runnerIDOverride(h *harness) error {
 		"ETC_DIR": "/etc/emisar", "DATA_DIR": "/var/lib/emisar", "LOG_DIR": "/var/log/emisar",
 		"EMISAR_URL": "", "EMISAR_ENROLLMENT_KEY": "",
 	}
-
-	withOverride := map[string]string{"EMISAR_RUNNER_ID": "web-01"}
-	for k, v := range base {
-		withOverride[k] = v
+	generate := func(group, id string) (map[string]any, []byte, error) {
+		env := map[string]string{"EMISAR_GROUP": group, "EMISAR_RUNNER_ID": id}
+		for k, v := range base {
+			env[k] = v
+		}
+		output, err := requireOutput(h.functions(h.repoPath("install.sh"),
+			[]string{"config_skeleton", "safe_config_value"}, script, env))
+		if err != nil {
+			return nil, nil, err
+		}
+		var config struct {
+			Runner map[string]any `yaml:"runner"`
+		}
+		if err := yaml.Unmarshal(output, &config); err != nil {
+			return nil, output, fmt.Errorf("generated config does not parse: %w\n%s", err, output)
+		}
+		return config.Runner, output, nil
 	}
-	result := h.functions(h.repoPath("install.sh"), []string{"config_skeleton", "safe_config_value"},
-		script, withOverride)
-	output, err := requireOutput(result)
+
+	for _, value := range []string{"web-01", "@web", "prod:", "null"} {
+		runner, output, err := generate(value, value)
+		if err != nil {
+			return fmt.Errorf("%q: %w", value, err)
+		}
+		for _, key := range []string{"group", "id"} {
+			if runner[key] != value {
+				return fmt.Errorf("runner.%s = %#v, want the string %q:\n%s", key, runner[key], value, output)
+			}
+		}
+	}
+
+	runner, output, err := generate("web", "")
 	if err != nil {
 		return err
 	}
-	if !strings.Contains(string(output), "id: web-01") {
-		return fmt.Errorf("EMISAR_RUNNER_ID did not land in the config skeleton:\n%s", output)
-	}
-
-	result = h.functions(h.repoPath("install.sh"), []string{"config_skeleton", "safe_config_value"},
-		script, base)
-	output, err = requireOutput(result)
-	if err != nil {
-		return err
-	}
-	if strings.Contains(string(output), "\n  id:") {
+	if _, found := runner["id"]; found {
 		return fmt.Errorf("unset EMISAR_RUNNER_ID still emitted an id line:\n%s", output)
 	}
 	return nil
@@ -2129,6 +2150,147 @@ func runnerUninstallHint(h *harness) error {
 		if !strings.Contains(string(output), "\n"+prefix+tc.want+"\n") {
 			return fmt.Errorf("%s: summary does not print %q:\n%s", tc.name, prefix+tc.want, output)
 		}
+	}
+	return nil
+}
+
+// runnerNextStepsNumbering proves the service instructions continue the
+// numbered list only when steps 1-2 (edit the config) were printed. A
+// configured host printed "3. Start the service" with no steps 1 or 2.
+func runnerNextStepsNumbering(h *harness) error {
+	headings := map[string]string{"systemd": "Start the service:", "launchd": "Load the LaunchDaemon:"}
+	for _, initSystem := range []string{"systemd", "launchd"} {
+		for _, needs := range []string{"0", "1"} {
+			preexisted := "1"
+			if needs == "1" {
+				preexisted = "0"
+			}
+			output, err := requireOutput(h.functions(h.repoPath("install.sh"),
+				[]string{"print_next_steps"}, "print_next_steps\n", map[string]string{
+					"VERSION": "runner-v9.9.9", "INIT": initSystem, "SERVICE_STARTED": "0",
+					"needs_configuration": needs, "config_preexisted": preexisted, "ENROLLMENT_KEY_UPDATE": "0",
+					"BIN_DIR": "/usr/local/bin", "ETC_DIR": "/etc/emisar",
+					"DATA_DIR": "/var/lib/emisar", "LOG_DIR": "/var/log/emisar",
+				}))
+			if err != nil {
+				return fmt.Errorf("%s, needs_configuration=%s: %w", initSystem, needs, err)
+			}
+			text := string(output)
+			numbered := strings.Contains(text, "  1. Edit") && strings.Contains(text, "  3. "+headings[initSystem])
+			unnumbered := !strings.Contains(text, "  1. ") && !strings.Contains(text, "  3. ") &&
+				!strings.Contains(text, "  4. ") && strings.Contains(text, "\n\n  "+headings[initSystem])
+			if needs == "1" && !numbered || needs == "0" && !unnumbered {
+				return fmt.Errorf("%s, needs_configuration=%s: service steps are misnumbered:\n%s", initSystem, needs, text)
+			}
+		}
+	}
+	return nil
+}
+
+// runnerConfigOwnership proves config.yaml and runner.env still get root
+// ownership when the service group does not exist. macOS creates no `emisar`
+// group and has no group named `root` (gid 0 is `wheel`), so a `root:root`
+// fallback failed under errexit and rolled the whole install back. The fake
+// chown answers like macOS: numeric ids, `wheel`, and the one group the case
+// declares exist. A group that does exist must still be used.
+func runnerConfigOwnership(h *harness) error {
+	for _, tc := range []struct {
+		group string
+		want  string
+	}{
+		{group: "emisar", want: "0:0"},
+		{group: "staff", want: "root:staff"},
+	} {
+		etc := h.path("config-ownership", tc.group)
+		if err := h.mkdir(etc); err != nil {
+			return err
+		}
+		trace := filepath.Join(etc, "chown-trace")
+		output, err := requireOutput(h.functions(h.repoPath("install.sh"),
+			[]string{"drop_config_skeleton", "config_skeleton", "safe_config_value", "runner_env_skeleton"}, `
+log() { :; }
+warn() { :; }
+chown() {
+  case "$1" in
+    0:0|root:wheel|"root:${EXISTING_GROUP}") printf '%s %s\n' "$1" "$2" >>"$TRACE"; return 0;;
+  esac
+  printf 'chown: %s: illegal group name\n' "${1#*:}" >&2
+  return 1
+}
+drop_config_skeleton
+printf 'CONFIG WRITTEN\n'
+`, map[string]string{
+				"OS": "darwin", "INIT": "launchd", "SERVICE_GROUP": tc.group, "EXISTING_GROUP": "staff",
+				"ETC_DIR": etc, "DATA_DIR": "/var/lib/emisar", "LOG_DIR": "/var/log/emisar",
+				"EMISAR_URL": "", "EMISAR_ENROLLMENT_KEY": "", "EMISAR_GROUP": "web",
+				"ENROLLMENT_KEY_UPDATE": "0", "URL_EXPLICIT": "0", "TRACE": trace,
+			}))
+		if err != nil {
+			return fmt.Errorf("service group %s: %w", tc.group, err)
+		}
+		if !strings.Contains(string(output), "CONFIG WRITTEN") {
+			return fmt.Errorf("service group %s: drop_config_skeleton did not finish:\n%s", tc.group, output)
+		}
+		want := fmt.Sprintf("%s %s/config.yaml\n%s %s/runner.env\n", tc.want, etc, tc.want, etc)
+		if err := exactFile(trace, want); err != nil {
+			return fmt.Errorf("service group %s: %w", tc.group, err)
+		}
+	}
+	return nil
+}
+
+// runnerUninstallWithoutDownloadTools proves uninstall runs on a host without
+// curl or tar. It downloads and extracts nothing, but it used to share the
+// install's tool check and refused `sudo bash install.sh --uninstall` there.
+// The control proves the install still refuses the same PATH.
+func runnerUninstallWithoutDownloadTools(h *harness) error {
+	root := h.path("uninstall-without-tools")
+	tools := filepath.Join(root, "tools")
+	bin := filepath.Join(root, "bin")
+	if err := h.mkdir(tools, bin); err != nil {
+		return err
+	}
+	for _, name := range []string{"rm", "cat", "tr"} {
+		path, err := exec.LookPath(name)
+		if err != nil {
+			return err
+		}
+		if err := os.Symlink(path, filepath.Join(tools, name)); err != nil {
+			return err
+		}
+	}
+	if err := writeFile(filepath.Join(bin, "emisar"), "old runner\n", 0o755); err != nil {
+		return err
+	}
+	env := map[string]string{
+		"PATH": tools, "OS": "darwin", "ARCH": "arm64", "INIT": "none", "PURGE": "0", "ASSUME_YES": "1",
+		"BIN_DIR": bin, "ETC_DIR": filepath.Join(root, "etc"), "DATA_DIR": filepath.Join(root, "data"),
+		"LOG_DIR": filepath.Join(root, "log"), "SERVICE_USER": "emisar", "PREVERIFIED_BUNDLE": "",
+		"INSTALL_RECEIPT_LOCATOR": filepath.Join(bin, ".emisar-install-receipt"),
+		"INSTALL_RECEIPT_PATH":    filepath.Join(root, "etc", "install-receipt"),
+	}
+	preamble := `
+id() { printf '0\n'; }
+log() { printf '%s\n' "$*"; }
+die() { printf 'DIE: %s\n' "$*" >&2; exit 1; }
+remove_runner_token() { :; }
+`
+	output, err := requireOutput(h.functions(h.repoPath("install.sh"),
+		[]string{"require_root", "confirm", "do_uninstall"}, preamble+"do_uninstall\n", env))
+	if err != nil {
+		return fmt.Errorf("uninstall without curl or tar: %w", err)
+	}
+	if !strings.Contains(string(output), "uninstalled") {
+		return fmt.Errorf("uninstall without curl or tar did not finish:\n%s", output)
+	}
+	if err := requireAbsent(filepath.Join(bin, "emisar")); err != nil {
+		return fmt.Errorf("uninstall without curl or tar: %w", err)
+	}
+
+	install := h.functions(h.repoPath("install.sh"),
+		[]string{"require_root", "require_root_and_tools"}, preamble+"require_root_and_tools\n", env)
+	if err := expectFailure(install, "required tool not found: tar"); err != nil {
+		return fmt.Errorf("install accepted a host without tar: %w", err)
 	}
 	return nil
 }
@@ -2208,6 +2370,7 @@ fetch_release_files() {
   printf '%s  %s\n' "`+wrongDigest+`" "$TARBALL" >"${dir}/SHA256SUMS"
 }
 tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
 download_release runner-v9.9.9 "$tmp"
 `, nil)
 	if err := expectFailure(tampered, "checksum verification failed"); err != nil {
@@ -2220,6 +2383,7 @@ fetch_release_files() {
   printf '%s  %s\n' "`+wrongDigest+`" "emisar-9.9.9-linux-arm64.tar.gz" >"${dir}/SHA256SUMS"
 }
 tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
 download_release runner-v9.9.9 "$tmp"
 `, nil)
 	if err := expectFailure(missing, "checksum manifest does not list emisar-9.9.9-linux-amd64.tar.gz"); err != nil {
@@ -2234,6 +2398,7 @@ fetch_release_files() {
   printf '%s  %s\n' "$(digest_of "${dir}/${TARBALL}")" "$TARBALL" >"${dir}/SHA256SUMS"
 }
 tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
 download_release runner-v9.9.9 "$tmp"
 `, nil)
 	output, err := requireOutput(honest)
