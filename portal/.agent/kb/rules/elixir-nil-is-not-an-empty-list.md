@@ -93,9 +93,9 @@ if payload["items"] != [], do: Enum.map(payload["items"], &row/1), else: []
 ## Scope — when `!= []` is correct
 
 On a value you normalized, or that a constructor guarantees, comparing to `[]`
-is right and this rule does not apply. The 11 live uses of `x["key"] != []` in
-`emisar_web` are all of that kind — `draft["inputs"]`, `step["outputs"]`,
-`input["enum_values"]` — reading a draft that
+is right and this rule does not apply. The runbook editor and workflow
+components' `x["key"] != []` and `== []` comparisons are all of that kind —
+`draft["inputs"]`, `step["outputs"]`, `input["enum_values"]` — reading a draft that
 `RunbookDraft.from_definition/1` already normalized. Do not "fix" those; the
 tell is not the comparison, it is whether the value came from a map **you**
 built.
@@ -111,7 +111,8 @@ expressions in `:if={…}` and `:for={…}` are text, not AST. The crash this ru
 exists for was inside a `~H` sigil.
 
 The broad AST form — flag every `x["key"] != []` — was measured and
-**rejected**: it fires on 11 sites in `emisar_web` and all 11 are correct. See
+**rejected**: when measured (2026-08-12), it fired on 11 sites in `emisar_web`
+and all 11 were correct. See
 [`elixir-rejected-credo-checks.md`](elixir-rejected-credo-checks.md) §6.
 
 ## Sweep target

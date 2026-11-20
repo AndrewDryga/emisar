@@ -41,7 +41,7 @@ boxes.
 |---|---|---|
 | One screenshot for a four-screen wizard | "That's the whole setup" | Screens 2 to 4 never captured |
 | A required field shown empty | "I can skip this" | Shot fired before the driver typed |
-| A full console screen, nothing marked | *hunts* | No `highlight()` call before the shot |
+| A full console screen, nothing marked | *hunts* | No `capturekit.Highlight` call before the shot |
 
 ## ✅ Good
 
@@ -49,8 +49,8 @@ boxes.
 // Fill BEFORE shooting: a frame showing an empty Display Label teaches nothing.
 focusField(ctx, "label")
 chromedp.Run(ctx, chromedp.KeyEvent("emisar"))
-highlight(ctx, "Display Label")          // outline the target
-screenshot(ctx, outDir, "jc-07-general-info")
+capturekit.Highlight(ctx, "Display Label", highlightSettle) // outline the target
+capturekit.Screenshot(ctx, outDir, "jc-07-general-info")
 ```
 
 ```elixir
@@ -73,9 +73,9 @@ screenshot(ctx, outDir, "jc-07-general-info")
 ## ❌ Bad
 
 ```go
-screenshot(ctx, outDir, "jc-07-general-info")   // shot fires first…
-focusField(ctx, "label")                        // …then the field is filled
-chromedp.Run(ctx, chromedp.KeyEvent("emisar"))  // the docs get the empty frame
+capturekit.Screenshot(ctx, outDir, "jc-07-general-info") // shot fires first…
+focusField(ctx, "label")                                 // …then the field is filled
+chromedp.Run(ctx, chromedp.KeyEvent("emisar"))           // the docs get the empty frame
 ```
 
 ```elixir
@@ -94,14 +94,15 @@ chromedp.Run(ctx, chromedp.KeyEvent("emisar"))  // the docs get the empty frame
 
 ## How it's enforced
 
-Review, plus two mechanical habits in the capture drivers
-(`tools/cmd/okta-capture`, `tools/cmd/jumpcloud-capture`):
+Review, plus two mechanical habits in the capture drivers (`tools/cmd/*-capture`, such as
+`okta-capture` and `jumpcloud-capture`):
 
-- `highlight(label)` outlines the smallest element carrying the text;
-  `highlightControl(section)` outlines the row around a checkbox/radio, which carry no text of
-  their own; `highlightGroup(anchor, companion)` frames a complete labelled unit. Call the
-  appropriate helper immediately before every `screenshot`, except when the whole shown card is
-  the instruction.
+- The shared `capturekit.Highlight(ctx, label, settle)` in `tools/internal/capture` outlines the
+  smallest element carrying the text. Drivers add local variants: JumpCloud's
+  `highlightControl(ctx, section)` outlines the row around a checkbox/radio, which carry no text of
+  their own; `highlightGroup(ctx, anchor, companion)` (JumpCloud and Okta) frames a complete
+  labelled unit. Call the appropriate helper immediately before every `capturekit.Screenshot`,
+  except when the whole shown card is the instruction.
 - **Look at every final published image at the width the docs render it before wiring it in.**
   Do not stop at the filename, the driver's log line, or the uncropped capture; look at the
   final pixels. Check all four edges, marker continuity, selected state, secrets and account chrome,

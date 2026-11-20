@@ -23,11 +23,11 @@ $ sudo emisar pack update redis
 
   redis                  v0.2.3 → v0.2.4 updated
 1 updated, 0 up to date, 0 not in registry, 0 failed.
-Reloaded the runner — it re-reads packs and re-advertises to the control plane.
+Signaled the runner to reload packs and re-advertise to the control plane.
 ```
 
-Every line matches `packupdate.go`'s formats, including the `%-22s` padding and
-the real reload sentence. The rollback example elides the long setup summary
+Every line matches `packupdate.go`'s formats, including the `%-22s` padding, and
+`reload.go`'s real reload sentence. The rollback example elides the long setup summary
 with `…` between the `installed` line and the reload line.
 
 ## ❌ Bad

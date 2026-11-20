@@ -1,7 +1,7 @@
 ---
 name: mcp-api
 sources: [portal/apps/emisar_web/priv/mcp/api-schemas.json, portal/apps/emisar_web/lib/emisar_web/controllers/mcp, portal/apps/emisar_web/lib/emisar_web/controllers/mcp_rpc_controller.ex, portal/apps/emisar/lib/emisar/mcp_operations.ex, mcp/protocol.go]
-updated: 2026-11-05
+updated: 2026-11-20
 ---
 
 # MCP action API specification
@@ -397,6 +397,9 @@ authorization, and approval decision:
   that call public cloud APIs or alter internet-facing production services, so
   the conservative hints report the external and irreversible effects some
   calls can cause. They do not replace Emisar's exact policy and approval gate.
+- `cancel_run` advertises `readOnlyHint: false`, `destructiveHint: false`,
+  `idempotentHint: true`, and `openWorldHint: false`: it only withdraws an
+  owned run inside Emisar before dispatch.
 
 These are model/UI hints, not authorization or confirmation gates. A client may
 apply its own confirmation UI; that does not replace Emisar authorization or
@@ -1080,9 +1083,18 @@ coordinated schema, instruction, documentation, and client-corpus updates.
       "runner_ref": "postgres-primary~18a65e2f86b2548f847095a6f36d2fc9",
       "status": "pending_approval",
       "created_at": "2026-07-13T14:42:10Z",
+      "review": {
+        "request_id": "01a08f81-cb81-7273-801b-ce6ad6321a77",
+        "status": "pending",
+        "required_approvals": 1,
+        "approved_count": 0,
+        "argument_count": 0,
+        "reason": "Restart the primary to apply the reviewed memory settings.",
+        "decisions": []
+      },
       "approval": {
-        "request_id": "apr_01J0D85QB2BWAAGXX9YZFZJEPR",
-        "url": "https://emisar.dev/app/example/approvals/apr_01J0D85QB2BWAAGXX9YZFZJEPR",
+        "request_id": "01a08f81-cb81-7273-801b-ce6ad6321a77",
+        "url": "https://emisar.dev/app/example/approvals/01a08f81-cb81-7273-801b-ce6ad6321a77",
         "expires_at": "2026-07-13T15:12:10Z",
         "handoff": "If you have not yet told the user about this request, tell them now in this conversation that it waits for an authorized person to approve it in Emisar, and give them this approval's url. If you are a subagent, send that notice to your parent agent now and ask it to tell the user. Do not retry it, approve it yourself, or treat a chat reply as approval."
       },
@@ -1091,9 +1103,11 @@ coordinated schema, instruction, documentation, and client-corpus updates.
         "tool": "wait_for_run",
         "arguments": {
           "run_id": "019f61cf-59b4-71d9-a78c-4ece74d1e164",
+          "cursor": "<opaque>",
           "timeout": "45s"
         }
-      }
+      },
+      "run_url": "https://emisar.dev/app/example/runs/019f61cf-59b4-71d9-a78c-4ece74d1e164"
     }
   ]
 }
@@ -1454,9 +1468,18 @@ Example after a wait times out while approval is still pending:
     "runner_ref": "postgres-primary~18a65e2f86b2548f847095a6f36d2fc9",
     "status": "pending_approval",
     "created_at": "2026-07-13T14:42:10Z",
+    "review": {
+      "request_id": "01a08f81-cb81-7273-801b-ce6ad6321a77",
+      "status": "pending",
+      "required_approvals": 1,
+      "approved_count": 0,
+      "argument_count": 0,
+      "reason": "Restart the primary to apply the reviewed memory settings.",
+      "decisions": []
+    },
     "approval": {
-      "request_id": "apr_01J0D85QB2BWAAGXX9YZFZJEPR",
-      "url": "https://emisar.dev/app/example/approvals/apr_01J0D85QB2BWAAGXX9YZFZJEPR",
+      "request_id": "01a08f81-cb81-7273-801b-ce6ad6321a77",
+      "url": "https://emisar.dev/app/example/approvals/01a08f81-cb81-7273-801b-ce6ad6321a77",
       "expires_at": "2026-07-13T15:12:10Z",
       "handoff": "If you have not yet told the user about this request, tell them now in this conversation that it waits for an authorized person to approve it in Emisar, and give them this approval's url. If you are a subagent, send that notice to your parent agent now and ask it to tell the user. Do not retry it, approve it yourself, or treat a chat reply as approval."
     },
@@ -1465,9 +1488,11 @@ Example after a wait times out while approval is still pending:
       "tool": "wait_for_run",
       "arguments": {
         "run_id": "019f61cf-59b4-71d9-a78c-4ece74d1e164",
+        "cursor": "<opaque>",
         "timeout": "45s"
       }
-    }
+    },
+    "run_url": "https://emisar.dev/app/example/runs/019f61cf-59b4-71d9-a78c-4ece74d1e164"
   }
 }
 ```
@@ -1684,7 +1709,7 @@ side effect.
     "created_at": "2026-07-13T14:42:10Z",
     "finished_at": "2026-07-13T14:47:02Z",
     "review": {
-      "request_id": "apr_01J0D85QB2BWAAGXX9YZFZJEPR",
+      "request_id": "01a08f81-cb81-7273-801b-ce6ad6321a77",
       "status": "cancelled",
       "required_approvals": 1,
       "approved_count": 0,
@@ -1889,7 +1914,8 @@ not-found error (`runbook_not_found` when no live release answers the slug,
       "input_count": 1,
       "stage_count": 1,
       "step_count": 1
-    }
+    },
+    "draft_definition_sha256": null
   }
 }
 ```
@@ -2039,9 +2065,11 @@ Accepted response:
             "item_id": "8828f094-e608-47cc-bcc5-98c13e40accd",
             "step_id": "check",
             "runner_ref": "postgres-primary~18a65e2f86b2548f847095a6f36d2fc9",
+            "target_selection": "all",
+            "target_group": null,
             "status": "running",
             "action_id": "postgres.replication_status",
-            "pack_ref": "postgres@1.4.2/sha256:b54e88d5b39f84f8c2a50f05ba26e1f3627b78464272ecf5b36797c148db4120",
+            "pack_ref": "postgres@1.4.0/sha256:b54e88d5b39f84f8c2a50f05ba26e1f3627b78464272ecf5b36797c148db4120",
             "pack_hash": "sha256:b54e88d5b39f84f8c2a50f05ba26e1f3627b78464272ecf5b36797c148db4120",
             "risk": "low",
             "attempt_count": 1,
@@ -2104,8 +2132,9 @@ Execution statuses are `pending_approval`, `active`, `succeeded`, `halted`, and
 terminal outcome settle the accepted execution under `ok: true`; a caller does
 not retry the complete mutation.
 
-Each item identifies the exact runner, action, pack ref and hash, configured
-wait, extracted outputs, success-condition evidence, terminal error, attempt
+Each item identifies the exact runner, its target selection (`all` or
+`random_one`, with `target_group` naming the group a `random_one` step drew from
+and `null` otherwise), action, pack ref and hash, configured wait, extracted outputs, success-condition evidence, terminal error, attempt
 count, and latest physical attempt. `runs_next` paginates complete attempt
 history through `recent_runs`. When a result approaches the 512 KiB tool budget,
 the projection first replaces non-sensitive output values with their encoded
@@ -2360,8 +2389,9 @@ The base digest is whichever document the caller read: the unpublished change's
 when the runbook has one, otherwise the live release's. The portal locks the
 runbook row, compares that digest inside the transaction, then rewrites the
 single unpublished change in place: no new row, no new number, and the live
-release untouched. A mismatched digest, or a slug this credential cannot resolve,
-returns `draft_changed` and writes no operation and no change. The result and
+release untouched. A mismatched digest returns `draft_changed`; a slug this
+credential cannot resolve returns `runbook_not_found`. Neither writes an
+operation or a change. The result and
 recovery objects are the shape above, with `live_ref` naming the release that
 keeps running.
 

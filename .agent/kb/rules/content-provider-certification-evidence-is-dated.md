@@ -36,9 +36,9 @@ engineering evidence rather than the customer-facing footer.
 
 ```heex
 <.docs_layout
-  current="connect-nono"
-  updated="September 9, 2026"
-  evidence="Tested with nono 0.75.0 on macOS on September 7, 2026."
+  current="connect-agent-sandboxes"
+  updated="November 6, 2026"
+  evidence="Tested with Docker Sandboxes 0.39.0, nono 0.75.0, and Dev Containers CLI 0.89.0 on macOS on September 7, 2026."
 >
 ```
 

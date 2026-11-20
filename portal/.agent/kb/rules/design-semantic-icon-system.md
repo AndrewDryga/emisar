@@ -56,15 +56,14 @@ This is the load-bearing contract:
    summary, or labelled row carrying a decorative glyph states that section's
    subject, so the token is chosen by MEANING — never by a noun it happens to
    share with the label. A token naming an entity's MODE or STATE
-   (`runner.maintenance`, `state.offline`, `state.approved`) belongs beside the
+   (`runner.maintenance`, `state.offline`, `state.online`) belongs beside the
    entity that is in it; used as a section marker it asserts a fact the page
    never claims, and its accent reads as a verdict on the section. The
    quickstart's "The runner is not showing up" troubleshooting disclosure wore
    `runner.maintenance` — a runner glyph with a brand-green core, so the row
    read "this runner is in maintenance, and it is fine" above a checklist for a
    host that never connected. Mark the section by what the reader DOES there:
-   `story.debug` for troubleshooting, `communication.prompt_suppressed` for the
-   stop-asking-permission walkthrough. Sweep: every `<.icon>` inside a
+   `story.debug` for troubleshooting. Sweep: every `<.icon>` inside a
    `<summary>`, a heading, or a docs/marketing row label — read each token
    against the text beside it, and reject a `state.*` or `*.maintenance` token
    that is not labelling the entity actually in that state.

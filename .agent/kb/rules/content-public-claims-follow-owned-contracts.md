@@ -73,7 +73,7 @@ Every action: actor, redacted arguments, target host, exit code.
 84 MCP tools
 ```
 
-when the compiled MCP registry exposes twelve.
+when that count disagrees with the compiled MCP registry.
 
 ## Enforcement
 

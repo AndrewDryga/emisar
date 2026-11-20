@@ -52,8 +52,9 @@ RUN printf '%s\n' "$SOURCE_REVISION" > /app/REVISION
 ```
 
 `dev/mcp/Dockerfile` shares the filtered repository-root context with the
-packaged Portal and runner images, then copies only `mcp/go.mod` and `mcp/`.
-Unrelated repository edits do not invalidate those layers.
+packaged Portal and runner images, then copies only `mcp/`. The module is
+stdlib-only, so it has no dependency layer, and unrelated repository edits do
+not invalidate its build.
 
 ## Bad
 

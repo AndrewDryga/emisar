@@ -1,7 +1,7 @@
 ---
 name: wire-protocol
 sources: [runner/internal/cloud, runner/internal/attest, mcp/internal/attest, portal/apps/emisar_web/lib/emisar_web/runner_socket.ex, portal/apps/emisar_web/lib/emisar_web/runner_socket_drain.ex]
-updated: 2026-11-07
+updated: 2026-11-20
 ---
 
 # Runner wire protocol
@@ -376,8 +376,10 @@ The runner-to-portal direction has its own vocabulary, and the portal relies on
 one code: `concurrency_cap_reached` means the runner is already at
 `MaxConcurrentRuns` and did not start the dispatch, so the portal REQUEUES that
 run rather than failing it. Treat it as a contract, not a diagnostic; the wire
-golden pins it. The portal finalizes it idempotently. It carries terminal status, exit code,
-duration, emitted stream byte counts, total and dropped progress-chunk counts,
+golden pins it.
+
+The portal finalizes an `action_result` idempotently. The result carries
+terminal status, exit code, duration, emitted stream byte counts, total and dropped progress-chunk counts,
 truncation flags, masked executed command, reason, and the
 local audit event ID. Per-rule redaction hit counts exist in the runner's
 local journal only. They are not on the wire, so "was anything masked in
@@ -468,11 +470,16 @@ The runner enforces these:
 | Exact `args` object | 32 KiB |
 | JSON nesting | 64 levels |
 | Runner refs in one signed action | 16 |
-| `Emisar-Attestation` HTTP header | 16384 encoded bytes |
 | Concurrent actions per runner | 8 (fixed) |
 
 The concurrency cap is a compiled constant: no config key, flag, or environment
 variable changes it.
+
+The `Emisar-Attestation` HTTP header never reaches the runner: it rides the
+bridge-to-portal hop, and both the bridge and the portal bound it at 16384
+encoded bytes (see [Signed action attestation v5](#signed-action-attestation-v5)).
+The runner receives the decoded envelope inside `run_action`, under the message
+limit above.
 
 The portal enforces its own bounds on the same wire, and several of them decide
 what a runner's peer really accepts:

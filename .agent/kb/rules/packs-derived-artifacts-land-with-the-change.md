@@ -23,8 +23,8 @@ MCP projection accepts suffixes; only the catalog build is strict.
 `packctl catalog build --packs ./packs --out ./dist/packs --repo-url
 https://github.com/andrewdryga/emisar --previous <that file>`,
 copy the built `catalog.json` over `portal/apps/emisar/priv/packs/catalog.json`,
-and run `mix test test/emisar/catalog/pack_baseline_test.exs
-test/emisar/catalog/published_registry/cache_test.exs` from `apps/emisar`. The
+and run `./run test portal apps/emisar/test/emisar/catalog/pack_baseline_test.exs
+apps/emisar/test/emisar/catalog/published_registry/cache_test.exs` from the repository root. The
 live catalog is the only valid history source: the committed artifact can carry
 an unpublished intermediate version forward after a canceled release, and
 without `--previous` every pack's version-window history rebuilds empty and the

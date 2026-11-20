@@ -1,7 +1,8 @@
 schema_version: 1
 
-# Per-runner config for the docker-compose demo stack, mounted over the
-# runner image at /etc/emisar/config.yaml. DEV ONLY.
+# Per-runner config for the docker-compose demo stack. runner-config-init
+# copies it into the runner_configs volume and the runner reads it with
+# --config /configs/edge-fra-01.yaml. DEV ONLY.
 #
 # `runner.id` is the durable external_id the runner presents on register.
 # It MUST match the external_id the seed pins on this runner's row
@@ -29,9 +30,9 @@ cloud:
 
 paths:
   data_dir: "/var/lib/emisar"
-  # Edge host: the Caddy reverse proxy + the linux-core basics. Both ship
-  # in the library, so the cloud auto-trusts them against PackBaseline on
-  # connect (no manual Trust step).
+  # Edge host: the shared baseline (linux-core through showcase) plus the
+  # proxy and network packs. All ship in the library, so the cloud
+  # auto-trusts them against PackBaseline on connect (no manual Trust step).
   packs:
     - "/opt/emisar/packs/linux-core"
     - "/opt/emisar/packs/systemd-deep"

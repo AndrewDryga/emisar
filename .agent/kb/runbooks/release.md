@@ -1,7 +1,7 @@
 ---
 name: release
 sources: [portal/apps/emisar_web/lib/emisar_web/changelog.ex, portal/config/config.exs, .github/workflows/runner-release.yml, .github/workflows/mcp-release.yml, .github/workflows/mcp-eval.yml, packs/PUBLISHING.md]
-updated: 2026-11-06
+updated: 2026-11-20
 ---
 
 # Cutting an emisar release
@@ -141,7 +141,7 @@ Never title a product release with a bare `vX.Y.Z`.
 
 ## Order of operations
 
-1. **Pick the version + anchor.** `git tag -l 'v*.*.0' | sort -V | tail -1` is the
+1. **Pick the version + anchor.** `git tag -l 'v[0-9]*' | sort -V | tail -1` is the
    previous release; review `git log <previous>..HEAD --format='%h %ad %s' --date=short`
    and choose the next version (minor bump) and the anchor commit (usually `HEAD`).
 2. **Group the window into themes** from that log — the raw material for both the
@@ -164,7 +164,8 @@ Never title a product release with a bare `vX.Y.Z`.
 9. **Gate the complete candidate** from the repository root: `./run gate all`.
    Green before committing. Never pipe the format/compile checks through
    `head`/`tail` (it masks the exit code).
-10. **Commit** the changelog, version, license date, test, and reconciled catalog — one focused commit
+10. **Commit** the changelog, `portal/VERSION`, `server.json`, the compatibility snapshot,
+   `LICENSE.md`, the marketing test, and the reconciled catalog — one focused commit
    (e.g. `release: v0.25.0 — <title>`).
 11. **Push the commit** (`git push origin main`). *Outward-facing — confirm first.*
 12. **Create the signed tag** at the anchor (`git tag -s …`) and `git tag -v` it.

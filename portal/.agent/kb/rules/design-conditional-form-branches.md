@@ -62,8 +62,7 @@ hierarchy are visual contracts.
 Search change handlers for `Map.put(:action, :validate)` — every one of them
 reports blanks the operator has not reached. `EmisarWeb.LiveForm.on_change/1`
 replaces it. Submit paths keep the raw changeset, so check the enclosing function
-before swapping: `profile_live`'s `save_email` sets the action inside a SUBMIT
-path and must keep the full error set.
+before swapping: an action set inside a SUBMIT path must keep the full error set.
 Search for `phx-change` forms that conditionally reveal a required child and render
 its error from `field.errors` alone. Search for `choice_cards` immediately followed
 by a separately labeled or framed dependent control.

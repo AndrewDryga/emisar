@@ -25,20 +25,14 @@ lines.
 
 ## ✅ Good
 
-```elixir
-deliver(user.email, "Confirm your emisar account", """
-Welcome to emisar!
+```text
+# Plain-text body of the sign-up code email (UserNotifier.deliver_sign_up_code/4):
+# each paragraph is one source line; the code is indented four.
+Use this code to finish creating your emisar workspace.
 
-Confirm your email to finish setting up your account:
+    #{secret}
 
-#{url}
-
-You can sign in any time — emisar emails you a one-time link, no password to set:
-
-#{sign_in_url}
-
-— emisar
-""")
+Enter the code in the browser where you signed up. It works once, only in that browser, and expires in 15 minutes.
 ```
 
 ```elixir

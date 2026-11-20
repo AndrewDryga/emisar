@@ -249,7 +249,7 @@ across several surfaces.
 - The install wizard's Resources rail links each install shape's own docs page (host install, containers, Kubernetes, Nomad, autoscaling) instead of one generic guide.
 - A callout that teaches a state's consequence ends with the doc link that owns the mechanism (the signed-only callouts link `/docs/signed-dispatch`).
 - `Identifier claim` reads "How emisar recognises a returning member. It never uses their email, because people change it.": what it does plus the one consequence, no threat model.
-- Entra's hint is "Entra gives every app a different `sub`, so pick `oid` — the same id directory sync uses.": the instruction and why it matters to them; the full identity-convergence argument lives in the Entra guide.
+- Entra's hint is "Entra gives every app a different `sub`, so emisar uses `oid`, the ID that directory sync sends.": the behavior and why it matters to them; the full identity-convergence argument lives in the Entra guide.
 
 ❌ Bad
 

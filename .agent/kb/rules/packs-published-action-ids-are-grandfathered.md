@@ -51,7 +51,7 @@ them: `aws-cloudwatch`→`cw.`, `aws-cost`→`ce.`, `aws-ec2`→`ec2.`,
 `gcp-certificates`, `gcp-cloudsql`, `gcp-compute`, `gcp-dns`, `gcp-iam`,
 `gcp-load-balancing`, `gcp-monitoring`, `gcp-networking`, `gcp-storage`. This is
 the one place the rule is genuinely broken rather than merely abbreviated:
-splitting it changes 84 published ids. It would not change search ranking either,
+splitting it changes 88 published ids. It would not change search ranking either,
 since `gcp-compute.` prefix-matches the query `gcp` exactly as `gcp.` does.
 
 *An invented abbreviation (20)* — grandfathered, never a pattern to copy:
@@ -63,10 +63,9 @@ since `gcp-compute.` prefix-matches the query `gcp` exactly as `gcp.` does.
 `victorialogs`→`vl.`, `victoriametrics`→`vm.`, `wireguard`→`wg.`,
 `zookeeper`→`zk.`
 
-**Retired spellings live outside that list, and no list can close it.** The
-bundled catalog artifact still carries `dnf-rpm` 0.1.10 and 0.1.12 with both
-`dnf.*` and `rpm.*` ids; 0.1.13 and the current 0.1.14 are `rpm.*` only
-(`portal/apps/emisar/priv/packs/catalog.json`). So `dnf.` is a published
+**Retired spellings live outside that list, and no list can close it.**
+`dnf-rpm` 0.1.12 published both `dnf.*` and `rpm.*` ids; later releases use
+`rpm.*` only (`portal/apps/emisar/priv/packs/catalog.json`). So `dnf.` is a published
 namespace that the 52 pairs above do not contain. Catalog history is also a
 bounded window — the build keeps the last `DefaultPreviousKept = 3` versions per
 pack (`runner/internal/catalog/catalog.go:36`) — so neither current source nor

@@ -1,7 +1,7 @@
 ---
 name: deployment
 sources: [.github/workflows/ci.yml, .github/workflows/cd.yml, infra/iam.tf, infra/github_oidc.tf, infra/versions.tf, portal/config/runtime.exs, portal/apps/emisar/lib/emisar/release.ex]
-updated: 2026-11-05
+updated: 2026-11-20
 ---
 
 # CI/CD production setup
@@ -104,10 +104,12 @@ and always reports a conclusion.
 
 ## Release tags
 
-Runner, MCP bridge, and product releases accept only exact SemVer signed
-annotated tags targeting current `main`. Their workflows verify GitHub's
-signature result and the tag's commit before building or publishing. The thin
-tag workflows call component-specific, no-input reusable workflows at one exact
+Runner and MCP bridge releases accept only exact SemVer signed annotated tags
+targeting current `main`. Their workflows verify GitHub's signature result and
+the tag's commit before building or publishing. Product `v*` tags must be signed,
+annotated, and reachable from `main`; the hosted MCP Registry workflow checks
+ancestry, not the tip, because it publishes after the deploy lands. The runner
+and bridge thin tag workflows call component-specific, no-input reusable workflows at one exact
 commit SHA; the release WIF provider and service-account binding admit only
 those called workflow identities. Rotate the pin only by first landing the new
 called workflows, then updating both callers and Terraform in one reviewed

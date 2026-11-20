@@ -1,7 +1,7 @@
 ---
 name: key-compromise
 sources: [portal/apps/emisar/lib/emisar/api_keys.ex, portal/apps/emisar/lib/emisar/oauth.ex, portal/apps/emisar/lib/emisar/runners.ex, portal/apps/emisar/lib/emisar/crypto.ex, portal/apps/emisar_web/priv/static/.well-known/mcp-registry-auth, infra/iam.tf, infra/secrets.tf]
-updated: 2026-11-05
+updated: 2026-11-20
 ---
 
 # Key-compromise response
@@ -95,8 +95,9 @@ For each legitimate host:
    new `rnrtok-…` token, and appears online under the expected identity. Refresh
    runner references before dispatching work.
 6. Repeat for **every runner in the fleet**, including hosts that were online.
-   An online runner normally reuses its cached token, so changing or revoking
-   the enrollment key does not make that host re-enroll.
+   Revoking the key or editing the environment file does not make a running
+   process re-enroll; it keeps its token. A restart with a changed key
+   registers again even if the cache remains, but remove the cache anyway.
 
 Do not call the rotation complete until the fleet inventory shows the new
 registrations and the old key fails at `/runner/register`. If a host's old

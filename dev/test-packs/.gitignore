@@ -1,5 +1,3 @@
 # Runtime artifacts — populated when the harness runs, never committed.
 bin/
 reports/
-__pycache__/
-*.pyc

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Demo-only journalctl shim baked into the dev runner Docker image.
+# Demo-only journalctl shim bind-mounted into the docker-compose demo runners.
 # Real production hosts use systemd's actual journalctl; this stub
 # returns realistic-looking journal entries for the demo units so the
 # linux-core actions don't require a running systemd to demonstrate.

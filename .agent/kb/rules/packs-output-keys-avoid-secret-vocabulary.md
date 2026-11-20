@@ -49,12 +49,11 @@ next_page_cursor: {type: [string, "null"], maxLength: 2048}
 with a behavior case asserting a non-null cursor value:
 
 ```yaml
-- name: databricks.catalogs_list-follows-the-cursor
-  action: databricks.catalogs_list
-  args: {page_cursor: uc-page-2}
+- action: databricks.catalogs_list
   expect:
     json:
-      /catalogs/0/name: archive
+      /catalogs/0/name: analytics
+      /next_page_cursor: uc-page-2
 ```
 
 **❌ Bad.** Projecting the API's wire name straight through

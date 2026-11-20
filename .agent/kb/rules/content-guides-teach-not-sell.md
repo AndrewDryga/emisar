@@ -44,8 +44,8 @@ sentence was a pitch; delete it.
 
 **How it's enforced.** Review: before shipping a vendor-neutral guide,
 `grep -c emisar` on its template — the body count is 0, or every hit sits inside
-the one designated section. The safe-access guide's "One MCP for all of
-infrastructure" section is the sanctioned designated-place shape; the
+the one designated section. The safe-access guide's "Where emisar fits"
+section (`#one-mcp`) is the sanctioned designated-place shape; the
 prompt-injection guide is the zero-mentions shape. For a titled product
 explainer, review every section for mechanism or limitation and reject feature
 laundry lists or repeated calls to action. Cross-links to sibling guides are

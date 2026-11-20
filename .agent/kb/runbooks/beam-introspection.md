@@ -1,7 +1,7 @@
 ---
 name: beam-introspection
 sources: [portal/apps/emisar/mix.exs, infra/monitoring_application.tf, tools/internal/infraops/portal.go]
-updated: 2026-11-05
+updated: 2026-11-20
 ---
 
 # Inspecting a running portal node
@@ -28,7 +28,8 @@ running unattended, because it polls.
 
 ## What to run
 
-**Memory climbing, cause unknown.** Which process types hold the most memory:
+**Memory climbing, cause unknown.** The ten individual processes holding the
+most memory, each with its registered name or initial call:
 
 ```elixir
 :recon.proc_count(:memory, 10)

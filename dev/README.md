@@ -6,7 +6,7 @@ artifacts from the runner, MCP, pack, and root installer sources.
 
 ## Compose topologies
 
-The repository has three intentionally separate Compose environments:
+The repository has intentionally separate Compose environments:
 
 - `dev/compose.yml` runs PostgreSQL and Keycloak for the fast host-native and
   Coop development loop.
@@ -14,6 +14,8 @@ The repository has three intentionally separate Compose environments:
   demo, runners, MCP, and signing smoke tests.
 - `dev/test-packs/compose.yaml` supplies the shared action-client container;
   each `packs/<name>/test/compose.yaml` owns its disposable system under test.
+- `dev/review-compose.yml` runs Coop's disposable PostgreSQL for the
+  publication-review gate.
 
 The application server stays out of the fast dependency stack, while the
 packaged stack verifies the release image. Every pack behavior project stays
@@ -48,8 +50,9 @@ shot` in that same box. Full `setup`, `doctor`, and SSO-specific captures still
 require Keycloak. Missing database addresses are never guessed.
 
 Native development is also supported. Install `.tool-versions` with asdf plus
-Git, Coop, Docker, the PostgreSQL client, ShellCheck, Chrome/Chromium, and
-ImageMagick, then run `./run setup`. It checks all prerequisites before it
+Git, Coop, Docker, the PostgreSQL client, ShellCheck, jq, GNU Bash (with
+`read -N`), GNU coreutils, Chrome/Chromium, and ImageMagick (see the root
+[README](../README.md) for the macOS setup), then run `./run setup`. It checks all prerequisites before it
 starts sidecars or changes the database. `./run doctor` prints every exact
 pinned version and continues through services, TLS, OIDC, and ignored-key
 checks.
@@ -59,7 +62,7 @@ Run `./run` or `./run help` for the complete map, or
 Coop supplies the browser and image tools in its project image; host-native
 development uses the corresponding host installations.
 
-The repository keeps tooling in three ownership buckets:
+The repository keeps tooling in these ownership buckets:
 
 - `./run` is only a cached Go-binary bootstrap and the contributor command surface.
 - `tools/` holds the reusable Go implementation, including browser automation.
@@ -121,7 +124,7 @@ Common feedback commands:
 ./run pack check redis
 ./run pack hashes
 ./run test packs redis
-./run test packs redis --case redis.ping
+./run test packs redis --case redis.info
 ```
 
 `check changed` incrementally compiles the umbrella, then format-checks and runs
@@ -235,12 +238,14 @@ exposed as `./run e2e billing`. Its ignored credentials remain in
 ## `runners/`
 
 One config file per docker-compose runner (`edge-fra-01.yaml`,
-`api-iad-02.yaml`, `pg-primary-iad.yaml`), mounted into the development image
-built from `dev/runner/Dockerfile`:
+`api-iad-02.yaml`, `pg-primary-iad.yaml`). The `runner-config-init` service
+copies them into the `runner_configs` volume so they are root-owned on Linux
+too, and each runner built from `dev/runner/Dockerfile` reads its own copy:
 
 ```yaml
+command: ["/usr/local/bin/emisar", "connect", "--config", "/configs/edge-fra-01.yaml"]
 volumes:
-  - ./dev/runners/edge-fra-01.yaml:/etc/emisar/config.yaml:ro
+  - runner_configs:/configs:ro
 ```
 
 Each pins a fixed `runner.id` (the durable `external_id`) that matches the
@@ -249,12 +254,16 @@ Because runner identity is `(account, external_id)`, the live container
 adopts its pre-seeded row on register instead of registering a second, empty
 runner. It comes up online and keeps the seeded run history, approvals,
 grants, and trusted pack catalog. The config also sets each runner's
-`group`, `labels`, and which role packs it loads and advertises (edge → caddy,
-api → systemd-deep, pg → postgres). All three also load linux-core, which runs
-for real off the container via the fixtures below.
+`group`, `labels`, and which packs it loads and advertises. All three load a
+shared baseline (linux-core, systemd-deep, debian, debugging, time-sync,
+showcase) plus a role set: proxies and networking on edge, containers and app
+runtimes on api, databases and storage on pg. linux-core runs for real off the
+container via the fixtures below.
 
 To add a runner: add a `dev/runners/<name>.yaml`, a matching `runner_specs`
-entry in the seed (same `external_id`), and a service in `docker-compose.yml`.
+entry in the seed (same `external_id`), the file to `runner-config-init`'s copy
+list, and a service in `docker-compose.yml` that depends on `runner-config-init`
+and passes `--config /configs/<name>.yaml`.
 
 ## `runner-fixtures/`
 

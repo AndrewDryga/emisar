@@ -1,5 +1,5 @@
 #!/bin/bash
-# Demo-only systemctl shim baked into the dev runner Docker image.
+# Demo-only systemctl shim bind-mounted into the docker-compose demo runners.
 # Real production hosts use the system's actual systemctl; this stub
 # only exists so the linux-core demo actions return realistic-looking
 # output inside the containerised runner where systemd isn't running.

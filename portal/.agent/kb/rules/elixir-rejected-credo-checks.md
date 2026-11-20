@@ -5,8 +5,8 @@ add**. Recorded so they don't get re-proposed each time the audit-sweep smells
 resurface — and so a future proposal starts from the measured false-positive
 evidence below, not from scratch.
 
-The bar (`portal/AGENTS.md` → Enforcement): "Adding a rule = adding its check"
-applies to a rule that is *mechanically decidable with low false-positives*. A
+The bar ([Enforcement](elixir-layered-contexts.md#enforcement)): a rule gets a
+standing check only when it is *mechanically decidable with low false-positives*. A
 candidate that fires mostly on correct code trains people to ignore it or
 sprinkle `# credo:disable`, which is worse than no check — those belong to
 `/elixir-iron-review` judgment, not a standing AST check.
@@ -144,8 +144,8 @@ the whole page down. The rule is
 [`elixir-nil-is-not-an-empty-list.md`](elixir-nil-is-not-an-empty-list.md).
 
 **Why the broad form was rejected — measured 11/11 false-positive.** A prototype
-flagging `x["key"] != []` / `== []` fires on 11 sites in `apps/emisar_web/lib`,
-and **every one is correct**:
+flagging `x["key"] != []` / `== []` fired on 11 sites in `apps/emisar_web/lib`
+when it was measured (2026-08-12), and **every one was correct**:
 
 - `runbook_editor_components.ex` ×3 and `runbook_workflow_components.ex` ×8 —
   all read a **draft**, and `RunbookDraft.from_definition/1` normalizes
@@ -185,7 +185,8 @@ the struct pattern but cannot know whether the value's upstream contract
 guarantees that struct. Flagging both idioms would either create standing noise
 or force a verbose `case` where `match?/2` says exactly what is being tested.
 
-**Verdict:** keep the direct-field rule in `portal/AGENTS.md` as review judgment.
+**Verdict:** keep the direct-field rule (the `match?/2` entry in the
+[Portal rule index](README.md)) as review judgment.
 The existing `MatchOnMapFieldValue` check stays intentionally narrower because
 bare-map field matches can silently survive a schema move; a struct pattern at
 least validates its named fields at compile time.

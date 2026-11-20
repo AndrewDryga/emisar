@@ -128,7 +128,7 @@ and a tier that depends on which engine answers is the drift this rule
 exists to stop. Up, not down: the unsafe direction removes a gate.
 
 **Start a workload — it depends, and that is correct.**
-`ec2.start_instance` and `gcp-compute.instance_start` are `high`; they bring
+`ec2.start_instance` and `gcp.instance_start` are `high`; they bring
 up a billable machine with its own inbound surface. `nomad.job_start`,
 `rmq.start_app` and `databricks.cluster_start` are `medium`; they schedule
 work inside a cluster that is already running and already exposed. Same verb,
