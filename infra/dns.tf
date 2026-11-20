@@ -91,10 +91,10 @@ resource "google_dns_record_set" "ryker" {
 }
 
 # ── TLS: Certificate Manager DNS authorization ────────────────────────────────
-# Proves domain control so the Google-managed cert (certificates.tf) provisions. One record
-# per SAN — apex, www, and mta-sts (the latter two CNAME to the apex/LB, so they
-# ride the same cert). Published into our own zone, so the cert goes ACTIVE minutes
-# while these records remain authoritative.
+# Proves domain control so the Google-managed certificates (certificates.tf)
+# provision and renew. One record per local.active_hostnames entry, including
+# Livebook when it is enabled; published into our own zone, so the records stay
+# in place for every renewal.
 resource "google_dns_record_set" "cert_auth" {
   for_each = local.active_hostnames
 

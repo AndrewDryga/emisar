@@ -46,8 +46,10 @@ deploy step.
    hand-maintained counter when the workspace value can be its source of truth.
    Never put a secret value in git, a `.tf` default, or a tfvars file — the TFC
    workspace (org `Dryga` / project `emisar`) is the only entry point, and access
-   to it is production access. A new secret = a sensitive variable + an
-   `app_secrets` entry + (if optional) an `optional_secret_values` entry.
+   to it is production access. A new portal application secret = a sensitive
+   variable + a `secret_definitions` entry (`app_secrets`, the container, and
+   the VM accessor binding derive from it) + (if optional) an
+   `optional_secret_values` entry.
 5. **The zone is authoritative and DNSSEC-validating.** Every durable public
    record belongs in `dns.tf`. Keep the registrar DS aligned with
    `dnssec_ds_record`; a future key rotation must activate the child key before

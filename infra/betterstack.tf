@@ -91,8 +91,8 @@ resource "betteruptime_policy" "incident" {
 }
 
 # ── GCP internal alarms → this same escalation (paid tier) ───────────────────
-# Severe GCP alerts from monitoring_database.tf and monitoring_platform.tf can
-# deliver here, so they
+# Severe GCP alerts and the budget, every one that selects
+# local.paging_notification_channels (monitoring.tf), can deliver here, so they
 # page the on-call exactly like the external monitors: a Cloud SQL transaction
 # wraparound climbing toward the write freeze, or NAT egress quietly failing,
 # should wake someone, not wait in an inbox. GCP posts to webhook_url;

@@ -127,8 +127,8 @@ resource "terraform_data" "livebook_backend_ready" {
 }
 
 # ── Backend: the MIG behind an HTTP backend service + health check ───────────
-# Cloud CDN stays off (the console is authenticated + dynamic). Cloud Armor can
-# attach here later via security_policy for WAF/rate-limiting.
+# Cloud CDN stays off (the console is authenticated + dynamic). Cloud Armor
+# rate limiting attaches via security_policy (security_policy.tf).
 resource "google_compute_backend_service" "app" {
   # A readiness-contract change gets a complete successor backend. The URL map
   # switches only after that backend passes the barrier below.

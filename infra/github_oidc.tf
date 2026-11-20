@@ -4,8 +4,8 @@
 # because only reusable-workflow jobs carry `job_workflow_*` claims.
 locals {
   # The reviewed commit the release workflows must run from. It is asserted here
-  # AND used to build the pack-registry publisher's principalSet in
-  # pack_registry.tf, so a rotation that updates only some of the four spellings
+  # AND used to build the binary release publisher's (emisar-release-publisher)
+  # principalSet in pack_registry.tf, so a rotation that updates only some of the four spellings
   # does not fail a plan — it silently stops matching, and the publisher loses
   # authority (or, worse, an unreviewed commit keeps it). One definition makes
   # the rotation a single edit. See the rotation note on

@@ -281,8 +281,8 @@ variable "livebook_iap_iam_user" {
 }
 
 # ── Secrets (SENSITIVE Terraform Cloud workspace variables) ───────────────────
-# Externally-issued credentials only — machine secrets (SECRET_KEY_BASE, the DB
-# password/URL) are generated in-config and are not variables. "" means "not
+# Externally-issued credentials only — machine secrets (SECRET_KEY_BASE) are
+# generated in-config and are not variables. "" means "not
 # configured": no secret version is created, cloud-init skips the env var, and
 # the release treats the feature as off. Paddle is all-or-nothing unless
 # disable_billing = true — enforced by a plan-time precondition (compute.tf).

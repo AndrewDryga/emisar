@@ -144,7 +144,7 @@ packs.
 
 The runner advertises group `emisar-admin` with `purpose=emisar-admin`. Local
 admission allows the private actions, those eight host packs, `hcp-terraform`,
-and the GCP certificate, Cloud SQL, compute, DNS, IAM, load-balancing,
+`sentry`, and the GCP certificate, Cloud SQL, compute, DNS, IAM, load-balancing,
 monitoring, networking, and storage packs at every declared risk tier. The GCP
 credentials remain read-only, so mutation actions are visible but Google refuses
 them. The HCP token's permissions are broad, so the
@@ -174,7 +174,9 @@ for the fleet and rollout surge. Changing the variable automatically writes and
 deploys a new exact Secret Manager version without storing the payload in state.
 Set the HCP Terraform API token separately as the sensitive workspace variable
 `emisar_tfe_token`; changing it likewise writes and rolls to an exact managed
-secret version.
+secret version. The Sentry pack's reads and issue mutations use the required
+sensitive workspace variable `emisar_sentry_auth_token`, an internal-integration
+auth token distinct from the portal's `sentry_dsn`; it rotates the same way.
 
 ### Native diagnostic utilities
 
@@ -365,26 +367,31 @@ removal and name reuse; retained access evidence lives in the locked logging
 bucket. Adding a secret requires:
 
 1. A sensitive variable in `variables.tf` when the value is externally issued.
-2. A Terraform-managed secret container and an `app_secrets` entry in `secrets.tf`.
+2. A `secret_definitions` entry (secret ID to environment variable name) in
+   `secrets.tf`. The secret container, the `app_secrets` map, and the instance
+   service account's per-secret accessor binding all derive from it.
 3. An `optional_secret_values` entry when the application can boot without it.
-4. The minimum per-secret IAM binding for the instance service account.
 
 Never place values in git, defaults, command history, or `.tfvars` files.
 
 Write-only values never enter state, so `secret_data_wo_version` is the only
 signal a payload changed. Externally issued credentials (Paddle, Postmark,
-Sentry, Mixpanel, X Ads), the runner enrollment key, and the TFE token derive
-that trigger from a hash of the payload itself. Changing the workspace value is
-therefore the rotation: the new version and the instance-template roll follow
-from it.
+Sentry DSN, Mixpanel, X Ads), the runner enrollment key, the TFE token, and the
+admin runner's Sentry auth token derive that trigger from a hash of the payload
+itself. Changing the workspace value is therefore the rotation: the new version
+and the instance-template roll follow from it.
 
-Two secrets, `emisar-secret-key-base` and `emisar-release-cookie`, cannot do
-that and keep a hand-maintained counter instead. Their payloads are ephemeral or
-Terraform-generated, so hashing them would rotate them on every apply. Rotate
-either by incrementing only its entry in `local.secret_generations`, in the
-same change as the workspace value. The resulting exact version is part of
-cloud-init, so the instance template rolls and no VM ever follows the mutable
-`latest` alias.
+Three secrets cannot do that and keep a hand-maintained counter in
+`local.secret_generations` instead: `emisar-secret-key-base`,
+`emisar-release-cookie`, and, when Livebook is enabled,
+`emisar-livebook-secret-key-base`. Their payloads are ephemeral or
+Terraform-generated, so hashing them would rotate them on every apply. Rotate a
+generated signing key by incrementing only its entry. Rotate the release cookie
+by incrementing its entry in the same change as `release_cookie_value`. The
+resulting exact version is part of cloud-init, so the affected instance template
+rolls and no VM ever follows the mutable `latest` alias. The Livebook key rolls
+only the Livebook VM; the steps below cover the portal signing key and the
+cookie.
 
 Rotate signing and cookie values separately, each in its own maintenance window:
 
@@ -410,10 +417,11 @@ a reversible DDL probe.
 Personal operator access is optional and attributable. Set the sensitive HCP
 Terraform workspace variable `database_operator_iam_user` to one lowercase
 Google user email. Terraform provisions that identity as a Cloud SQL IAM user
-and grants connector login only on the `emisar` instance. It also grants the
-project-level console discovery permissions Cloud SQL Studio requires, and
-assigns the non-superuser `emisar_owner` and read-only `pg_read_all_stats`
-database roles. The Portal runtime does not receive the statistics role. The
+and grants connector login only on the `emisar` instance. Its Cloud SQL Studio
+access (`roles/cloudsql.studioUser`) is conditioned to that instance as well, so
+the binding does not grant the role's project-scoped Service Usage permissions
+(see `iam.tf`). Terraform also assigns the non-superuser `emisar_owner` and
+read-only `pg_read_all_stats` database roles. The Portal runtime does not receive the statistics role. The
 database principal itself exists only on `emisar`. Cloud SQL Studio is the
 browser-based path: select the `emisar` database and IAM authentication in the
 instance's Studio view; there is no database password.

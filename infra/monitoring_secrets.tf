@@ -8,14 +8,15 @@
 #
 # Be precise about what it does NOT catch, because the exclusion list is load
 # bearing and reads like an oversight. An attacker holding the VM service
-# account's token is EXEMPT here by design: that identity reads all eleven
-# secrets on every boot, so alerting on it would page on each instance
-# replacement and be muted within a week. Stolen-VM-token abuse stays an
+# account's token is EXEMPT here by design: that identity reads the configured
+# portal runtime and admin-runner secrets on every boot, so alerting on it would
+# page on each instance replacement and be muted within a week. Stolen-VM-token abuse stays an
 # evidence-sink question, answered from the locked bucket after the fact, not a
 # page. Do not "fix" this by dropping the VM SA from expected_secret_readers —
 # that trades a real control for a noisy one. If we want that case to page, it
-# needs a RATE condition over the boot-time baseline (instance_count ×
-# len(runtime_secrets) per hour), which is a separate policy.
+# needs a RATE condition over the boot-time baseline (roughly instance_count ×
+# (len(runtime_secrets) + len(admin_runner_secrets)) per startup, plus the reads
+# service restarts and retries add), which is a separate policy.
 
 locals {
   # The principals whose access is routine. Splat, not [0] — Livebook is

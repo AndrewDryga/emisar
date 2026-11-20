@@ -142,7 +142,7 @@ resource "google_monitoring_alert_policy" "lb_no_healthy_backends" {
 # The managed certs auto-renew, so a shrinking expiry window means renewal is
 # FAILING (DNS auth broken, CAA blocking issuance) — two weeks is enough
 # runway to fix it before browsers hard-fail. Measured by the uptime check
-# (validate_ssl above), so it watches the cert actually served, not the one
+# (validate_ssl in monitoring_uptime.tf), so it watches the cert actually served, not the one
 # Certificate Manager thinks it provisioned.
 resource "google_monitoring_alert_policy" "cert_expiry" {
   display_name = "Emisar: TLS Certificate Expiring"

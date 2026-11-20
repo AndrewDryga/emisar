@@ -9,11 +9,11 @@ locals {
     local.slack_alert_channels,
   )
 
-  # The severe, silent-failure subset (Cloud SQL down / near-full / txid-
-  # wraparound, zero healthy backends, MIG below target, NAT allocation failure)
-  # also pages Better Stack — but only when the paid integration is enabled. The
-  # splat is [] while var.betterstack_gcp_paging is off, so these fall back to
-  # email + Slack and the config applies cleanly on the free tier.
+  # The severe, silent-failure subset (every alert policy and the budget that
+  # select local.paging_notification_channels) also pages Better Stack — but
+  # only when the paid integration is enabled. The splat is [] while
+  # var.betterstack_gcp_paging is off, so these fall back to email + Slack and
+  # the config applies cleanly on the free tier.
   paging_notification_channels = concat(
     local.alert_notification_channels,
     google_monitoring_notification_channel.betterstack[*].id,

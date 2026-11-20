@@ -33,8 +33,10 @@ locals {
     if id != "emisar-database-url"
   }
 
-  # The three PROVIDER-GENERATED secrets, whose value has no payload to hash: a
-  # deliberately edited generation is the only rotation signal they have.
+  # Secrets whose value cannot be hashed into a trigger: the two
+  # provider-generated keys and the ephemeral, workspace-supplied release
+  # cookie. A deliberately edited generation is the only rotation signal they
+  # have.
   # Changing one writes a new version for only that secret; its computed version
   # is rendered into cloud-init, so the instance template rolls and replacement
   # VMs fetch exactly the reviewed version rather than a mutable `latest` alias.
