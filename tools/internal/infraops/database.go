@@ -9,10 +9,12 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"os/signal"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -223,6 +225,8 @@ type background struct {
 }
 
 func startBackground(command *exec.Cmd) (*background, error) {
+	command.Stdin = nil
+	isolateTunnel(command)
 	if err := command.Start(); err != nil {
 		return nil, err
 	}
@@ -234,7 +238,7 @@ func startBackground(command *exec.Cmd) (*background, error) {
 func (process *background) stop() {
 	process.once.Do(func() {
 		if process.command.Process != nil {
-			_ = process.command.Process.Kill()
+			_ = killTunnel(process.command)
 		}
 	})
 }
@@ -341,11 +345,21 @@ func (a *App) database(ctx context.Context, args []string) error {
 		return fmt.Errorf("finding SOCKS port: %w", err)
 	}
 
+	// psql owns Ctrl-C: it cancels the running query or discards the input line.
+	// The shared context ends on SIGINT as well, so the tunnel and psql run on one
+	// that only TERM and HUP end; a Ctrl-C before psql starts still aborts the
+	// setup through ctx, and every exit still tears the tunnel down.
+	session := ctx
+	if options.psql {
+		var stopSession context.CancelFunc
+		session, stopSession = interactiveSession(ctx)
+		defer stopSession()
+	}
+
 	fmt.Fprintf(a.Err, "Opening private route through %s (%s)...\n", portal.name, portal.zone)
-	ssh := a.command(ctx, a.Root, nil, "gcloud", "compute", "ssh", portal.name,
+	ssh := a.command(session, a.Root, nil, "gcloud", "compute", "ssh", portal.name,
 		"--project="+options.project, "--zone="+portal.zone, "--tunnel-through-iap",
 		"--", "-N", "-D", fmt.Sprintf("127.0.0.1:%d", socksPort), "-o", "ExitOnForwardFailure=yes")
-	ssh.Stdin = nil
 	sshProcess, err := startBackground(ssh)
 	if err != nil {
 		return fmt.Errorf("starting IAP SOCKS tunnel: %w", err)
@@ -357,9 +371,8 @@ func (a *App) database(ctx context.Context, args []string) error {
 
 	fmt.Fprintf(a.Err, "Starting Cloud SQL Auth Proxy on 127.0.0.1:%d...\n", options.port)
 	proxyEnv := databaseProxyEnv(socksPort, accessToken)
-	proxy := a.command(ctx, a.Root, proxyEnv,
+	proxy := a.command(session, a.Root, proxyEnv,
 		"cloud-sql-proxy", databaseProxyArgs(connectionName, options.port, !options.psql)...)
-	proxy.Stdin = nil
 	proxyProcess, err := startBackground(proxy)
 	if err != nil {
 		return fmt.Errorf("starting Cloud SQL Auth Proxy: %w", err)
@@ -387,7 +400,7 @@ Password: none (automatic IAM authentication)
 		psqlArgs = append(psqlArgs,
 			"--host=127.0.0.1", fmt.Sprintf("--port=%d", options.port),
 			"--dbname=emisar", "--username="+options.user, "--no-password")
-		return a.run(ctx, a.Root, map[string]string{
+		return a.run(session, a.Root, map[string]string{
 			"PGAPPNAME": "emisar-database-helper", "PGCONNECT_TIMEOUT": "15",
 			"PGPASSWORD": loginToken, "PGSSLMODE": "disable",
 		}, "psql", psqlArgs...)
@@ -402,6 +415,12 @@ Password: none (automatic IAM authentication)
 	fmt.Fprintln(a.Out, "Press Ctrl-C to stop the private tunnel.")
 	fmt.Fprint(a.Out, details)
 	return waitForTunnel(ctx, sshProcess, proxyProcess)
+}
+
+// interactiveSession is a context for an interactive client and its tunnel:
+// detached from ctx, which an interrupt ends, and ended by SIGTERM or SIGHUP.
+func interactiveSession(ctx context.Context) (context.Context, context.CancelFunc) {
+	return signal.NotifyContext(context.WithoutCancel(ctx), syscall.SIGTERM, syscall.SIGHUP)
 }
 
 func waitForTunnel(ctx context.Context, processes ...*background) error {

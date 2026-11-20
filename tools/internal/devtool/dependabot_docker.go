@@ -7,35 +7,37 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
 )
 
-// The build locations that stay outside the Dependabot docker lane on purpose,
-// each with the reason .github/dependabot.yml states in prose. This list is the
-// mechanical half of that comment: docker directories are not recursive, so a
-// Dockerfile or compose file in a fresh subdirectory otherwise leaves the lane
-// silently — dev/test-packs/gcloud/Dockerfile did exactly that and was only
-// caught by a review board. Adding a location here is a decision to never get a
-// bump PR for it, so state why nothing is lost.
-//
-// dev/review-compose.yml is the fourth file the dependabot.yml comment names,
-// but it is not enumerated below: Dependabot's docker ecosystem does not
-// recognise that file name, so it was never in the lane to leave. It travels
-// with dev/compose.yml, whose reason covers both mirrors.
+// The build locations that stay outside the Dependabot container lanes on
+// purpose, each with the reason .github/dependabot.yml states in prose. This list
+// is the mechanical half of that comment: Dependabot directories are not
+// recursive, so a Dockerfile or compose file in a fresh subdirectory otherwise
+// leaves the lane silently — dev/test-packs/gcloud/Dockerfile did exactly that
+// and was only caught by a review board. Adding a location here is a decision to
+// never get a bump PR for it, so state why nothing is lost. A key is a
+// path.Match pattern over the repository-relative path.
 var dependabotDockerExclusions = map[string]string{
 	".agent/Dockerfile":                "builds FROM an ARG base image that is the operator's coop box, which Dependabot cannot resolve",
 	"dev/compose.yml":                  "mirrors the root docker-compose.yml Postgres and Keycloak pins byte for byte, together with dev/review-compose.yml; Dependabot opens PRs per directory, so listing \"/dev\" would move one mirror off the reference on its own and fail the shared service image pins phase",
+	"dev/review-compose.yml":           "mirrors the root docker-compose.yml Postgres pin byte for byte and travels with dev/compose.yml, whose reason covers both mirrors",
+	"dev/test-packs/compose.yaml":      "runs the locally built runner image PACKTEST_RUNNER_IMAGE names, which no registry publishes",
 	"dev/test-packs/gcloud/Dockerfile": "builds FROM an ARG gcloud version owned by each packs/gcp-*/test/cases.yaml, which the pack gate makes compose default PACKTEST_VERSION to",
+	"packs/*/test/compose.yaml":        "a pack's primary SUT image defaults PACKTEST_VERSION to the version its test/cases.yaml matrix owns, which the pack gate enforces, so a compose-only bump would fail that gate",
+	"packs/docker/test/fixtures/*":     "inputs to the docker pack's compose actions under test, not a stack anyone runs",
 }
 
 // Trees that hold build files nobody publishes: fetched dependencies, their
-// vendored build output, and the archived task folders under .agent/tasks (one
-// of which carries a devcontainer Dockerfile).
+// vendored build output, the pack harness's ignored per-run reports (which keep
+// the rendered compose file of each hostile run), and the archived task folders
+// under .agent/tasks (one of which carries a devcontainer Dockerfile).
 func skipDependabotDockerDir(rel string) bool {
-	if rel == "portal/deps" {
+	if rel == "portal/deps" || rel == "dev/test-packs/reports" {
 		return true
 	}
 	switch path.Base(rel) {
@@ -47,21 +49,31 @@ func skipDependabotDockerDir(rel string) bool {
 	return false
 }
 
-// The file names Dependabot's docker ecosystem picks up in a listed directory.
-func isDependabotDockerFile(name string) bool {
-	switch name {
-	case "compose.yml", "compose.yaml", "docker-compose.yml", "docker-compose.yaml":
-		return true
+// Dependabot's docker-compose fetcher keeps file names matching this, unanchored
+// (dependabot-core docker/lib/dependabot/docker_compose/file_fetcher.rb). The
+// docker ecosystem reads Dockerfiles, and YAML only in Kubernetes or Helm
+// shapes, so a compose file is bumped only from a docker-compose directory.
+var dependabotComposeFile = regexp.MustCompile(`(?i)(docker-)?compose(-\w+)?(\.[\w-]+)?\.ya?ml`)
+
+// dependabotLane is the package-ecosystem that reads a build file with this
+// name, or "" when neither container ecosystem reads it.
+func dependabotLane(name string) string {
+	if dependabotComposeFile.MatchString(name) {
+		return "docker-compose"
 	}
 	// A per-Dockerfile ignore file (Dockerfile.dockerignore) shares the prefix but is not a build file.
 	if strings.HasSuffix(name, ".dockerignore") {
-		return false
+		return ""
 	}
-	return strings.HasPrefix(name, "Dockerfile") || strings.HasSuffix(name, ".Dockerfile")
+	if strings.HasPrefix(name, "Dockerfile") || strings.HasSuffix(name, ".Dockerfile") {
+		return "docker"
+	}
+	return ""
 }
 
-// The `directories` (or `directory`) of the docker entry in .github/dependabot.yml.
-func (a *App) dependabotDockerDirectories() ([]string, error) {
+// The `directories` (or `directory`) of each container ecosystem in
+// .github/dependabot.yml, keyed by package-ecosystem.
+func (a *App) dependabotDockerDirectories() (map[string][]string, error) {
 	relative := filepath.Join(".github", "dependabot.yml")
 	data, err := os.ReadFile(filepath.Join(a.Root, relative))
 	if err != nil {
@@ -77,30 +89,32 @@ func (a *App) dependabotDockerDirectories() ([]string, error) {
 	if err := yaml.Unmarshal(data, &config); err != nil {
 		return nil, fmt.Errorf("%s: %w", relative, err)
 	}
-	var globs []string
+	lanes := map[string][]string{}
 	for _, update := range config.Updates {
-		if update.Ecosystem != "docker" {
+		if update.Ecosystem != "docker" && update.Ecosystem != "docker-compose" {
 			continue
 		}
 		if update.Directory != "" {
-			globs = append(globs, update.Directory)
+			lanes[update.Ecosystem] = append(lanes[update.Ecosystem], update.Directory)
 		}
-		globs = append(globs, update.Directories...)
+		lanes[update.Ecosystem] = append(lanes[update.Ecosystem], update.Directories...)
 	}
-	if len(globs) == 0 {
-		return nil, fmt.Errorf("%s declares no package-ecosystem: docker directories", relative)
-	}
-	for i, glob := range globs {
-		// "/dev/runner/" and "/dev/runner" name the same directory; "/" is itself.
-		if trimmed := strings.TrimSuffix(glob, "/"); trimmed != "" {
-			globs[i] = trimmed
+	for _, ecosystem := range []string{"docker", "docker-compose"} {
+		if len(lanes[ecosystem]) == 0 {
+			return nil, fmt.Errorf("%s declares no package-ecosystem: %s directories", relative, ecosystem)
+		}
+		for i, glob := range lanes[ecosystem] {
+			// "/dev/runner/" and "/dev/runner" name the same directory; "/" is itself.
+			if trimmed := strings.TrimSuffix(glob, "/"); trimmed != "" {
+				lanes[ecosystem][i] = trimmed
+			}
 		}
 	}
-	return globs, nil
+	return lanes, nil
 }
 
 func (a *App) checkDependabotDockerCoverage() error {
-	globs, err := a.dependabotDockerDirectories()
+	lanes, err := a.dependabotDockerDirectories()
 	if err != nil {
 		return err
 	}
@@ -130,12 +144,18 @@ func (a *App) checkDependabotDockerCoverage() error {
 			}
 			return nil
 		}
-		if !isDependabotDockerFile(entry.Name()) {
+		lane := dependabotLane(entry.Name())
+		if lane == "" {
 			return nil
 		}
 		found++
-		if _, excluded := dependabotDockerExclusions[relative]; excluded {
-			claimed[relative] = true
+		excluded := false
+		for pattern := range dependabotDockerExclusions {
+			if matched, _ := path.Match(pattern, relative); matched {
+				claimed[pattern], excluded = true, true
+			}
+		}
+		if excluded {
 			return nil
 		}
 		// Dependabot directories are literal paths from the repository root, with
@@ -145,16 +165,16 @@ func (a *App) checkDependabotDockerCoverage() error {
 		if directory == "/." {
 			directory = "/"
 		}
-		for _, glob := range globs {
+		for _, glob := range lanes[lane] {
 			matched, err := path.Match(glob, directory)
 			if err != nil {
-				return fmt.Errorf(".github/dependabot.yml: docker directory %q is not a valid pattern: %w", glob, err)
+				return fmt.Errorf(".github/dependabot.yml: %s directory %q is not a valid pattern: %w", lane, glob, err)
 			}
 			if matched {
 				return nil
 			}
 		}
-		uncovered = append(uncovered, fmt.Sprintf("%s: %s matches no docker directory", relative, directory))
+		uncovered = append(uncovered, fmt.Sprintf("%s: %s matches no %s directory", relative, directory, lane))
 		return nil
 	})
 	if walkErr != nil {
@@ -169,14 +189,14 @@ func (a *App) checkDependabotDockerCoverage() error {
 	// back uncovered and stay silently outside the lane.
 	for relative := range dependabotDockerExclusions {
 		if !claimed[relative] {
-			problems = append(problems, fmt.Sprintf("%s: excluded from the docker lane but no such build file exists", relative))
+			problems = append(problems, fmt.Sprintf("%s: excluded from the Dependabot lanes but no such build file exists", relative))
 		}
 	}
 	if len(problems) > 0 {
 		sort.Strings(problems)
-		return fmt.Errorf("every Dockerfile/compose location must be in the .github/dependabot.yml docker lane "+
+		return fmt.Errorf("every Dockerfile must be in the .github/dependabot.yml docker lane and every compose file in its docker-compose lane, "+
 			"or in dependabotDockerExclusions with a reason:\n  %s", strings.Join(problems, "\n  "))
 	}
-	fmt.Fprintf(a.Out, "verified: all %d Dockerfile/compose locations are covered by the Dependabot docker lane or excluded with a reason\n", found)
+	fmt.Fprintf(a.Out, "verified: all %d Dockerfile/compose locations are covered by the Dependabot docker or docker-compose lane or excluded with a reason\n", found)
 	return nil
 }

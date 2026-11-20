@@ -4,7 +4,7 @@ version: 2
 # cadence and the same 7-day release-age floor (Dependabot groups and opens PRs
 # per directory). Only mix and gomod can hold major and minor bumps past that
 # floor — GitHub supports the semver-* cooldown keys for those ecosystems, while
-# terraform, docker, and github-actions accept `default-days` alone. The dep-age
+# terraform, docker, docker-compose, and github-actions accept `default-days` alone. The dep-age
 # CI gate enforces the mix/gomod windows on the lock diffs themselves, so a
 # hand-made bump can't dodge the cooldown.
 updates:
@@ -60,28 +60,23 @@ updates:
         update-types: ["minor", "patch"]
 
   - package-ecosystem: "docker"
-    # Docker directories are not recursive, so every location Dependabot can
-    # usefully bump is listed. "/" is the root docker-compose.yml (the
-    # signing-e2e/sso-e2e stack); "/runner/release" is the published ghcr
+    # Dockerfiles. Docker directories are not recursive, so every location
+    # Dependabot can usefully bump is listed. This ecosystem reads YAML only in
+    # Kubernetes or Helm shapes, never a compose file: compose files have their
+    # own docker-compose entry below. "/runner/release" is the published ghcr
     # emisar-runner image customers pull, which shares portal's debian base and
-    # must be bumped alongside it. Four repository-owned files stay outside the
-    # lane on purpose. dev/compose.yml and dev/review-compose.yml mirror the root
-    # Postgres and Keycloak pins byte for byte, and Dependabot opens PRs per
-    # directory: listing "/dev" would move one mirror off the reference on its
-    # own and fail the shared service image pins phase of `./run gate tooling`,
-    # so only "/" is bumped and the mirrors travel in the same commit.
-    # .agent/Dockerfile and dev/test-packs/gcloud/Dockerfile build FROM an ARG
-    # Dependabot cannot resolve; the coop box base is the operator's, and the
-    # gcloud version is owned by each packs/gcp-*/test/cases.yaml (the pack gate
-    # makes compose default PACKTEST_VERSION to it), so no bump is lost.
+    # must be bumped alongside it. .agent/Dockerfile and
+    # dev/test-packs/gcloud/Dockerfile stay outside on purpose: they build FROM
+    # an ARG Dependabot cannot resolve; the coop box base is the operator's, and
+    # the gcloud version is owned by each packs/gcp-*/test/cases.yaml (the pack
+    # gate makes compose default PACKTEST_VERSION to it), so no bump is lost.
     # This list is not prose alone: the dependabot docker coverage phase of
-    # `./run gate tooling` walks the repository for build files and fails on any
-    # whose directory matches neither a glob below nor an entry in
-    # dependabotDockerExclusions (tools/internal/devtool/dependabot_docker.go),
-    # which carries the same exclusion rationale. Add a location to one or the
-    # other.
+    # `./run gate tooling` walks the repository for Dockerfiles and compose
+    # files and fails on any whose directory matches no directory of its
+    # ecosystem below and no entry in dependabotDockerExclusions
+    # (tools/internal/devtool/dependabot_docker.go), which carries every
+    # exclusion's rationale. Add a location to one or the other.
     directories:
-      - "/"
       - "/portal"
       - "/runner/release"
       - "/infra/runtime/admin-runner/diagnostics"
@@ -92,6 +87,24 @@ updates:
       - "/dev/test-packs"
       - "/packs/*/test"
       - "/packs/*/test/*"
+    schedule:
+      interval: "weekly"
+      day: "friday"
+      time: "09:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: "docker-compose"
+    # The root docker-compose.yml (the signing-e2e/sso-e2e stack). Only "/" is
+    # listed: dev/compose.yml and dev/review-compose.yml mirror its Postgres and
+    # Keycloak pins byte for byte, and Dependabot opens PRs per directory, so
+    # listing "/dev" would move one mirror off the reference on its own and fail
+    # the shared service image pins phase of `./run gate tooling`. The mirrors
+    # travel in the same commit as the root bump. Pack test compose files stay
+    # out because each primary SUT image follows its test/cases.yaml matrix.
+    directory: "/"
     schedule:
       interval: "weekly"
       day: "friday"

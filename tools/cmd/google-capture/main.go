@@ -36,6 +36,11 @@ const (
 	redactedClientSecret = "GOCSPX-example-redacted-client-secret"
 )
 
+// errCloudTOSConsent stops a run at any Google Cloud terms prompt the account
+// owner has not opted in to with -accept-cloud-tos: the full-page signup wall and
+// the in-console dialog alike.
+var errCloudTOSConsent = errors.New("accepting the Google Cloud Terms of Service is a human account-level decision; re-run with -accept-cloud-tos if it is yours to give")
+
 var (
 	googleClientIDPattern     = regexp.MustCompile(`[0-9]{6,}-[a-z0-9]{10,}\.apps\.googleusercontent\.com`)
 	googleClientSecretPattern = regexp.MustCompile(`GOCSPX-[A-Za-z0-9_-]{6,}`)
@@ -159,23 +164,23 @@ func run(env map[string]string, outDir string, headless, cleanupOnly bool, fresh
 		if err := capturekit.RequireText(ctx, "Google Auth Platform", 90*time.Second); err != nil {
 			return err
 		}
-		if err := acceptTerms(ctx); err != nil {
+		if err := acceptTerms(ctx, acceptCloudTOS); err != nil {
 			return err
 		}
-		return removeCaptureClients(ctx, env, outDir)
+		return removeCaptureClients(ctx, env, outDir, captureClientName, certifyClientName)
 	}
 	if certifyLogin != "" {
 		return certifyLoginFlow(ctx, env, outDir, certifyLogin)
 	}
 	if certifyRedirect != "" {
-		if err := certifyClientFlow(ctx, env, outDir, certifyRedirect, certifyCredentials); err != nil {
+		if err := certifyClientFlow(ctx, env, acceptCloudTOS, outDir, certifyRedirect, certifyCredentials); err != nil {
 			_ = capturekit.Screenshot(ctx, outDir, "google-failed")
 			_ = capturekit.DescribePage(ctx, env)
 			return err
 		}
 		return nil
 	}
-	if err := authPlatformFlow(ctx, env, outDir); err != nil {
+	if err := authPlatformFlow(ctx, env, acceptCloudTOS, outDir); err != nil {
 		_ = capturekit.Screenshot(ctx, outDir, "google-failed")
 		_ = capturekit.DescribePage(ctx, env)
 		return err
@@ -437,7 +442,7 @@ func signIn(ctx context.Context, env map[string]string, acceptCloudTOS bool) err
 		case strings.Contains(location, "console.cloud.google.com"):
 			if strings.Contains(body, "Terms of Service") && strings.Contains(body, "Agree") {
 				if !acceptCloudTOS {
-					return errors.New("accepting the Google Cloud Terms of Service is a human account-level decision; re-run with -accept-cloud-tos if it is yours to give")
+					return errCloudTOSConsent
 				}
 				if err := agreeToCloudTerms(ctx); err != nil {
 					return err
@@ -462,11 +467,11 @@ func signIn(ctx context.Context, env map[string]string, acceptCloudTOS bool) err
 	return errors.New("sign-in to Google Cloud did not finish")
 }
 
-func authPlatformFlow(ctx context.Context, env map[string]string, outDir string) error {
+func authPlatformFlow(ctx context.Context, env map[string]string, acceptCloudTOS bool, outDir string) error {
 	if err := capturekit.RequireText(ctx, "Google Auth Platform", 90*time.Second); err != nil {
 		return err
 	}
-	if err := acceptTerms(ctx); err != nil {
+	if err := acceptTerms(ctx, acceptCloudTOS); err != nil {
 		return err
 	}
 	// Three shapes. A project with the platform configured opens on the
@@ -477,9 +482,9 @@ func authPlatformFlow(ctx context.Context, env map[string]string, outDir string)
 	if !inWizard {
 		if err := capturekit.RequireText(ctx, "Get started", 20*time.Second); err != nil {
 			fmt.Println("  already configured — capturing Branding and Audience directly")
-			return configuredFlow(ctx, env, outDir)
+			return configuredFlow(ctx, env, acceptCloudTOS, outDir)
 		}
-		if err := capture(ctx, env, outDir, "google-01-get-started", textHighlight("Get started")); err != nil {
+		if err := capture(ctx, env, acceptCloudTOS, outDir, "google-01-get-started", textHighlight("Get started")); err != nil {
 			return err
 		}
 		if err := clickFirstText(ctx, "Get started"); err != nil {
@@ -498,7 +503,7 @@ func authPlatformFlow(ctx context.Context, env map[string]string, outDir string)
 	if err := chooseOption(ctx, "User support email", env["GOOGLE_TEST_USER"]); err != nil {
 		return err
 	}
-	if err := capture(ctx, env, outDir, "google-02-app-information", fieldHighlight("App name", "User support email")); err != nil {
+	if err := capture(ctx, env, acceptCloudTOS, outDir, "google-02-app-information", fieldHighlight("App name", "User support email")); err != nil {
 		return err
 	}
 	if err := clickFirstText(ctx, "Next"); err != nil {
@@ -511,7 +516,7 @@ func authPlatformFlow(ctx context.Context, env map[string]string, outDir string)
 	if err := selectRadio(ctx, "Internal"); err != nil {
 		return err
 	}
-	if err := capture(ctx, env, outDir, "google-03-audience-internal", textHighlight("Internal")); err != nil {
+	if err := capture(ctx, env, acceptCloudTOS, outDir, "google-03-audience-internal", textHighlight("Internal")); err != nil {
 		return err
 	}
 	if err := clickFirstText(ctx, "Next"); err != nil {
@@ -524,7 +529,7 @@ func authPlatformFlow(ctx context.Context, env map[string]string, outDir string)
 	if err := fillField(ctx, "Email addresses", env["GOOGLE_TEST_USER"]); err != nil {
 		return err
 	}
-	if err := capture(ctx, env, outDir, "google-04-contact-information", fieldHighlight("Email addresses")); err != nil {
+	if err := capture(ctx, env, acceptCloudTOS, outDir, "google-04-contact-information", fieldHighlight("Email addresses")); err != nil {
 		return err
 	}
 	if err := clickFirstText(ctx, "Next"); err != nil {
@@ -543,7 +548,7 @@ func authPlatformFlow(ctx context.Context, env map[string]string, outDir string)
 	} else {
 		fmt.Println("  the Finish step has no agreement checkbox; highlighting Create")
 	}
-	if err := capture(ctx, env, outDir, "google-05-finish", marker); err != nil {
+	if err := capture(ctx, env, acceptCloudTOS, outDir, "google-05-finish", marker); err != nil {
 		return err
 	}
 	if err := clickFirstText(ctx, "Continue", "Create"); err != nil {
@@ -553,19 +558,19 @@ func authPlatformFlow(ctx context.Context, env map[string]string, outDir string)
 		return err
 	}
 
-	return clientFlow(ctx, env, outDir)
+	return clientFlow(ctx, env, acceptCloudTOS, outDir)
 }
 
 // clientFlow makes the OAuth client emisar signs in with, and is the same on a
 // freshly walked wizard and an already-configured project.
-func clientFlow(ctx context.Context, env map[string]string, outDir string) error {
+func clientFlow(ctx context.Context, env map[string]string, acceptCloudTOS bool, outDir string) error {
 	if err := clickFirstText(ctx, "Clients"); err != nil {
 		return err
 	}
 	if err := capturekit.RequireText(ctx, "OAuth 2.0 Client IDs", 45*time.Second); err != nil {
 		return err
 	}
-	if err := capture(ctx, env, outDir, "google-06-clients", textHighlight("Create client")); err != nil {
+	if err := capture(ctx, env, acceptCloudTOS, outDir, "google-06-clients", textHighlight("Create client")); err != nil {
 		return err
 	}
 	if err := clickFirstText(ctx, "Create client", "CREATE OAUTH CLIENT ID"); err != nil {
@@ -575,7 +580,7 @@ func clientFlow(ctx context.Context, env map[string]string, outDir string) error
 	if err := capturekit.RequireText(ctx, "Create OAuth client ID", 30*time.Second); err != nil {
 		return err
 	}
-	if err := acceptTerms(ctx); err != nil {
+	if err := acceptTerms(ctx, acceptCloudTOS); err != nil {
 		return err
 	}
 	if err := dismissOverlays(ctx); err != nil {
@@ -597,7 +602,7 @@ func clientFlow(ctx context.Context, env map[string]string, outDir string) error
 	// Label-based again: nothing on this console's forms carries an accessible
 	// name, so a field lookup binds to nothing. Point at the chosen value and the
 	// section the step is about.
-	if err := capture(ctx, env, outDir, "google-07-web-application", textHighlight("Web application", "Authorized redirect URIs")); err != nil {
+	if err := capture(ctx, env, acceptCloudTOS, outDir, "google-07-web-application", textHighlight("Web application", "Authorized redirect URIs")); err != nil {
 		return err
 	}
 	if err := clickFirstText(ctx, "Create"); err != nil {
@@ -607,13 +612,13 @@ func clientFlow(ctx context.Context, env map[string]string, outDir string) error
 	if err := capturekit.RequireText(ctx, "OAuth client created", 30*time.Second); err != nil {
 		return err
 	}
-	if err := capture(ctx, env, outDir, "google-08-client-created", textHighlight("Client ID", "Client secret")); err != nil {
+	if err := capture(ctx, env, acceptCloudTOS, outDir, "google-08-client-created", textHighlight("Client ID", "Client secret")); err != nil {
 		return err
 	}
 	if err := clickFirstText(ctx, "OK"); err != nil {
 		return err
 	}
-	return removeCaptureClients(ctx, env, outDir)
+	return removeCaptureClients(ctx, env, outDir, captureClientName)
 }
 
 // certifyLoginFlow drives a real Google Workspace sign-in through emisar and
@@ -921,11 +926,11 @@ func firstLine(text string) string {
 //
 // The credentials are written to the secrets directory rather than printed: they
 // are live, and a transcript is not where a client secret should live.
-func certifyClientFlow(ctx context.Context, env map[string]string, outDir, redirectURI, credentialsPath string) error {
+func certifyClientFlow(ctx context.Context, env map[string]string, acceptCloudTOS bool, outDir, redirectURI, credentialsPath string) error {
 	if err := capturekit.RequireText(ctx, "Google Auth Platform", 90*time.Second); err != nil {
 		return err
 	}
-	if err := acceptTerms(ctx); err != nil {
+	if err := acceptTerms(ctx, acceptCloudTOS); err != nil {
 		return err
 	}
 	if err := clickFirstText(ctx, "Clients"); err != nil {
@@ -986,22 +991,35 @@ func certifyClientFlow(ctx context.Context, env map[string]string, outDir, redir
 	return nil
 }
 
-// countCaptureClients is how many of this tool's own clients the list still
+// clientRowPredicate is the JS `ours` test for a client-list row carrying one
+// of names. Counting, selecting and verifying all use it, so a cleanup cannot
+// count one set of clients and delete another.
+func clientRowPredicate(names []string) string {
+	quoted := make([]string, len(names))
+	for index, name := range names {
+		quoted[index] = fmt.Sprintf("%q", name)
+	}
+	return fmt.Sprintf("const ours = tr => [%s].some(name => (tr.textContent || '').includes(name));", strings.Join(quoted, ","))
+}
+
+// countCaptureClients is how many clients named one of names the list still
 // shows. Every deletion is judged by this dropping, never by the click landing.
-func countCaptureClients(ctx context.Context) (int, error) {
+func countCaptureClients(ctx context.Context, names []string) (int, error) {
 	script := fmt.Sprintf(`(() => {
   const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-  const ours = tr => [%q, %q].some(name => (tr.textContent || '').includes(name));
+  %s
   return [...document.querySelectorAll('tr')].filter(tr => visible(tr) && ours(tr)).length;
-})()`, captureClientName, certifyClientName)
+})()`, clientRowPredicate(names))
 	return chromedp.Run(ctx, chromedp.Evaluate[int](script))
 }
 
-// removeCaptureClients deletes every OAuth client this tool has ever created in
-// the project. A capture run mints a real client with a real secret, so leaving
-// it behind adds live credentials to the operator's project on every run — three
-// had accumulated before this existed.
-func removeCaptureClients(ctx context.Context, env map[string]string, outDir string) error {
+// removeCaptureClients deletes every OAuth client named one of names in the
+// project. A capture run mints a real client with a real secret, so leaving it
+// behind adds live credentials to the operator's project on every run — three
+// had accumulated before this existed. A docs run passes only its own client:
+// the certification client's credentials are saved for later sign-ins, so only
+// an explicit -cleanup removes it.
+func removeCaptureClients(ctx context.Context, env map[string]string, outDir string, names ...string) error {
 	if err := clickFirstText(ctx, "Clients"); err != nil {
 		return err
 	}
@@ -1009,7 +1027,7 @@ func removeCaptureClients(ctx context.Context, env map[string]string, outDir str
 		return err
 	}
 	for attempt := 0; attempt < 10; attempt++ {
-		before, err := countCaptureClients(ctx)
+		before, err := countCaptureClients(ctx, names)
 		if err != nil {
 			return err
 		}
@@ -1024,14 +1042,14 @@ func removeCaptureClients(ctx context.Context, env map[string]string, outDir str
 		// nothing and left the clients behind.
 		selectRow := fmt.Sprintf(`(() => {
   const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-  const ours = tr => [%q, %q].some(name => (tr.textContent || '').includes(name));
+  %s
   const row = [...document.querySelectorAll('tr')].find(tr => visible(tr) && ours(tr));
   if (!row) return false;
   const box = row.querySelector('input[type=checkbox],[role=checkbox]');
   if (!box) return false;
   box.click();
   return true;
-})()`, captureClientName, certifyClientName)
+})()`, clientRowPredicate(names))
 
 		selected, actionErr10 := chromedp.Run(ctx, chromedp.Evaluate[bool](selectRow))
 		if actionErr10 != nil {
@@ -1145,7 +1163,7 @@ func removeCaptureClients(ctx context.Context, env map[string]string, outDir str
 		// PROVE it. Printing "removed" straight after the click reported ten
 		// deletions of a client that was still there — the same lie every other
 		// unverified step in this session told.
-		after, err := countCaptureClients(ctx)
+		after, err := countCaptureClients(ctx, names)
 		if err != nil {
 			return err
 		}
@@ -1158,7 +1176,7 @@ func removeCaptureClients(ctx context.Context, env map[string]string, outDir str
 	}
 	// The loop is capped, so exhausting it is not success: say what is left
 	// rather than returning a silent all-clear over live credentials.
-	remaining, err := countCaptureClients(ctx)
+	remaining, err := countCaptureClients(ctx, names)
 	if err != nil {
 		return err
 	}
@@ -1317,9 +1335,10 @@ func dismissOverlays(ctx context.Context) error {
 
 // acceptTerms clears the Google Cloud Platform / Starter Tier agreement wall
 // that fronts a console the account has not agreed on yet. Accepting terms on
-// someone's Google account is their decision, so this runs only because the
-// account owner asked for it explicitly.
-func acceptTerms(ctx context.Context) error {
+// someone's Google account is their decision, so without -accept-cloud-tos a
+// dialog that is up stops the run before anything on it is touched. The dialog
+// can arrive after sign-in's own check, so every caller passes the opt-in here.
+func acceptTerms(ctx context.Context, acceptCloudTOS bool) error {
 	// Detect by the VISIBLE button, not by the words. "Terms of Service" appears in
 	// the console's own footer links, so matching the body text made this run —
 	// and fail — on every page whether the dialog was up or not.
@@ -1335,6 +1354,9 @@ func acceptTerms(ctx context.Context) error {
 	}
 	if !showing {
 		return nil
+	}
+	if !acceptCloudTOS {
+		return errCloudTOSConsent
 	}
 	// Tick the agreement's OWN checkbox. The dialog carries two — the terms and a
 	// marketing opt-in — and a generic "first checkbox" click left Agree and
@@ -1390,7 +1412,7 @@ func acceptTerms(ctx context.Context) error {
 // up presents: Branding carries the app name and support email the wizard's App
 // Information step writes, Audience carries the Internal/External choice, and
 // Clients is where the OAuth client is made. Same fields, reachable pages.
-func configuredFlow(ctx context.Context, env map[string]string, outDir string) error {
+func configuredFlow(ctx context.Context, env map[string]string, acceptCloudTOS bool, outDir string) error {
 	if err := clickFirstText(ctx, "Branding"); err != nil {
 		return err
 	}
@@ -1400,7 +1422,7 @@ func configuredFlow(ctx context.Context, env map[string]string, outDir string) e
 	// Label-based, not field-based: this page's inputs carry no accessible name at
 	// all, and the support email is a menu rather than an input, so there is
 	// nothing for a field lookup to bind to.
-	if err := capture(ctx, env, outDir, "google-01-branding", textHighlight("App name", "User support email")); err != nil {
+	if err := capture(ctx, env, acceptCloudTOS, outDir, "google-01-branding", textHighlight("App name", "User support email")); err != nil {
 		return err
 	}
 
@@ -1410,11 +1432,11 @@ func configuredFlow(ctx context.Context, env map[string]string, outDir string) e
 	if err := capturekit.RequireText(ctx, "Internal", 45*time.Second); err != nil {
 		return err
 	}
-	if err := capture(ctx, env, outDir, "google-02-audience", textHighlight("Internal")); err != nil {
+	if err := capture(ctx, env, acceptCloudTOS, outDir, "google-02-audience", textHighlight("Internal")); err != nil {
 		return err
 	}
 
-	return clientFlow(ctx, env, outDir)
+	return clientFlow(ctx, env, acceptCloudTOS, outDir)
 }
 
 // framePrelude scrolls the shot so EVERY ringed control is in it, not just the
@@ -1520,12 +1542,12 @@ func fieldHighlight(labels ...string) highlightScript {
 	}
 }
 
-func capture(ctx context.Context, env map[string]string, outDir, name string, marker highlightScript) error {
+func capture(ctx context.Context, env map[string]string, acceptCloudTOS bool, outDir, name string, marker highlightScript) error {
 	// Before every shot, not once at the start. The console's welcome dialog
 	// arrives on its own schedule — it rendered AFTER the first check and then sat
 	// over the create-client form, so "Application type" was never visible. Both
 	// calls are no-ops when there is nothing to clear.
-	if err := acceptTerms(ctx); err != nil {
+	if err := acceptTerms(ctx, acceptCloudTOS); err != nil {
 		return fmt.Errorf("%s: %w", name, err)
 	}
 	if err := dismissOverlays(ctx); err != nil {

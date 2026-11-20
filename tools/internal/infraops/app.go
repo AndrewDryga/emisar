@@ -20,6 +20,9 @@ const usageText = `usage: ./run ops <command> [args]
   database ...                       open the private production database tunnel
   drill pitr [--apply]               run the PITR and IAM recovery drill
   drill cleanup [--apply [ID]]       list or clean recovery drill resources
+                                     both act on $PROJECT_ID (default emisar), not EMISAR_GCP_PROJECT;
+                                     pitr also reads SOURCE_INSTANCE (default emisar), DRILL_ZONE
+                                     (default us-central1-f) and DRILL_MANIFEST_DIR (default infra/.agent/drills)
   validate-templates                 render and validate production cloud-init
   qualify-admin-diagnostics [--prebuilt] REVISION emisar/admin-diagnostics:TAG
                                      build and qualify extracted native Linux bytes (requires Docker);

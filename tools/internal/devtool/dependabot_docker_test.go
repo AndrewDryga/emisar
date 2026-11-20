@@ -8,20 +8,29 @@ import (
 	"testing"
 )
 
-// A docker lane shaped like the real one: a plain directory, a one-segment glob,
-// and the two-segment glob the pack SUT subdirectories need.
+// Lanes shaped like the real ones: a docker lane with a plain directory, a
+// one-segment glob and the two-segment glob the pack SUT subdirectories need,
+// and a docker-compose lane for the root stack.
 const dependabotDockerFixture = `version: 2
 updates:
   - package-ecosystem: "gomod"
     directories: ["/runner"]
   - package-ecosystem: "docker"
     directories:
-      - "/"
       - "/portal"
       - "/dev/runner/"
       - "/packs/*/test"
       - "/packs/*/test/*"
+  - package-ecosystem: "docker-compose"
+    directory: "/"
 `
+
+// Every exclusion must match a file, or the check reports it as stale, so each
+// fixture carries one for each of them.
+var dependabotDockerExcludedFixtures = []string{
+	".agent/Dockerfile", "dev/compose.yml", "dev/review-compose.yml", "dev/test-packs/compose.yaml",
+	"dev/test-packs/gcloud/Dockerfile", "packs/nginx/test/compose.yaml", "packs/docker/test/fixtures/worst-case-compose.yml",
+}
 
 func writeDependabotDockerFixtures(t *testing.T, config string, files ...string) *App {
 	t.Helper()
@@ -43,9 +52,7 @@ func writeDependabotDockerFixtures(t *testing.T, config string, files ...string)
 }
 
 func TestCheckDependabotDockerCoverage(t *testing.T) {
-	// Every exclusion must exist, or the check reports it as stale, so each case
-	// carries all three of them.
-	excluded := []string{".agent/Dockerfile", "dev/compose.yml", "dev/test-packs/gcloud/Dockerfile"}
+	excluded := dependabotDockerExcludedFixtures
 
 	for _, testCase := range []struct {
 		name  string
@@ -55,13 +62,11 @@ func TestCheckDependabotDockerCoverage(t *testing.T) {
 		{
 			name: "covered locations pass",
 			files: []string{
-				"docker-compose.yml",            // the "/" root
-				"portal/Dockerfile",             // a plain directory
-				"dev/runner/Dockerfile",         // a glob written with a trailing slash
-				"packs/nginx/test/compose.yaml", // /packs/*/test
-				"packs/nginx/test/Dockerfile",
-				"packs/snmp/test/snmpd/Dockerfile",        // /packs/*/test/*
-				"packs/docker/test/fixtures/compose.yaml", // still one segment deep
+				"docker-compose.yml",               // the docker-compose "/" root
+				"portal/Dockerfile",                // a plain directory
+				"dev/runner/Dockerfile",            // a glob written with a trailing slash
+				"packs/nginx/test/Dockerfile",      // /packs/*/test
+				"packs/snmp/test/snmpd/Dockerfile", // /packs/*/test/*
 			},
 		},
 		{
@@ -85,7 +90,26 @@ func TestCheckDependabotDockerCoverage(t *testing.T) {
 		{
 			name:  "a compose file in a new top-level directory is uncovered",
 			files: []string{"stack/docker-compose.yaml"},
-			want:  "stack/docker-compose.yaml: /stack matches no docker directory",
+			want:  "stack/docker-compose.yaml: /stack matches no docker-compose directory",
+		},
+		{
+			// The docker ecosystem reads no compose file, so a docker directory
+			// does not carry one: this is how the root stack sat unbumped.
+			name:  "a compose file in a docker directory is uncovered",
+			files: []string{"portal/compose.yaml"},
+			want:  "portal/compose.yaml: /portal matches no docker-compose directory",
+		},
+		{
+			// The compose fetcher's pattern is unanchored, so a prefixed name is
+			// a compose file too.
+			name:  "a prefixed compose name is a compose file",
+			files: []string{"dev/runner/review-compose.yml"},
+			want:  "dev/runner/review-compose.yml: /dev/runner matches no docker-compose directory",
+		},
+		{
+			name:  "a Dockerfile in the compose root is uncovered",
+			files: []string{"Dockerfile"},
+			want:  "Dockerfile: / matches no docker directory",
 		},
 		{
 			// Dependabot parses no ignore file, so a directory holding only one needs no lane.
@@ -124,18 +148,27 @@ func TestCheckDependabotDockerCoverage(t *testing.T) {
 
 	// An exclusion whose file is gone would silently cover the path if it came
 	// back, so it fails rather than lingering.
-	err := writeDependabotDockerFixtures(t, dependabotDockerFixture, ".agent/Dockerfile", "dev/compose.yml").
+	var withoutGcloud []string
+	for _, file := range excluded {
+		if file != "dev/test-packs/gcloud/Dockerfile" {
+			withoutGcloud = append(withoutGcloud, file)
+		}
+	}
+	err := writeDependabotDockerFixtures(t, dependabotDockerFixture, withoutGcloud...).
 		checkDependabotDockerCoverage()
-	if err == nil || !strings.Contains(err.Error(), "dev/test-packs/gcloud/Dockerfile: excluded from the docker lane but no such build file exists") {
+	if err == nil || !strings.Contains(err.Error(), "dev/test-packs/gcloud/Dockerfile: excluded from the Dependabot lanes but no such build file exists") {
 		t.Fatalf("stale exclusion not reported: %v", err)
 	}
 
-	// A lane that stops listing docker fails loudly instead of passing on an
-	// empty glob set, which would call every location uncovered.
-	err = writeDependabotDockerFixtures(t, "version: 2\nupdates:\n  - package-ecosystem: \"gomod\"\n    directory: \"/runner\"\n").
-		checkDependabotDockerCoverage()
-	if err == nil || !strings.Contains(err.Error(), "declares no package-ecosystem: docker directories") {
-		t.Fatalf("missing docker lane not reported: %v", err)
+	// A config that stops listing either container lane fails loudly instead of
+	// passing on an empty glob set, which would call every location uncovered.
+	for _, lane := range []string{"docker", "docker-compose"} {
+		other := map[string]string{"docker": "docker-compose", "docker-compose": "docker"}[lane]
+		err = writeDependabotDockerFixtures(t, "version: 2\nupdates:\n  - package-ecosystem: \""+other+"\"\n    directory: \"/\"\n").
+			checkDependabotDockerCoverage()
+		if err == nil || !strings.Contains(err.Error(), "declares no package-ecosystem: "+lane+" directories") {
+			t.Fatalf("missing %s lane not reported: %v", lane, err)
+		}
 	}
 
 	// A pathspec that selects nothing is the shape of a check that stopped
@@ -163,8 +196,7 @@ func TestCheckDependabotDockerCoverageSkipsUnreadableDirectoriesOnlyInABox(t *te
 	if os.Geteuid() == 0 {
 		t.Skip("root can read a mode-000 directory")
 	}
-	app := writeDependabotDockerFixtures(t, dependabotDockerFixture,
-		".agent/Dockerfile", "dev/compose.yml", "dev/test-packs/gcloud/Dockerfile")
+	app := writeDependabotDockerFixtures(t, dependabotDockerFixture, dependabotDockerExcludedFixtures...)
 	hidden := filepath.Join(app.Root, "portal", ".agent", "secrets")
 	if err := os.MkdirAll(hidden, 0o755); err != nil {
 		t.Fatal(err)

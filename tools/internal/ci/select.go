@@ -269,7 +269,7 @@ func (selection *Selection) include(file string) {
 	// enforces are infra inputs: tightening a duration, an enum, an arg rule or a
 	// template reference can reject that pack from a commit that touches no
 	// infra/ file, and the gate would first fail on whoever pushed next.
-	if strings.HasPrefix(file, "infra/") || file == ".tool-versions" || packLoader {
+	if strings.HasPrefix(file, "infra/") || file == ".tool-versions" || packLoader || infraOperationsInput(file) {
 		selection.Infra = true
 	}
 	if slices.Contains([]string{"portal/mix.lock", "runner/go.mod", "runner/go.sum", "mcp/go.mod", "mcp/go.sum", "tools/go.mod", "tools/go.sum", ".dep-age-allow"}, file) || strings.HasPrefix(file, "tools/cmd/depgate/") {
@@ -519,6 +519,20 @@ func packBehaviorSharedPath(file string) bool {
 		"go.work",
 		"go.work.sum",
 	}, file)
+}
+
+// infraOperationsInput is a file outside infra/ that the infra gate's
+// operations tests (tools/internal/infraops) read: the published catalog the
+// admin-runner pins must match, the gcp-monitoring pack whose log view the
+// admin runner is bound to, and the Portal sources whose Logger messages the
+// log-based alert filters must match. A change to one of them alone used to
+// merge with those tests unrun, and the red surfaced on whoever pushed next.
+func infraOperationsInput(file string) bool {
+	if file == "portal/apps/emisar/priv/packs/catalog.json" || strings.HasPrefix(file, "packs/gcp-monitoring/") {
+		return true
+	}
+	parts := strings.SplitN(file, "/", 5)
+	return len(parts) == 5 && parts[0] == "portal" && parts[1] == "apps" && parts[3] == "lib" && filepath.Ext(file) == ".ex"
 }
 
 func isPackFile(file string) bool {

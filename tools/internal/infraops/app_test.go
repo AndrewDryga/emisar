@@ -162,6 +162,37 @@ func TestDiscoverDrillIDs(t *testing.T) {
 	}
 }
 
+// Both drill commands name the project they act on before anything runs: the
+// PROJECT_ID override, or the "emisar" default when it is unset.
+func TestDrillCommandsPrintTheEffectiveProject(t *testing.T) {
+	for _, tc := range []struct {
+		env  string
+		want string
+	}{
+		{"", "drill project: emisar (default; set PROJECT_ID to change it)\n"},
+		{"scratch-1", "drill project: scratch-1 (PROJECT_ID)\n"},
+	} {
+		t.Setenv("PROJECT_ID", tc.env)
+		var out bytes.Buffer
+		app := New(t.TempDir(), strings.NewReader(""), &out, &out)
+		app.LookPath = func(string) (string, error) { return "", errors.New("gcloud is not installed") }
+
+		if err := app.pitrDrill(t.Context(), nil); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.HasPrefix(out.String(), tc.want) {
+			t.Errorf("pitr dry run with PROJECT_ID=%q began %q, want %q", tc.env, out.String(), tc.want)
+		}
+		out.Reset()
+		if err := app.cleanupDrills(t.Context(), []string{"--apply"}); err == nil {
+			t.Fatal("cleanup ran without gcloud")
+		}
+		if !strings.HasPrefix(out.String(), tc.want) {
+			t.Errorf("cleanup with PROJECT_ID=%q began %q, want %q", tc.env, out.String(), tc.want)
+		}
+	}
+}
+
 func TestDrillCreatedAt(t *testing.T) {
 	got, err := drillCreatedAt("edrill-2607221300-abcdef")
 	if err != nil {

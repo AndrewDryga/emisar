@@ -115,6 +115,19 @@ func appendManifest(path string, values map[string]string) error {
 	return file.Close()
 }
 
+// drillProject is the project both drill commands act on and prints it before
+// anything runs. It is PROJECT_ID, defaulting to "emisar": the drills predate
+// the EMISAR_GCP_PROJECT and gcloud-config resolution portal and database use,
+// and changing it would silently move what an existing recovery command touches.
+func (a *App) drillProject() string {
+	project, from := os.Getenv("PROJECT_ID"), "PROJECT_ID"
+	if project == "" {
+		project, from = "emisar", "default; set PROJECT_ID to change it"
+	}
+	fmt.Fprintf(a.Out, "drill project: %s (%s)\n", project, from)
+	return project
+}
+
 func (a *App) pitrDrill(ctx context.Context, args []string) (runErr error) {
 	apply := false
 	if len(args) == 1 && args[0] == "--apply" {
@@ -122,10 +135,7 @@ func (a *App) pitrDrill(ctx context.Context, args []string) (runErr error) {
 	} else if len(args) != 0 {
 		return usage("usage: ./run ops drill pitr [--apply]")
 	}
-	project := os.Getenv("PROJECT_ID")
-	if project == "" {
-		project = "emisar"
-	}
+	project := a.drillProject()
 	source := os.Getenv("SOURCE_INSTANCE")
 	if source == "" {
 		source = "emisar"

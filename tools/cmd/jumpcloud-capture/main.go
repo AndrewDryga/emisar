@@ -371,6 +371,50 @@ func openApplicationList(ctx context.Context, consoleURL string) error {
 	return dismissTrialEndedOverlay(ctx)
 }
 
+// appRows pairs each application-list checkbox with the text on its own line and
+// defines abandoned, the one test for "a capture run left this behind". The list
+// is a virtualized div grid: the checkboxes are real, but a row's label is not in
+// their ancestors, so climbing found nothing and the cleanup reported a clean
+// tenant over visible litter. Pairing by GEOMETRY sees the row.
+//
+// The cleanup, the refuse-to-create guard and the resume lookup all share it: a
+// guard that counted the certified keeper while the cleanup spared it refused
+// every fresh run, and running the cleanup it asked for changed nothing.
+const appRows = `
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const boxes = [...document.querySelectorAll('input[type=checkbox]')].filter(visible);
+  const leaves = [...document.querySelectorAll('*')].filter(el =>
+    visible(el) && !el.querySelector('*') && (el.textContent || '').trim());
+  const rowLeaves = box => {
+    const r = box.getBoundingClientRect();
+    const mid = r.top + r.height / 2;
+    return leaves.filter(el => { const b = el.getBoundingClientRect(); return b.top <= mid && b.bottom >= mid; });
+  };
+  const rowText = box => rowLeaves(box).map(el => (el.textContent || '').trim()).join(' | ');
+  // The CERTIFICATE ("Expires") marks a keeper, not the provisioning badge.
+  // Sparing anything that advertised provisioning left every run's ACTIVATED app
+  // behind, which is why the count kept climbing however often cleanup was run.
+  const abandoned = text => /\bemisar\b/.test(text) && !/Expires/.test(text);
+`
+
+// selectAbandonedApps ticks every abandoned row and returns their text, one per line.
+const selectAbandonedApps = `(() => {` + appRows + `
+  const picked = [];
+  for (const box of boxes) {
+    if (box.checked) continue;
+    const text = rowText(box);
+    if (!abandoned(text)) continue;
+    box.click();
+    picked.push(text.slice(0, 70));
+  }
+  return picked.join('\n');
+})()`
+
+// countAbandonedApps is how many rows selectAbandonedApps would tick.
+const countAbandonedApps = `(() => {` + appRows + `
+  return boxes.filter(box => abandoned(rowText(box))).length;
+})()`
+
 // cleanupCaptureApplications removes the applications a capture run leaves in the
 // tenant. Each full run creates one, and chasing a form through several attempts
 // leaves several.
@@ -384,39 +428,7 @@ func cleanupCaptureApplications(ctx context.Context, consoleURL, outDir string) 
 		return err
 	}
 
-	// By GEOMETRY. The list is a virtualized div grid: the checkboxes are real, but
-	// a row's label is not in their ancestors, so climbing found nothing and the
-	// cleanup reported a clean tenant over visible litter. Pair each checkbox with
-	// the text sitting on its own line instead.
-	const selectAbandoned = `(() => {
-  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-  const boxes = [...document.querySelectorAll('input[type=checkbox]')].filter(visible);
-  const leaves = [...document.querySelectorAll('*')].filter(el =>
-    visible(el) && !el.querySelector('*') && (el.textContent || '').trim());
-  const rowText = box => {
-    const r = box.getBoundingClientRect();
-    const mid = r.top + r.height / 2;
-    return leaves
-      .filter(el => { const b = el.getBoundingClientRect(); return b.top <= mid && b.bottom >= mid; })
-      .map(el => (el.textContent || '').trim())
-      .join(' | ');
-  };
-  const picked = [];
-  for (const box of boxes) {
-    if (box.checked) continue;
-    const text = rowText(box);
-    if (!/\bemisar\b/.test(text)) continue;
-    // The CERTIFICATE marks a keeper, not the provisioning badge. Sparing anything
-    // that advertised provisioning left every run's ACTIVATED app behind, which is
-    // why the count kept climbing however often this was run.
-    if (/Expires/.test(text)) continue;
-    box.click();
-    picked.push(text.slice(0, 70));
-  }
-  return picked.join('\n');
-})()`
-
-	picked, actionErr4 := chromedp.Run(ctx, chromedp.Evaluate[string](selectAbandoned))
+	picked, actionErr4 := chromedp.Run(ctx, chromedp.Evaluate[string](selectAbandonedApps))
 	if actionErr4 != nil {
 		return actionErr4
 	}
@@ -623,20 +635,14 @@ func exploreConsole(ctx context.Context, env map[string]string, outDir, script s
 // A capture run creates an application. Refuse to create a SECOND one while
 // earlier ones are still here: debugging this flow meant running it repeatedly,
 // and six applications accumulated in the founder's tenant while the fix for
-// exactly that was being written. Clean up first, deliberately.
+// exactly that was being written. Clean up first, deliberately. It counts what
+// -cleanup-apps would delete, so the certified keeper never blocks a run.
 func refuseIfTenantAlreadyLittered(ctx context.Context, env map[string]string) error {
 	if err := openApplicationList(ctx, env["JUMPCLOUD_CONSOLE_URL"]); err != nil {
 		return err
 	}
 
-	const countOurs = `(() => {
-  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-  const leaves = [...document.querySelectorAll('*')].filter(el =>
-    visible(el) && !el.querySelector('*') && (el.textContent || '').trim() === 'emisar');
-  return leaves.length;
-})()`
-
-	existing, actionErr8 := chromedp.Run(ctx, chromedp.Evaluate[int](countOurs))
+	existing, actionErr8 := chromedp.Run(ctx, chromedp.Evaluate[int](countAbandonedApps))
 	if actionErr8 != nil {
 		return actionErr8
 	}
@@ -1388,21 +1394,11 @@ func openSavedApp(ctx context.Context, env map[string]string, outDir string) err
 		return err
 	}
 
-	const openFreshApp = `(() => {
-  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-  const boxes = [...document.querySelectorAll('input[type=checkbox]')].filter(visible);
-  const leaves = [...document.querySelectorAll('*')].filter(el =>
-    visible(el) && !el.querySelector('*') && (el.textContent || '').trim());
+	const openFreshApp = `(() => {` + appRows + `
   for (const box of boxes) {
-    const r = box.getBoundingClientRect();
-    const mid = r.top + r.height / 2;
-    const row = leaves.filter(el => {
-      const b = el.getBoundingClientRect();
-      return b.top <= mid && b.bottom >= mid;
-    });
-    const text = row.map(el => (el.textContent || '').trim()).join(' | ');
-    if (!/\bemisar\b/.test(text)) continue;
-    if (/Expires/.test(text)) continue;
+    const row = rowLeaves(box);
+    const text = rowText(box);
+    if (!abandoned(text)) continue;
     const label = row.find(el => (el.textContent || '').trim() === 'emisar');
     if (!label) continue;
     const labelBox = label.getBoundingClientRect();

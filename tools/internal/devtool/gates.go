@@ -730,6 +730,15 @@ func (a *App) infraGate(ctx context.Context) error {
 	}); err != nil {
 		return err
 	}
+	// These tests run the admin-runner's install, verify and preflight scripts
+	// and hold its pack pins, IAM, log view and log-metric filters to the files
+	// they guard. Those files are infra inputs, so their proof belongs to the
+	// infra gate; in the tooling gate alone an infra-only change never ran it.
+	if err := a.gatePhase("infra operations tests", func() error {
+		return a.run(ctx, filepath.Join(a.Root, "tools"), nil, "go", "test", "-count=1", "./internal/infraops/...")
+	}); err != nil {
+		return err
+	}
 	return a.gatePhase("infra trusted release pins", func() error {
 		return a.infraOps(ctx, []string{"verify-release-pins"})
 	})

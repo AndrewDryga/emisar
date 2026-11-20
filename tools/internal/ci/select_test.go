@@ -617,6 +617,55 @@ func TestSelect(t *testing.T) {
 		}
 	})
 
+	// The infra gate runs the infraops tests, and these are the files they guard:
+	// the admin-runner scripts and pins, IAM, the log view and log-metric
+	// filters, the HCP upload ignore list, and the inputs outside infra/ (the
+	// published catalog, the gcp-monitoring pack, Portal Logger messages).
+	t.Run("infra operations test inputs select infra", func(t *testing.T) {
+		for _, file := range []string{
+			"infra/runtime/admin-runner/start.sh",
+			"infra/runtime/admin-runner/install-diagnostics.sh",
+			"infra/runtime/admin-runner/verify-diagnostics.sh",
+			"infra/runtime/admin-runner/pack-pins.txt",
+			"infra/iam.tf",
+			"infra/logging.tf",
+			"infra/monitoring_application.tf",
+			"infra/.terraformignore",
+			"portal/apps/emisar/priv/packs/catalog.json",
+			"packs/gcp-monitoring/actions/log_entries.yaml",
+			"portal/apps/emisar/lib/emisar/runs.ex",
+			"portal/apps/emisar_web/lib/emisar_web/endpoint.ex",
+		} {
+			writeFixture(t, root, file, "fixture\n")
+			commitAll(t, root, "infra operations input")
+			selection, err := Select(context.Background(), root, "pull_request", base)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !selection.Infra {
+				t.Fatalf("%s did not select infra: %+v", file, selection)
+			}
+			resetHard(t, root, base)
+		}
+		// Not log sources and not read by those tests.
+		for _, file := range []string{
+			"portal/apps/emisar/test/emisar/runs_test.exs",
+			"portal/apps/emisar_web/lib/emisar_web/components/layouts/root.html.heex",
+			"packs/gcp-compute/actions/list_instances.yaml",
+		} {
+			writeFixture(t, root, file, "fixture\n")
+			commitAll(t, root, "not an infra operations input")
+			selection, err := Select(context.Background(), root, "pull_request", base)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if selection.Infra {
+				t.Fatalf("%s selected infra: %+v", file, selection)
+			}
+			resetHard(t, root, base)
+		}
+	})
+
 	// The listing job validates server.json against the registry schema; every
 	// emisar-specific assertion about it lives in the Portal suite.
 	t.Run("the MCP listing descriptor selects the portal suite", func(t *testing.T) {

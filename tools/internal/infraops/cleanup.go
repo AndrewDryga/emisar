@@ -179,10 +179,7 @@ func (a *App) cleanupDrills(ctx context.Context, args []string) error {
 	default:
 		return usage("usage: ./run ops drill cleanup [--apply [DRILL_ID]]")
 	}
-	project := os.Getenv("PROJECT_ID")
-	if project == "" {
-		project = "emisar"
-	}
+	project := a.drillProject()
 	if err := a.require("gcloud"); err != nil {
 		return err
 	}
