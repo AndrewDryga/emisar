@@ -71,4 +71,64 @@ defmodule EmisarWeb.Components.DirectoryGroupsTest do
 
     refute html =~ "Keycloak"
   end
+
+  describe "member_groups/1 counts" do
+    defp group(n), do: %{id: "group-#{n}", display: "Group #{n}"}
+
+    defp render_member_groups(attrs) do
+      render_component(
+        &DirectoryGroups.member_groups/1,
+        [
+          id: "member-groups",
+          membership_id: "membership",
+          path: "/app/acme/team",
+          filter_params: %{}
+        ] ++ attrs
+      )
+    end
+
+    defp text(html, selector) do
+      html
+      |> LazyHTML.from_fragment()
+      |> LazyHTML.query(selector)
+      |> LazyHTML.text()
+      |> String.trim()
+    end
+
+    test "the overflow toggle uses a singular for one remaining group" do
+      one = render_member_groups(summary: %{count: 2, groups: [group(1)]})
+      many = render_member_groups(summary: %{count: 3, groups: [group(1)]})
+
+      assert text(one, "#member-groups-toggle") == "+1 group"
+      assert text(many, "#member-groups-toggle") == "+2 groups"
+    end
+
+    test "the expanded list count uses a singular for one group" do
+      list = fn count, groups ->
+        %{
+          membership_id: "membership",
+          search: "",
+          error?: false,
+          groups: groups,
+          page: [],
+          metadata: %Emisar.Repo.Paginator.Metadata{count: count}
+        }
+      end
+
+      one =
+        render_member_groups(
+          summary: %{count: 1, groups: [group(1)]},
+          list: list.(1, [group(1)])
+        )
+
+      many =
+        render_member_groups(
+          summary: %{count: 2, groups: [group(1)]},
+          list: list.(2, [group(1), group(2)])
+        )
+
+      assert text(one, "nav[aria-label='Member groups pages'] span") == "1 group"
+      assert text(many, "nav[aria-label='Member groups pages'] span") == "2 groups"
+    end
+  end
 end

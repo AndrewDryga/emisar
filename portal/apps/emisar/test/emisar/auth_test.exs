@@ -795,6 +795,46 @@ defmodule Emisar.AuthTest do
       refute_received {:email, _}
     end
 
+    test "a failed sign-up send, first or resent, logs the code's token and a label" do
+      Emisar.Config.put_override(:emisar, :email_codes_async?, true)
+      parent = self()
+      email = Fixtures.Random.unique_email()
+
+      Emisar.Config.put_override(:emisar, :mailer_deliver_error, fn _email ->
+        send(parent, {:sending, self()})
+        {:error, {422, %{"Message" => "Found inactive addresses: #{email}."}}}
+      end)
+
+      attrs = %{
+        "email" => email,
+        "full_name" => "Ada Lovelace",
+        "account_name" => "Analytical Engines #{System.unique_integer([:positive])}"
+      }
+
+      log =
+        capture_log(fn ->
+          assert {:ok, %{token_id: first_id, delivery: {:ok, :queued}}} =
+                   Auth.request_sign_up_code(attrs, %RequestContext{})
+
+          assert_receive {:sending, first_sender}
+          first_ref = Process.monitor(first_sender)
+          assert_receive {:DOWN, ^first_ref, :process, ^first_sender, _reason}
+
+          assert {:ok, %{token_id: second_id, delivery: {:ok, :queued}}} =
+                   Auth.resend_email_code(first_id, %RequestContext{})
+
+          assert_receive {:sending, second_sender}
+          second_ref = Process.monitor(second_sender)
+          assert_receive {:DOWN, ^second_ref, :process, ^second_sender, _reason}
+          send(parent, {:token_ids, first_id, second_id})
+        end)
+
+      assert_received {:token_ids, first_id, second_id}
+      assert log =~ "sign-in code not delivered token_id=#{first_id} reason=http_422"
+      assert log =~ "sign-in code not delivered token_id=#{second_id} reason=http_422"
+      refute log =~ email
+    end
+
     test "a Member that no longer qualifies gets nothing", %{member: member, account: account} do
       {token_id, _nonce, _secret} = request_magic_link(account, member.email)
       Fixtures.Memberships.suspend_membership(member)

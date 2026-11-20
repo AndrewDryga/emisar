@@ -8,16 +8,12 @@ defmodule Emisar.Catalog.ConsoleProjection do
   `Emisar.Catalog` they were private and only reachable through a Subject-gated
   read, so the rules they encode could not be exercised without first building
   an account, a runner, a pack version and a trust decision.
-
-  `Emisar.Catalog` keeps the six of these the web already calls and delegates to
-  them, so the dependency runs one way.
   """
 
   alias Emisar.Catalog.{ActionSetDiff, PackBaseline, PackVersion, RunnerAction, TrustedManifest}
 
-  # Severity order. Catalog's own risk folding reads it back through
-  # risk_rank/0 rather than keeping a second copy, so one table ranks risk for
-  # the whole context.
+  # Severity order, atom-keyed. This module and Catalog's in-memory risk folding
+  # (which reads it back through risk_rank/0) share this one table.
   @risk_rank %{low: 0, medium: 1, high: 2, critical: 3}
 
   @doc "The severity order used when picking the worst of several risks."
@@ -604,7 +600,7 @@ defmodule Emisar.Catalog.ConsoleProjection do
   Pure over already-authorized data: pass the `%PackVersion{}` (loaded via a
   Subject-gated read) and its advertised `%RunnerAction{}` rows loaded WHOLE —
   the diff compares every descriptor field, so summary-column rows (from
-  `list_pack_actions/3` or `select_console_columns/1`) would silently report no
+  `RunnerAction.Query.select_console_columns/1`) would silently report no
   changes. A nil manifest (trusted before this feature, or never trusted)
   yields an empty diff — the UI falls back to listing the actions.
   Returns `%{added: [...], removed: [...], changed: [...]}`.

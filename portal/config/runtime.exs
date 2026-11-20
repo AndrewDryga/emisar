@@ -16,22 +16,28 @@ import Config
 #   PADDLE_WEBHOOK_SECRET  — required when PADDLE_API_KEY is set
 #   PADDLE_CLIENT_TOKEN    — required when PADDLE_API_KEY is set; the client-side
 #                            token Paddle.js initializes with on /checkout
+#   POSTMARK_API_TOKEN     — mailer adapter (Postmark); OR set EMISAR_DISABLE_MAIL=1
+#                            to log every send instead. A dev-routes build ignores
+#                            both and delivers to the in-memory /dev/mailbox
 #
 # There is no price-id env var: checkout prices come from the live Paddle
 # catalog, and plan identity + limits ride the webhook via the product's
 # custom_data (plan, runners_limit, members_limit, audit_retention_days,
-# features_sso_enabled?, features_scim_enabled?) — see Emisar.Billing.Entitlements.
+# features_sso_enabled?, features_scim_enabled?, features_audit_export_enabled?)
+# — see Emisar.Billing.Entitlements.
 #
 # Optional prod env vars:
 #   PHX_HOST               — public hostname (defaults to emisar.dev)
 #   PORT                   — HTTP listen port (default 4000)
 #   URL_PORT               — public URL port if it differs from PORT (e.g. a
 #                            published host port); only applies when FORCE_SSL=false
-#   FORCE_SSL              — "false" disables HTTPS redirect + secure cookies (default true)
+#   FORCE_SSL              — marks the deployment HTTPS-fronted (default true): drives
+#                            the URL scheme/port and secure cookies; "false" turns
+#                            both off. The redirect + HSTS are compiled in (prod.exs)
 #   POOL_SIZE              — Ecto pool size (default 10)
 #   DATABASE_PORT          — proxy port (default 5432)
 #   DATABASE_ROLE          — PostgreSQL role assumed at connection startup
-#   POSTMARK_API_TOKEN     — mailer adapter (Postmark); OR set EMISAR_DISABLE_MAIL=1
+#   EMISAR_DISABLE_MAIL    — "1"/"true" runs without Postmark, logging every send
 #   MAILER_FROM_EMAIL      — override the "From" address (default no-reply@emisar.dev)
 #   MAILER_FROM_NAME       — override the "From" display name (default emisar)
 #   SENTRY_DSN             — enables error uploads when set
@@ -46,12 +52,18 @@ import Config
 #   EMISAR_CLUSTER_PROJECT — GCP project for GCE peer discovery; ALSO what makes
 #                            clustering happen at all, and the Cloud Logging
 #                            project id. Set by the instance template.
-#   EMISAR_CLUSTER_VALUE   — the GCE tag peers are discovered by
+#   EMISAR_CLUSTER_VALUE   — the GCE label value peers are discovered by
+#                            (default "emisar")
 #   EMISAR_PACK_CATALOG_URL — published catalog to refresh auto-trust from;
 #                            empty pins the bundled snapshot
-#   EMISAR_SSO_ALLOWED_IDP_HOSTS — extra IdP hosts the SSRF guard permits
+#   EMISAR_SSO_ALLOWED_IDP_HOSTS — extra IdP hosts the SSRF guard permits; read
+#                            only by dev builds and dev-routes images, ignored
+#                            (with a warning) by a production image
 #   EMISAR_DISABLE_BILLING — "1" to run without Paddle (CI smoke, self-host)
 #   EMISAR_DEV_ROUTES      — build-time; exposes dev-only routes. Never prod.
+#   EMISAR_ENFORCE_RUNNER_VERSION / EMISAR_ENFORCE_MCP_VERSION — exactly "true"
+#                            refuses a peer whose parseable version is below the
+#                            Emisar.Compat minimum; otherwise only warns (default)
 #   X_ADS_CONVERSIONS_JSON — enables server-side X signup conversion reporting;
 #                            JSON with consumer_key, consumer_secret, access_token,
 #                            access_token_secret, pixel_id, and event_id
@@ -82,10 +94,7 @@ if config_env() == :prod do
   # Keep application metadata queryable, but never serialize the request and
   # socket structs. GoogleCloud handles :crash_reason separately so caught
   # exceptions are sent in the shape Google Cloud Error Reporting recognizes.
-  config :logger,
-    level: :info,
-    handle_otp_reports: true
-
+  # The :info level is set once, at compile time, in prod.exs.
   config :logger, :default_handler,
     formatter:
       LoggerJSON.Formatters.GoogleCloud.new(
@@ -139,8 +148,8 @@ if config_env() == :prod do
     env.("SECRET_KEY_BASE") ||
       raise "SECRET_KEY_BASE is missing (generate with: mix phx.gen.secret)"
 
-  # Salt for the cookieless daily anonymous-visitor hash — reuse the app secret
-  # so every node agrees and an attacker can't recompute a day's ids.
+  # Salt for the cookieless weekly anonymous-visitor hash — reuse the app secret
+  # so every node agrees and an attacker can't recompute a week's ids.
   config :emisar, :analytics_salt, secret_key_base
   config :emisar, :email_link_secret, secret_key_base
   config :emisar, :mcp_telemetry_salt, secret_key_base
@@ -237,8 +246,7 @@ if config_env() == :prod do
   # catalog, which keeps image smoke tests and offline self-hosts deterministic.
   config :emisar, Emisar.Catalog.PublishedRegistry, catalog_url: pack_catalog_url
 
-  # -- Mailer (Postmark by default; Mailgun and SMTP available as
-  # fallbacks if you swap providers later) --------------------------
+  # -- Mailer (dev-routes mailbox, Postmark, or logged when disabled) --
   cond do
     EmisarWeb.Router.dev_routes?() ->
       # A dev-routes BUILD (the docker-compose stack): deliver into the
@@ -372,24 +380,23 @@ if config_env() == :prod do
 end
 
 # Exact `host:port` endpoints which the OIDC guard may exempt from its private-
-# address policy. This exists only for development and test builds, whose local
-# Keycloak cannot have a public address. The build-time dev-routes flag separates
-# the packaged local stack from a production image even if the same runtime env
-# variables are injected into both.
+# address policy. This exists only for development builds, whose local Keycloak
+# cannot have a public address. The build-time dev-routes flag separates the
+# packaged local stack from a production image even if the same runtime env
+# variables are injected into both. The test build never reads the shell, so an
+# exported value cannot change the guard's default; a test that needs an
+# exemption installs it with `Emisar.Config.put_override/3`.
 allowed_idp_hosts_env = env.("EMISAR_SSO_ALLOWED_IDP_HOSTS")
 
-development_or_test_build? =
-  config_env() in [:dev, :test] or EmisarWeb.Router.dev_routes?()
+development_build? =
+  config_env() == :dev or (config_env() == :prod and EmisarWeb.Router.dev_routes?() == true)
 
-if is_binary(allowed_idp_hosts_env) and not development_or_test_build? do
-  IO.warn(
-    "EMISAR_SSO_ALLOWED_IDP_HOSTS is ignored outside development and test builds",
-    []
-  )
+if is_binary(allowed_idp_hosts_env) and config_env() == :prod and not development_build? do
+  IO.warn("EMISAR_SSO_ALLOWED_IDP_HOSTS is ignored outside development builds", [])
 end
 
 sso_allowed_idp_hosts =
-  if development_or_test_build? do
+  if development_build? do
     (allowed_idp_hosts_env || "")
     |> String.split(",", trim: true)
     |> Enum.map(&String.trim/1)

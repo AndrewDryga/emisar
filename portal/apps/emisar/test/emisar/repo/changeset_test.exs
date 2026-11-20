@@ -2,9 +2,8 @@ defmodule Emisar.Repo.ChangesetTest do
   @moduledoc """
   The shared `Emisar.Repo.Changeset` helpers, exercised on schemaless changesets
   to keep them pure: `castable/1` (normalize an input schema's attrs for
-  `cast/3`), `put_default_value/3` (fill a field only if it's unset — the
-  literal, lazy 0-arity fn, changeset-aware 1-arity fn, and copy-from-another-
-  field forms together), `truncate_codepoints/3` (cut header-fed text to the
+  `cast/3`), `put_default_value/3` (fill a field with a literal only if it's
+  unset), `truncate_codepoints/3` (cut header-fed text to the
   codepoint count `varchar(n)` enforces), `validate_json_size/3` (cap a
   serialized field size) and `validate_json_value/3` (structural limits before
   that byte cap).
@@ -48,32 +47,6 @@ defmodule Emisar.Repo.ChangesetTest do
       result = RepoChangeset.put_default_value(changeset(%{name: "Existing"}), :name, "untitled")
       assert result.changes == %{}
       assert result.data.name == "Existing"
-    end
-
-    test "a 0-arity function default is invoked lazily" do
-      result = RepoChangeset.put_default_value(changeset(), :slug, fn -> "generated" end)
-      assert result.changes == %{slug: "generated"}
-    end
-
-    test "a 1-arity function default receives the changeset" do
-      result =
-        RepoChangeset.put_default_value(changeset(%{name: "Acme"}), :slug, fn changeset ->
-          "slug-of-#{get_field(changeset, :name)}"
-        end)
-
-      assert result.changes == %{slug: "slug-of-Acme"}
-    end
-
-    test "from: copies another field's value when that field is set" do
-      result =
-        RepoChangeset.put_default_value(changeset(%{name: "Acme Inc"}), :legal_name, from: :name)
-
-      assert result.changes == %{legal_name: "Acme Inc"}
-    end
-
-    test "from: a field that doesn't resolve leaves the target untouched" do
-      result = RepoChangeset.put_default_value(changeset(), :legal_name, from: :nonexistent)
-      assert result.changes == %{}
     end
   end
 

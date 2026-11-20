@@ -19,8 +19,9 @@ defmodule EmisarWeb.RunnerInstall do
   Mints a fresh install key and returns `{command, key_id}` — `Runners`' curl
   one-liner for that key, plus the key id (so a presence-join handler can tell
   THIS wizard's runner from any other host coming up). An insecure public HTTP
-  origin returns `{:insecure_transport, nil}` before a key is minted;
-  `{:mint_failed, nil}` covers mint failures. A nil key id can never match a join.
+  origin returns `{:insecure_transport, nil}` and an invalid one
+  `{:unavailable, nil}`, both before a key is minted; `{:mint_failed, nil}`
+  covers mint failures. A nil key id can never match a join.
   """
   def mint_command(%Emisar.Auth.Subject{} = subject, base) do
     with :ok <- InstallCommand.validate_origin(base),

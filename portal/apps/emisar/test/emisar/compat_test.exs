@@ -1,6 +1,5 @@
 defmodule Emisar.CompatTest do
-  # async: false — these tests set the global Emisar.Compat policy.
-  use ExUnit.Case, async: false
+  use ExUnit.Case, async: true
   alias Emisar.Compat
 
   defp put_policy(opts) do

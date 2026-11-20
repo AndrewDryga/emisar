@@ -79,8 +79,8 @@ list, detail, and forms use the archetype widths below, never per-page drift.
 | **List** | `:full` for a DENSE columnar table (many `<:col>`s — Runs, Audit); `:table` for a CARD/grouped list or panel list (`<:item>` rows, sibling panels — Runners, Approvals, Packs, Agents) so single-value rows don't stretch thin | shell title + `:actions` primary CTA · `page_intro` + `doc_link` · one contiguous attention-spine slot · ONE LiveTable (filters from the owning context's `<schema>_filters/0` — a deep-link pivot is a REAL filter reading active in the bar, never a chip; `pivot_chip` is DELETED) · 4-state empty slot (§4) | RunsLive |
 | **Detail** | `:table` — the SAME width as the list it's reached from, so the header never jumps (run/runner/approval/audit details all converted) | `detail_header` (back · entity title · `:actions`) · NAKED meta row on the canvas, Status first (one flex row at sm+, 2-col grid on phones — no `meta_strip` island); **a qualifier inside a meta VALUE (source kind, client version, group) is dim inline type — bright value then `· qualifier` in zinc-500 (run detail's "Dispatched by" is the template), NEVER a filled chip riding the value; chips mark a row/card's STATE ("no 2FA", "current"), not a value's metadata. A status field renders the NORMALIZED state the page leads with, never a raw DB status that contradicts the verdict (lapsed-but-unswept approval = expired, not pending)** · conditional attention stack (tight `space-y-3` group inside the page's `space-y-12` wrapper) · canvas sections (`section_header`) · artifacts as `code_panel`-framed boxes · danger zones last | RunDetail, RunnerDetail |
 | **Editor** | `:table` — same rule as Detail: the list's width | `detail_header` + Cancel in header · the editing surface (repeating units = naked forms under `STEP N` keys with hairlines, never card washes) · Save/primary action in ONE place (the surface's footer row) · inline errors · no silent data loss on navigate | RunbookEditor |
-| **Create flow** | `:form` | own `/new` route · single `panel` form · privilege choices as `choice_cards` · **in-page success step** (do-again / back-to-list) — never flash-and-redirect | Team invite |
-| **Settings** | `:settings` | `page_intro` + `doc_link` · NAKED sibling `<section>`s, one per concern, each headed by `section_header` (title/subtitle/actions) — panels are DEAD (§8.1); never a label-left/content-right divider table | Profile, SSO :new/:edit |
+| **Create flow** | `:form` | own `/new` route · single naked form (FORMS ARE NAKED, `design-system.md` §8.1) · privilege choices as `choice_cards` · **in-page success step** (do-again / back-to-list) — never flash-and-redirect | Team invite |
+| **Settings** | `:settings` | `page_intro` + `doc_link` · NAKED sibling `<section>`s, one per concern, each headed by `section_header` (title/subtitle/actions) — panels are DEAD (`design-system.md` §8.1); never a label-left/content-right divider table | Profile, SSO :new/:edit |
 | **Wizard** | `:form` (`:detail` with a rail) | one guided surface · one primary action per step · live wait states with escalating troubleshooting · page-advance keyed to the specific entity it created · a wizard carrying a supporting rail (trust facts, resources) goes two-column at `lg` — task left, reading right, separated by AIR (a wide gap), never a vertical rule (vertical hairlines are shell chrome; content hairlines are row-lattice grammar only) — and runs `:detail`, never a `:form` tower beside dead space | RunnerInstall |
 | **Wait-room** | auth layout / `:form` | status_dot + what-happens-next promise · live resolution · the promise must survive a dropped socket (reconnect note) | SSOPending |
 
@@ -123,17 +123,16 @@ Structural rules that ride along:
   above a group header — "default · 1 runner total"). Only a real header row above the
   body earns the top rule. `wrapper_class="divide-y divide-zinc-800/70"`, never
   `… border-t border-zinc-800/70`; the audit list is the reference.
-- **Sibling islands.** Co-equal concerns are sibling `card`/`panel` islands — never
-  card-in-card, never one mega-card, never fully flat. No two stacked competing headers:
-  dedupe a title+subheading pair that says the same thing twice.
-- **A titled surface is a `panel`** (title · optional subtitle · optional right-side
-  annotation · `:actions`); a bare surface is a `card`. A hand-rolled header row inside a
-  `card` is banned — that's `panel` (with `padding={:none}` for `divide-y` list bodies).
+- **Sibling sections.** Co-equal concerns are sibling naked `<section>`s on the canvas,
+  each headed by `section_header` — never one mega-section, never boxed (`card`/`panel`
+  are deleted; `design-system.md` §8.1). No two stacked competing headers: dedupe a
+  title+subheading pair that says the same thing twice.
+- **A titled section uses `section_header`** (title · optional subtitle · `:badge` ·
+  `:actions`; `level={3}` for a subsection). A hand-rolled heading row is banned.
 - **Island-header grammar (design-review R2).** Two registers, chosen by what the island
-  IS, never by taste: an **eyebrow** (`title_variant={:eyebrow}` on `panel` — the xs uppercase
-  zinc-400 atom) heads a piece of the RECORD — a
+  IS, never by taste: an **eyebrow** (the xs uppercase zinc-400 atom) heads a piece of the RECORD — a
   read-only field or fragment of the entity (Reason, Arguments, Payload, Changes, Actor /
-  Subject, What this does); a **title-case display header** (`panel`'s default) heads a
+  Subject, What this does); a **title-case display header** (`section_header`) heads a
   surface with its own job — interactive (Decide, an editor) or a navigable collection
   (Recent runs, Advertised actions, Group mappings). The 10px uppercase atom is the
   *field-label* level (`meta_field`, an id line INSIDE a card) — it never heads an island.
@@ -142,8 +141,8 @@ Structural rules that ride along:
   (`code_panel`'s label was deliberately REGRADED to the 16px title tier — a command
   inset is the page's anchor artifact, not a record fragment; see the why-comment at
   its definition.)
-- **Detail meta leads.** A detail page opens with `meta_strip`, Status field first;
-  em-dash (muted, own span) for absent values.
+- **Detail meta leads.** A detail page opens with its naked meta row (the Detail
+  archetype above), Status field first; em-dash (muted, own span) for absent values.
 - **Filters are all visible — never hidden behind a "More filters" disclosure — and
   flow INLINE by default.** A list's filter bar shows every filter at once. The default
   `filter_layout={:inline}` flows them in ONE wrapping row of equal-width compact
@@ -175,13 +174,26 @@ Structural rules that ride along:
 - **Settings never embed in operational pages** without a PM decision — the current three
   (2FA/SSO toggles on Team, grant cap on Approvals, SIEM tokens on Audit) are grandfathered
   until that pass; do not add a fourth.
-- **The Settings IA (2026-07-04 restructure).** The nav's Settings group is exactly TWO
-  items: **Team** (the people + access hub — the roster LEADS the page; the Security
-  posture rows (2FA, SSO) follow below it as the rare-touch footer concern, and they are
-  SSO's one console door) and **Billing**. Every credential surface lives behind its
-  OWNING page as a title-row door, never a nav item: runner keys → Runners, agent keys →
-  LLM agents (+ /connect create flow), SIEM tokens → Audit. Don't re-add nav items for
-  sub-features; don't move the roster back below account config.
+- **The console IA.** The nav has no Settings group: **Connect** holds Runners, AI agents
+  and Service accounts; **Operate** holds Runs, Runbooks, Approvals and Audit log;
+  **Control** holds Policy, Packs, **Team** and **Billing**. Team is the people + access
+  hub — the roster LEADS the page; the Security posture rows (2FA, SSO) follow below it
+  as the rare-touch footer concern, and they are SSO's one console door. Credential
+  surfaces that belong to a page live behind that OWNING page as a title-row door, never
+  a nav item: runner keys → Runners, agent keys → AI agents (+ /connect create flow),
+  SIEM tokens → Audit. Don't re-add nav items for sub-features; don't move the roster
+  back below account config.
+
+### 3.1 Create-flow footer + the ONE back affordance (design-review R1)
+
+- **A form's footer groups its buttons** — primary + quiet cancel side by side
+  (`simple_form`'s actions row is `flex gap-3`, never `justify-between`): a pair flung
+  to opposite edges loses its association and puts Cancel where the primary
+  conventionally sits. A single full-width button (auth pages) still spans naturally.
+- **ONE back affordance: `<.back_link>` in the shell `:title`, above the page's job.**
+  Never a boxed "← Back to X" button in `:actions`, never an in-body ghost arrow link.
+  The shell title is the page's JOB ("Invite a member", "Connect a runner"), not the
+  parent section's name; a section below it never re-titles the page with a near-synonym.
 
 ## 4. States are part of the page, not a later pass
 
@@ -392,12 +404,13 @@ the commit button, where the operator can reach the action before reading what i
     interruption that must span the whole viewport. Sweep: amber/rose `bg-*-500/10`
     alert boxes, dashed pending boxes, and status-result rows that duplicate the spine.
 21. **A spine without a visible, semantically exact icon is broken.** Every attention
-    block starts with a real `hero-*` glyph; `<.event_block>` rejects empty/invalid names
-    and `<.callout>` provides a tone default. Match the metaphor to the prescribed
-    action: installing a newer version uses download semantics; `arrow-path` means
-    refresh, retry, or work in progress. Verify the built asset or its browser-computed
-    mask — a present `<span>` with `mask-image: none` is not an icon. Sweep: spine roots
-    without a Heroicon child, action/icon mismatches, and computed empty masks.
+    block starts with a semantic registry token (`EmisarWeb.Icons`); `<.event_block>`
+    rejects empty/invalid names and `<.callout>` provides a tone default. Match the meaning
+    to the prescribed action: installing a newer version is `action.download`; refresh,
+    retry, and work in progress are distinct meanings (`action.refresh`, `action.retry`,
+    `state.loading`), never one circular-arrow alias (`design-semantic-icon-system.md`).
+    Verify the rendered `<svg data-icon>` in the browser. Sweep: spine roots without an
+    icon child and action/icon meaning mismatches.
 22. **Spacing utilities only work between element siblings.** When prose and a command,
     secret, or action need a deliberate gap, wrap the prose in `<p>` (or another semantic
     element) before applying `space-y-*`. Raw HEEx text nodes do not match Tailwind's
@@ -497,17 +510,6 @@ the commit button, where the operator can reach the action before reading what i
     to its canonical minted spelling (device-flow code, magic-link code). Sweep:
     `String.upcase`/`String.downcase` on a value that reaches a template, and
     `uppercase` on any element above the eyebrow tier.
-
-### 7.1 Create-flow footer + the ONE back affordance (design-review R1)
-
-- **A form's footer groups its buttons** — primary + quiet cancel side by side
-  (`simple_form`'s actions row is `flex gap-3`, never `justify-between`): a pair flung
-  to opposite edges loses its association and puts Cancel where the primary
-  conventionally sits. A single full-width button (auth pages) still spans naturally.
-- **ONE back affordance: `<.back_link>` in the shell `:title`, above the page's job.**
-  Never a boxed "← Back to X" button in `:actions`, never an in-body ghost arrow link.
-  The shell title is the page's JOB ("Invite a member", "Connect a runner"), not the
-  parent section's name; a panel below it never re-titles the page with a near-synonym.
 38. **Third-party marks inherit the surface's visual system, not a vendor tile.** Keep the
     recognizable silhouette and an accessible adjacent name, but render small decorative
     navigation/index marks with the same accent, optical size, and hover behavior as sibling
@@ -638,14 +640,14 @@ the commit button, where the operator can reach the action before reading what i
     `whitespace-pre-wrap` on an element whose interpolated child sits on its own indented
     line.
 49. **Every attention spine starts with a visible, semantically exact icon.** `<.event_block>`
-    requires a valid `hero-*` name and `<.callout>` supplies a tone default when no override
-    is given; never render a bare vertical line or accept an empty icon. Match the glyph to
-    the operator action: version installation uses download semantics, while `arrow-path` is
-    reserved for refresh, retry, or work in progress. A new icon is not verified merely
-    because its span exists — run the asset build or inspect its computed mask in the
-    browser so a missing generated Heroicon class cannot ship as an invisible glyph. Sweep:
-    spine roots without a `hero-*` child, icons whose metaphor disagrees with the prescribed
-    action, and icon spans whose computed `mask-image` is `none`.
+    requires a registry token (`EmisarWeb.Icons` raises on an unknown name) and `<.callout>`
+    supplies a tone default when no override is given; never render a bare vertical line or
+    accept an empty icon. Match the meaning to the operator action: version installation is
+    `action.download`, while refresh, retry, and work in progress each have their own token
+    (`design-semantic-icon-system.md`). `EmisarWeb.IconsTest` and
+    `EmisarWeb.TemplateHygieneTest` reject unknown tokens; still look at the rendered SVG in
+    the browser. Sweep: spine roots without an icon child and icons whose meaning disagrees
+    with the prescribed action.
 50. **A note that instructs the operator wears the callout spine; the naked `status_note` is
     only for a passive posture fact.** Setup guidance, do-this/leave-that copy, and anything
     the operator acts on inside a flow is an actionable interruption — render it through
@@ -656,7 +658,7 @@ the commit button, where the operator can reach the action before reading what i
 51. **"Managed by <provider>" is stated once at the row, never repeated per attribute.** When a
     row already carries a provisioning badge (the sync badge saying the member is
     directory/IdP-provisioned) plus a lock on each *inline-editable* control the directory
-    owns (the role dropdown becomes a locked `hero-lock-closed` chip + a tooltip pointing to
+    owns (the role dropdown becomes a locked `state.locked` chip + a tooltip pointing to
     the provider), do NOT also print a passive `· managed by identity provider` FYI beside a
     *read-only* value — the roster runner-access line was the correction. A read-only value
     has no inline control to lock, so the note only re-says the badge; reserve the "change
@@ -772,7 +774,7 @@ the commit button, where the operator can reach the action before reading what i
     `<.gated_setting>` — the Team roster's already-approved role pattern generalized. A
     member who may change it gets the CONTROL, which already carries the value (a select's
     selection, a toggle's verb, a confirm button's "Stop requiring SSO"); a member who may
-    not gets that same value as a content-sized locked `<.chip icon="hero-lock-closed-mini">`
+    not gets that same value as a content-sized locked `<.chip icon="state.locked">`
     whose `<.tooltip>` names *that setting's* real requirement. Both arms sit in the same
     slot with the caller's one spacing class, so the permission state never moves the card
     (§7.55), and the value is never stretched to the control's track (a value filling that
@@ -808,7 +810,7 @@ the commit button, where the operator can reach the action before reading what i
     correctly, so the check would fire on correct code.
 60. **One concept keeps one icon across navigation and secondary surfaces.** Reuse the
     owning menu item's glyph anywhere the same concept appears as compact metadata:
-    LLM agents and MCP origin use `hero-sparkles`; `hero-bolt` remains the Runs and
+    AI agents and MCP origin use `product.agent`; `product.run` remains the Runs and
     action/execution glyph. A tooltip explains the compact icon (§7.15), but never gives
     a second glyph a duplicate meaning. Sweep: source badges, counters, empty states, and
     inline metadata whose noun already has a navigation icon.

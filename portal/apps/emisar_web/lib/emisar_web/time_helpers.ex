@@ -1,17 +1,17 @@
 defmodule EmisarWeb.TimeHelpers do
   @moduledoc """
-  Shared view formatters — timestamps, durations, JSON, audit labels,
-  and changeset errors. One place so every page renders the same way.
+  Shared view formatters — timestamps, durations, JSON and audit labels.
+  One place so every page renders the same way.
   Formatting only: it takes scalars and plain tuples, never a domain struct
   or a loaded/unloaded association (attribution facts come from
   `Emisar.Runs.run_who_via/1` and `Emisar.Runbooks.execution_who_via/1`).
 
-      <span>{relative_time(@run.inserted_at)}</span>     # "3m ago"
-      <span>{absolute_time(@run.inserted_at)}</span>     # "May 21, 14:03 UTC"
+      <.local_time value={@run.inserted_at} mode={:relative} />   # "3m ago"
+      <.local_time value={@run.inserted_at} />                    # "May 21, 14:03 UTC"
 
-  All formatters tolerate `nil` and `%NaiveDateTime{}` in addition to
-  `%DateTime{}`. `nil` renders as the configurable `placeholder`
-  (defaults to `"—"`).
+  `local_time/1` is the template entry point: it tolerates `nil` (rendered
+  as the configurable `placeholder`, `"—"` by default) and treats a
+  `%NaiveDateTime{}` as UTC. The string formatters below take a `%DateTime{}`.
   """
   use Phoenix.Component
   alias EmisarWeb.CoreComponents
@@ -21,14 +21,10 @@ defmodule EmisarWeb.TimeHelpers do
 
       just now  /  3m ago  /  4h ago  /  2d ago  /  May 18
 
-  Falls back to `placeholder` for nil. `:now` is the instant the offset is
-  measured from, the current time by default.
+  `:now` is the instant the offset is measured from, the current time by
+  default.
   """
-  def relative_time(value, opts \\ [])
-
-  def relative_time(nil, opts), do: Keyword.get(opts, :placeholder, "—")
-
-  def relative_time(%DateTime{} = datetime, opts) do
+  def relative_time(%DateTime{} = datetime, opts \\ []) do
     # One `now` for both the diff and the year comparison — reading the clock
     # twice can straddle midnight on New Year's Eve and print the wrong form.
     now = Keyword.get_lazy(opts, :now, &DateTime.utc_now/0)
@@ -40,9 +36,6 @@ defmodule EmisarWeb.TimeHelpers do
       true -> future_label(-diff, datetime, now)
     end
   end
-
-  def relative_time(%NaiveDateTime{} = ndt, opts),
-    do: ndt |> DateTime.from_naive!("Etc/UTC") |> relative_time(opts)
 
   # Beyond a week it's an absolute date, and the year is what makes it readable:
   # a bare "Jul 2" from a previous year reads as this one. The test is the
@@ -76,15 +69,8 @@ defmodule EmisarWeb.TimeHelpers do
   @doc """
   Absolute UTC timestamp, "May 21, 14:03 UTC" style.
   """
-  def absolute_time(value, opts \\ [])
-
-  def absolute_time(nil, opts), do: Keyword.get(opts, :placeholder, "—")
-
-  def absolute_time(%DateTime{} = datetime, _opts),
+  def absolute_time(%DateTime{} = datetime),
     do: Calendar.strftime(datetime, "%b %-d, %H:%M UTC")
-
-  def absolute_time(%NaiveDateTime{} = ndt, opts),
-    do: ndt |> DateTime.from_naive!("Etc/UTC") |> absolute_time(opts)
 
   @doc """
   Second-precision timestamp for forensic surfaces (the audit trail, decision
@@ -93,9 +79,6 @@ defmodule EmisarWeb.TimeHelpers do
   """
   def forensic_time(%DateTime{} = datetime),
     do: Calendar.strftime(datetime, "%Y-%m-%d %H:%M:%S UTC")
-
-  def forensic_time(%NaiveDateTime{} = ndt),
-    do: ndt |> DateTime.from_naive!("Etc/UTC") |> forensic_time()
 
   @doc """
   Formats a duration given in milliseconds: `"312ms"`, `"1.3s"`, `"4m 12s"`.
@@ -143,7 +126,7 @@ defmodule EmisarWeb.TimeHelpers do
     |> String.replace(~r/[._]/, " ")
     |> String.split(" ", trim: true)
     |> case do
-      [first | rest] -> String.capitalize(first) <> " " <> Enum.join(rest, " ")
+      [first | rest] -> Enum.join([String.capitalize(first) | rest], " ")
       [] -> t
     end
   end
@@ -159,8 +142,11 @@ defmodule EmisarWeb.TimeHelpers do
   `mode`:
     - `:absolute` (default) — "May 30, 18:59 UTC" → "May 30, 14:59"
     - `:relative` — "3h ago" / "Jul 14"
+    - `:forensic` — "2026-05-30 18:59:00 UTC" → "2026-05-30 14:59:00", to the
+      second in the viewer's local time
 
-  Tolerates `nil` by rendering `placeholder` (default `"—"`).
+  Tolerates `nil` by rendering `placeholder` (default `"—"`) and treats a
+  `%NaiveDateTime{}` as UTC.
   """
   attr :value, :any, required: true
   attr :mode, :atom, default: :absolute, values: [:absolute, :relative, :forensic]

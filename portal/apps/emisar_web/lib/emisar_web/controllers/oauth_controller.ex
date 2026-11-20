@@ -29,8 +29,6 @@ defmodule EmisarWeb.OAuthController do
   alias EmisarWeb.UserAuth
 
   plug :put_layout, html: {EmisarWeb.Layouts, :app}
-  # Auth surface — keep it out of search indexes.
-  plug :put_noindex when action in [:authorize, :authorize_submit]
 
   # Unauthenticated, abuse-prone: /register INSERTs a client row per call and
   # /token is a credential-exchange brute-force surface. Cap per IP.
@@ -52,8 +50,6 @@ defmodule EmisarWeb.OAuthController do
          on_reject: {EmisarWeb.ErrorHTML, :rate_limited}
        ]
        when action in [:authorize, :authorize_submit]
-
-  defp put_noindex(conn, _opts), do: assign(conn, :noindex, true)
 
   # -- Dynamic Client Registration (RFC 7591) -------------------------
 

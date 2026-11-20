@@ -4280,6 +4280,49 @@ defmodule Emisar.RunsTest do
                |> Repo.all()
     end
 
+    test "moves past queued runs the runner refuses and dispatches the next one", %{
+      account: account
+    } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
+      Emisar.Runners.subscribe_runner_transport(runner)
+      Fixtures.Catalog.create_action(runner: runner)
+
+      Fixtures.Catalog.create_action(
+        runner: runner,
+        action_id: "linux.load",
+        admission_allowed: false
+      )
+
+      Fixtures.Catalog.create_action(
+        runner: runner,
+        action_id: "linux.disk",
+        primary_executable_available: false,
+        missing_executable: "df"
+      )
+
+      snapshot = %{
+        pack_ref: Fixtures.Catalog.default_pack_ref(),
+        expected_pack_hash: Fixtures.Catalog.default_pack_hash()
+      }
+
+      refused =
+        for action_id <- ["linux.load", "linux.disk"] do
+          attrs = base_attrs(account.id, runner.id, Map.put(snapshot, :action_id, action_id))
+          {:ok, run} = Runs.create_run(attrs)
+          run
+        end
+
+      {:ok, next} = Runs.create_run(base_attrs(account.id, runner.id, snapshot))
+
+      assert Runs.dispatch_queued_for_runner(runner.id) == :ok
+
+      request_id = next.request_id
+      assert_receive {:cloud_to_runner, _generation, %{"request_id" => ^request_id}}
+      refute_receive {:cloud_to_runner, _generation, _}, 100
+      assert Runs.peek_run_by_id(next.id).status == :sent
+      assert Enum.map(refused, &Runs.peek_run_by_id(&1.id).status) == [:refused, :refused]
+    end
+
     test "leaves :running, terminal, and other-runner runs untouched (no double-exec)", %{
       account: account,
       runner: runner

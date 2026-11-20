@@ -1,9 +1,9 @@
 defmodule EmisarWeb.ProfileLiveTest do
   @moduledoc """
-  Profile (plan §3 "Profile"): three sections, all about this Member in this
-  workspace — its name (the email is shown, not editable: to change an address,
-  an administrator invites the new one), its multi-factor authentication, and
-  its own active sessions. Nothing here reaches another workspace or another
+  Profile: three sections, all about this Member in this
+  workspace — its name and email (an eligible member changes its own address
+  after proving it is the current member and owns the new inbox), its
+  multi-factor authentication, and its own active sessions. Nothing here reaches another workspace or another
   Member.
   """
   use EmisarWeb.ConnCase, async: true

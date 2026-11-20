@@ -14,7 +14,7 @@
 
 @theme {
   /* emisar brand accent — the emerald gate. `brand-400` is the exact logo
-     green (#36E6A5, see images/emisar-icon.svg); `brand-500` is the button
+     green (#36E6A5, see images/brand/emisar-icon.svg); `brand-500` is the button
      resting fill (dark text reads on it) that hovers up to the logo green.
      The marketing site uses this as its accent; semantic pass/pending/deny
      chips stay on emerald/amber/rose via `<.chip>`. */
@@ -104,7 +104,7 @@
 
    The weights are ON-SCREEN targets, not grid units. The ramp is FINE at the
    small end — 1px native @16 (see the unit-16 rule below), ≈1.3px @20,
-   1.55px @24+ — because refinement at small sizes comes from crisp hairlines
+   1.5px @24, scaling with the box above that — because refinement at small sizes comes from crisp hairlines
    at full contrast, never from bulk: the bold experiment read clunky beside
    the type, exactly what the founder's old-vs-new comparison showed.
    --------------------------------------------------------------------------- */
@@ -792,7 +792,7 @@ pre::-webkit-scrollbar-track,
 [data-hiw] *,[data-hiw] *::before,[data-hiw] *::after{box-sizing:border-box}
 [data-hiw] p,[data-hiw] ol,[data-hiw] ul{margin:0;padding:0;list-style:none}
 [data-hiw] .hiw-mono{font-family:var(--font-mono);font-size:12px;letter-spacing:0}
-[data-hiw] .hiw-init,[data-hiw] .hiw-init *,[data-hiw] .hiw-init *::before,[data-hiw] .hiw-init *::after{transition:none!important}
+[data-hiw].hiw-init,[data-hiw].hiw-init *,[data-hiw].hiw-init *::before,[data-hiw].hiw-init *::after{transition:none!important}
 
 /* Panel: the page's demo panel recipe */
 [data-hiw] .hiw-panel{position:relative;overflow:hidden;border:1px solid var(--color-zinc-800);border-radius:12px;background:#0c0c0e;box-shadow:0 0 0 1px rgba(255,255,255,.05),0 25px 50px -12px rgba(3,47,34,.4)}
@@ -822,7 +822,6 @@ pre::-webkit-scrollbar-track,
 [data-hiw] .hiw-w,[data-hiw] .hiw-w-lit,[data-hiw] .hiw-w-head{fill:none;stroke-linecap:round;stroke-linejoin:round}
 [data-hiw] .hiw-w{stroke:var(--wire);stroke-width:1;opacity:0;transition:opacity .5s var(--e)}
 [data-hiw] .hiw-w.is-on{opacity:1}
-[data-hiw] .hiw-w.t-old{stroke:rgba(255,255,255,.22);stroke-dasharray:3 5}
 [data-hiw] .hiw-w-lit{stroke-width:1.5;opacity:0;transition:opacity .6s var(--e)}
 [data-hiw] .hiw-w-lit.t-brand{stroke:rgba(54,230,165,.7)}
 [data-hiw] .hiw-w-lit.t-plain{stroke:rgba(244,244,245,.42)}
@@ -869,10 +868,10 @@ pre::-webkit-scrollbar-track,
 [data-hiw] .hiw-swap>span.pre{opacity:0;transform:translateY(6px);transition:none}
 
 /* Quiet columns: structure dims, words stay readable */
-[data-hiw] .hiw-q .hiw-card,[data-hiw] .hiw-q .hiw-card.is-live,[data-hiw] .hiw-card.hiw-q{box-shadow:0 0 0 1px rgba(255,255,255,.05),0 18px 36px -22px rgba(0,0,0,.9)}
-[data-hiw] .hiw-q .emisar-icon,[data-hiw] .hiw-q .hiw-logo,[data-hiw] .hiw-card.hiw-q .emisar-icon{opacity:.4}
-[data-hiw] .hiw-q .hiw-tile,[data-hiw] .hiw-card.hiw-q .hiw-tile{background:transparent;box-shadow:none}
-[data-hiw] .hiw-q .hiw-name,[data-hiw] .hiw-q .hiw-ag,[data-hiw] .hiw-card.hiw-q .hiw-name{color:var(--color-zinc-300)}
+[data-hiw] .hiw-q .hiw-card,[data-hiw] .hiw-q .hiw-card.is-live{box-shadow:0 0 0 1px rgba(255,255,255,.05),0 18px 36px -22px rgba(0,0,0,.9)}
+[data-hiw] .hiw-q .emisar-icon,[data-hiw] .hiw-q .hiw-logo{opacity:.4}
+[data-hiw] .hiw-q .hiw-tile{background:transparent;box-shadow:none}
+[data-hiw] .hiw-q .hiw-name,[data-hiw] .hiw-q .hiw-ag{color:var(--color-zinc-300)}
 [data-hiw] .hiw-q .hiw-port.is-on{opacity:.45}
 [data-hiw] .hiw-q .hiw-region{box-shadow:inset 0 0 0 1px rgba(255,255,255,.04);background:none}
 [data-hiw] .hiw-q .hiw-pack{box-shadow:inset 0 0 0 1px rgba(255,255,255,.04)}

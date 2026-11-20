@@ -403,6 +403,37 @@ defmodule EmisarWeb.DashboardLiveTest do
       refute html =~ "Invite team members"
     end
 
+    test "the Team pillar follows a member removed while the dashboard is open", %{conn: conn} do
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
+      runner = Fixtures.Runners.create_runner(account_id: account.id, name: "runner-1")
+
+      {:ok, _raw, _key} =
+        Emisar.ApiKeys.create_key(
+          %{name: "Bot", scopes: ["actions:read"], runner_filter: []},
+          subject
+        )
+
+      first_run(account, runner)
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}")
+      assert html =~ "2<span class=\"text-2xl text-zinc-400\"> members</span>"
+
+      {:ok, _removed} = Emisar.Accounts.delete_membership(operator, subject)
+      # The team broadcast only schedules the refresh; fire the debounce message.
+      send(lv.pid, :refresh_dashboard)
+
+      html = render(lv)
+      assert html =~ "1<span class=\"text-2xl text-zinc-400\"> member</span>"
+
+      assert has_element?(
+               lv,
+               "a[href='#{~p"/app/#{account}/settings/team/invite"}']",
+               "Invite team members"
+             )
+    end
+
     test "the Team pillar flips to managing providers once SSO is live", %{conn: conn} do
       {conn, owner, account} = register_and_log_in(conn)
       subject = Fixtures.Subjects.subject_for(owner)
@@ -1053,11 +1084,11 @@ defmodule EmisarWeb.DashboardLiveTest do
     on_exit(fn -> :telemetry.detach(handler) end)
 
     send(lv.pid, event)
-    _ = render(lv)
-    _ = drain_repo_row_count(lv.pid)
+    render(lv)
+    drain_repo_row_count(lv.pid)
 
     send(lv.pid, :refresh_dashboard)
-    _ = render(lv)
+    render(lv)
     rows = drain_repo_row_count(lv.pid)
     :ok = :telemetry.detach(handler)
     rows
@@ -1091,11 +1122,11 @@ defmodule EmisarWeb.DashboardLiveTest do
     on_exit(fn -> :telemetry.detach(handler) end)
 
     send(lv.pid, event)
-    _ = render(lv)
-    _ = drain_repo_query_count(lv.pid)
+    render(lv)
+    drain_repo_query_count(lv.pid)
 
     send(lv.pid, :refresh_dashboard)
-    _ = render(lv)
+    render(lv)
     query_count = drain_repo_query_count(lv.pid)
     :ok = :telemetry.detach(handler)
     query_count

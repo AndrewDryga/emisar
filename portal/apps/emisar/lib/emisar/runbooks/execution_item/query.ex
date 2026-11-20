@@ -42,9 +42,6 @@ defmodule Emisar.Runbooks.ExecutionItem.Query do
   def select_count(queryable),
     do: select(queryable, [runbook_execution_items: i], count(i.id))
 
-  def pending(queryable \\ all()),
-    do: by_status(queryable, :pending)
-
   def waiting_recovery_stats(queryable \\ all(), now) do
     queryable
     |> by_status(:waiting)

@@ -24,8 +24,4 @@ defmodule Emisar.SSO.GroupRoleMapping.Query do
     do: where(queryable, [mappings: m], m.directory_group_id in ^directory_group_ids)
 
   def lock_for_update(queryable), do: lock(queryable, "FOR NO KEY UPDATE")
-
-  @impl Emisar.Repo.Query
-  def cursor_fields,
-    do: [{:mappings, :asc, :directory_group_id}, {:mappings, :asc, :id}]
 end

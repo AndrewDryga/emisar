@@ -1,8 +1,5 @@
 defmodule EmisarWeb.MCPRpcVersionTest do
-  # async: false — these tests flip the global Emisar.Compat MCP enforcement
-  # flag (VM-wide). Kept out of the main mcp_rpc_controller_test so that suite
-  # stays async.
-  use EmisarWeb.ConnCase, async: false
+  use EmisarWeb.ConnCase, async: true
   alias Emisar.{ApiKeys, Fixtures}
 
   # test.exs policy: < 0.0.1 unsupported, [0.0.1, 0.1.0) outdated, >= 0.1.0 supported.

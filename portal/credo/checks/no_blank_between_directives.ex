@@ -26,8 +26,6 @@ defmodule Emisar.Checks.NoBlankBetweenDirectives do
     ]
 
   alias Credo.Code
-  alias Credo.IssueMeta
-  alias Credo.SourceFile
 
   @directive ~r/^\s*(?:use|import|alias|require)\s/
 

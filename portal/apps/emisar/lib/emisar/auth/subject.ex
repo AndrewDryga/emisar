@@ -7,12 +7,11 @@ defmodule Emisar.Auth.Subject do
 
   Fields:
 
-    * `account` — the active `%Accounts.Account{}` (nil only for the
-      rare actor-only case — a self-service edit that reads just `actor`)
+    * `account` — the active `%Accounts.Account{}`
     * `actor` — the `%Accounts.Membership{}` a person acts as, `%ApiKey{}`, or
       `%Runner{}`
-    * `role` — atom role identifier (`:owner | :admin | :operator |
-      :viewer | :api_client | :runner`)
+    * `role` — atom role identifier (`:owner | :admin | :billing_manager |
+      :operator | :viewer | :api_client | :runner`)
     * `permissions` — `MapSet.t()` of `{module, action}` tuples; the
       Authorizers build entries via `build/2`
     * `context` — the request's `%RequestContext{}` (IP address, user agent,
@@ -39,7 +38,8 @@ defmodule Emisar.Auth.Subject do
   alias Emisar.{Accounts, RequestContext}
   alias Emisar.Auth.UserToken
 
-  @type role :: :owner | :admin | :operator | :viewer | :api_client | :runner
+  @type role ::
+          :owner | :admin | :billing_manager | :operator | :viewer | :api_client | :runner
   @type permission :: {module(), atom()}
   @type auth_method :: :magic_link | :sso
   @type actor ::
@@ -206,7 +206,7 @@ defmodule Emisar.Auth.Subject do
 
   defp authorizable_membership_role(%Accounts.Membership{role: role}), do: role
 
-  # -- Helpers used by every context's `ensure_X_in_subject_account` -
+  # -- Actor and account helpers -----------------------------------
 
   @doc """
   String label for the subject's audit actor kind. A person acts in a workspace

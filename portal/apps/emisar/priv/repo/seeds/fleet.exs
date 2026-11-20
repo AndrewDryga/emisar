@@ -2,7 +2,7 @@ defmodule Emisar.Seeds.Fleet do
   @moduledoc """
   The demo fleet: four production-shaped runners, the catalog each one
   advertises, one teammate per shape a runner grant can take, and the bootstrap
-  enrollment key (seeded last by the driver, so its curl line prints last).
+  enrollment key.
   """
 
   alias Emisar.Accounts
@@ -378,7 +378,7 @@ defmodule Emisar.Seeds.Fleet do
       {:ok, [], _} ->
         case System.get_env("EMISAR_DEV_FIXED_ENROLLMENT_KEY") do
           fixed when is_binary(fixed) and byte_size(fixed) >= 29 ->
-            {:ok, _key} =
+            changeset =
               Runners.EnrollmentKey.Changeset.create_with_secret(
                 account.id,
                 owner_subject.membership_id,
@@ -389,7 +389,17 @@ defmodule Emisar.Seeds.Fleet do
                   reusable: true
                 }
               )
-              |> Repo.insert()
+
+            # The same receipt Runners.create_enrollment_key writes, in the same
+            # transaction as the key it names.
+            {:ok, _changes} =
+              Ecto.Multi.new()
+              |> Ecto.Multi.insert(:key, changeset)
+              |> Ecto.Multi.insert(
+                :audit,
+                &Audit.Events.enrollment_key_created(owner_subject, &1.key)
+              )
+              |> Repo.commit_multi()
 
             Helpers.say("✓ Seeded dev fixed enrollment key", IO.ANSI.green())
 
@@ -405,20 +415,23 @@ defmodule Emisar.Seeds.Fleet do
               )
 
             IO.puts("")
-            Helpers.say("Bootstrap a runner:", IO.ANSI.green())
 
-            IO.puts(
-              "  curl -fsSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{raw} bash"
-            )
+            # The product's builder: it names this portal's own origin, so a key
+            # minted in a local database never bootstraps against the hosted one.
+            case Runners.enrollment_install_command(raw, Emisar.PublicUrl.base()) do
+              {:ok, command} ->
+                Helpers.say("Bootstrap a runner:", IO.ANSI.green())
+                IO.puts(" " <> command)
+
+              {:error, _reason} ->
+                Helpers.say(
+                  "Bootstrap a runner from /runners/install in the console.",
+                  IO.ANSI.green()
+                )
+            end
 
             IO.puts("")
         end
-
-        Audit.log(account.id, "enrollment_key.created",
-          actor_kind: "system",
-          target_kind: "enrollment_key",
-          payload: %{seeded: true}
-        )
 
       _ ->
         :ok

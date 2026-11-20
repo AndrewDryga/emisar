@@ -167,15 +167,16 @@ defmodule Emisar.Audit.Jobs.RetentionTest do
   end
 
   # An unknown / renamed plan name must not crash the nightly prune — and must
-  # not SHORTEN it either. This number drives a Repo.delete_all, so collapsing an
-  # unrecognized slug to the 7-day free floor meant one renamed Paddle price
-  # pruned a paying account's history on the next tick, irreversibly. It fails
-  # open to the longest window we define instead: keeping data too long is
-  # correctable, deleting it is not.
+  # not SHORTEN retention either. `Audit.log` stamps each row's `retain_until`
+  # from `Billing.account_audit_retention_days/1`, which gives an unknown plan
+  # the longest window we define (collapsing it to the 7-day free floor would
+  # let one renamed Paddle price prune a paying account's history). The sweep
+  # then honors that stamped horizon: keeping data too long is correctable,
+  # deleting it is not.
   test "retains for the longest window when the plan is unresolvable" do
     account = Fixtures.Accounts.create_account()
-    # A subscription with a plan name no @plans entry matches; Billing.plan/1
-    # returns nil for it and the worker fails open to the longest window.
+    # A subscription with a plan name no @plans entry matches, so the row is
+    # stamped with the longest retention horizon when Audit.log builds it.
     Fixtures.Accounts.create_subscription(account, "legacy-unlisted-plan")
 
     ten_days_ago = DateTime.add(DateTime.utc_now(), -10 * 86_400, :second)

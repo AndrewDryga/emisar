@@ -1060,7 +1060,6 @@ defmodule EmisarWeb.PoliciesLive do
               can_manage={@can_manage_account?}
               save_label="Save default policy"
               dirty={editor_dirty?(@account)}
-              top_margin="mt-0"
             />
           </div>
           <aside class="mt-8 lg:col-span-1 lg:mt-0">
@@ -1417,7 +1416,6 @@ defmodule EmisarWeb.PoliciesLive do
           can_manage={@can_manage}
           save_label="Save ruleset"
           dirty={editor_dirty?(@ruleset)}
-          top_margin="mt-0"
         >
           <:actions :if={is_nil(@ruleset.policy) or @can_remove}>
             <.remove_ruleset_button ruleset={@ruleset} />
@@ -1673,11 +1671,6 @@ defmodule EmisarWeb.PoliciesLive do
 
   slot :actions, doc: "buttons beside Save in the bottom row — a ruleset's Remove"
 
-  attr :top_margin, :string,
-    default: "mt-6",
-    doc:
-      "top gap above the box. `mt-6` separates a ruleset box from its header; the default policy passes `mt-0` — its section header already spaces it (and it lines up with the rail)"
-
   defp policy_fields(assigns) do
     assigns =
       assign(assigns,
@@ -1698,7 +1691,7 @@ defmodule EmisarWeb.PoliciesLive do
       phx-change="form_change"
       phx-submit="save"
       class={[
-        @top_margin,
+        "mt-0",
         "@container space-y-8 rounded-xl border border-dashed border-zinc-800 p-5 sm:p-6"
       ]}
     >
@@ -1712,8 +1705,8 @@ defmodule EmisarWeb.PoliciesLive do
       <.callout :for={msg <- @rules_errors} tone={:rose}>{msg}</.callout>
 
       <%!-- No "Risk-tier defaults" heading — it just echoes the panel title "Default
-           policy". The tier grid is the card's primary content; the panel subtitle
-           labels it ("by risk tier") and the tier cards are self-evident. --%>
+           policy". The tier grid is the card's primary content, and the tier cards
+           are self-evident. --%>
       <div>
         <div class="grid grid-cols-1 gap-x-4 gap-y-4 @md:grid-cols-2 @2xl:grid-cols-4">
           <.tier_field

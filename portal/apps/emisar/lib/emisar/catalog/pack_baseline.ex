@@ -3,7 +3,8 @@ defmodule Emisar.Catalog.PackBaseline do
   The canonical pack hashes we publish right now, read from the live
   published registry.
 
-  Used by `Catalog.observe_state/2` to decide what to do on first sight
+  Used by `Catalog.observe_state_from_connection/4` (and `Catalog.observe_state/2`
+  for seeds and tests) to decide what to do on first sight
   of a `(pack_id, version)`:
 
     * **Hash matches the published baseline** → auto-pin as trusted.

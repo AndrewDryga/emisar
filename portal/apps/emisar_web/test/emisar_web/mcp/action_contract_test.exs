@@ -117,6 +117,60 @@ defmodule EmisarWeb.MCP.ActionContractTest do
     assert ActionContract.validate(%{"delay" => "1h", "file" => "/var/log/app"}, action) == :ok
   end
 
+  test "a string argument with path rules must be absolute, like the runner requires" do
+    action =
+      action([
+        arg("target", "string", validation: %{"allowed_prefixes" => ["/etc"]}),
+        arg("note", "string")
+      ])
+
+    assert_issue(%{"target" => "etc/hosts"}, action, "target", "path")
+
+    assert ActionContract.validate(%{"target" => "/etc/hosts", "note" => "relative"}, action) ==
+             :ok
+  end
+
+  test "arrays without max_items stop at the runner's 256-item backstop" do
+    for type <- ["string_array", "integer_array"] do
+      item = if type == "string_array", do: "a", else: 1
+
+      assert ActionContract.validate(
+               %{"v" => List.duplicate(item, 256)},
+               action([arg("v", type)])
+             ) ==
+               :ok
+
+      assert_issue(
+        %{"v" => List.duplicate(item, 257)},
+        action([arg("v", type)]),
+        "v",
+        "max_items"
+      )
+
+      above = action([arg("v", type, validation: %{"max_items" => 300})])
+      assert ActionContract.validate(%{"v" => List.duplicate(item, 300)}, above) == :ok
+
+      below = action([arg("v", type, validation: %{"max_items" => 2})])
+      assert_issue(%{"v" => List.duplicate(item, 3)}, below, "v", "max_items")
+    end
+  end
+
+  test "number tokens longer than the runner's 64-byte limit are refused" do
+    action = action([arg("ratio", "number", validation: %{"min" => 0, "max" => 1})])
+    fits = "0." <> String.duplicate("0", 61) <> "1"
+    too_long = "0." <> String.duplicate("0", 62) <> "1"
+
+    assert byte_size(fits) == 64
+    assert validate_json(~s({"ratio":#{fits}}), action) == :ok
+    assert_issue_json(~s({"ratio":#{too_long}}), action, "ratio", "type")
+
+    assert {:ok, %{"ratio" => %JSONNumber{raw: ^fits}}} =
+             ActionContract.cast_form(%{"ratio" => fits}, action)
+
+    assert {:error, [%{arg: "ratio", code: "type"}]} =
+             ActionContract.cast_form(%{"ratio" => too_long}, action)
+  end
+
   test "rejects control and formatting characters in string, path, and array arguments" do
     action =
       action([

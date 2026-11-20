@@ -143,7 +143,7 @@ defmodule EmisarWeb.RunbookDraft do
       "id" => "",
       "title" => "Run actions",
       "mode" => "sequential",
-      "max_parallel" => "5",
+      "max_parallel" => to_string(Runbooks.definition_limit!(:default_stage_parallelism)),
       "steps" => [step()]
     }
   end

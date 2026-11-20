@@ -108,6 +108,10 @@ defmodule EmisarWeb.RunbookDraftTest do
       |> Runbooks.Authoring.build_v1()
 
     assert rebuilt == definition
+    # `==` equates 30 and 30.0; the digest does not. Integer bounds and float
+    # values must survive the editor exactly, or an untouched field changes the
+    # publish diff.
+    assert Runbooks.definition_digest(rebuilt) == Runbooks.definition_digest(definition)
   end
 
   test "a loaded argument binding is descriptor-resynchronized without double-quoting a literal" do
@@ -194,6 +198,13 @@ defmodule EmisarWeb.RunbookDraftTest do
     definition = Runbooks.Authoring.build_v1(command)
 
     assert get_in(definition, ["inputs", Access.at(0), "default"]) == ~s({"a":[1]})
+  end
+
+  test "a new stage starts at the definition's default stage parallelism" do
+    default = to_string(Runbooks.definition_limit!(:default_stage_parallelism))
+
+    assert RunbookDraft.stage()["max_parallel"] == default
+    assert [%{"max_parallel" => ^default}] = RunbookDraft.new()["stages"]
   end
 
   test "a malformed browser row falls back to its bounded default shape" do

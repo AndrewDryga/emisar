@@ -19,21 +19,22 @@ rots the moment the body changes; a doc that says nothing is worse than none.
 
 ```elixir
 @doc """
-Archives a runbook. Requires `manage` on runbooks; scoped to the subject's account.
+Soft-deletes a runbook. Its releases are retained. Requires `manage_runbooks`
+and that the subject owns the runbook's account.
 
-Returns `{:ok, runbook}` or `{:error, :not_found | :unauthorized}`.
+Returns `{:ok, runbook}` or `{:error, :unauthorized | :not_found}`.
 """
-def archive_runbook(id, %Subject{} = subject)
+def delete_runbook(%Runbook{} = runbook, %Subject{} = subject)
 ```
 
 **❌ Bad**
 
 ```elixir
 @doc """
-Takes an id and a subject, fetches the runbook by id, sets its deleted_at to now,
-updates the row, and returns it.
+Takes a runbook and a subject, sets its deleted_at to now, updates the row,
+and returns it.
 """
-def archive_runbook(id, %Subject{} = subject)
+def delete_runbook(%Runbook{} = runbook, %Subject{} = subject)
 ```
 
 (Narrates the body, omits the permission and the error shape, and goes stale the

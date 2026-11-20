@@ -59,7 +59,7 @@
         <div class="min-w-0 overflow-hidden rounded-xl border border-brand-500/25 bg-black/40">
           <div class="flex items-center gap-2 border-b border-brand-500/20 bg-brand-500/5 px-4 py-2.5">
             <span class="h-2 w-2 rounded-full bg-brand-500"></span>
-            <span class="text-xs font-semibold text-brand-200">postgres.yml · emisar pack action</span>
+            <span class="text-xs font-semibold text-brand-200">actions/terminate_backend.yaml · emisar pack action</span>
           </div>
           <div class="space-y-1.5 px-4 py-4 font-mono text-[11.5px] leading-relaxed text-zinc-300">
             <p>id: postgres.terminate_backend</p>
@@ -71,12 +71,15 @@
             <p>&nbsp;&nbsp;- name: pid</p>
             <p>&nbsp;&nbsp;&nbsp;&nbsp;type: integer</p>
             <p>&nbsp;&nbsp;&nbsp;&nbsp;required: true</p>
+            <p>&nbsp;&nbsp;&nbsp;&nbsp;validation:</p>
+            <p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;min: 1</p>
+            <p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;max: 4194304</p>
             <p>execution:</p>
             <p>&nbsp;&nbsp;command:</p>
             <p>&nbsp;&nbsp;&nbsp;&nbsp;binary: psql</p>
-            <p>&nbsp;&nbsp;&nbsp;&nbsp;argv: ["-tAc", "SELECT</p>
+            <p>&nbsp;&nbsp;&nbsp;&nbsp;argv: ["-XAt", "-c", "SELECT</p>
             <p>
-              &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pg_terminate_backend(&#123;&#123; args.pid &#125;&#125;)"]
+              &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pg_terminate_backend(&#123;&#123; args.pid &#125;&#125;);"]
             </p>
           </div>
         </div>

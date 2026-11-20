@@ -2,8 +2,8 @@ defmodule EmisarWeb.HealthController do
   @moduledoc """
   Process liveness and traffic readiness probes.
 
-  Application startup already waits for stable PostgreSQL access before the web
-  endpoint can serve traffic. Liveness therefore remains independent of later
+  Application startup already waits for one successful PostgreSQL probe before
+  the web endpoint can serve traffic. Liveness therefore remains independent of later
   database outages so the instance manager does not restart the whole fleet.
 
   Readiness always checks PostgreSQL. The load balancer therefore stops sending

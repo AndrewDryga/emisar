@@ -82,10 +82,15 @@ defmodule Emisar.Catalog.Jobs.PackVersionRetentionTest do
     account = Fixtures.Accounts.create_account()
     stale = stale_pack_version(account)
 
-    assert PackVersionRetention.execute([]) == :ok
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        assert PackVersionRetention.execute([]) == :ok
+      end)
 
     assert Repo.reload(stale)
     assert retention_markers(account.id) == []
+    # Cleanup being off is the normal answer, not a sweep failure.
+    refute log =~ "pack_version_retention.failed"
   end
 
   test "leaves no housekeeping marker for an account with nothing to remove" do

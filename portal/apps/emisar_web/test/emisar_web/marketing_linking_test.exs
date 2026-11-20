@@ -15,8 +15,8 @@ defmodule EmisarWeb.MarketingLinkingTest do
   alias Emisar.Catalog.PublishedRegistry
   alias EmisarWeb.SitemapController
 
-  # The pages we crawl for outbound links — the static hubs (nav, footer, the
-  # /packs grid, the /guides + /docs indexes). Their union of hrefs is the link
+  # The pages we crawl for outbound links — the marketing, docs, and guide
+  # paths from `SitemapController.paths/0`. Their union of hrefs is the link
   # graph; the leaf pack-detail pages don't need crawling (they're link targets,
   # not hubs).
   defp hub_paths, do: SitemapController.paths()
@@ -42,7 +42,7 @@ defmodule EmisarWeb.MarketingLinkingTest do
     linked = links_across_pages(conn, hub_paths())
 
     # Every public path except the home root must appear as a link somewhere —
-    # including every doc, both guide articles, and every pack-detail page.
+    # including every doc, every guide, and every pack-detail page.
     orphans = Enum.reject(all_public_paths() -- ["/"], &MapSet.member?(linked, &1))
 
     assert orphans == [],
@@ -61,14 +61,13 @@ defmodule EmisarWeb.MarketingLinkingTest do
       /guides/prompt-injection-for-ops-teams
     )
 
-    sources = Enum.reject(hub_paths(), &String.starts_with?(&1, "/guides"))
+    links_by_source =
+      hub_paths()
+      |> Enum.reject(&String.starts_with?(&1, "/guides"))
+      |> Enum.map(&{&1, conn |> get(&1) |> html_response(200) |> links_from_html()})
 
     for guide <- guides do
-      linkers =
-        Enum.filter(sources, fn from ->
-          html = conn |> get(from) |> html_response(200)
-          guide in links_from_html(html)
-        end)
+      linkers = for {from, links} <- links_by_source, guide in links, do: from
 
       assert linkers != [],
              "#{guide} is only reachable from /guides — give it an inbound link from a product page"

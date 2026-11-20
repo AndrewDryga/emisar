@@ -4,9 +4,9 @@ defmodule EmisarWeb.RunnerSocketDrain do
 
   Sits in the supervision tree below `EmisarWeb.Endpoint`, so on SIGTERM
   it terminates BEFORE the Endpoint tears every socket down at once.
-  Its `terminate/2` broadcasts a node-local `:drain` signal on the
+  Its `terminate/2` broadcasts a node-local `:runner_socket_drain` signal on the
   `runner_socket_drain` PubSub topic. Each `EmisarWeb.RunnerSocket`
-  process subscribes to that topic at init; on `:drain` it pushes a
+  process subscribes to that topic at init; on `:runner_socket_drain` it pushes a
   `shutdown` envelope to the runner (so the runner knows to resync state
   after reconnecting, not silently retry an outbound queue with the
   cloud's old state) and stops normally.

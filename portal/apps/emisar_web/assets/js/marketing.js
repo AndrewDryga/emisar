@@ -47,10 +47,7 @@ initConsoleCasts()
 initEmisarDemo()
 initHowItWorksMap()
 initTocScrollSpy()
-// The docs sidebar (nav[aria-label="Docs"]) exists only on /docs/* pages.
-if (document.querySelector('nav[aria-label="Docs"]')) {
-  initDocsNavScroll()
-}
+initDocsNavScroll()
 initDocsFilter()
 initDocsLightbox()
 initDropdowns()

@@ -25,7 +25,7 @@ defmodule Emisar.Runbooks.ExecutionItem.Changeset do
     |> validate_length(:args_sha256, is: 64)
     |> validate_number(:policy_version, greater_than_or_equal_to: 1)
     |> validate_number(:stage_position, greater_than_or_equal_to: 0, less_than: 16)
-    |> validate_number(:step_position, greater_than_or_equal_to: 0, less_than: 32)
+    |> validate_number(:step_position, greater_than_or_equal_to: 0)
     |> unique_constraint([:runbook_execution_id, :step_id, :runner_ref],
       name: :runbook_execution_items_logical_identity_index
     )

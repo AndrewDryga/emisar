@@ -50,7 +50,7 @@ defmodule Emisar.Auth.SubjectTest do
       # An owner-specific permission held by no other role.
       assert MapSet.member?(
                subject.permissions,
-               Emisar.Accounts.Authorizer.manage_security_settings_permission()
+               Emisar.Accounts.Authorizer.manage_owners_permission()
              )
     end
 
@@ -121,12 +121,6 @@ defmodule Emisar.Auth.SubjectTest do
       assert subject.actor == membership
       assert Subject.actor_kind(subject) == "membership"
       assert Subject.human_membership_id(subject) == membership.id
-    end
-  end
-
-  describe "Authorizer.permissions_for/1" do
-    test "returns an empty set for unknown roles" do
-      assert MapSet.size(Emisar.Auth.Permissions.for_role(:nope)) == 0
     end
   end
 
@@ -304,9 +298,6 @@ defmodule Emisar.Auth.SubjectTest do
       subject = Subject.for_api_key(%ApiKey{id: "key-2"}, %Account{id: "acct-1"})
       assert subject.membership_id == nil
     end
-  end
-
-  describe "for_runner/3" do
   end
 
   describe "actor_kind/1 + actor_id/1" do

@@ -21,7 +21,6 @@ defmodule Emisar.Checks.CrossContextDeepCall do
 
   @special_contexts %{
     "oauth" => "OAuth",
-    "api_keys" => "ApiKeys",
     "mcp_operations" => "MCPOperations",
     "sso" => "SSO"
   }

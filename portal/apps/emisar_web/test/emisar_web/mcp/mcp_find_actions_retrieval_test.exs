@@ -2,8 +2,8 @@ defmodule EmisarWeb.MCPFindActionsRetrievalTest do
   @moduledoc """
   Retrieval benchmark for `find_actions` at production catalog scale.
 
-  Seeds the founder fleet's real 37-pack set (~700 actions from the shipped
-  catalog) across three role-shaped runners, then asserts a golden set of
+  Seeds the founder fleet's real pack set (several hundred actions from the
+  shipped catalog) across three role-shaped runners, then asserts a golden set of
   operator-language queries each surface their action on PAGE ONE — the page a
   model acts on. Every ranking regression shows up here deterministically,
   without an LLM in the loop.

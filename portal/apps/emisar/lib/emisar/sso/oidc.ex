@@ -46,14 +46,14 @@ defmodule Emisar.SSO.OIDC do
               {:ok, verified()} | {:error, term()}
   @callback discover(provider :: struct()) :: {:ok, discovery()} | {:error, term()}
 
-  # Only the "Test connection" capstone calls discover/1; the real impl + that
+  # Only the "Check issuer" capstone calls discover/1; the real impl + that
   # one test stub implement it, so the other (login-flow) test stubs needn't.
   @optional_callbacks discover: 1
 
   # One fixed window is shared by authorization, callback, and unsaved discovery
   # work. A complete login spends two entries; a replayed callback or an
   # authenticated reset goes through both the canonical provider budget and its
-  # account's aggregate budget. Test-connection discovery spends that same
+  # account's aggregate budget. Check-issuer discovery spends that same
   # account budget, so rotating providers or entry points cannot fill the Guard
   # pool. Each budget is three times the SSO routes' per-address cap (20 a
   # minute), so no one client address can use up a workspace's sign-ins.

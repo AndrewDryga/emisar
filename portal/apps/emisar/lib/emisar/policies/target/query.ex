@@ -77,6 +77,7 @@ defmodule Emisar.Policies.Target.Query do
     )
   end
 
+  @impl Emisar.Repo.Query
   def cursor_fields,
     do: [
       {:policy_targets, :asc, :group_sort},

@@ -9,25 +9,16 @@ defmodule Emisar.Policies.Glob do
   """
 
   @doc """
-  Whether `string` matches the glob `pattern`. `*` is the only wildcard (any
-  run, including empty); all other characters are literal. Anchored and
-  case-INSENSITIVE — a deny override like `*.drop_*` must also catch
-  `cassandra.DROP_table` (the safe direction for a security matcher), and it
-  keeps policy matching consistent with the case-insensitive `ilike` the Runs
-  page already uses.
-  """
-  def match?(pattern, string) do
-    matcher = compile(pattern)
-    match_compiled?(matcher, string)
-  end
-
-  @doc """
-  Compiles a policy glob once for repeated matching.
+  Compiles a policy glob once for repeated matching with `match_compiled?/2`.
+  `*` is the only wildcard (any run, including empty); all other characters are
+  literal. Anchored and case-INSENSITIVE — a deny override like `*.drop_*` must
+  also catch `cassandra.DROP_table` (the safe direction for a security matcher),
+  and it keeps policy matching consistent with the case-insensitive `ilike` the
+  Runs page already uses.
 
   The policy editor's live outcome preview can test thousands of actions against
-  the same override list on every render. Compiling wildcard regexes once per
-  preview keeps the matcher semantics identical to `match?/2` without paying
-  regex compilation per action.
+  the same override list on every render, so wildcard regexes are compiled once
+  per preview rather than once per action.
   """
   def compile(pattern) do
     if String.contains?(pattern, "*") do

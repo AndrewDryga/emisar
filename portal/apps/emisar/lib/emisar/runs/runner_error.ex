@@ -53,11 +53,16 @@ defmodule Emisar.Runs.RunnerError do
 
   defp bounded(value, limit) when is_binary(value) do
     if String.valid?(value),
-      do: value |> Emisar.SafeText.strip() |> String.slice(0, limit),
+      do: value |> Emisar.SafeText.strip() |> take_codepoints(limit),
       else: nil
   end
 
   defp bounded(_value, _limit), do: nil
+
+  # Code points, not graphemes: a grapheme can carry any number of combining
+  # marks, so a grapheme cap would not bound the stored text.
+  defp take_codepoints(value, limit),
+    do: value |> String.codepoints() |> Enum.take(limit) |> IO.iodata_to_binary()
 
   # The transport validated a canonical run request id, so the correlation is
   # carried whole or not at all — never a truncated id that matches nothing.

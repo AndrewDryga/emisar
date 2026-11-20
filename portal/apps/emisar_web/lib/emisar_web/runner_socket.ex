@@ -501,7 +501,7 @@ defmodule EmisarWeb.RunnerSocket do
   end
 
   defp handle_envelope(type, _msg, state) do
-    Logger.debug("runner_socket unknown envelope type #{type}")
+    Logger.debug("runner_socket unknown envelope type #{inspect(type)}")
     {:ok, state}
   end
 

@@ -461,19 +461,18 @@ defmodule EmisarWeb.RunNewLiveTest do
     {conn, owner, account} = register_and_log_in(conn)
 
     # Deny everything at every risk tier.
-    _ =
-      Fixtures.Policies.create_policy(
-        account_id: account.id,
-        updated_by_membership_id: owner.id,
-        rules: %{
-          "defaults" => %{
-            "low" => "deny",
-            "medium" => "deny",
-            "high" => "deny",
-            "critical" => "deny"
-          }
+    Fixtures.Policies.create_policy(
+      account_id: account.id,
+      updated_by_membership_id: owner.id,
+      rules: %{
+        "defaults" => %{
+          "low" => "deny",
+          "medium" => "deny",
+          "high" => "deny",
+          "critical" => "deny"
         }
-      )
+      }
+    )
 
     {runner, action} = action_with_required_arg(account)
 
@@ -927,21 +926,20 @@ defmodule EmisarWeb.RunNewLiveTest do
   test "a policy deny flashes and the run is recorded as :denied (no navigate)", %{conn: conn} do
     {conn, owner, account} = register_and_log_in(conn)
 
-    _ =
-      Fixtures.Policies.create_policy(
-        account_id: account.id,
-        updated_by_membership_id: owner.id,
-        rules: %{
-          "schema_version" => 2,
-          "defaults" => %{
-            "low" => "deny",
-            "medium" => "deny",
-            "high" => "deny",
-            "critical" => "deny"
-          },
-          "overrides" => []
-        }
-      )
+    Fixtures.Policies.create_policy(
+      account_id: account.id,
+      updated_by_membership_id: owner.id,
+      rules: %{
+        "schema_version" => 2,
+        "defaults" => %{
+          "low" => "deny",
+          "medium" => "deny",
+          "high" => "deny",
+          "critical" => "deny"
+        },
+        "overrides" => []
+      }
+    )
 
     {runner, action} = action_with_required_arg(account)
 
@@ -963,21 +961,20 @@ defmodule EmisarWeb.RunNewLiveTest do
   test "an approval-required action creates a :pending_approval run and navigates", %{conn: conn} do
     {conn, owner, account} = register_and_log_in(conn)
 
-    _ =
-      Fixtures.Policies.create_policy(
-        account_id: account.id,
-        updated_by_membership_id: owner.id,
-        rules: %{
-          "schema_version" => 2,
-          "defaults" => %{
-            "low" => "require_approval",
-            "medium" => "require_approval",
-            "high" => "require_approval",
-            "critical" => "require_approval"
-          },
-          "overrides" => []
-        }
-      )
+    Fixtures.Policies.create_policy(
+      account_id: account.id,
+      updated_by_membership_id: owner.id,
+      rules: %{
+        "schema_version" => 2,
+        "defaults" => %{
+          "low" => "require_approval",
+          "medium" => "require_approval",
+          "high" => "require_approval",
+          "critical" => "require_approval"
+        },
+        "overrides" => []
+      }
+    )
 
     {runner, action} = action_with_required_arg(account)
 

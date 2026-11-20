@@ -37,6 +37,7 @@ defmodule Emisar.Policies.Policy.Query do
     |> limit(^max_configs)
   end
 
+  @impl Emisar.Repo.Query
   def cursor_fields,
     do: [{:policies, :asc, :scope_type}, {:policies, :asc, :scope_value}, {:policies, :asc, :id}]
 

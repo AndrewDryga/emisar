@@ -2,8 +2,9 @@ defmodule Emisar.OAuth do
   @moduledoc """
   Minimal OAuth 2.1 authorization server for remote MCP clients
   (Claude.ai, ChatGPT), implementing the subset the MCP authorization
-  spec requires: Dynamic Client Registration (RFC 7591), authorization
-  code + PKCE (S256), and refresh tokens.
+  spec requires: Client ID Metadata Documents and Dynamic Client
+  Registration (RFC 7591), authorization code + PKCE (S256), and refresh
+  tokens.
 
   The RFC 8707 `resource` parameter is stored on the code + token. The
   MCP bearer boundary supplies its canonical resource URI to
@@ -32,7 +33,7 @@ defmodule Emisar.OAuth do
   @access_ttl_s 3_600
   @refresh_ttl_s 30 * 24 * 3_600
   # A dynamically-registered client that never completed consent is abandoned
-  # after this long — the daily sweep prunes it so `oauth_clients` doesn't grow
+  # after this long — the hourly sweep prunes it so `oauth_clients` doesn't grow
   # one orphan row per drive-by registration.
   @unused_client_ttl_s 30 * 24 * 3_600
 

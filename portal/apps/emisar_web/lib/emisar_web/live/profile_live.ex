@@ -1,7 +1,8 @@
 defmodule EmisarWeb.ProfileLive do
   @moduledoc """
-  The Member's own page in this workspace: Profile (the name shown here; the
-  email it was invited or signed up with, read-only), Multi-factor
+  The Member's own page in this workspace: Profile (the name shown here, and the
+  email, which an eligible member changes after proving its credential and the
+  new inbox), Multi-factor
   authentication (this Member's factor, enrolled with a fresh proof of its own
   credential), and Active sessions (this Member's sessions in this workspace).
 
@@ -368,7 +369,7 @@ defmodule EmisarWeb.ProfileLive do
     end
   end
 
-  # -- Active sessions -------------------------------------------------
+  # -- Email -----------------------------------------------------------
 
   def handle_event("edit_email", _params, socket) do
     {:noreply,
@@ -456,6 +457,8 @@ defmodule EmisarWeb.ProfileLive do
      |> reset_email_step()
      |> assign_email_form(socket.assigns.current_membership)}
   end
+
+  # -- Active sessions -------------------------------------------------
 
   def handle_event("retry_sessions", _params, socket),
     do: {:noreply, reload_sessions(socket)}
@@ -904,7 +907,7 @@ defmodule EmisarWeb.ProfileLive do
 
       <.page_intro>
         Your profile, multi-factor authentication and sessions in this workspace.
-        <.doc_link href="/security">Security overview</.doc_link>
+        <.doc_link href={~p"/security"}>Security overview</.doc_link>
       </.page_intro>
 
       <div

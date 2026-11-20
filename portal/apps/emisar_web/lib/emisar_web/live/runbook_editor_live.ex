@@ -10,6 +10,7 @@ defmodule EmisarWeb.RunbookEditorLive do
   alias EmisarWeb.{LiveForm, Permissions, RunbookDraft, RunbookEditorCatalog}
 
   @preview_delay_ms 350
+  @max_target_refs Runbooks.definition_limit!(:max_target_refs_per_step)
 
   @input_fields ~w[id description type required sensitive default minimum maximum
                    min_length max_length]
@@ -315,7 +316,7 @@ defmodule EmisarWeb.RunbookEditorLive do
             |> Map.put("target_selection", "all")
             |> Map.put("target_refs", [target])
 
-          target in refs or length(refs) >= 16 ->
+          target in refs or length(refs) >= @max_target_refs ->
             step
 
           true ->
@@ -567,8 +568,8 @@ defmodule EmisarWeb.RunbookEditorLive do
   # Every definition change runs through here, so it is also where a publish
   # review the operator opened stops describing what they would publish.
   defp validate_and_preview(socket) do
-    socket = socket |> assign(:publish_review, nil) |> refresh_authoring_access()
     definition = canonical_definition(socket.assigns.draft)
+    socket = socket |> assign(:publish_review, nil) |> refresh_authoring_access(definition)
 
     case Runbooks.validate_definition(definition, socket.assigns.current_subject) do
       {:ok, _definition} ->
@@ -593,12 +594,12 @@ defmodule EmisarWeb.RunbookEditorLive do
     end
   end
 
-  defp refresh_authoring_access(socket) do
+  defp refresh_authoring_access(socket),
+    do: refresh_authoring_access(socket, canonical_definition(socket.assigns.draft))
+
+  defp refresh_authoring_access(socket, definition) do
     error =
-      case Runbooks.definition_authoring_access(
-             canonical_definition(socket.assigns.draft),
-             socket.assigns.current_subject
-           ) do
+      case Runbooks.definition_authoring_access(definition, socket.assigns.current_subject) do
         {:ok, :authorized} -> nil
         {:error, reason} -> reason
       end
@@ -735,7 +736,6 @@ defmodule EmisarWeb.RunbookEditorLive do
       true ->
         attrs = %{
           "title" => socket.assigns.draft["title"],
-          "name" => socket.assigns.draft["title"],
           "slug" => socket.assigns.draft["slug"],
           "description" => socket.assigns.draft["description"],
           "draft_definition" => definition

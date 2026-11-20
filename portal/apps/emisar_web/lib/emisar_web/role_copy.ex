@@ -24,9 +24,6 @@ defmodule EmisarWeb.RoleCopy do
     "Owners can manage the entire account and access all runners and packs. They can delete the account and remove or demote you."
   end
 
-  def change_body("operator"),
-    do: Auth.role_description("operator")
-
   def change_body(role), do: Auth.role_description(role)
 
   @doc "A separate access-editing paragraph for Admin and Operator role confirmations."

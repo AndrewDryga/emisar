@@ -460,7 +460,7 @@ defmodule Emisar.Catalog.PublishedRegistry.Catalog do
   # bytes, so a second lint here defends a weaker consequence of a conceded
   # capability.
   defp parse_host_access(groups, pack_id) when is_list(groups),
-    do: parse_each(groups, &parse_host_access_group(&1, pack_id))
+    do: reduce_ok(groups, &parse_host_access_group(&1, pack_id))
 
   defp parse_host_access(_groups, pack_id),
     do: {:error, "pack #{inspect(pack_id)} setup host_access must be a list"}
@@ -472,7 +472,7 @@ defmodule Emisar.Catalog.PublishedRegistry.Catalog do
        when is_list(actions) and actions != [] and is_binary(requirement) and
               is_list(recipes) and recipes != [] do
     with true <- Enum.all?(actions, &is_binary/1),
-         {:ok, recipes} <- parse_each(recipes, &parse_host_access_recipe(&1, pack_id)) do
+         {:ok, recipes} <- reduce_ok(recipes, &parse_host_access_recipe(&1, pack_id)) do
       {:ok, %{actions: actions, requirement: requirement, recipes: recipes}}
     else
       false -> {:error, "pack #{inspect(pack_id)} has a malformed setup host_access group"}
@@ -496,18 +496,6 @@ defmodule Emisar.Catalog.PublishedRegistry.Catalog do
 
   defp parse_host_access_recipe(_recipe, pack_id),
     do: {:error, "pack #{inspect(pack_id)} has a malformed setup host_access recipe"}
-
-  defp parse_each(items, parse) do
-    result =
-      Enum.reduce_while(items, {:ok, []}, fn item, {:ok, parsed} ->
-        case parse.(item) do
-          {:ok, value} -> {:cont, {:ok, [value | parsed]}}
-          {:error, _} = error -> {:halt, error}
-        end
-      end)
-
-    with {:ok, parsed} <- result, do: {:ok, Enum.reverse(parsed)}
-  end
 
   defp optional_string(map, key) do
     case Map.get(map, key) do

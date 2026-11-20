@@ -18,8 +18,9 @@ defmodule EmisarWeb.Icons do
   Every master is drawn on a centered 24-unit grid. Stroke weight and optical
   projection belong to the output size rather than the file: `grid/1` reports
   the bucket, `CoreComponents.icon_viewbox/1` zooms the small buckets slightly,
-  and `assets/css/app.css` sets the weight so the on-screen stroke stays
-  ≈1.55–1.65 px at every size instead of thinning as the box shrinks. Anatomy
+  and the `.emisar-icon` rules in `assets/css/app.css` set the weight per
+  output size and master grid: 1px for a native 16-unit master, about 1.3px
+  in the 20 bucket, 1.5px at 24, scaling with the box above that. Anatomy
   paints in `currentColor`; the `accent`, `warn`, `danger`, and `selection`
   classes recolor emphasis without ever being the only carrier of meaning.
 

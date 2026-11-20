@@ -5,14 +5,12 @@ defmodule EmisarWeb.MetricsPlug do
   alias Plug.Conn
 
   plug(:match)
-  plug(Plug.Telemetry, event_prefix: [:prometheus_metrics, :plug])
   plug(:dispatch)
 
   get "/metrics" do
     body = TelemetryMetricsPrometheus.Core.scrape()
 
     conn
-    |> Conn.put_private(:prometheus_metrics_name, :prometheus_metrics)
     |> Conn.put_resp_content_type("text/plain")
     |> Conn.send_resp(200, body)
   end

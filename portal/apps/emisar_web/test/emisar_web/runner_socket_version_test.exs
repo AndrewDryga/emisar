@@ -1,8 +1,5 @@
 defmodule EmisarWeb.RunnerSocketVersionTest do
-  # async: false — these tests flip the global Emisar.Compat enforcement flag,
-  # which is VM-wide; an async file could see it mid-flip. Kept out of the main
-  # runner_socket_test so that suite stays async.
-  use EmisarWeb.ConnCase, async: false
+  use EmisarWeb.ConnCase, async: true
   alias Emisar.{Audit, Fixtures, Runners}
   alias EmisarWeb.RunnerSocket
 

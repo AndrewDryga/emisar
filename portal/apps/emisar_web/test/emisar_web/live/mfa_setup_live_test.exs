@@ -1,6 +1,6 @@
 defmodule EmisarWeb.MfaSetupLiveTest do
   @moduledoc """
-  The workspace's MFA page (`/app/:slug/mfa_setup`, plan §3 "MFA"): a Member
+  The workspace's MFA page (`/app/:slug/mfa_setup`): a Member
   of a workspace that requires MFA is forwarded here from every page; without a
   factor it enrolls, with one it proves the factor for this browser. Enrollment
   needs a fresh proof of the Member's own credential — an emailed code to a
@@ -144,7 +144,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     # the secret from it to play the authenticator's part.
     assert [_, encoded] = Regex.run(~r/data-copy-text="([A-Z2-7]+)"/, html)
     secret = Base.decode32!(encoded, padding: false)
-    html = submit_concurrent_mfa_enrollment(lv, secret)
+    html = confirm_mfa_enrollment(lv, secret)
 
     assert html =~ "Save your recovery codes"
     assert has_element?(lv, "ol li[aria-current=step]", "Recovery codes")
@@ -337,8 +337,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
 
     {_member, _codes} = Fixtures.Memberships.enable_mfa!(Auth.generate_mfa_secret(), subject)
 
-    assert {:error, {:live_redirect, %{to: to}}} =
-             submit_concurrent_mfa_enrollment(lv, pending_secret)
+    assert {:error, {:live_redirect, %{to: to}}} = confirm_mfa_enrollment(lv, pending_secret)
 
     assert to == setup_path(account)
     {:ok, _challenge, html} = live(conn, setup_path(account))
@@ -674,7 +673,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
       assert [_, encoded] = Regex.run(~r/data-copy-text="([A-Z2-7]+)"/, html)
       secret = Base.decode32!(encoded, padding: false)
 
-      assert submit_concurrent_mfa_enrollment(lv, secret) =~ "Save your recovery codes"
+      assert confirm_mfa_enrollment(lv, secret) =~ "Save your recovery codes"
       assert %DateTime{} = Repo.reload!(member).mfa_enabled_at
     end
   end
@@ -692,7 +691,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
   # A real TOTP generated at the end of one 30-second window can expire before
   # the LiveView validates it. Retry only that exact rejection once; every code
   # still passes through the production verifier.
-  defp submit_concurrent_mfa_enrollment(lv, secret) do
+  defp confirm_mfa_enrollment(lv, secret) do
     html =
       render_hook(lv, "confirm_mfa", %{
         "mfa" => %{"otp" => Fixtures.Auth.totp_code(secret)}

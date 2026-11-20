@@ -63,4 +63,15 @@ defmodule EmisarWeb.UnsubscribeControllerTest do
       assert json_response(one_click, 429)["error"] == "rate_limited"
     end
   end
+
+  describe "request logging" do
+    test "the token-bearing unsubscribe paths are not request-logged" do
+      for method <- [:get, :post] do
+        conn = Plug.Test.conn(method, "/unsubscribe/monthly-report/secret-token")
+        assert EmisarWeb.Endpoint.endpoint_log_level(conn) == false
+      end
+
+      assert EmisarWeb.Endpoint.endpoint_log_level(Plug.Test.conn(:get, "/pricing")) == :info
+    end
+  end
 end

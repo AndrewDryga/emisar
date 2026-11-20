@@ -3,13 +3,10 @@
   written for a first-time evaluator: the simplest true version of
   the product, one request traced start to finish.
 
-  The example is the same story the /security hero shows — Maya
-  Chen's Claude Code restarting checkout-api.service on api-iad-02,
-  approved by Jordan Lee (both from the demo seed) — so the story
-  holds across pages. Payload braces are HTML-escaped (&#123;/&#125;)
-  because HEEx treats literal braces as interpolation; the colored
-  spans follow the home page's code idiom (sky keys, brand strings,
-  amber numbers/pending, rose deny).
+  Payload braces are HTML-escaped (&#123;/&#125;) because HEEx treats
+  literal braces as interpolation; the colored spans follow the home
+  page's code idiom (sky keys, brand strings, amber numbers/pending,
+  rose deny).
 ============================================================ --%>
 <div class="bg-zinc-950 text-zinc-100">
   <.marketing_nav signed_in?={@signed_in?} current={:how_it_works} />
@@ -56,7 +53,7 @@
     </div>
     <%!-- Wider than the text column, like a product picture: the map needs its three columns. --%>
     <div class="mx-auto mt-12 max-w-[75rem] px-6 lg:px-8">
-      <.how_it_works_map />
+      <.how_it_works_map pack_count={@pack_count} action_count={@action_count} />
     </div>
   </section>
 

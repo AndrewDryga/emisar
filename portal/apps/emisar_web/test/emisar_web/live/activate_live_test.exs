@@ -6,7 +6,7 @@ defmodule EmisarWeb.ActivateLiveTest do
   use EmisarWeb.ConnCase, async: true
   alias Emisar.{ApiKeys, RequestContext, Throttle}
   alias Emisar.ApiKeys.ApiKey
-  alias Emisar.{Fixtures, Repo}
+  alias Emisar.Repo
 
   defp open_grant(clients \\ ["claude-code"]) do
     {:ok, device_code, user_code, grant} =
@@ -72,6 +72,22 @@ defmodule EmisarWeb.ActivateLiveTest do
 
       assert missed =~
                ~r/<input(?=[^>]*\bname="lookup\[code\]")(?=[^>]*\bvalue="XXXX-2418")[^>]*>/
+    end
+
+    test "a non-string code in the URL or the form leaves the empty lookup form", %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+
+      for query <- ["?code[]=x", "?code[a]=b"] do
+        {:ok, lv, html} = live(conn, ~p"/app/#{account}/activate" <> query)
+        assert html =~ "Enter the approval code"
+        assert render(lv) =~ "Enter the approval code"
+        refute render(lv) =~ "No pending request matches this code"
+      end
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/activate")
+      html = render_submit(lv, "lookup", %{"lookup" => %{"code" => ["x"]}})
+      assert html =~ "Enter the approval code"
+      refute html =~ "No pending request matches this code"
     end
 
     test "the code form looks a request up by hand, normalizing the input", %{conn: conn} do

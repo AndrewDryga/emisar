@@ -19,6 +19,7 @@ defmodule Emisar.Telemetry do
   The matching `Telemetry.Metrics` definitions live in `EmisarWeb.Telemetry`.
   """
   alias Emisar.{Approvals, Catalog, Runners}
+  require Logger
 
   # Reported before any remote catalog has validated. Larger than any
   # refresh interval, so "never fetched" alerts exactly like "stopped
@@ -126,8 +127,11 @@ defmodule Emisar.Telemetry do
   """
   @spec measure_approval_queue() :: :ok
   def measure_approval_queue do
-    %{count: count, oldest_age_seconds: age} = Approvals.pending_queue_stats()
-    :telemetry.execute([:emisar, :approvals, :pending], %{count: count, oldest_age_seconds: age})
+    sample(:approval_queue, fn ->
+      %{count: count, oldest_age_seconds: age} = Approvals.pending_queue_stats()
+      measurements = %{count: count, oldest_age_seconds: age}
+      :telemetry.execute([:emisar, :approvals, :pending], measurements)
+    end)
   end
 
   @doc """
@@ -138,7 +142,9 @@ defmodule Emisar.Telemetry do
   """
   @spec measure_runner_connections() :: :ok
   def measure_runner_connections do
-    :telemetry.execute([:emisar, :runners, :connection], Runners.connection_counts())
+    sample(:runner_connections, fn ->
+      :telemetry.execute([:emisar, :runners, :connection], Runners.connection_counts())
+    end)
   end
 
   @doc """
@@ -158,17 +164,33 @@ defmodule Emisar.Telemetry do
   """
   @spec measure_published_catalog() :: :ok
   def measure_published_catalog do
-    status = Catalog.PublishedRegistry.status()
+    sample(:published_catalog, fn ->
+      status = Catalog.PublishedRegistry.status()
 
-    age =
-      case status.checked_at do
-        nil -> @never_checked_age_seconds
-        checked_at -> DateTime.diff(DateTime.utc_now(), checked_at)
-      end
+      age =
+        case status.checked_at do
+          nil -> @never_checked_age_seconds
+          checked_at -> DateTime.diff(DateTime.utc_now(), checked_at)
+        end
 
-    :telemetry.execute(
-      [:emisar, :catalog, :published],
-      %{age_seconds: age, packs: status.count}
-    )
+      :telemetry.execute(
+        [:emisar, :catalog, :published],
+        %{age_seconds: age, packs: status.count}
+      )
+    end)
+  end
+
+  # The poller permanently drops a sampler that raises, exits or throws, so one
+  # slow database read or catalog call would freeze its gauge until the poller
+  # restarts. A failed read skips this tick instead, and logs only which sampler
+  # failed and the bounded failure class, never the reason's content.
+  defp sample(name, fun) do
+    fun.()
+  rescue
+    error ->
+      Logger.warning("telemetry.sample_failed sampler=#{name}", error: inspect(error.__struct__))
+  catch
+    kind, _reason ->
+      Logger.warning("telemetry.sample_failed sampler=#{name}", error: inspect(kind))
   end
 end

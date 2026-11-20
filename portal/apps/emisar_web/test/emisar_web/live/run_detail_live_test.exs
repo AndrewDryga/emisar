@@ -471,12 +471,16 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
     with_chain =
       run_with(account, %{
-        reason: "restart the stuck worker",
+        reason: "restart the stuck worker\nafter the queue drains",
         evidence: "run 0f9c showed the queue depth climbing for 20m",
         expected: "queue depth drops to zero within a minute"
       })
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{with_chain.id}")
+
+    # The reason keeps its line breaks, like evidence and expected outcome.
+    assert html =~
+             ~s(<span class="whitespace-pre-wrap">restart the stuck worker\nafter the queue drains</span>)
 
     assert html =~ "Evidence"
     assert html =~ "run 0f9c showed the queue depth climbing for 20m"
@@ -744,7 +748,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
     refute html =~ "Runner audit record incomplete"
-    refute html =~ "Check the runner's audit storage."
+    refute rendered_text(html) =~ "Check the runner's audit storage."
   end
 
   # Metadata keys/values are attacker-influenced (a hostile MCP client controls
@@ -1259,7 +1263,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     assert has_element?(lv, "#cancel-run", "Cancel run")
     assert html =~ "Cancel this run?"
     refute html =~ "Withdraw request"
-    refute html =~ "Changes already made won't be undone."
+    refute rendered_text(html) =~ "Changes already made won't be undone."
 
     html = render_click(lv, "cancel", %{})
 
@@ -1399,6 +1403,42 @@ defmodule EmisarWeb.RunDetailLiveTest do
     assert html =~ "partial-line"
   end
 
+  test "a run cancelled after it started keeps the output it streamed", %{conn: conn} do
+    {conn, _owner, account} = register_and_log_in(conn)
+    run = run_with(account, %{status: "running"})
+
+    {:ok, _} =
+      Runs.append_event(run, %{
+        seq: 1,
+        kind: "progress",
+        stream: "stdout",
+        payload: %{"chunk" => "before-the-kill\n"}
+      })
+
+    {:ok, finished} =
+      Fixtures.Runs.finish(run, %{"request_id" => run.request_id, "status" => "cancelled"})
+
+    assert finished.status == :cancelled
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    assert has_element?(lv, "#run-output")
+    assert html =~ "before-the-kill"
+  end
+
+  test "a run cancelled while still queued shows no output panel", %{conn: conn} do
+    {conn, owner, account} = register_and_log_in(conn)
+    run = run_with(account, %{status: :pending})
+    {:ok, run} = Runs.cancel_run(run, Fixtures.Subjects.subject_for(owner), "not needed")
+
+    assert run.status == :cancelled
+    assert run.sent_at == nil
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    refute has_element?(lv, "#run-output")
+  end
+
   test "a run_updated broadcast refreshes the status chip", %{conn: conn} do
     {conn, _owner, account} = register_and_log_in(conn)
     run = run_with(account, %{status: "sent"})
@@ -1494,6 +1534,22 @@ defmodule EmisarWeb.RunDetailLiveTest do
     # Regression: the button's `status in [...]` guard compared the Ecto.Enum
     # atom against strings, so it never rendered.
     assert html =~ "Cancel run"
+  end
+
+  test "the pre-connect render does not tell an authorized operator they cannot cancel", %{
+    conn: conn
+  } do
+    {conn, _owner, account} = register_and_log_in(conn)
+    run = run_with(account, %{status: "sent"})
+
+    # Action access is only checked once connected; the dead render must not
+    # state a denial it never evaluated.
+    dead = html_response(get(conn, ~p"/app/#{account}/runs/#{run.id}"), 200)
+    refute dead =~ "To cancel, you need action access"
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+    assert has_element?(lv, "#cancel-run-confirm:not([disabled])")
+    refute render(lv) =~ "To cancel, you need action access"
   end
 
   test "a terminal run has no cancellation control", %{conn: conn} do

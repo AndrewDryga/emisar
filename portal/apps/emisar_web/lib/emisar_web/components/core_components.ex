@@ -1,16 +1,8 @@
 defmodule EmisarWeb.CoreComponents do
   @moduledoc """
-  Provides core UI components.
-
-  At first glance, this module may seem daunting, but its goal is to provide
-  core building blocks for your application, such as modals, tables, and
-  forms. The components consist mostly of markup and are well-documented
-  with doc strings and declarative assigns. You may customize and style
-  them in any way you want, based on your application growth and needs.
-
-  The default components use Tailwind CSS, a utility-first CSS framework.
-  See the [Tailwind CSS documentation](https://tailwindcss.com) to learn
-  how to customize them or feel free to swap in another framework altogether.
+  The console's shared UI primitives: buttons, inputs, callouts, confirmation
+  dialogs, and status indicators, styled with Tailwind CSS. Tables live in
+  `EmisarWeb.LiveTable`.
 
   Icons come from the semantic registry (`EmisarWeb.Icons`). See `icon/1` for usage.
   """
@@ -448,7 +440,7 @@ defmodule EmisarWeb.CoreComponents do
   two treatments in use (neutral, danger-on-hover). `size={:compact}` keeps the
   40px target while drawing a 32px hover face beside compact form controls;
   pass any positioning via `class`. Event bindings (`phx-click`,
-  `phx-value-*`, `data-confirm`) and `disabled` ride the global `:rest`.
+  `phx-value-*`) and `disabled` ride the global `:rest`.
   """
   attr :icon, :string, required: true
   attr :label, :string, required: true
@@ -778,19 +770,22 @@ defmodule EmisarWeb.CoreComponents do
 
   @doc """
   A full-width menu row for a `<.dropdown>` panel — a left-aligned button (or
-  link) with an optional leading `icon`. `tone` mirrors `<.button variant={:ghost}>`
-  exactly (neutral → zinc, `caution` → amber, `danger` → rose, `success` →
-  brand-green), so an action reads the same color whether it sits inline or in a menu.
+  link) with an optional leading `icon`. `tone` is a hue atom that tints the row
+  text and its hover (`:neutral` → zinc, `:brand` → brand-green, `:amber` → amber,
+  `:rose` → rose).
 
-  The action rides the global `:rest` — `phx-click`/`phx-value-*`/`data-confirm`
-  for a button, or `navigate`/`patch`/`href` to render a `<.link>` instead — so
-  each row keeps its own (still server-authz-gated) behavior. `:if` on the call
-  site controls whether the row renders at all.
+  The action rides the global `:rest` — `phx-click`/`phx-value-*` for a button,
+  or `navigate`/`patch`/`href` to render a `<.link>` instead — so each row keeps
+  its own (still server-authz-gated) behavior. `:if` on the call site controls
+  whether the row renders at all.
 
   ## Example
 
       <.menu_item phx-click="start_edit" phx-value-membership_id={id}>Edit name</.menu_item>
-      <.menu_item tone={:rose} phx-click="remove" data-confirm="Sure?">Remove</.menu_item>
+      <.menu_item tone={:rose} phx-click={open_confirm("remove-member")}>Remove</.menu_item>
+
+  A destructive row opens a `<.confirm_dialog id="remove-member">` rendered elsewhere
+  on the page; it never uses the native browser confirm.
   """
   attr :icon, :string, default: nil, doc: "leading icon meaning"
   attr :tone, :atom, default: :neutral, values: [:neutral, :brand, :amber, :rose]
@@ -820,8 +815,7 @@ defmodule EmisarWeb.CoreComponents do
     "emisar-icon-mono flex w-full items-center gap-2 rounded-sm px-3 py-2 text-left transition-colors disabled:pointer-events-none disabled:opacity-40"
   end
 
-  # Toned rows tint like their ghost-button siblings. Neutral steps to
-  # zinc-800: menu rows sit on the dropdown's zinc-900 panel, so the ghost
+  # Neutral steps to zinc-800: menu rows sit on the dropdown's zinc-900 panel, so the ghost
   # button's zinc-900 hover would paint the panel's own color — no visible
   # hover at all (the packs row menu's "Revoke trust" was the correction).
   defp menu_item_tone(:rose), do: "text-rose-300 hover:bg-rose-500/10"
@@ -1046,10 +1040,7 @@ defmodule EmisarWeb.CoreComponents do
   says this filter is narrowing the list. Labels and values render escaped
   through HEEx (IL-16) — option text includes account data.
   """
-  attr :id, :any, default: nil, doc: "defaults to the field name where a label renders"
   attr :name, :any, required: true
-  attr :label, :string, default: nil
-  attr :label_variant, :atom, default: :default, values: [:default, :eyebrow]
   attr :prompt, :string, default: nil, doc: "a leading empty-value option"
   attr :prompt_selected, :boolean, default: false, doc: "marks the prompt option selected"
   attr :size, :atom, default: :default, values: [:default, :compact, :filter]
@@ -1068,25 +1059,11 @@ defmodule EmisarWeb.CoreComponents do
   attr :rest, :global, include: ~w(disabled form)
 
   def select(assigns) do
-    assigns = assign(assigns, :id, select_id(assigns))
-
     ~H"""
     <div>
-      <.label :if={@label} for={@id} variant={@label_variant}>{@label}</.label>
       <select
-        id={@id}
         name={@name}
-        class={
-          [
-            # The top margin is the label gap — a label-less select (aria-label
-            # callers) must sit flush, or it reads vertically misaligned beside
-            # sibling controls in the same row.
-            @label && select_label_gap(@size),
-            select_box_class(@size, @active?),
-            select_chevron_room(@size),
-            @class
-          ]
-        }
+        class={[select_box_class(@size, @active?), select_chevron_room(@size), @class]}
         {@rest}
       >
         <option :if={@prompt} value="" selected={@prompt_selected}>{@prompt}</option>
@@ -1118,21 +1095,6 @@ defmodule EmisarWeb.CoreComponents do
     </div>
     """
   end
-
-  # The id exists only to tie `<label for>` to the box, and no caller passed
-  # one — so the single labelled select shipped a combo box with no accessible
-  # name. Default it to the field name where a label actually renders; an
-  # UNLABELLED select repeats (four tier pickers per policy editor share one
-  # name), so stamping those with a derived id would duplicate it.
-  defp select_id(%{id: id}) when not is_nil(id), do: id
-
-  defp select_id(%{label: label, name: name}) when is_binary(label) and is_binary(name),
-    do: input_id(name)
-
-  defp select_id(_assigns), do: nil
-
-  defp select_label_gap(:default), do: "mt-2"
-  defp select_label_gap(_tighter), do: "mt-1"
 
   # The form-field box, mirroring `input/1` so a `<.select>` and an `<.input>` in
   # one row are the same control.
@@ -1896,9 +1858,9 @@ defmodule EmisarWeb.CoreComponents do
   @doc """
   The coarse semantic bucket for a status string — `:pass | :pending | :deny |
   :neutral`. Used where a caller needs the OUTCOME tone without the full badge
-  (e.g. the mobile card's left status spine). The detailed `status_classes`/
-  `status_dot` below carry the per-status visual specifics, such as the running
-  pulse, that this coarse bucket flattens.
+  (e.g. the mobile card's left status spine). The detailed `status_word_class/1`
+  (text color) and `status_dot_spec/1` (dot and pulse) carry the per-status visual
+  specifics, such as the running pulse, that this coarse bucket flattens.
   """
   def status_tone(status) do
     case to_string(status) do
@@ -2143,9 +2105,9 @@ defmodule EmisarWeb.CoreComponents do
 
   @doc """
   The ONE enforcement toggle — a two-state `role="switch"` action button:
-  solid brand while OFF (the enabling action), rose outline while ON (the
+  bordered neutral while OFF (the enabling action), rose outline while ON (the
   disabling action). The caller supplies both labels and, via the global
-  attrs, `phx-click` and the state-dependent `data-confirm`.
+  attrs, `phx-click`.
 
       <.switch
         on={not @current_account.settings.monthly_report_opt_out}
@@ -2156,13 +2118,12 @@ defmodule EmisarWeb.CoreComponents do
       />
 
   A CONSEQUENTIAL toggle never gates itself with the native `data-confirm` —
-  its `phx-click` opens the shared `<.confirm_dialog>` instead (the
-  require-MFA switch in Team is the model).
+  its `phx-click` opens the shared `<.confirm_dialog>` instead.
   """
   attr :on, :boolean, required: true
   attr :on_label, :string, required: true, doc: "shown while ON — the turn-off action"
   attr :off_label, :string, required: true, doc: "shown while OFF — the turn-on action"
-  attr :rest, :global, include: ~w(phx-click data-confirm aria-label)
+  attr :rest, :global
 
   def switch(assigns) do
     ~H"""
@@ -2260,8 +2221,8 @@ defmodule EmisarWeb.CoreComponents do
     "grid h-5 w-5 shrink-0 place-items-center text-sm font-semibold leading-5 tabular-nums text-zinc-500"
   end
 
-  # The plan variant keeps its circled step marker — a run sequence in a dense
-  # card row; the guide numeral takes the list period.
+  # Both variants show a bare numeral; the guide numeral takes the list period,
+  # the plan numeral does not.
   defp steps_marker(:guide, idx), do: "#{idx + 1}."
   defp steps_marker(:plan, idx), do: idx + 1
 
@@ -2461,8 +2422,9 @@ defmodule EmisarWeb.CoreComponents do
   `[data-copy-text]` listener). Every inline mono id uses this instead of a bare
   `<span class="font-mono">` plus a bespoke `copy_button`, so copy looks and
   behaves the same everywhere. The value never free-space-truncates — a machine
-  id you can't read in full is useless — it wraps (`break-all`); tune size/color
-  through `class`.
+  id you can't read in full is useless — it wraps at `dotted_mono` break
+  opportunities after dots and dashes, with `break-words` for an overlong segment;
+  tune size/color through `class`.
 
       <.copyable_id value={@runner.hostname} />
       <.copyable_id value={@event.request_id} class="text-xs text-zinc-400" />
@@ -2500,8 +2462,8 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
-  The ONE framed code surface — an eyebrow-labeled header (optional
-  `annotation`, optional copy button, `:badge` extras) over a mono `<pre>`.
+  The ONE framed code surface — a titled header (optional `annotation`,
+  optional copy button) over a mono `<pre>`.
   Every static code/JSON/argv/snippet block composes this (design-console-ux §1).
   The code rides the `code` ATTR, not a slot, so the formatter can never leak
   indentation into the whitespace-significant `<pre>`. The run-output
@@ -2547,7 +2509,7 @@ defmodule EmisarWeb.CoreComponents do
       ]}
       {@rest}
     >
-      <%!-- The label eyebrow is short by design, so it holds its width; the
+      <%!-- The label is short by design, so it holds its width; the
            annotation cluster is the one that shrinks — its truncate ellipsizes
            a long value (a sha256, an event id) instead of colliding with the
            label or pushing Copy off-viewport on a phone. --%>
@@ -2720,9 +2682,7 @@ defmodule EmisarWeb.CoreComponents do
   The intro line that sits directly under an index page's title — one place so
   every list page opens the same way (a `<.console_shell>` `:title` carries
   the page name; this carries the explanation under it). The default slot is the
-  subtitle (a readable-width lead paragraph); `:actions` right-aligns alongside
-  it; `:help` renders a longer "how it works" card below, for pages that need to
-  teach the model before the list (Policy). Pass whichever slots the page needs.
+  subtitle (a readable-width lead paragraph); with no slot content nothing renders.
 
       <.page_intro>
         Each <em>(pack, version)</em> has a pinned trusted hash…
@@ -2763,21 +2723,16 @@ defmodule EmisarWeb.CoreComponents do
 
   @doc """
   A short teaching rail for a list page — "what is this, in plain terms" beside
-  the list (the aside of a main+aside grid), ended with a link into the full
-  docs. The caller gives it a fixed 22rem track that only splits off at xl, so
-  its prose never squeezes; below xl it stacks full-width under the list.
+  the list (the aside of a main+aside grid): a title over caller-provided teaching
+  content, which may carry a contextual `<.doc_link>`. The caller gives it a fixed
+  22rem track that only splits off at xl, so its prose never squeezes; below xl it
+  stacks full-width under the list.
 
-      <.docs_rail title="What's a runner?" doc_href={~p"/docs/runner-fleet"} doc_label="Runner docs">
+      <.docs_rail title="What's a runner?">
         <p>A runner is the small emisar agent on one of your hosts…</p>
       </.docs_rail>
   """
   attr :title, :string, required: true
-
-  attr :doc_href, :string,
-    default: nil,
-    doc: "omit (with doc_label) when the page intro already links the same docs"
-
-  attr :doc_label, :string, default: nil
   slot :inner_block, required: true
 
   def docs_rail(assigns) do
@@ -2790,12 +2745,6 @@ defmodule EmisarWeb.CoreComponents do
       <div class="mt-3 space-y-3 text-sm leading-relaxed text-zinc-400">
         {render_slot(@inner_block)}
       </div>
-      <%!-- text-sm on the HOST, not the component: doc_link carries no text-*
-           (so it adapts to context), and this <p> would otherwise inherit the
-           dashboard's page-base 16px — bigger than the rail's text-sm prose. --%>
-      <p :if={@doc_href} class="mt-4 text-sm">
-        <.doc_link href={@doc_href}>{@doc_label}</.doc_link>
-      </p>
     </aside>
     """
   end
@@ -2811,7 +2760,6 @@ defmodule EmisarWeb.CoreComponents do
       <.section_header title="Pending" count={@pending_metadata.count} count_tone={:amber} />
       <.section_header title="Targeted rulesets">
         <:subtitle>A ruleset replaces the default policy for one runner or group.</:subtitle>
-        <:actions><.button phx-click="add_ruleset">Add ruleset</.button></:actions>
       </.section_header>
   """
   attr :title, :string, required: true
@@ -2984,13 +2932,13 @@ defmodule EmisarWeb.CoreComponents do
   Key-value row for detail panes. `:row` (default) is a label-left /
   value-right flex row; `:grid` emits a bare `<dt>`/`<dd>` pair (no wrapper)
   for a mono, column-aligned readout — drop it inside a
-  `<dl class="grid grid-cols-[max-content,1fr] gap-x-3">` so labels and values
+  `<dl class="grid grid-cols-[max-content_1fr] gap-x-3">` so labels and values
   line up across rows (the `:grid` value defaults zinc-300; wrap it in a colored
   span to flag a row, e.g. a changed hash):
 
       <.kv label="Hostname">{@runner.hostname || "—"}</.kv>
 
-      <dl class="grid grid-cols-[max-content,1fr] gap-x-3 gap-y-0.5 text-[11px]">
+      <dl class="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-0.5 text-[11px]">
         <.kv layout={:grid} label="trusted:">{hash || "— (none yet)"}</.kv>
       </dl>
   """
@@ -3324,11 +3272,13 @@ defmodule EmisarWeb.CoreComponents do
     * **Dismissable** — the `Tooltip` hook hides the bubble on `Escape` while
       keeping focus on the trigger, re-arming on the next hover/focus.
 
-  Pass an explicit `id` when the same described tip renders more than once on a
-  page (a per-row lock) to keep the trigger + bubble ids unique. An icon-only
-  trigger instead passes `aria_label`: it uses the same visual hover/focus bubble
-  without ids or a hook, so a responsive component may duplicate the slot safely;
-  the accessible name already carries the tooltip text.
+  Every tooltip mounts the `Tooltip` hook, so its wrapper always carries an id:
+  the explicit `id`, or one derived from `text`. Pass a distinct explicit `id`
+  whenever the same tooltip text renders more than once on a page (a per-row
+  lock, a responsive component that duplicates the slot), icon-only triggers
+  included, so the DOM ids stay unique. An icon-only trigger passes `aria_label`:
+  the accessible name already carries the tooltip text, so without an explicit
+  `id` or a `command` the wrapper skips `aria-describedby`.
 
   When the reason ends in something the operator must RUN, pass `command` rather
   than naming it mid-sentence: the prose stays, and the shared `code_line` row
@@ -3593,7 +3543,7 @@ defmodule EmisarWeb.CoreComponents do
   attr :target, :string, default: nil, doc: "CSS selector of element whose innerText to copy"
   attr :text, :string, default: nil, doc: "literal string to copy (alternative to :target)"
   attr :class, :any, default: nil
-  attr :rest, :global, include: ~w(id)
+  attr :rest, :global
 
   slot :inner_block, required: true
 
@@ -3906,7 +3856,6 @@ defmodule EmisarWeb.CoreComponents do
               id={"#{@id}-input"}
               token={@confirm_token}
               value={@typed}
-              label_variant={:eyebrow}
             />
           </form>
 
@@ -4078,29 +4027,24 @@ defmodule EmisarWeb.CoreComponents do
   # after the action would be dropped while that submit is in flight.
   defp hide_confirm_dialog(id), do: %JS{} |> fade_dialog_out(id) |> JS.push("confirm_reset")
 
-  @doc """
-  The type-to-confirm field: "Type <text> [copy] to confirm" above the mono
-  input. The text keeps its own case inside an eyebrow label, and the copy
-  control (`copyable_id`'s dim clipboard) sits right after it, so an operator
-  pastes a long name instead of retyping it. The match ignores case and
-  surrounding whitespace (`EmisarWeb.ConfirmDialog.matches?/2`); the deliberate
-  step is the paste and the Confirm. Rendered by `confirm_dialog`.
-  """
+  # The type-to-confirm field: "Type <text> [copy] to confirm" above the mono
+  # input. The text keeps its own case inside an eyebrow label, and the copy
+  # control (`copyable_id`'s dim clipboard) sits right after it, so an operator
+  # pastes a long name instead of retyping it. The match ignores case and
+  # surrounding whitespace (`EmisarWeb.ConfirmDialog.matches?/2`); the deliberate
+  # step is the paste and the Confirm. Rendered by `confirm_dialog`.
   attr :id, :string, required: true, doc: "the input's id — the label points at it"
-  attr :name, :string, default: "confirm_token"
   attr :token, :string, required: true, doc: "the text the operator must type"
   attr :value, :string, required: true, doc: "the live-typed value held by the page"
-  attr :label_variant, :atom, default: :default, values: [:default, :eyebrow]
-  attr :rest, :global, include: ~w(required)
 
-  def typed_confirm_field(assigns) do
+  defp typed_confirm_field(assigns) do
     ~H"""
     <div>
       <%!-- The label holds only "Type <text>" so the copy control can follow
            the text inside one sentence; the input takes its name from both
            halves through aria-labelledby, which keeps "Copy" out of it. The
            copy listener stops the click before the label sees it. --%>
-      <p class={label_variant(@label_variant)}>
+      <p class={label_variant(:eyebrow)}>
         <label id={"#{@id}-label"} for={@id}>
           Type
           <span class="break-words font-mono normal-case tracking-normal text-zinc-200">{@token}</span>
@@ -4120,14 +4064,13 @@ defmodule EmisarWeb.CoreComponents do
       <.input
         id={@id}
         type="text"
-        name={@name}
+        name="confirm_token"
         value={@value}
         class="font-mono"
         autocomplete="off"
         phx-debounce="50"
         aria-labelledby={"#{@id}-label #{@id}-label-tail"}
         data-typed-confirm
-        {@rest}
       />
     </div>
     """

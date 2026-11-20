@@ -25,7 +25,7 @@ defmodule Emisar.Audit.Event do
     field :ip_address, :string
     field :user_agent, :string
     field :request_id, :string
-    # How the actor authenticated this session (provenance, decision 6).
+    # How the actor authenticated this session (provenance).
     field :auth_method, :string
     field :mfa, :boolean
     field :user_identity_id, Ecto.UUID

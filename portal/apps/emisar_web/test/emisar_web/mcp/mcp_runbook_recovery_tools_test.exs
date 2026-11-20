@@ -228,7 +228,6 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
           :action_unavailable,
           :incomplete_contract,
           :not_found,
-          :pack_ref_mismatch,
           :pack_retired,
           :pack_untrusted,
           :runner_not_found,
@@ -259,7 +258,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     capacity = RunbookTools.execution_failure(:runbook_capacity_exceeded)
     assert capacity.error.code == "runbook_capacity_exceeded"
     assert capacity.error.retryable
-    assert capacity.error.message =~ "1,024 active runbook items"
+    assert capacity.error.message =~ "would exceed the account limit for active runbook items"
   end
 
   test "dynamic runbook issue codes stay inside the published error taxonomy" do

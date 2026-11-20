@@ -17,18 +17,6 @@ defmodule Emisar.AccountsTest do
   alias Emisar.Runs.ActionRun
   alias Emisar.SSO.LinkRequest
 
-  describe "action_in_runner_access?/3" do
-    test "both runner and pack grants must cover the action" do
-      runner = %{id: Ecto.UUID.generate(), group: "database"}
-      {:ok, access} = RunnerAccess.new(:restricted, ["database"], [], :restricted, ["postgres"])
-      assert Accounts.action_in_runner_access?(runner, "postgres", access)
-      refute Accounts.action_in_runner_access?(runner, "linux-core", access)
-      refute Accounts.action_in_runner_access?(%{runner | group: "web"}, "postgres", access)
-      refute Accounts.action_in_runner_access?(runner, "postgres", RunnerAccess.none())
-      assert Accounts.action_in_runner_access?(runner, "postgres", RunnerAccess.all())
-    end
-  end
-
   defmodule RecordingSessionDisconnector do
     def disconnect_live_sessions(topics) do
       send(self(), {:membership_activation_disconnect, topics})
@@ -2720,9 +2708,9 @@ defmodule Emisar.AccountsTest do
     test "refuses a subject with no account permission" do
       account = Fixtures.Accounts.create_account()
 
-      runner_subject = Fixtures.Subjects.permissionless_subject(account)
+      permissionless_subject = Fixtures.Subjects.permissionless_subject(account)
 
-      assert Accounts.fetch_team_security_facts(runner_subject) == {:error, :unauthorized}
+      assert Accounts.fetch_team_security_facts(permissionless_subject) == {:error, :unauthorized}
     end
 
     test "a subject from another account reads only its own totals" do
@@ -2743,8 +2731,8 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "suppressed_member_emails/2" do
-    test "returns the account's member emails that are on the suppression list" do
+  describe "suppressed_member_emails/3" do
+    test "returns the given members' emails that are on the suppression list" do
       account = Fixtures.Accounts.create_account()
 
       subject =
@@ -2752,18 +2740,41 @@ defmodule Emisar.AccountsTest do
           Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
         )
 
-      _bouncing =
+      bouncing =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
           email: "bouncing@example.com"
         )
 
-      _fine = Fixtures.Memberships.create_membership(account_id: account.id)
+      fine = Fixtures.Memberships.create_membership(account_id: account.id)
 
       {:ok, _} = Mail.suppress("bouncing@example.com", :hard_bounce, "bounce")
 
-      assert {:ok, suppressed} = Accounts.suppressed_member_emails(account, subject)
+      assert {:ok, suppressed} =
+               Accounts.suppressed_member_emails(account, [bouncing.id, fine.id], subject)
+
       assert suppressed == MapSet.new(["bouncing@example.com"])
+    end
+
+    test "checks only the requested members" do
+      account = Fixtures.Accounts.create_account()
+
+      subject =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+        )
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        email: "off-page@example.com"
+      )
+
+      shown = Fixtures.Memberships.create_membership(account_id: account.id)
+
+      {:ok, _} = Mail.suppress("off-page@example.com", :hard_bounce, "bounce")
+
+      assert Accounts.suppressed_member_emails(account, [shown.id], subject) ==
+               {:ok, MapSet.new()}
     end
 
     test "is empty when no member email is suppressed" do
@@ -2774,9 +2785,9 @@ defmodule Emisar.AccountsTest do
           Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
         )
 
-      Fixtures.Memberships.create_membership(account_id: account.id)
+      member = Fixtures.Memberships.create_membership(account_id: account.id)
 
-      assert {:ok, suppressed} = Accounts.suppressed_member_emails(account, subject)
+      assert {:ok, suppressed} = Accounts.suppressed_member_emails(account, [member.id], subject)
       assert MapSet.size(suppressed) == 0
     end
 
@@ -2791,7 +2802,7 @@ defmodule Emisar.AccountsTest do
       account_b = Fixtures.Accounts.create_account()
 
       # An address suppressed globally, but a member only of account B.
-      _b_member =
+      b_member =
         Fixtures.Memberships.create_membership(
           account_id: account_b.id,
           email: "b-only@example.com"
@@ -2799,8 +2810,11 @@ defmodule Emisar.AccountsTest do
 
       {:ok, _} = Mail.suppress("b-only@example.com", :hard_bounce, "bounce")
 
-      # Account A asks for ITS suppressed emails — B's bouncing address must not leak.
-      assert {:ok, suppressed} = Accounts.suppressed_member_emails(account_a, subject_a)
+      # Account A asks for ITS suppressed emails, naming B's member id — B's
+      # bouncing address must not leak.
+      assert {:ok, suppressed} =
+               Accounts.suppressed_member_emails(account_a, [b_member.id], subject_a)
+
       refute MapSet.member?(suppressed, "b-only@example.com")
       assert MapSet.size(suppressed) == 0
     end
@@ -2809,7 +2823,8 @@ defmodule Emisar.AccountsTest do
       {_owner_a, _account_a, subject_a} = Fixtures.Subjects.owner_subject()
       account_b = Fixtures.Accounts.create_account()
 
-      assert Accounts.suppressed_member_emails(account_b, subject_a) == {:error, :unauthorized}
+      assert Accounts.suppressed_member_emails(account_b, [], subject_a) ==
+               {:error, :unauthorized}
     end
   end
 
@@ -3186,6 +3201,18 @@ defmodule Emisar.AccountsTest do
                )
 
       assert membership.account_id == account.id
+    end
+  end
+
+  describe "action_in_runner_access?/3" do
+    test "both runner and pack grants must cover the action" do
+      runner = %{id: Ecto.UUID.generate(), group: "database"}
+      {:ok, access} = RunnerAccess.new(:restricted, ["database"], [], :restricted, ["postgres"])
+      assert Accounts.action_in_runner_access?(runner, "postgres", access)
+      refute Accounts.action_in_runner_access?(runner, "linux-core", access)
+      refute Accounts.action_in_runner_access?(%{runner | group: "web"}, "postgres", access)
+      refute Accounts.action_in_runner_access?(runner, "postgres", RunnerAccess.none())
+      assert Accounts.action_in_runner_access?(runner, "postgres", RunnerAccess.all())
     end
   end
 

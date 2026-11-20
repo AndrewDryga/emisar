@@ -83,12 +83,6 @@ defmodule EmisarWeb.MCP.Cancellation do
         |> Enum.map(&scoped_topic(conn, &1, token))
         |> Enum.reject(&is_nil/1)
 
-      %{id: api_key_id} ->
-        case scoped_topic(conn, api_key_id, token) do
-          nil -> []
-          topic -> [topic]
-        end
-
       _ ->
         []
     end

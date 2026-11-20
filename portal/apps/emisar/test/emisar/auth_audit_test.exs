@@ -477,7 +477,7 @@ defmodule Emisar.AuthAuditTest do
   describe "session self-revocation" do
     setup do
       {owner, account, _subject} = Fixtures.Subjects.owner_subject()
-      _ = Fixtures.Auth.create_session_token!(owner, :magic_link, nil)
+      Fixtures.Auth.create_session_token!(owner, :magic_link, nil)
       keep = Fixtures.Auth.create_session_token!(owner, :magic_link, nil)
       subject = Fixtures.Subjects.subject_for(owner, session: keep)
       %{member: owner, account: account, keep: keep, subject: subject}

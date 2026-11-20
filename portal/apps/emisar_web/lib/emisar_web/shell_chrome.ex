@@ -28,9 +28,9 @@ defmodule EmisarWeb.ShellChrome do
   @doc """
   Merges `fields` into the socket's chrome, seeding it first when absent.
 
-  The hooks that write here run in several places — two mount branches and four
-  refresh handlers — and not always in a fixed order, so this tolerates being
-  the first writer.
+  The hooks that write here run in several places — mount hooks and refresh
+  handlers — and not always in a fixed order, so this tolerates being the
+  first writer.
   """
   @spec put(Phoenix.LiveView.Socket.t(), Enumerable.t()) :: Phoenix.LiveView.Socket.t()
   def put(socket, fields) do

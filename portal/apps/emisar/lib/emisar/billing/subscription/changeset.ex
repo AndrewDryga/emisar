@@ -11,15 +11,15 @@ defmodule Emisar.Billing.Subscription.Changeset do
   ]a
 
   @doc """
-  A support/seed write that is NOT a vendor mirror update.
+  A complimentary-plan write (`Billing.grant_complimentary_plan/2`, behind
+  `mix emisar.set_plan` and the seeds) that is NOT a vendor mirror update.
 
   `upsert/2` drops any event it cannot prove is newer than Paddle's stored
-  `updated_at`, which is right for a webhook and wrong for a human: once an
-  account had ever been mirrored, `mix emisar.set_plan` and the seeds were
-  silently dropped — Ecto returned the unchanged row, so the task printed
-  success and nothing had happened. A manual write is authoritative by
-  definition, so it skips the guard and clears the vendor timestamp, which
-  hands the mirror back to the next real webhook.
+  `updated_at`, which is right for a webhook and wrong for a human: a
+  timestamp-less write would be silently dropped once a row had been mirrored.
+  A manual write is authoritative by definition, so it skips the guard and
+  clears the vendor timestamp, which hands the mirror back to the next real
+  webhook.
   """
   def manual(subscription \\ %Subscription{}, attrs) do
     subscription

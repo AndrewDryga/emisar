@@ -7,7 +7,7 @@ defmodule Emisar.Checks.NoIslandContainers do
       Design-system §8.1: console content sits NAKED on the black canvas — a
       box is earned only by a secret, a code artifact, or an actionable
       warning, and earned boxes come from SHARED components (`code_panel`,
-      `secret_reveal`, `output_preview`, `panel` on the settings archetype).
+      `secret_reveal`, `output_preview`).
       A live page hand-painting a wash background + frame onto a container
       tag is the "gray island" the console redesign keeps killing.
 
@@ -34,9 +34,6 @@ defmodule Emisar.Checks.NoIslandContainers do
           <div class="…">
       """
     ]
-
-  alias Credo.IssueMeta
-  alias Credo.SourceFile
 
   @container_tag ~r/<(?:div|section|article|ul|ol|li|dl|aside|p)\b/
   @wash ~r/(?<![:\w.-])bg-(?:zinc-(?:800|900|950)|black|white)(?:\/\[?[0-9.]+\]?)?(?![\w-])/
@@ -104,7 +101,7 @@ defmodule Emisar.Checks.NoIslandContainers do
       message:
         "Hand-painted island: a container tag carries a wash background + frame in a live " <>
           "page. Content sits naked on the canvas (design-system §8.1); an earned box uses a " <>
-          "shared component (`code_panel`, `secret_reveal`, `panel`), never inline classes.",
+          "shared component (`code_panel`, `secret_reveal`), never inline classes.",
       line_no: line_no
     )
   end

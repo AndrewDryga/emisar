@@ -39,7 +39,7 @@ defmodule Emisar.Mail do
 
   @doc """
   Internal — of the given `emails`, the subset that is suppressed, returned as
-  the CALLER's own strings. Called by `Accounts.suppressed_member_emails/2` to
+  the CALLER's own strings. Called by `Accounts.suppressed_member_emails/3` to
   flag bouncing member/invite addresses on the Team page. The caller supplies
   an already account-scoped list (we never expose the global list); the result
   is a `MapSet` keyed to the input strings, so a render-time

@@ -332,6 +332,45 @@ defmodule EmisarWeb.AuditLiveTest do
       refute has_element?(lv, "li[id^='event-']", "unrelated-human")
     end
 
+    test "a collapsed panel keeps naming a selected actor or target across a patch",
+         %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+      picked_id = Ecto.UUID.generate()
+
+      sides = [
+        {"actor", :actor_kind, :actor_id, :actor_label},
+        {"target", :target_kind, :target_id, :target_label}
+      ]
+
+      for {side, kind_key, id_key, label_key} <- sides do
+        {:ok, _} =
+          Audit.log(account.id, "membership.role_changed", [
+            {kind_key, "user"},
+            {id_key, picked_id},
+            {label_key, "picked-#{side}@example.com"}
+          ])
+
+        {:ok, _} =
+          Audit.log(account.id, "user.signed_in", [
+            {kind_key, "user"},
+            {id_key, Ecto.UUID.generate()},
+            {label_key, "unrelated-#{side}"}
+          ])
+
+        query = %{"#{side}_kind" => "user", "#{side}_id" => picked_id}
+        {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit?#{query}")
+
+        # Collapse the auto-opened panel, then patch to a new URL that keeps the pick.
+        lv |> element("button[phx-click='toggle_filters']") |> render_click()
+        lv |> element("button[phx-value-window='24h']") |> render_click()
+        assert_patch(lv)
+
+        toggle = lv |> element("button[phx-click='toggle_filters']") |> render()
+        assert toggle =~ "picked-#{side}@example.com"
+        refute has_element?(lv, "li[id^='event-']", "unrelated-#{side}")
+      end
+    end
+
     test "the From date filter narrows to recent events", %{conn: conn} do
       {conn, _owner, account} = register_and_log_in(conn)
 
@@ -1114,6 +1153,31 @@ defmodule EmisarWeb.AuditLiveTest do
       refute Map.has_key?(params, "window")
       refute Map.has_key?(params, "from")
       refute Map.has_key?(params, "to")
+    end
+
+    test "an unrelated filter change keeps the active preset; editing a bound clears it", %{
+      conn: conn
+    } do
+      {conn, _owner, account} = register_and_log_in(conn)
+      {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user", actor_label: "x")
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit")
+      lv |> element("button[phx-click='toggle_filters']") |> render_click()
+
+      lv |> element("button[phx-value-window='24h']") |> render_click()
+      assert_patch(lv)
+
+      # The form re-submits the unchanged From and the preset's empty To.
+      html = lv |> form("#audit-events-filter", %{category: "fleet", to: ""}) |> render_change()
+      params = URI.decode_query(URI.parse(assert_patch(lv)).query)
+      assert params["window"] == "24h"
+      assert params["category"] == "fleet"
+      assert html =~ ~s(aria-pressed="true")
+
+      lv |> form("#audit-events-filter", %{from: "2026-01-01T00:00"}) |> render_change()
+      params = URI.decode_query(URI.parse(assert_patch(lv)).query)
+      refute Map.has_key?(params, "window")
+      assert params["from"] == "2026-01-01T00:00"
     end
 
     # a quick-range preset only touches from/to; an

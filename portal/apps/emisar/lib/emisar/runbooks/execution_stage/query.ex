@@ -10,12 +10,6 @@ defmodule Emisar.Runbooks.ExecutionStage.Query do
   def by_execution_id(queryable \\ all(), execution_id),
     do: where(queryable, [runbook_execution_stages: s], s.runbook_execution_id == ^execution_id)
 
-  def by_account_id(queryable \\ all(), account_id),
-    do: where(queryable, [runbook_execution_stages: s], s.account_id == ^account_id)
-
-  def by_status(queryable \\ all(), status),
-    do: where(queryable, [runbook_execution_stages: s], s.status == ^status)
-
   def ordered(queryable \\ all()),
     do: order_by(queryable, [runbook_execution_stages: s], asc: s.position)
 

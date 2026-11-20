@@ -41,6 +41,20 @@ defmodule Emisar.Jobs.Executors.GloballyUniqueTest do
     def execute(_config), do: raise("secret-shaped detail must not be logged")
   end
 
+  defmodule ExitingJob do
+    @behaviour GloballyUnique
+
+    @impl GloballyUnique
+    def execute(_config), do: exit({:pool_down, "secret-shaped detail must not be logged"})
+  end
+
+  defmodule ThrowingJob do
+    @behaviour GloballyUnique
+
+    @impl GloballyUnique
+    def execute(_config), do: throw({:aborted, "secret-shaped detail must not be logged"})
+  end
+
   test "declared jobs preserve their configured interval and initial delay" do
     assert %{
              id: DeclaredJob,
@@ -92,8 +106,7 @@ defmodule Emisar.Jobs.Executors.GloballyUniqueTest do
   end
 
   test "a failed tick emits a stable redacted operator signal" do
-    previous = Process.flag(:trap_exit, true)
-    on_exit(fn -> Process.flag(:trap_exit, previous) end)
+    Process.flag(:trap_exit, true)
 
     log =
       capture_log(fn ->
@@ -106,5 +119,40 @@ defmodule Emisar.Jobs.Executors.GloballyUniqueTest do
     assert log =~ "error=RuntimeError"
     signal = Enum.find(String.split(log, "\n"), &String.contains?(&1, "recurrent_job.failed"))
     refute signal =~ "secret-shaped detail"
+  end
+
+  for {job, kind} <- [{ExitingJob, :exit}, {ThrowingJob, :throw}] do
+    @job job
+    @kind kind
+
+    test "a tick that ends in #{kind} still emits the failure signal" do
+      Process.flag(:trap_exit, true)
+      handler_id = "job-failed-#{System.unique_integer([:positive])}"
+
+      :ok =
+        :telemetry.attach(
+          handler_id,
+          [:emisar, :job, :failed],
+          fn _event, measurements, meta, pid -> send(pid, {:failed, measurements, meta}) end,
+          self()
+        )
+
+      on_exit(fn -> :telemetry.detach(handler_id) end)
+
+      log =
+        capture_log(fn ->
+          {:ok, pid} = GloballyUnique.start_link({@job, :timer.hours(1), initial_delay: 0})
+          assert_receive {:EXIT, ^pid, _reason}
+        end)
+
+      assert_receive {:failed, %{count: 1}, %{job: name, kind: @kind}}
+      assert name == inspect(@job)
+      refute_received {:failed, _measurements, _meta}
+
+      signal = Enum.find(String.split(log, "\n"), &String.contains?(&1, "recurrent_job.failed"))
+      assert signal =~ "job=#{inspect(@job)}"
+      assert signal =~ "error=#{inspect(@kind)}"
+      refute signal =~ "secret-shaped detail"
+    end
   end
 end

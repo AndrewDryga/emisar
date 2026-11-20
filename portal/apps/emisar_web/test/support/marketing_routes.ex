@@ -4,9 +4,9 @@ defmodule EmisarWeb.MarketingRoutes do
 
   Both page batteries — `EmisarWeb.MarketingTest` (render + CSP +
   indexability) and `EmisarWeb.MarketingStructuralTest` (structural +
-  breadcrumbs) — parametrize directly over `battery_paths/0`, so a page added
-  to the router joins both automatically and there is no hand-maintained
-  inventory left to drift.
+  breadcrumbs) — parametrize directly over `battery_paths/0`. A static page
+  added to the router and a guide added to the controller join both
+  automatically; only the `/packs/:id` family keeps pinned examples.
   """
 
   # MarketingController GET routes that are NOT indexable HTML pages (feeds),
@@ -16,8 +16,8 @@ defmodule EmisarWeb.MarketingRoutes do
   @doc """
   Every static public marketing HTML path in the router.
 
-  Dynamic `:slug` families are excluded — each battery pins its own concrete
-  representative (e.g. `/guides/how-emisar-works`) instead.
+  Dynamic `:slug` families are excluded — `battery_paths/0` adds every guide
+  from `EmisarWeb.MarketingController.guide_paths/0` and pins pack examples.
   """
   def static_html_paths do
     EmisarWeb.Router.__routes__()
@@ -27,24 +27,19 @@ defmodule EmisarWeb.MarketingRoutes do
     |> MapSet.new()
   end
 
-  # One concrete representative per dynamic `:slug` family, so the batteries
-  # still render one of each even though the derivation excludes them.
-  @dynamic_representatives ~w(
-    /packs/postgres
-    /packs/cassandra
-    /guides/cli-vs-mcp-for-infrastructure-agents
-    /guides/how-emisar-works
-    /guides/give-ai-agents-safe-production-access
-    /guides/prompt-injection-for-ops-teams
-  )
+  # Pinned pack pages, so the batteries still render the `/packs/:id` family
+  # even though the router derivation excludes it.
+  @pack_representatives ~w(/packs/postgres /packs/cassandra)
 
   @doc """
-  The battery surface: every static public HTML path plus the pinned dynamic
-  representatives, sorted — what the page batteries parametrize over.
+  The battery surface, sorted: every static public HTML path, every guide
+  derived from `EmisarWeb.MarketingController.guide_paths/0`, and the pinned
+  pack representatives — what the page batteries parametrize over.
   """
   def battery_paths do
     static_html_paths()
-    |> Enum.concat(@dynamic_representatives)
+    |> Enum.concat(EmisarWeb.MarketingController.guide_paths())
+    |> Enum.concat(@pack_representatives)
     |> Enum.sort()
   end
 end

@@ -1,6 +1,6 @@
 defmodule EmisarWeb.AuditPerformanceLiveTest do
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.{Audit, Fixtures}
+  alias Emisar.Audit
 
   setup %{conn: conn} do
     {conn, owner, account} = register_and_log_in(conn)

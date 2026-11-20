@@ -1,7 +1,7 @@
 defmodule EmisarWeb.PackRegistryController do
   @moduledoc """
   Machine-facing pack registry endpoints consumed by the runner's
-  `emisar pack install`:
+  `emisar pack install` and `emisar pack suggest`:
 
     * `GET /packs.json`            — index of every pack (id, version,
                                      content hash, requirements, tarball URL,
@@ -11,6 +11,8 @@ defmodule EmisarWeb.PackRegistryController do
     * `GET /packs/:id/versions/:version/pack.tar.gz` — 302-redirect to a
                                      SPECIFIC version's tarball (current or a
                                      remembered prior one)
+    * `GET /packs/suggest.json`    — lean detection index for
+                                     `emisar pack suggest`
 
   The human-facing `/packs` + `/packs/:id` HTML pages live in
   `MarketingController`. Both read the same published catalog through

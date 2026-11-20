@@ -1,6 +1,6 @@
 defmodule Emisar.SSO.OIDC.Oidcc do
   @moduledoc """
-  Real `oidcc`-backed implementation of the `Emisar.SSO.OIDC` seam (oidcc 3.8).
+  Real `oidcc`-backed implementation of the `Emisar.SSO.OIDC` seam.
 
   **We fetch; oidcc parses.** There is no discovery worker. Each sign-in loads
   the discovery document, judges every endpoint it names, and only then loads the
@@ -67,7 +67,7 @@ defmodule Emisar.SSO.OIDC.Oidcc do
 
     url_opts = %{
       redirect_uri: Keyword.fetch!(opts, :redirect_uri),
-      scopes: Keyword.get(opts, :scopes, @default_scopes),
+      scopes: @default_scopes,
       state: state,
       nonce: nonce,
       pkce_verifier: verifier,
@@ -172,8 +172,8 @@ defmodule Emisar.SSO.OIDC.Oidcc do
   # caller's (`oidcc_token.erl`: `maps:merge(Opts, #{signing_algs => …})`), so no
   # opt can override it — the narrowing has to happen in the document, and this
   # is the one place a document becomes a configuration we act on. An empty result
-  # means the IdP signs with nothing we can verify: refuse now, so "Test
-  # connection" says so instead of every sign-in failing an unexplained
+  # means the IdP signs with nothing we can verify: refuse now, so "Check
+  # issuer" says so instead of every sign-in failing an unexplained
   # signature check later.
   defp narrow_id_token_signing_algs(%{id_token_signing_alg_values_supported: algs} = config)
        when is_list(algs) do

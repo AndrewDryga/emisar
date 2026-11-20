@@ -650,6 +650,7 @@ defmodule EmisarWeb.SSOController do
             ],
        do: "reauthentication_invalid"
 
+  defp failure_reason(:rate_limited), do: "rate_limited"
   defp failure_reason(%Ecto.Changeset{}), do: "domain_validation_failed"
   defp failure_reason(reason) when reason in [nil, false, :unauthorized], do: "unauthorized"
   defp failure_reason(_reason), do: "redacted_failure"

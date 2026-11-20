@@ -17,8 +17,9 @@ defmodule Emisar.Approvals.Grant do
       runner advertising the action".
     * `args_sha256` matches the dispatched args' SHA-256, OR is `nil`
       which means "any args for this action".
-    * `expires_at` is `nil` for indefinite, otherwise the grant is
-      expired when `expires_at < now()`.
+    * `expires_at` is always set by approval minting (`:once` mints no
+      grant); a stored `nil` has no time-based expiry. A set `expires_at`
+      makes the grant expired once `expires_at <= now()`.
     * `max_uses` is `nil` for unlimited, otherwise the grant is
       consumed when `uses_count >= max_uses`.
     * `revoked_at` non-nil makes the grant unusable forever.

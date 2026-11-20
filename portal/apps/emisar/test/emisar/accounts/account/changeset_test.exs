@@ -33,9 +33,16 @@ defmodule Emisar.Accounts.Account.ChangesetTest do
 
     test "rejects slugs the router serves as literal /app/<segment> paths" do
       for reserved <-
-            ~w[accounts agents approvals audit billing checkout packs policies runbooks runners runs service-accounts sso team] do
+            ~w[agents approvals audit billing checkout packs policies runbooks runners runs service-accounts sso team] do
         assert "is reserved" in errors_on(changeset(slug: reserved)).slug
       end
+    end
+
+    test "accepts a slug no literal /app/<segment> route serves" do
+      assert changeset(slug: "accounts").valid?
+
+      account = Fixtures.Accounts.create_account()
+      assert Account.Changeset.update(account, %{slug: "accounts"}).valid?
     end
 
     test "installs default settings" do
@@ -54,14 +61,6 @@ defmodule Emisar.Accounts.Account.ChangesetTest do
       refute invalid.valid?
 
       assert "is set through the approval settings" in errors_on(invalid).settings.max_grant_lifetime_seconds
-    end
-
-    test "validates the pack-retention window is at least one day" do
-      invalid = changeset(settings: %{pack_unseen_retention_days: 0})
-
-      refute invalid.valid?
-
-      assert "must be greater than 0" in errors_on(invalid).settings.pack_unseen_retention_days
     end
 
     test "refuses the Catalog-owned cleanup schedule on generic creation" do
@@ -196,6 +195,46 @@ defmodule Emisar.Accounts.Account.ChangesetTest do
       refute invalid.valid?
 
       assert "must be greater than 0" in errors_on(invalid).settings.runner_inactive_retention_hours
+    end
+  end
+
+  describe "put_pack_retention_days/2" do
+    setup do
+      %{account: Fixtures.Accounts.create_account()}
+    end
+
+    test "writes the window the generic path refuses", %{account: account} do
+      changeset = Account.Changeset.put_pack_retention_days(account, 30)
+
+      assert changeset.valid?
+      assert apply_changes(changeset).settings.pack_unseen_retention_days == 30
+    end
+
+    test "nil turns the sweep off", %{account: account} do
+      account = Fixtures.Accounts.set_pack_retention_days(account, 30)
+
+      changeset = Account.Changeset.put_pack_retention_days(account, nil)
+
+      assert changeset.valid?
+      assert apply_changes(changeset).settings.pack_unseen_retention_days == nil
+    end
+
+    test "leaves the other settings alone", %{account: account} do
+      account = Fixtures.Accounts.set_account_settings(account, %{require_mfa: true})
+
+      changeset = Account.Changeset.put_pack_retention_days(account, 7)
+
+      assert apply_changes(changeset).settings.require_mfa
+    end
+
+    test "validates the window is at least one day", %{account: account} do
+      assert Account.Changeset.put_pack_retention_days(account, 1).valid?
+
+      invalid = Account.Changeset.put_pack_retention_days(account, 0)
+
+      refute invalid.valid?
+
+      assert "must be greater than 0" in errors_on(invalid).settings.pack_unseen_retention_days
     end
   end
 

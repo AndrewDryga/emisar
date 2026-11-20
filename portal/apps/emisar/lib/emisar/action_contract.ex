@@ -12,6 +12,10 @@ defmodule Emisar.ActionContract do
   alias Emisar.SafeText
 
   @default_max_string_bytes 32_768
+  # The runner's backstops (runner/internal/validation/args.go): an array with no
+  # declared max_items, and the length of an exact number token.
+  @default_max_items 256
+  @max_number_literal_bytes 64
   @duration ~r/\A[+-]?(?:0|(?:(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:ns|us|µs|μs|ms|s|m|h))+)\z/u
   @duration_part ~r/([0-9]+(?:\.[0-9]*)?|\.[0-9]+)(ns|us|µs|μs|ms|s|m|h)/u
   @duration_units %{
@@ -146,6 +150,10 @@ defmodule Emisar.ActionContract do
     end
   end
 
+  defp coerce(%{"name" => name, "type" => "number"}, %JSONNumber{raw: raw})
+       when byte_size(raw) > @max_number_literal_bytes,
+       do: issue(name, "type", "number literal is longer than #{@max_number_literal_bytes} bytes")
+
   defp coerce(%{"name" => name, "type" => "number"}, value) do
     case exact_number(value) do
       {:ok, number} -> {:ok, number}
@@ -273,8 +281,14 @@ defmodule Emisar.ActionContract do
     end
   end
 
-  defp validate_max_items(%{"name" => name, "type" => type}, value, %{"max_items" => max})
-       when type in ["string_array", "integer_array"] and is_integer(max) do
+  defp validate_max_items(%{"name" => name, "type" => type}, value, validation)
+       when type in ["string_array", "integer_array"] do
+    max =
+      case validation do
+        %{"max_items" => max} when is_integer(max) -> max
+        _validation -> @default_max_items
+      end
+
     if length(value) <= max, do: :ok, else: issue(name, "max_items", "has more than #{max} items")
   end
 
@@ -372,7 +386,7 @@ defmodule Emisar.ActionContract do
   end
 
   defp validate_portable_paths(%{"name" => name, "type" => type}, value, validation)
-       when type in ["path", "string_array"] do
+       when type in ["string", "path", "string_array"] do
     if path_constraints?(validation) do
       values = if is_list(value), do: value, else: [value]
 

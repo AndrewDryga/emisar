@@ -108,7 +108,8 @@ defmodule EmisarWeb.MCP.CatalogTools do
            |> Enum.filter(&pack_matches?(&1, args))
            |> after_key(& &1.pack_ref, last_key),
          {:ok, packs} <- pack_page(headers, inventory, subject, args) do
-      paginate("list_packs", packs, & &1.pack_ref, scope, args, :packs)
+      {page, more?} = split_more(packs, args.limit)
+      page_result("list_packs", page, more?, & &1.pack_ref, scope, args, :packs, & &1)
     end
   end
 
@@ -502,10 +503,13 @@ defmodule EmisarWeb.MCP.CatalogTools do
           else: acc
       end)
 
-    Map.new(
-      [{"matched", length(runners)} | Enum.map(@summary_statuses, &{&1, counted[&1] || 0})],
-      fn {key, value} -> {String.to_existing_atom(key), value} end
-    )
+    %{
+      matched: length(runners),
+      connected: Map.get(counted, "connected", 0),
+      disconnected: Map.get(counted, "disconnected", 0),
+      pending: Map.get(counted, "pending", 0),
+      disabled: Map.get(counted, "disabled", 0)
+    }
   end
 
   # "all" keeps everything; otherwise the mode names the exact state to keep.
@@ -907,7 +911,7 @@ defmodule EmisarWeb.MCP.CatalogTools do
     Enum.any?(compatibilities, &(&1.runner_ref in runner_refs))
   end
 
-  defp paginate(tool, items, key, scope, args, field, render \\ & &1) do
+  defp paginate(tool, items, key, scope, args, field, render) do
     filters = cursor_filters(args)
 
     case CatalogCursor.decode(args.cursor, tool, scope, filters) do

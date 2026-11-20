@@ -14,12 +14,6 @@ defmodule Emisar.Runbooks.RunbookExecution.Query do
   def by_runbook_id(queryable \\ all(), runbook_id),
     do: where(queryable, [runbook_executions: r], r.runbook_id == ^runbook_id)
 
-  def by_api_key_id(queryable \\ all(), api_key_id),
-    do: where(queryable, [runbook_executions: r], r.api_key_id == ^api_key_id)
-
-  def by_operation_id(queryable \\ all(), operation_id),
-    do: where(queryable, [runbook_executions: r], r.operation_id == ^operation_id)
-
   def active(queryable \\ all()),
     do: where(queryable, [runbook_executions: r], r.status == :active)
 
@@ -102,9 +96,6 @@ defmodule Emisar.Runbooks.RunbookExecution.Query do
       api_key: api_key
     )
   end
-
-  def older_than(queryable \\ all(), cutoff),
-    do: where(queryable, [runbook_executions: r], r.inserted_at <= ^cutoff)
 
   @doc """
   A bounded page of execution ids that completed before `cutoff`, scoped to

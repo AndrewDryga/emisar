@@ -3,7 +3,7 @@ defmodule Emisar.SSO.GroupRoleMapping do
   Maps one immutable, server-owned SCIM directory-group resource to an emisar
   role for a provider. Directory sync recomputes a member's role as the HIGHEST
   mapped role over the groups they belong to. `role` is validated non-`:owner`
-  in the changeset — sync can never grant owner (decision 7).
+  in the changeset — sync can never grant owner.
 
   `external_group_id` and `external_group_display` are read-only snapshots for
   audit and rollback. They never identify the mapped group.

@@ -319,9 +319,11 @@ defmodule Emisar.Billing do
 
   @doc """
   Internal — Audit's per-row retention stamp: the account's audit-retention
-  window, in days. An `audit_retention_days` entitlement mirrored from Paddle
-  overrides the plan default; free floor (7d) for no or an unknown/renamed
-  plan (same read-tolerant degradation as `plan/1`).
+  window, in days. An unresolved entitlement lifecycle keeps the longest plan
+  window. Otherwise a positive `audit_retention_days` entitlement mirrored from
+  Paddle overrides the plan default: the free floor (7d) with no subscription,
+  and the longest plan window for an unknown/renamed plan, so a slug this
+  build doesn't know never prunes a paying account's history.
   """
   def account_audit_retention_days(account_id) when is_binary(account_id) do
     account_id
@@ -374,9 +376,8 @@ defmodule Emisar.Billing do
     entitled_feature(posture, "features_scim_enabled?", posture.plan_name == "enterprise")
   end
 
-  # Internal nil-or-struct helper. Used by `upsert_subscription/2` and
-  # webhook event application. Not exposed to LiveView/MCP because
-  # there's no Subject path here.
+  # Internal unlocked nil-or-struct read. Not exposed to LiveView/MCP because
+  # there's no Subject path here; writers re-read the row locked instead.
   defp peek_subscription_for_account(account_id), do: subscription_for_account(account_id, [])
 
   @doc """
@@ -663,18 +664,13 @@ defmodule Emisar.Billing do
   # so a replace-set upsert would null fields the event didn't mention. The INSERT
   # race is closed by `unique_index(:billing_subscriptions, [:account_id])` (a concurrent
   # first-insert loses with a constraint error; Paddle's redelivery then takes the
-  # update branch); the UPDATE race is closed by the LOCKED re-read below
-  # (`fetch_and_update` → FOR NO KEY UPDATE), so a concurrent webhook + hourly
-  # BillingSync (or two webhooks) serialize on the row and the loser recomputes
-  # off the committed state, instead of last-write-winning a stale status over a
+  # update branch); the UPDATE race is closed by the Multi locking the account,
+  # then re-reading the subscription row locked, so a concurrent webhook + hourly
+  # `SyncSubscriptions` (or two webhooks) serialize and the loser recomputes off
+  # the committed state, instead of last-write-winning a stale status over a
   # fresh one.
   def upsert_subscription(account_id, attrs, opts \\ []) do
-    writer =
-      cond do
-        Keyword.get(opts, :manual, false) -> :manual
-        Keyword.get(opts, :replace_provider?, false) -> :replace
-        true -> :upsert
-      end
+    writer = if Keyword.get(opts, :replace_provider?, false), do: :replace, else: :upsert
 
     reject_deleted? = Keyword.get(opts, :reject_deleted?, false)
 
@@ -1111,9 +1107,9 @@ defmodule Emisar.Billing do
   Internal — returns :ok if the account is within plan limits for `resource`.
   Returns `{:error, :over_limit, plan, limit}` otherwise.
 
-  Called by `Runners.register_via_enrollment_key/2` on the bootstrap path
-  before any Subject exists, and by `Catalog`/admin flows that already
-  authorized upstream. The check itself is account-scoped (the runner
+  Called by `Runners.register_via_enrollment_key/3` on the bootstrap path
+  before any Subject exists, and by `Runners.enable_runner/2` after it
+  authorized its Subject. The check itself is account-scoped (the runner
   counting), not subject-scoped.
   """
   def check_limit(%Accounts.Account{} = account, resource) do
@@ -1225,7 +1221,7 @@ defmodule Emisar.Billing do
   # human checkout click, deliberately uncached (always fresh, no staleness
   # machinery).
   defp resolve_checkout_price_id(plan_name, cycle) do
-    with {:ok, products} <- Emisar.Billing.PaddleClient.list_products() do
+    with {:ok, products} <- PaddleClient.list_products() do
       products
       |> Enum.find(&(product_plan_slug(&1) == plan_name))
       |> checkout_price_of_product(cycle)
@@ -1474,7 +1470,7 @@ defmodule Emisar.Billing do
          {:ok, account} <- Accounts.fetch_account_by_id(account.id),
          {:ok, invoices} <- do_list_recent_invoices(account, limit: 24),
          true <- Enum.any?(invoices, &(&1.id == transaction_id)) do
-      Emisar.Billing.PaddleClient.get_transaction_invoice(transaction_id)
+      PaddleClient.get_transaction_invoice(transaction_id)
     else
       false -> {:error, :not_found}
       other -> other
@@ -1496,7 +1492,7 @@ defmodule Emisar.Billing do
     # subscription; no subscription id means no invoices to show.
     case peek_subscription_for_account(account_id) do
       %Subscription{paddle_subscription_id: subscription_id} when is_binary(subscription_id) ->
-        case Emisar.Billing.PaddleClient.list_transactions(%{
+        case PaddleClient.list_transactions(%{
                customer: customer_id,
                subscription_id: subscription_id,
                limit: limit
@@ -2021,7 +2017,6 @@ defmodule Emisar.Billing do
     case subscription_data do
       %{"id" => id, "status" => status} when is_binary(id) and is_binary(status) ->
         prepare_subscription_write(subscription_data, extract_event_occurred_at(event),
-          source: :webhook,
           transaction_id: subscription_data["transaction_id"]
         )
 
@@ -2046,14 +2041,10 @@ defmodule Emisar.Billing do
     expected =
       case Keyword.get(opts, :expected_subscription, :current) do
         :current -> mirror_version(peek_subscription_by_paddle_id(id))
-        :missing -> nil
         %Subscription{} = subscription -> mirror_version(subscription)
       end
 
-    upsert_from_subscription(subscription_data, nil,
-      expected_mirror: expected,
-      source: :reconciliation
-    )
+    upsert_from_subscription(subscription_data, nil, expected_mirror: expected)
   end
 
   def reconcile_subscription_data(_subscription_data, _opts),
@@ -2075,7 +2066,7 @@ defmodule Emisar.Billing do
     do: {:error, :malformed_subscription}
 
   defp reconcile_unseen_subscription(subscription_data),
-    do: upsert_from_subscription(subscription_data, nil, source: :reconciliation)
+    do: upsert_from_subscription(subscription_data, nil, [])
 
   defp upsert_from_subscription(data, event_occurred_at, opts) do
     with {:ok, prepared} <- prepare_subscription_write(data, event_occurred_at, opts),
@@ -2525,12 +2516,6 @@ defmodule Emisar.Billing do
       entitled_subscription = if entitled_state?(posture.entitlement_state), do: subscription
       runner_count = current_count(account, :runners)
       member_count = current_count(account, :members)
-      # nil pricing for a plan this build doesn't know (a slug minted in
-      # Paddle) — the UI treats it like custom pricing, not free's $0.
-      monthly_cents =
-        if plan_source(subscription) == "complimentary",
-          do: 0,
-          else: posture.known_plan && posture.known_plan.monthly_price_cents
 
       # The mirrored cadence prices the period: an annual subscriber's summary
       # must read "$X/yr" at the annual per-runner rate, not the monthly one.
@@ -2548,8 +2533,6 @@ defmodule Emisar.Billing do
          runner_limit: entitled_limit(posture, :runners_limit),
          member_count: member_count,
          member_limit: entitled_limit(posture, :members_limit),
-         monthly_per_runner_cents: monthly_cents,
-         monthly_total_cents: monthly_cents && monthly_cents * runner_count,
          billing_interval: cycle,
          period_total_cents: period_cents,
          currency_code: currency_code,
@@ -2607,9 +2590,9 @@ defmodule Emisar.Billing do
   # -- Authorization ----------------------------------------------------
 
   @doc """
-  Whether `subject` may manage billing and the subscription — the owner and the
-  billing-manager seat. Also gates the plan catalogue, since choosing one is a
-  checkout.
+  Whether `subject` may manage billing and the subscription — owners, admins,
+  and the billing manager. Also gates the plan catalogue, since choosing one is
+  a checkout.
   """
   def subject_can_manage_billing?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_billing_permission())
@@ -2623,14 +2606,10 @@ defmodule Emisar.Billing do
   @doc """
   Headroom on a `summary` resource: `:ok` (>1 slot free),
   `:warning` (1 slot free), `:at_limit` (0 free), `:unlimited`.
-  Used by the UI to colour the runner/members usage tile.
+  Used by the UI to colour the runner usage tile.
   """
   def headroom(%{} = summary, :runners) do
     headroom_for(summary.runner_count, summary.runner_limit)
-  end
-
-  def headroom(%{} = summary, :members) do
-    headroom_for(summary.member_count, summary.member_limit)
   end
 
   defp headroom_for(_used, :unlimited), do: :unlimited

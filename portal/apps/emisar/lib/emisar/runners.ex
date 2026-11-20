@@ -17,8 +17,9 @@ defmodule Emisar.Runners do
   socket's own subject upstream.
 
   The context module also **supervises the Runners recurrent jobs** (the
-  inactivity-retention sweep), the way `Emisar.Catalog`/`Emisar.Runs` do —
-  domain jobs live under `jobs/` and their owning context starts them.
+  inactivity-retention and install-key-retention sweeps), the way
+  `Emisar.Catalog`/`Emisar.Runs` do — domain jobs live under `jobs/` and their
+  owning context starts them.
   """
   use Supervisor
   alias Ecto.Multi
@@ -644,7 +645,7 @@ defmodule Emisar.Runners do
 
   defp refs_outside_access(refs, %Accounts.RunnerAccess{} = access, %Subject{} = subject) do
     with {:ok, runners} <- list_runners_in_action_scope(subject) do
-      reachable = Enum.flat_map(runners, &runbook_runner/1)
+      reachable = Enum.flat_map(runners, &runbook_runner_fact/1)
       groups = complete_group_names(subject.account.id, access)
       runner_refs = MapSet.new(reachable, & &1.runner_ref)
 
@@ -823,7 +824,7 @@ defmodule Emisar.Runners do
   @doc """
   Fetch a single non-deleted runner by its account-unique name. Requires
   `view_runners`; account-scoped. `{:ok, runner} | {:error, :not_found |
-  :unauthorized}`. Used to resolve a runner the agent named (MCP `recent_runs`).
+  :unauthorized}`.
   """
   def fetch_runner_by_name(name, %Subject{} = subject, opts \\ []) when is_binary(name) do
     with {:ok, subject} <-
@@ -914,7 +915,7 @@ defmodule Emisar.Runners do
   connection tally from the DURABLE connection record
   (`last_connected_at`/`last_disconnected_at`/`disabled_at`), NOT live Presence —
   Presence is per-account (no fleet view) and an ungraceful socket drop only
-  reaches these columns on the next `mark_disconnected`/reconnect. Good enough
+  reaches these columns on the next `disconnect_runner/5`/reconnect. Good enough
   for an ops trend gauge; the per-account UI stays Presence-accurate. Drives the
   `emisar.runners.connection.*` gauges, fleet-wide by design (no `account_id` —
   series cardinality + tenant enumeration). Returns the four-state tally.
@@ -1427,7 +1428,7 @@ defmodule Emisar.Runners do
 
   # The manual "Clean up now" sweep is narrowed to the operator's own runner
   # access, exactly as delete_runner is — a runner-scope-restricted admin must
-  # not delete beyond their scope. The nightly job passes no subject and stays
+  # not delete beyond their scope. The hourly job passes no subject and stays
   # account-wide; an owner (or any all-access member) resolves to unrestricted.
   defp scope_sweep_to_manager(queryable, %{subject: subject, access: access}),
     do: queryable |> scope_to_runner_access(access) |> Authorizer.for_subject(subject)
@@ -2438,9 +2439,6 @@ defmodule Emisar.Runners do
   runner's socket process. Callers must pass an account/runner pair already
   authorized by their owning operation.
   """
-  # Directed (single-consumer) publish — the runner's socket process is the
-  # topic's only subscriber, so this is a "deliver", not a broadcast_* event.
-  # credo:disable-for-lines:3 Emisar.Checks.InlineBroadcast
   def deliver_to_runner(account_id, runner_id, generation, msg) do
     case current_connection_generation(account_id, runner_id) do
       {:ok, ^generation} -> broadcast_to_runner(account_id, runner_id, generation, msg)
@@ -2546,7 +2544,7 @@ defmodule Emisar.Runners do
 
   Returns `{:ok, raw_secret, key}` or `{:error, :unauthorized}`. No audit log on
   mint — auto-gen is noise. Once a runner registers with the key,
-  `consume_enrollment_key/1` records its use and audit logs
+  `consume_enrollment_key/2` records its use and audit logs
   `enrollment_key.bound` with `auto: true`. Unused keys expire after 24 hours.
   """
   def mint_install_key(%Subject{account: account} = subject, opts \\ []) do
@@ -2708,7 +2706,8 @@ defmodule Emisar.Runners do
   end
 
   defp peek_by_prefix(raw, hash, size) do
-    if String.length(raw) < size do
+    # Malformed UTF-8 can never match and must not reach Postgres as text.
+    if not String.valid?(raw) or String.length(raw) < size do
       nil
     else
       prefix = String.slice(raw, 0, size)
@@ -2851,7 +2850,8 @@ defmodule Emisar.Runners do
   grace window or claim that a later WebSocket connection succeeded.
   """
   def verify_runner_token(raw, context \\ %RequestContext{}) when is_binary(raw) do
-    if String.length(raw) < @token_prefix_size do
+    # Malformed UTF-8 can never match and must not reach Postgres as text.
+    if not String.valid?(raw) or String.length(raw) < @token_prefix_size do
       {:error, :token_invalid}
     else
       prefix = String.slice(raw, 0, @token_prefix_size)
@@ -3212,8 +3212,11 @@ defmodule Emisar.Runners do
   # carry the same predicate or Postgres won't match the partial index.
   # An :unsafe_fragment is the only way to express that in Ecto; the
   # columns/predicate are literals here, so there's nothing to interpolate.
+  # The runner names its row after its validated external_id: a declared
+  # `runner.id` is the operator's handle, and the runner defaults the id to its
+  # hostname otherwise.
   defp insert_runner(repo, key, attrs, external_id) do
-    name = derive_name(attrs, external_id)
+    name = external_id
 
     with :ok <- ensure_name_available(key, name) do
       changeset =
@@ -3249,8 +3252,8 @@ defmodule Emisar.Runners do
 
   # Names are unique among live runners: another live runner holding this
   # name — online or not — is a conflict the operator resolves by deleting the
-  # holder in the console, or by declaring `runner.id` on the host (derive_name/2
-  # names the row after a declared id, else the reported hostname; nothing can
+  # holder in the console, or by declaring `runner.id` on the host (the row is
+  # named after the external_id, which defaults to the hostname; nothing can
   # rename a runner row). The partial unique index is the race backstop in
   # `insert_runner/4`.
   defp ensure_name_available(key, name) do
@@ -3343,20 +3346,6 @@ defmodule Emisar.Runners do
     case repo.update_all(query, []) do
       {1, _} -> :ok
       {0, _} -> {:error, :enrollment_key_invalid}
-    end
-  end
-
-  # A declared runner.id is the operator's handle for this runner, so it names
-  # the row too. The runner defaults its external_id to the hostname, so an id
-  # that differs from the reported hostname was declared on purpose; equal
-  # values collapse to the hostname-derived name either way.
-  defp derive_name(attrs, external_id) do
-    declared_id? = is_binary(external_id) and external_id != attrs[:hostname]
-
-    if declared_id? do
-      external_id
-    else
-      attrs[:hostname] || attrs[:name] || "runner-#{Crypto.runner_name_suffix()}"
     end
   end
 end

@@ -17,7 +17,6 @@ defmodule EmisarWeb.Sandbox do
   # :last_caller_pid is the sandbox-owning test process, planted so the
   # test-only `Emisar.Config` override lookup can find it across the request
   # boundary — never request/audit state (that stays an `%Emisar.RequestContext{}`).
-  # credo:disable-for-this-file Emisar.Checks.NoProcessDictionary
 
   @behaviour Plug
 

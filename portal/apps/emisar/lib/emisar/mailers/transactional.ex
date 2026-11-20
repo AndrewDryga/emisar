@@ -28,7 +28,7 @@ defmodule Emisar.Mailers.Transactional do
           | {:link_paragraph, binary(), binary(), binary(), binary()}
           | {:emphasis, binary(), binary(), binary()}
           | {:facts, [{binary(), fact_value()}]}
-          | {:status, binary(), binary(), binary(), :success | :warning | :danger | :neutral}
+          | {:status, binary(), binary(), binary(), :success | :warning | :danger}
           | {:section, binary()}
           | {:code, binary()}
           | {:pre, binary()}
@@ -45,8 +45,7 @@ defmodule Emisar.Mailers.Transactional do
       preview: Map.fetch!(attrs, :preview),
       blocks: Map.get(attrs, :blocks, []),
       action: Map.get(attrs, :action),
-      secondary_action: Map.get(attrs, :secondary_action),
-      footer: Map.get(attrs, :footer)
+      secondary_action: Map.get(attrs, :secondary_action)
     }
 
     %{text: text(content), html: html(content)}
@@ -63,8 +62,7 @@ defmodule Emisar.Mailers.Transactional do
       "Hi #{content.recipient},",
       blocks,
       text_action(content.action),
-      text_action(content.secondary_action),
-      content.footer
+      text_action(content.secondary_action)
     ]
     |> Enum.reject(&blank?/1)
     |> Enum.join("\n\n")
@@ -105,7 +103,6 @@ defmodule Emisar.Mailers.Transactional do
     </tr>
     #{Enum.map_join(content.blocks, &html_block/1)}
     #{html_actions(content.action, content.secondary_action)}
-    #{html_footer(content.footer)}
     """)
   end
 
@@ -224,21 +221,9 @@ defmodule Emisar.Mailers.Transactional do
     ~s(<td class="gm-edge" style="#{Style.fill(@edge)}border-radius:8px;padding:1px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td class="gm-ground" style="#{Style.fill(@ground)}border-radius:7px;"><a href="#{HTML.escape(url)}" target="_top" style="display:inline-block;padding:12px 21px;font-family:#{@font};font-size:14px;line-height:1;font-weight:600;color:#{@ink};text-decoration:none;border-radius:7px;">#{Style.blend(HTML.escape(label))}</a></td></tr></table></td>)
   end
 
-  defp html_footer(footer) when is_binary(footer) and footer != "" do
-    """
-    #{Style.rule()}
-    <tr>
-      <td style="padding:20px 0 0;font-family:#{@font};font-size:12px;line-height:1.65;color:#{@ink_soft};">#{Style.blend(HTML.escape(footer))}</td>
-    </tr>
-    """
-  end
-
-  defp html_footer(_footer), do: ""
-
   defp status_color(:success), do: @brand
   defp status_color(:warning), do: @amber
   defp status_color(:danger), do: @rose
-  defp status_color(:neutral), do: @ink
 
   defp indent(value), do: value |> String.split("\n") |> Enum.map_join("\n", &("  " <> &1))
   defp blank?(value), do: is_nil(value) or value == ""

@@ -389,7 +389,7 @@ defmodule EmisarWeb.RunbookRunLive do
          put_flash(
            socket,
            :error,
-           "This account already has 1,024 active runbook items. Wait for an execution to finish or cancel one, then try again."
+           "This run would exceed the account limit for active runbook items. Wait for an execution to finish or cancel one, then try again."
          )}
 
       # Retrying the same text fails identically, so this one names the argument
@@ -431,9 +431,7 @@ defmodule EmisarWeb.RunbookRunLive do
     generation = socket.assigns.preflight_generation
     Process.send_after(self(), {:run_preflight, generation}, @preflight_delay_ms)
 
-    socket
-    |> assign(:preflight_generation, generation)
-    |> assign(:preflight, %{socket.assigns.preflight | state: :loading})
+    assign(socket, :preflight, %{socket.assigns.preflight | state: :loading})
   end
 
   defp schedule_preflight(socket), do: socket
@@ -889,7 +887,7 @@ defmodule EmisarWeb.RunbookRunLive do
   defp evidence_kind(_evidence), do: "Execution evidence"
 
   defp evidence_tone(status) when status in ["passed", "extracted"], do: :brand
-  defp evidence_tone("failed"), do: :rose
+  defp evidence_tone(status) when status in ["failed", "error"], do: :rose
   defp evidence_tone(status) when status in ["not met", "pending"], do: :amber
   defp evidence_tone(_status), do: :neutral
 

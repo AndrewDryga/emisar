@@ -6,6 +6,10 @@ defmodule EmisarWeb.RunnerConnectController do
       baked into the image) for a per-runner token. Called once at first
       boot. Idempotent on `external_id`.
 
+    * `POST /runner/token/refresh` — exchanges a live runner token for its
+      successor; the presented token is the authorization. `409 not_due` when
+      the token is too young to rotate.
+
     * `GET  /runner/socket/websocket` — upgrades to the WebSock transport
       after authenticating via `Authorization: Bearer <runner_token>`.
   """
@@ -81,8 +85,9 @@ defmodule EmisarWeb.RunnerConnectController do
     end
   end
 
-  # nil for a token that never rotates, so an older runner sees no field and a
-  # newer one reads "never due" — the same answer, spelled once.
+  # nil for a token minted before rotation existed (no expiry). A newer runner
+  # reads the missing value as "ask", so it attempts a refresh on its next dial
+  # and migrates onto an expiring successor.
   defp iso8601(nil), do: nil
   defp iso8601(%DateTime{} = at), do: DateTime.to_iso8601(at)
 

@@ -39,6 +39,15 @@ defmodule Emisar.Runs.RunEventTest do
       assert errors_on(changeset).stream == ["should be at most 32 character(s)"]
     end
 
+    test "counts a stream label in code points, so combining marks can't hide its length" do
+      # One grapheme, 301 code points: past the varchar(255) column.
+      stream = "x" <> String.duplicate("\u0301", 300)
+      changeset = RunEvent.Changeset.create(create_attrs(%{stream: stream}))
+
+      refute changeset.valid?
+      assert errors_on(changeset).stream == ["should be at most 32 character(s)"]
+    end
+
     test "rejects a non-positive seq from a hostile runner" do
       # Runner seq is 1-based; 0 and negatives are malformed and rejected before
       # the row (and the DB CHECK) ever see them.

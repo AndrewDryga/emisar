@@ -14,16 +14,6 @@ defmodule EmisarWeb.RunnerSocketDrainTest do
     assert Process.info(pid, :trap_exit) == {:trap_exit, true}
   end
 
-  test "terminate broadcasts :runner_socket_drain on the shared topic" do
-    :ok = Phoenix.PubSub.subscribe(Emisar.PubSub.Server, RunnerSocketDrain.drain_topic())
-
-    # Direct call — the drain window sleep makes this take ~2s, which is
-    # the documented flush window, not a test smell.
-    assert RunnerSocketDrain.terminate(:shutdown, %{}) == :ok
-
-    assert_receive :runner_socket_drain
-  end
-
   test "terminate drains this node's subscribers only, never the cluster adapter" do
     :ok = Phoenix.PubSub.subscribe(Emisar.PubSub.Server, RunnerSocketDrain.drain_topic())
 
@@ -42,6 +32,8 @@ defmodule EmisarWeb.RunnerSocketDrainTest do
     :ok = Emisar.PubSub.broadcast("trace_probe", :probe)
     assert_receive {:trace, _, :call, {Phoenix.PubSub.PG2, :broadcast, [_ | _]}}
 
+    # Direct call — the drain window sleep makes this take ~2s, which is
+    # the documented flush window, not a test smell.
     assert RunnerSocketDrain.terminate(:shutdown, %{}) == :ok
 
     assert_received :runner_socket_drain

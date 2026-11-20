@@ -77,7 +77,9 @@ defmodule EmisarWeb.RunbookMarkdown do
 
   defp consume_line(line, state) do
     cond do
-      fence = Regex.run(~r/^```([A-Za-z0-9_+-]*)\s*$/, line) ->
+      # The label is the info string's first word; metadata after it
+      # (`bash title=check`) and punctuation (`c#`, `compose.yml`) still open a fence.
+      fence = Regex.run(~r/^```([^`\s]*)[^`]*$/, line) ->
         [_, language] = fence
         state |> flush_text() |> Map.put(:code, %{language: language, lines: []})
 

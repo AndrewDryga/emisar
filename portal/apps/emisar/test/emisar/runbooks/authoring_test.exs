@@ -96,6 +96,13 @@ defmodule Emisar.Runbooks.AuthoringTest do
 
       definition = Authoring.build_v1(command)
 
+      # `==` equates 30 and 30.0; the canonical digest does not, so an integer
+      # token must stay an integer and a decimal one a float.
+      threshold = get_in(definition, ["inputs", Access.at(1)])
+      assert threshold["minimum"] === 0
+      assert threshold["maximum"] === 30
+      assert threshold["default"] === 2.5
+
       assert definition == %{
                "schema_version" => 1,
                "context_markdown" => "## Before you run\n\nConfirm the incident.",
@@ -116,8 +123,8 @@ defmodule Emisar.Runbooks.AuthoringTest do
                    "required" => false,
                    "sensitive" => false,
                    "default" => 2.5,
-                   "minimum" => 0.0,
-                   "maximum" => 30.0
+                   "minimum" => 0,
+                   "maximum" => 30
                  }
                ],
                "stages" => [

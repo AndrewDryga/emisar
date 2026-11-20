@@ -303,10 +303,7 @@ defmodule Emisar.SSO.SCIM do
 
       group_ids = repost_group_ids(identity, state)
 
-      mapped_access =
-        runner_access_mappings
-        |> Enum.filter(&(&1.directory_group_id in group_ids))
-        |> then(&Emisar.SSO.GroupAccess.effective(provider_runner_access(current), &1))
+      mapped_access = effective_runner_access(current, group_ids, runner_access_mappings)
 
       {:ok,
        %{
@@ -557,8 +554,6 @@ defmodule Emisar.SSO.SCIM do
     else
       :ok
     end
-
-    Accounts.after_membership_activation_committed(changes)
   end
 
   defp repost_authorization(provider, %{authoritative?: true} = authorization) do
@@ -579,7 +574,7 @@ defmodule Emisar.SSO.SCIM do
   defp provision_scim_user(%IdentityProvider{} = provider, external_id, attrs, retry) do
     multi = build_scim_provision_multi(provider, external_id, attrs)
 
-    case Repo.commit_multi(multi, after_commit: &Accounts.after_membership_activation_committed/1) do
+    case Repo.commit_multi(multi) do
       {:ok, %{identity: identity, membership: membership}} ->
         {:ok, %{identity: identity, membership: membership}}
 
@@ -1442,8 +1437,8 @@ defmodule Emisar.SSO.SCIM do
     end
   end
 
-  @doc "Internal — rename one server-issued Group resource without changing identity."
-  def scim_rename_group(%IdentityProvider{} = provider, id, display) do
+  # Rename one server-issued Group resource without changing identity.
+  defp scim_rename_group(%IdentityProvider{} = provider, id, display) do
     multi =
       provider
       |> scim_group_multi()
@@ -1475,19 +1470,11 @@ defmodule Emisar.SSO.SCIM do
   """
   def validate_scim_group_display(display), do: validate_optional_scim_string(display)
 
-  @doc """
-  Internal — SCIM group patch (`PATCH /Groups` member ops): add/remove members
-  of a group, then recompute the role of every affected identity. Add ids are
-  resolved to the provider's identities (unknown ids ignored); remove ids
-  soft-delete the matching links. `{:ok, group_summary}`.
-  """
-  def scim_patch_group_members(
-        %IdentityProvider{} = provider,
-        id,
-        add_ids,
-        remove_ids,
-        display \\ nil
-      ) do
+  # SCIM group patch (`PATCH /Groups` member ops): add/remove members of a
+  # group, then recompute the role of every affected identity. Add ids are
+  # resolved to the provider's identities (unknown ids ignored); remove ids
+  # soft-delete the matching links. `{:ok, group_summary}`.
+  defp scim_patch_group_members(%IdentityProvider{} = provider, id, add_ids, remove_ids, display) do
     multi =
       provider
       |> scim_group_multi()
@@ -1503,10 +1490,9 @@ defmodule Emisar.SSO.SCIM do
         removed =
           remove_group_members(locked, group, resolve_member_identity_ids(locked, remove_ids))
 
-        {:ok, {added, removed, Enum.uniq(added ++ removed)}}
+        {:ok, Enum.uniq(added ++ removed)}
       end)
-      |> Multi.run(:affected, fn _repo, %{sync: {locked, first_push?}, members: members} ->
-        {_added, _removed, touched} = members
+      |> Multi.run(:affected, fn _repo, %{sync: {locked, first_push?}, members: touched} ->
         {:ok, identities_to_recompute(locked, touched, first_push?)}
       end)
       |> Multi.run(:authorization, fn repo, %{sync: {locked, _first_push?}, affected: affected} ->
@@ -1517,10 +1503,8 @@ defmodule Emisar.SSO.SCIM do
          :ok <- validate_optional_scim_string(display),
          :ok <- validate_scim_patch_member_ids(add_ids, remove_ids),
          {:ok, changes} <- Repo.commit_multi(multi),
-         :ok <- recompute_role_for_affected(changes.authorization, changes.affected),
-         {:ok, summary} <- scim_fetch_group(provider, changes.group.id) do
-      {added, removed, _touched} = changes.members
-      {:ok, Map.merge(summary, %{added: length(added), removed: length(removed)})}
+         :ok <- recompute_role_for_affected(changes.authorization, changes.affected) do
+      scim_fetch_group(provider, changes.group.id)
     else
       false -> {:error, :not_found}
       error -> error
@@ -1582,10 +1566,7 @@ defmodule Emisar.SSO.SCIM do
          id,
          {:delta, display, add_ids, remove_ids}
        ) do
-    with {:ok, _summary} <-
-           scim_patch_group_members(provider, id, add_ids, remove_ids, display) do
-      scim_fetch_group(provider, id)
-    end
+    scim_patch_group_members(provider, id, add_ids, remove_ids, display)
   end
 
   # Serialize every group write on the provider row, BEFORE any membership is
@@ -1720,20 +1701,19 @@ defmodule Emisar.SSO.SCIM do
     end
   end
 
-  defp validate_scim_patch_member_ids(add_external_ids, remove_external_ids)
-       when is_list(add_external_ids) and is_list(remove_external_ids) do
-    if length(add_external_ids) + length(remove_external_ids) > @scim_group_member_max_count do
+  defp validate_scim_patch_member_ids(add_ids, remove_ids)
+       when is_list(add_ids) and is_list(remove_ids) do
+    if length(add_ids) + length(remove_ids) > @scim_group_member_max_count do
       {:error, :invalid_scim_group}
     else
-      case validate_scim_member_ids(add_external_ids) do
-        :ok -> validate_scim_member_ids(remove_external_ids)
+      case validate_scim_member_ids(add_ids) do
+        :ok -> validate_scim_member_ids(remove_ids)
         error -> error
       end
     end
   end
 
-  defp validate_scim_patch_member_ids(_add_external_ids, _remove_external_ids),
-    do: {:error, :invalid_scim_group}
+  defp validate_scim_patch_member_ids(_add_ids, _remove_ids), do: {:error, :invalid_scim_group}
 
   defp validate_scim_member_ids(member_ids) when is_list(member_ids) do
     cond do
@@ -1787,8 +1767,8 @@ defmodule Emisar.SSO.SCIM do
     |> Enum.map(& &1.id)
   end
 
-  # Make the group's synced membership exactly `desired_ids`: revive/keep the
-  # rows that should stay, insert the new ones, soft-delete the rest. Returns
+  # Make the group's synced membership exactly `desired_ids`: keep the rows
+  # that should stay, insert the new ones, soft-delete the rest. Returns
   # the identities whose membership actually changed (added or removed), for the
   # role recompute.
   defp replace_group_members(

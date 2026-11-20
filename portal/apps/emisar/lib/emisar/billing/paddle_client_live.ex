@@ -16,9 +16,9 @@ defmodule Emisar.Billing.PaddleClient.Live do
 
   @impl true
   def create_customer(attrs) do
-    with {:ok, %{"data" => %{"id" => id} = data}} <-
+    with {:ok, %{"data" => %{"id" => _id} = data}} <-
            post_json("/customers", customer_body(attrs)) do
-      {:ok, Map.put(data, "id", id)}
+      {:ok, data}
     end
   end
 
@@ -265,11 +265,8 @@ defmodule Emisar.Billing.PaddleClient.Live do
 
   @impl true
   def construct_webhook_event(payload, signature, secret) do
-    with :ok <- verify_signature(payload, signature, secret),
-         {:ok, event} <- Jason.decode(payload) do
-      {:ok, event}
-    else
-      {:error, reason} -> {:error, reason}
+    with :ok <- verify_signature(payload, signature, secret) do
+      Jason.decode(payload)
     end
   end
 

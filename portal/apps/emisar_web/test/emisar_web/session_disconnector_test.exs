@@ -2,7 +2,7 @@ defmodule EmisarWeb.SessionDisconnectorTest do
   @moduledoc """
   The web-side half of "end these sessions' sockets": each session's
   topic must receive the `%Phoenix.Socket.Broadcast{}`
-  disconnect event LiveView's channel tears down on.
+  disconnect event that `EmisarWeb.UserAuth` and `Phoenix.Socket` act on.
   """
   use EmisarWeb.ConnCase, async: true
   alias Emisar.{Auth, Crypto, Fixtures}

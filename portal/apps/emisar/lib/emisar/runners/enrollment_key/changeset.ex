@@ -1,7 +1,7 @@
 defmodule Emisar.Runners.EnrollmentKey.Changeset do
   @moduledoc """
-  Changesets for runner enrollment keys: create / mint-install (auto-generated)
-  / revoke / soft-delete / usage. The raw key only ever flows through
+  Changesets for runner enrollment keys: form / create / create-with-secret /
+  mint-install (auto-generated) / revoke. The raw key only ever flows through
   `create/5` and `mint_install/5` return values — `key_hash` is the
   persisted form.
   """

@@ -12,6 +12,9 @@ defmodule EmisarWeb.HowItWorksMap do
   use Phoenix.Component
   import EmisarWeb.CoreComponents, only: [icon: 1]
 
+  attr :pack_count, :integer, required: true, doc: "published packs, for the packs caption"
+  attr :action_count, :string, required: true, doc: "published actions, comma-delimited"
+
   def how_it_works_map(assigns) do
     ~H"""
     <div data-hiw class="hiw" data-s="10" data-act="3">
@@ -70,7 +73,7 @@ defmodule EmisarWeb.HowItWorksMap do
                 </p>
                 <p class="hiw-cap-size" data-hiw-cap-n="6" aria-hidden="true">
                   <strong class="hiw-cap-t">Packs extend the agent's toolset.</strong>
-                  <span class="hiw-cap-s">Agents run actions grouped in packs, each a fixed command with checked arguments. The catalog has 1,840 actions in 103 packs for the tools you most likely use, and you can build your own.</span>
+                  <span class="hiw-cap-s">Agents run actions grouped in packs, each a fixed command with checked arguments. The catalog has {@action_count} actions in {@pack_count} packs for the tools you most likely use, and you can build your own.</span>
                 </p>
                 <p class="hiw-cap-size" data-hiw-cap-n="7" aria-hidden="true">
                   <strong class="hiw-cap-t">Low-risk requests run unattended.</strong>

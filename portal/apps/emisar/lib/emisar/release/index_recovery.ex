@@ -16,7 +16,7 @@ defmodule Emisar.Release.IndexRecovery do
     end
 
     existing = index(repo, schema, spec.name)
-    verify_index!(repo, table_oid, spec, existing)
+    verify_index!(table_oid, spec, existing)
     unless usable?(existing), do: refuse!(spec.name, "index is still invalid after recovery")
     clean_remnants(repo, schema, table_oid, spec)
   end
@@ -31,7 +31,7 @@ defmodule Emisar.Release.IndexRecovery do
 
       existing ->
         table_oid = verify_table!(repo, schema, spec)
-        verify_index!(repo, table_oid, spec, existing)
+        verify_index!(table_oid, spec, existing)
         sql(repo, "DROP INDEX CONCURRENTLY #{qualified(schema, spec.name)}")
     end
   end
@@ -102,7 +102,7 @@ defmodule Emisar.Release.IndexRecovery do
   end
 
   defp repair_index(repo, schema, table_oid, spec, existing) do
-    verify_index!(repo, table_oid, spec, existing)
+    verify_index!(table_oid, spec, existing)
 
     unless usable?(existing) do
       # An invalid UNIQUE index may still reject duplicate writes. Rebuild it
@@ -137,7 +137,7 @@ defmodule Emisar.Release.IndexRecovery do
 
     for [name] <- rows, remnant_name?(name, spec.name) do
       existing = index(repo, schema, name)
-      verify_index!(repo, table_oid, spec, existing)
+      verify_index!(table_oid, spec, existing)
       if existing["valid"], do: refuse!(name, "reindex remnant is valid; ownership is ambiguous")
       sql(repo, "DROP INDEX CONCURRENTLY #{qualified(schema, name)}")
     end
@@ -287,7 +287,7 @@ defmodule Emisar.Release.IndexRecovery do
     end
   end
 
-  defp verify_index!(_repo, table_oid, spec, existing) do
+  defp verify_index!(table_oid, spec, existing) do
     keys =
       Enum.map(spec.keys, fn {name, order} ->
         %{"name" => name, "order" => order_option(order), "default" => true}

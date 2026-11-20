@@ -15,8 +15,10 @@ defmodule EmisarWeb.Telemetry do
     Supervisor.init(children, strategy: :rest_for_one)
   end
 
-  # Telemetry poller — runs `periodic_measurements/0` every 10s so gauge-style
-  # metrics (VM memory, run queue lengths) get refreshed. Disabled in tests
+  # Telemetry poller — runs `periodic_measurements/0` every 10s to refresh the
+  # approval-queue, runner-connection and published-catalog gauges. VM gauges
+  # (memory, run queue lengths) come from telemetry_poller's own default
+  # poller, which the library starts separately. Disabled in tests
   # because the samplers do fleet-wide DB reads outside an ExUnit sandbox owner;
   # the sampler functions themselves are still covered directly.
   defp poller_children do
@@ -248,7 +250,9 @@ defmodule EmisarWeb.Telemetry do
           "Seconds since the published catalog last validated; a rising value means " <>
             "auto-trust is frozen on the last-good document (gauge)"
       ),
-      counter("emisar.catalog.descriptor_rejected.count",
+      # One event carries how many descriptors a runner state rejected, so this
+      # sums the measurement rather than counting events.
+      sum("emisar.catalog.descriptor_rejected.count",
         description:
           "Runner-advertised action descriptors the catalog refused, so the action is " <>
             "absent from that runner's list"

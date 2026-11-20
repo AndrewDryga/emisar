@@ -182,7 +182,7 @@ defmodule EmisarWeb.SCIM.DiscoveryController do
   def service_provider_config(conn, _params) do
     json(conn, %{
       "schemas" => ["urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig"],
-      "documentationUri" => "#{base_url(conn)}/docs/scim",
+      "documentationUri" => Emisar.PublicUrl.url("/docs/scim"),
       "patch" => %{"supported" => true},
       "bulk" => %{"supported" => false, "maxOperations" => 0, "maxPayloadSize" => 0},
       "filter" => %{"supported" => true, "maxResults" => Resource.max_page_size()},
@@ -199,7 +199,7 @@ defmodule EmisarWeb.SCIM.DiscoveryController do
       ],
       "meta" => %{
         "resourceType" => "ServiceProviderConfig",
-        "location" => "#{base_url(conn)}/scim/v2/ServiceProviderConfig"
+        "location" => Emisar.PublicUrl.url("/scim/v2/ServiceProviderConfig")
       }
     })
   end
@@ -239,6 +239,4 @@ defmodule EmisarWeb.SCIM.DiscoveryController do
     |> put_status(:not_found)
     |> json(Resource.error(404, "No SCIM Schema `#{id}`."))
   end
-
-  defp base_url(_conn), do: Emisar.PublicUrl.base()
 end

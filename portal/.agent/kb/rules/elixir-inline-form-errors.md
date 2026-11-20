@@ -25,9 +25,10 @@ resend.
 ```elixir
 # magic_link_live.ex
 def handle_event("verify_code", %{"code" => code}, socket) do
-  with true <- is_binary(socket.assigns.token_id),
-       {:ok, user} <- Auth.verify_magic_link(socket.assigns.token_id, code, socket.assigns.nonce) do
-    handoff = MagicLinkHandoff.sign(user.id, socket.assigns.registered?, socket.assigns.token_id)
+  %{token_id: token_id, nonce: nonce, request_context: context} = socket.assigns
+
+  with {:ok, membership_id} <- Auth.verify_magic_link(token_id, code, nonce, context) do
+    handoff = MagicLinkHandoff.sign(membership_id, token_id)
     {:noreply, redirect(socket, to: ~p"/sign_in/magic/complete?#{[handoff: handoff]}")}  # success navigates — fine
   else
     _ -> {:noreply, assign(socket, :code_error, "That code didn't match or has expired.")}  # stays put, inline
@@ -57,7 +58,7 @@ end
 It's correct for what **isn't** a fixable form error and has **no input to return to**: an
 auth denial, a dead / expired / rate-limited link click (a GET, not a typed form), an
 OAuth/SSO callback failure, a cross-account 404. There's no field there to annotate, so a
-page-level flash is the honest place. (See `user_confirmation_controller`, `sso_controller`:
+page-level flash is the honest place. (See `UserSessionController.magic_link_confirm`, `sso_controller`:
 link/OAuth flows, deliberately flash-and-redirect.)
 
 ## How it's enforced

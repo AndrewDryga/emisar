@@ -1,7 +1,7 @@
 defmodule EmisarWeb.SCIM.UserController do
   @moduledoc """
   Inbound SCIM 2.0 `/Users` — the directory-sync lifecycle an IdP (Okta,
-  Entra, Google) pushes: create/reconcile, read, list/filter, the `active`
+  Entra) pushes: create/reconcile, read, list/filter, the `active`
   flip (PATCH/PUT), and DELETE. Every action reads the provider resolved by
   `SCIM.Auth` from `conn.assigns.scim_provider` and drives the account-scoped
   `Emisar.SSO.scim_*` functions with it — the token's provider-scope IS the
@@ -294,10 +294,10 @@ defmodule EmisarWeb.SCIM.UserController do
   defp render_error(conn, _reason),
     do: bad_request(conn, "invalidValue", "The SCIM request could not be processed.")
 
-  defp not_found(conn, external_id) do
+  defp not_found(conn, id) do
     detail =
-      if external_id,
-        do: "No SCIM User with id `#{external_id}` in this directory.",
+      if id,
+        do: "No SCIM User with id `#{id}` in this directory.",
         else: "No matching SCIM User in this directory."
 
     conn

@@ -10,7 +10,7 @@ const INSET = 8
 
 // The console's work canvas, intersected with the window. A trigger outside
 // `main` — the sidebar's workspace switcher — is bounded by the window alone.
-export function canvasBounds(el) {
+function canvasBounds(el) {
   const canvas = el.closest("main")?.getBoundingClientRect()
   return {
     left: Math.max(INSET, (canvas?.left ?? 0) + INSET),
@@ -21,7 +21,7 @@ export function canvasBounds(el) {
 // How far `rect` must slide horizontally to sit inside those bounds — 0 when it
 // already does. An overlay wider than the canvas keeps its left edge visible,
 // because that is where its content starts.
-export function horizontalShift(el, rect) {
+function horizontalShift(el, rect) {
   const {left, right} = canvasBounds(el)
   if (rect.left < left) return left - rect.left
   if (rect.right > right) return Math.max(right - rect.right, left - rect.left)

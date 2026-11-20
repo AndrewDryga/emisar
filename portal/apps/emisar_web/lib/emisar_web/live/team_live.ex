@@ -5,16 +5,14 @@ defmodule EmisarWeb.TeamLive do
   alias EmisarWeb.{Permissions, RoleCopy, RunnerScope}
   alias Phoenix.LiveView.JS
 
-  # String forms of the canonical role enum — the invite/role forms work
-  # in strings (HTTP params); membership.role itself is an atom.
   @runner_scope_required "Choose at least one runner group or runner for selected access."
   @pack_scope_required "Choose at least one pack for selected pack access."
 
   # No mount gate, deliberately: every member may see who else is in the
   # workspace, so the roster read (`list_team_member_facts/3`) asks only for
   # `view_own_account`. Managing the team is gated where it acts — the render's
-  # `@can_manage_team?` branches and `Permissions.gated/3` on every handler — which
-  # is what leaves a billing manager a read-only Team page instead of a nav link
+  # `@can_manage_team?` branches, and every mutating handler's context call (or its
+  # `Permissions.gated/3` wrapper) re-authorizes — which is what leaves a billing manager a read-only Team page instead of a nav link
   # that flashes and bounces. Same shape as the Billing page.
   def mount(_params, _session, socket) do
     {:ok,
@@ -72,9 +70,10 @@ defmodule EmisarWeb.TeamLive do
        Emisar.PublicUrl.base() <> ~p"/app/#{socket.assigns.current_account}/sign_in"
      )
      |> ConfirmDialog.init()
-     |> assign_invite_form()
-     # Only the add page renders this form, and building it re-reads the session's
-     # authority, so it is built there (handle_params), not on every mount.
+     # Only the add pages render these forms, and building one re-reads the
+     # session's authority, so each is built there (handle_params), not on every
+     # mount.
+     |> assign(:form, nil)
      |> assign(:service_account_form, nil)
      |> assign(:added_service_account, nil)
      |> assign(:added_service_account_access, nil)}
@@ -82,8 +81,8 @@ defmodule EmisarWeb.TeamLive do
 
   def handle_params(params, _uri, socket) do
     case socket.assigns.live_action do
-      # The invite page needs no member load — it renders from the subject alone,
-      # so it skips the connected?/loading dance and shows the form immediately.
+      # The invite page needs no member load; only its access pickers' runner
+      # and pack lists wait for the connected pass.
       :new ->
         socket = socket |> assign(:page_title, "Invite a member") |> reset_invite_form()
 
@@ -162,18 +161,23 @@ defmodule EmisarWeb.TeamLive do
 
   defp reload(socket), do: load(socket, socket.assigns[:filter_params] || %{})
 
-  def handle_event("filter", params, socket) do
+  def handle_event("filter", params, %{assigns: %{live_action: action}} = socket)
+      when action in [:index, :service_accounts] do
     fields = Enum.map(socket.assigns.filters, &to_string(&1.name))
     params = Map.merge(Map.take(socket.assigns.filter_params, fields), Map.take(params, fields))
 
     {:noreply,
      LiveTable.apply_filter(
        socket,
-       roster_path(socket.assigns.live_action, socket.assigns.current_account),
+       roster_path(action, socket.assigns.current_account),
        params,
        socket.assigns.filters
      )}
   end
+
+  # The invite, add-service-account, and MFA-reset routes have no roster to filter,
+  # so a crafted filter event leaves the page (and any half-typed form) alone.
+  def handle_event("filter", _params, socket), do: {:noreply, socket}
 
   def handle_event("start_edit", %{"membership_id" => id}, %{assigns: %{editing_id: id}} = socket) do
     {:noreply, close_name_edit(socket)}
@@ -312,8 +316,7 @@ defmodule EmisarWeb.TeamLive do
   def handle_event("toggle_require_mfa", _params, socket) do
     value = socket.assigns.security_facts.mfa_enforcement != :enforced
 
-    if socket.assigns.security_facts.available? and
-         Accounts.subject_can_manage_account_security?(socket.assigns.current_subject) do
+    if Accounts.subject_can_manage_account_security?(socket.assigns.current_subject) do
       case Accounts.update_account(
              socket.assigns.current_account,
              %{settings: %{require_mfa: value}},
@@ -351,8 +354,7 @@ defmodule EmisarWeb.TeamLive do
     account = socket.assigns.current_account
     value = not socket.assigns.security_facts.sso_required?
 
-    if socket.assigns.security_facts.available? and
-         Accounts.subject_can_manage_account_security?(socket.assigns.current_subject) do
+    if Accounts.subject_can_manage_account_security?(socket.assigns.current_subject) do
       case Accounts.update_account(
              account,
              %{settings: %{require_sso: value}},
@@ -720,7 +722,6 @@ defmodule EmisarWeb.TeamLive do
 
   defp keep_pack_selection(_form, params), do: params
 
-  # Groups lead — a group is the wider grant, so the visible tags start there.
   # The invite form. Split out of render/1, which carried four unrelated
   # screens — invite, MFA reset, the roster, and the security rail — in one
   # 1,514-line body.
@@ -840,9 +841,6 @@ defmodule EmisarWeb.TeamLive do
               Emisar.Auth.role_carries_runner_access?(@form[:role].value)
           }>
             <legend class="text-sm font-medium text-zinc-300">Access</legend>
-            <%!-- The eyebrows below already say the two decisions, so this line
-                  spends itself on the one thing they cannot: why the first card
-                  is preselected. --%>
             <.access_scope_fields
               runner_mode_name="invite[runner_access_mode]"
               runner_mode_value={@form[:runner_access_mode].value}
@@ -1029,6 +1027,7 @@ defmodule EmisarWeb.TeamLive do
   end
 
   # The Team page's side rail: MFA posture, SSO connections, directory sync.
+  attr :can_configure_sso?, :boolean, required: true
   attr :current_account, :any, required: true
   attr :current_subject, :any, required: true
   attr :enabled_sso_provider_count, :any, required: true
@@ -1054,7 +1053,6 @@ defmodule EmisarWeb.TeamLive do
       >
         <:body>Refresh the page to try again.</:body>
       </.event_block>
-      <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — a self-contained security control, boxed per the screenshot --%>
       <div class="rounded-xl border border-zinc-800/80 p-4">
         <h4 class="text-sm font-medium text-zinc-100">Multi-factor authentication</h4>
         <p class="mt-1 text-xs leading-relaxed text-zinc-400">
@@ -1111,7 +1109,6 @@ defmodule EmisarWeb.TeamLive do
       <%!-- ── Single sign-on connections ── --%>
       <%!-- The id is a documented deep-link target: /settings/sso lands here
            via its anchored redirect, and /docs/sso points operators at it. --%>
-      <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — a self-contained security control, boxed per the screenshot --%>
       <div id="single-sign-on" class="rounded-xl border border-zinc-800/80 p-4">
         <h4 class="text-sm font-medium text-zinc-100">Single sign-on</h4>
         <p class="mt-1 text-xs leading-relaxed text-zinc-400">
@@ -1188,7 +1185,7 @@ defmodule EmisarWeb.TeamLive do
           who_can_change="Only owners and admins can change this."
           class="mt-4"
         >
-          <%= if SSO.subject_can_configure_sso?(@current_subject) do %>
+          <%= if @can_configure_sso? do %>
             <.button
               id="add-sso-connection"
               navigate={~p"/app/#{@current_account}/settings/sso/new"}
@@ -1291,7 +1288,6 @@ defmodule EmisarWeb.TeamLive do
       </h3>
 
       <%!-- ── Monthly report ── --%>
-      <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — a self-contained account preference, boxed like the security cards --%>
       <div class="rounded-xl border border-zinc-800/80 p-4">
         <h4 class="text-sm font-medium text-zinc-100">Monthly report</h4>
         <p class="mt-1 text-xs leading-relaxed text-zinc-400">
@@ -1317,6 +1313,7 @@ defmodule EmisarWeb.TeamLive do
     """
   end
 
+  # Groups lead — a group is the wider grant, so the visible tags start there.
   defp scope_tag_items(%Accounts.RunnerAccess{} = access) do
     Enum.map(access.groups, &{:group, &1}) ++ Enum.map(access.runner_ids, &{:runner, &1})
   end
@@ -1782,10 +1779,10 @@ defmodule EmisarWeb.TeamLive do
         #
         # A role without view_runners (billing_manager) gets no runners rather
         # than a MatchError crash — mirror the directory load above. The failure
-        # rides along: a scope editor that shows "No runners registered yet." on
+        # rides along: a scope editor that shows "No runners available to grant." on
         # a failed read invites an admin to widen a grant they can't see.
         {runners, runner_load_error?} =
-          case Emisar.Runners.list_runners_in_action_scope(socket.assigns.current_subject) do
+          case Runners.list_runners_in_action_scope(socket.assigns.current_subject) do
             {:ok, runners} -> {runners, false}
             {:error, _} -> {[], Runners.subject_can_view_runners?(socket.assigns.current_subject)}
           end
@@ -1810,7 +1807,11 @@ defmodule EmisarWeb.TeamLive do
         |> assign(:pack_load_error?, pack_load_error?)
         |> assign(
           :suppressed_emails,
-          suppressed_emails(socket.assigns.current_account, socket.assigns.current_subject)
+          suppressed_emails(
+            socket.assigns.current_account,
+            Enum.map(member_facts, & &1.membership.id),
+            socket.assigns.current_subject
+          )
         )
         |> assign(:load_error?, false)
 
@@ -1874,10 +1875,6 @@ defmodule EmisarWeb.TeamLive do
     end
   end
 
-  # Account-wide, not page-scoped: a security stat computed from one paginated
-  # page reads "all enrolled" while page 2 has gaps. Accounts owns the counts,
-  # the enforcement state, and the SSO requirement, all read fresh — the page
-  # never recombines them from its own assigns.
   defp list_roster(:service_accounts, account, subject, opts),
     do: Accounts.list_service_account_facts(account, subject, opts)
 
@@ -1894,6 +1891,10 @@ defmodule EmisarWeb.TeamLive do
 
   defp assign_team_stance(socket), do: socket
 
+  # Account-wide, not page-scoped: a security stat computed from one paginated
+  # page reads "all enrolled" while page 2 has gaps. Accounts owns the counts,
+  # the enforcement state, and the SSO requirement, all read fresh — the page
+  # never recombines them from its own assigns.
   defp assign_security_facts(socket) do
     facts =
       case Accounts.fetch_team_security_facts(socket.assigns.current_subject) do
@@ -2269,10 +2270,10 @@ defmodule EmisarWeb.TeamLive do
     runner_scope_missing? or pack_scope_missing?
   end
 
-  # The set of member emails on the deliverability suppression list — drives
+  # The visible rows' emails on the deliverability suppression list — drives
   # the "Email bouncing" badge. Degrades to empty (no badges) on a denied read.
-  defp suppressed_emails(account, subject) do
-    case Accounts.suppressed_member_emails(account, subject) do
+  defp suppressed_emails(account, membership_ids, subject) do
+    case Accounts.suppressed_member_emails(account, membership_ids, subject) do
       {:ok, emails} -> emails
       {:error, _} -> MapSet.new()
     end
@@ -2398,7 +2399,7 @@ defmodule EmisarWeb.TeamLive do
       <%!-- ========= Invite a member — its own focused page (:new) =========
            Pulled off the roster so the role choice gets room to breathe: a
            readable radio-card per role (name + what it can do), and a real
-           success step (Invite another / Back to members) instead of a flash.
+           success step (Invite another / View members) instead of a flash.
            NAKED on the canvas (§8.1: forms are naked — the inputs and the
            role cards are the controls; the panel around them was an island). --%>
       <.invite_form
@@ -2772,13 +2773,9 @@ defmodule EmisarWeb.TeamLive do
                           >
                             Email blocked
                           </.chip>
-                          <%!-- MFA status. Three states worth distinguishing:
-                         (1) enrolled — quiet brand check, the happy
-                         default; (2) not enrolled, account doesn't
-                         enforce — neutral grey "No MFA" hint; (3) not
-                         enrolled AND the account requires MFA — LOUD
-                         rose, because that user can't sign in right
-                         now and an admin should chase them. --%>
+                          <%!-- MFA status: an enrolled member gets a quiet brand
+                         chip; anyone else gets no badge — the MFA card
+                         already carries the account's count. --%>
                           <.mfa_badge enrolled?={member.mfa_enrolled?} />
                           <%!-- Provisioned by an SSO/SCIM connection? Attribute + link
                          it, so an admin can see where this member came from and
@@ -3070,7 +3067,12 @@ defmodule EmisarWeb.TeamLive do
                     }
                     id={"change-role-#{membership.id}-#{role}"}
                     tone={:amber}
-                    title={RoleCopy.change_title(member_name(membership) || "this member", role)}
+                    title={
+                      RoleCopy.change_title(
+                        Accounts.member_display_name(membership) || "this member",
+                        role
+                      )
+                    }
                     confirm_label={"Change to #{Emisar.Auth.role_label(role)}"}
                     on_confirm={
                       JS.push("change_role", value: %{membership_id: membership.id, role: role})
@@ -3282,8 +3284,8 @@ defmodule EmisarWeb.TeamLive do
         </div>
 
         <%!-- ===== Security side panel ===== MFA and SSO are the two account
-             security concerns; the SSO card contains its enforcement and
-             sign-in-link subsections in operator order. --%>
+             security concerns; the SSO card contains its enforcement
+             subsection, while the sign-in link is a page title action. --%>
         <%!-- One column at every width: a 22rem rail at xl, and below it the same
              cards full width under the roster. SSO carries a provider list and
              two settings sections, so pairing it with a short card only left one
@@ -3309,6 +3311,7 @@ defmodule EmisarWeb.TeamLive do
         </.docs_rail>
         <.security_rail
           :if={@live_action == :index}
+          can_configure_sso?={@can_approve_requests?}
           current_account={@current_account}
           current_subject={@current_subject}
           enabled_sso_provider_count={@enabled_sso_provider_count}
@@ -3551,7 +3554,6 @@ defmodule EmisarWeb.TeamLive do
   defp invited_pack_access(%Accounts.RunnerAccess{pack_mode: :restricted, pack_ids: pack_ids}),
     do: Enum.join(pack_ids, ", ")
 
-  # Inline action menu for a single member row. Hidden for the actor's
   attr :enrolled?, :boolean, required: true
 
   defp mfa_badge(%{enrolled?: true} = assigns) do
@@ -3566,7 +3568,7 @@ defmodule EmisarWeb.TeamLive do
     """
   end
 
-  # Not enrolled and the account doesn't enforce: render NOTHING — the MFA
+  # Not enrolled: render NOTHING — the MFA
   # card already aggregates the count, and a "No MFA" chip on every row of an
   # unenforced account carries zero discrimination (default ≠ signal).
   defp mfa_badge(assigns), do: ~H""
@@ -3606,8 +3608,9 @@ defmodule EmisarWeb.TeamLive do
   defp sync_badge_label(identity),
     do: "#{provisioned_via_label(identity.provisioned_via)} · #{identity.provider_name}"
 
-  # The roster row's action slot, in three shapes: your OWN row gets the audit
-  # jump, a manager gets the full Actions menu on everyone else's row, and a
+  # The roster row's action slot, in four shapes: your OWN row gets the audit
+  # jump, a team manager who cannot manage that member gets the same jump to
+  # theirs, a manager gets the full Actions menu on everyone else's row, and a
   # non-manager gets nothing on a teammate's row.
   attr :member, :map, required: true
   attr :current_membership_id, :string, required: true
@@ -3785,6 +3788,9 @@ defmodule EmisarWeb.TeamLive do
     """
   end
 
+  attr :require_mfa, :boolean, required: true
+  attr :disabled, :boolean, required: true
+
   defp mfa_confirm_button(assigns) do
     ~H"""
     <.confirm_button
@@ -3826,11 +3832,6 @@ defmodule EmisarWeb.TeamLive do
   # directory facts the viewer can't read still gets a sentence that makes sense.
   defp directory_label(nil), do: "your identity provider"
   defp directory_label(directory), do: directory.identity.provider_name
-
-  # The member's display name for a confirm/flash — name, else email, else nil.
-  # Callers supply the "this member" fallback.
-  defp member_name(%Accounts.Membership{} = membership),
-    do: Accounts.member_display_name(membership)
 
   # A sign-in and every console touch advance the Member's own activity stamp,
   # so a Member that never signed in reads "never active".

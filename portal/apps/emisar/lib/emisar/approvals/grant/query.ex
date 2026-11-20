@@ -247,17 +247,4 @@ defmodule Emisar.Approvals.Grant.Query do
   @impl Emisar.Repo.Query
   def cursor_fields,
     do: [{:grants, :desc, :granted_at}, {:grants, :asc, :id}]
-
-  # Keys and runners exclude tombstones; Member attribution retains exact history.
-  @impl Emisar.Repo.Query
-  def preloads,
-    do: [
-      api_key:
-        {Emisar.ApiKeys.ApiKey.Query.not_deleted(), Emisar.ApiKeys.ApiKey.Query.preloads()},
-      runner: {Emisar.Runners.Runner.Query.not_deleted(), Emisar.Runners.Runner.Query.preloads()},
-      granted_by_membership:
-        {Emisar.Accounts.Membership.Query.all(), Emisar.Accounts.Membership.Query.preloads()},
-      revoked_by_membership:
-        {Emisar.Accounts.Membership.Query.all(), Emisar.Accounts.Membership.Query.preloads()}
-    ]
 end

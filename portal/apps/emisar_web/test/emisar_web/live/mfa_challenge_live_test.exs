@@ -6,7 +6,7 @@ defmodule EmisarWeb.MfaChallengeLiveTest do
   with the handoff the controller trades for the session cookie.
   """
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.{Auth, Fixtures}
+  alias Emisar.Auth
   alias EmisarWeb.MfaChallengeHandoff
 
   setup %{conn: conn} do

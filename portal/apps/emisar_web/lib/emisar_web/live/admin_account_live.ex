@@ -18,9 +18,9 @@ defmodule EmisarWeb.AdminAccountLive do
   alias Emisar.{Accounts, Admin, Auth}
 
   def mount(%{"id" => id}, _session, socket) do
-    # IL-18: mount runs twice. The connected guard keeps the eight-query
-    # overview off the dead render AND is what makes the audit row exactly one
-    # per view rather than two.
+    # IL-18: mount runs twice. The connected guard keeps the whole overview read
+    # off the dead render AND is what makes the audit row exactly one per view
+    # rather than two.
     if connected?(socket),
       do: load_account(socket, id),
       else: {:ok, assign(socket, page_title: "Workspace", overview: nil)}
@@ -250,6 +250,15 @@ defmodule EmisarWeb.AdminAccountLive do
               </:meta>
             </.list_row>
           </ul>
+          <%!-- The read is capped while the counts above are fleet-wide, so say
+               when the list is cut rather than leave the two to disagree. --%>
+          <p
+            :if={length(@overview.fleet.runners) < fleet_total(@overview.fleet.counts)}
+            id="fleet-capped"
+            class="mt-4 text-sm text-zinc-400"
+          >
+            Showing the {length(@overview.fleet.runners)} most recently connected runners.
+          </p>
         </div>
 
         <div>
@@ -258,7 +267,7 @@ defmodule EmisarWeb.AdminAccountLive do
                is why it reads as a subtitle rather than the count badge, which
                everywhere else on this page counts the rows under it. --%>
           <.section_header title="Runs">
-            <:subtitle>{@overview.runs.count_30d} runs created in the last 30 days.</:subtitle>
+            <:subtitle>{runs_subtitle(@overview.runs.count_30d)}</:subtitle>
           </.section_header>
 
           <.empty_state :if={@overview.runs.recent == []} variant={:bare} title="No runs yet.">
@@ -319,7 +328,7 @@ defmodule EmisarWeb.AdminAccountLive do
               <:title>
                 <span class="truncate text-sm font-medium text-zinc-100">{client.client}</span>
               </:title>
-              <:meta>{client.runs} runs in the last 30 days</:meta>
+              <:meta>{client_runs_label(client.runs)}</:meta>
             </.list_row>
           </ul>
         </div>
@@ -376,6 +385,16 @@ defmodule EmisarWeb.AdminAccountLive do
   # (`legacy_manual`, `past_due`) that no operator says out loud.
   defp humanize_token(token), do: token |> String.replace("_", " ") |> String.capitalize()
 
-  defp api_keys_subtitle(1), do: "1 unrevoked API key."
-  defp api_keys_subtitle(count), do: "#{count} unrevoked API keys."
+  defp api_keys_subtitle(1), do: "1 unexpired, unrevoked API key."
+  defp api_keys_subtitle(count), do: "#{count} unexpired, unrevoked API keys."
+
+  defp runs_subtitle(1), do: "1 run created in the last 30 days."
+  defp runs_subtitle(count), do: "#{count} runs created in the last 30 days."
+
+  defp client_runs_label(1), do: "1 run in the last 30 days"
+  defp client_runs_label(count), do: "#{count} runs in the last 30 days"
+
+  # connection_counts partitions every non-deleted runner into these four.
+  defp fleet_total(counts),
+    do: counts.connected + counts.disconnected + counts.never_connected + counts.disabled
 end

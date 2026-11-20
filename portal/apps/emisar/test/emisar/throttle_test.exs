@@ -2,9 +2,11 @@ defmodule Emisar.ThrottleTest do
   @moduledoc """
   The shared abuse gate. The suite-wide config disables it
   (shared ETS counters would make unrelated tests flaky), so the tests
-  that exercise the live path flip it on locally — hence `async: false`.
+  that exercise the live path flip it on with a per-process
+  `Emisar.Config` override and use their own buckets — which is what lets
+  them run concurrently.
   """
-  use ExUnit.Case, async: false
+  use ExUnit.Case, async: true
   alias Emisar.Throttle
 
   # Unique bucket per test so the shared ETS table doesn't couple tests.

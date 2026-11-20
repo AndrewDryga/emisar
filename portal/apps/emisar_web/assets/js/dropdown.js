@@ -9,7 +9,7 @@
 // with the tooltip bubble and the select panel in overlay.js.
 import {positionOverlay} from "./overlay.js"
 
-export function positionDropdown(details) {
+function positionDropdown(details) {
   const panel = details.querySelector("[data-dropdown-panel]")
   const summary = details.querySelector("summary")
   if (!panel || !summary) return

@@ -44,6 +44,23 @@ defmodule EmisarWeb.RunbookMarkdownTest do
     assert html =~ "![remote]"
   end
 
+  test "a fence info string with metadata or punctuation still opens and closes a block" do
+    for info <- ["bash title=check", "c#", "docker-compose.yml"] do
+      html =
+        render_component(&RunbookMarkdown.render/1,
+          markdown: "```#{info}\n# not a heading\n```\n\nAfter the fence."
+        )
+
+      doc = LazyHTML.from_fragment(html)
+      [label | _] = String.split(info)
+
+      assert doc |> LazyHTML.query("div.uppercase") |> LazyHTML.text() |> String.trim() == label
+      assert doc |> LazyHTML.query("pre") |> LazyHTML.text() == "# not a heading"
+      assert doc |> LazyHTML.query("p") |> LazyHTML.text() |> String.trim() == "After the fence."
+      assert doc |> LazyHTML.query("h3, h4, h5, h6") |> Enum.count() == 0
+    end
+  end
+
   test "an unfinished fence remains a safe code block" do
     html = render_component(&RunbookMarkdown.render/1, markdown: "```json\n{\"ok\": true}")
 

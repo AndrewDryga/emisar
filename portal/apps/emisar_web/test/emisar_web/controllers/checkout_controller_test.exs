@@ -194,7 +194,6 @@ defmodule EmisarWeb.CheckoutControllerTest do
     end
   end
 
-  # The signed return with its last character changed: the signature no longer holds.
   # Edit the first character: every bit of it is data. The last character of
   # base64url can carry ignored padding bits, so flipping its low bit may leave
   # the signature valid and make this test flaky.

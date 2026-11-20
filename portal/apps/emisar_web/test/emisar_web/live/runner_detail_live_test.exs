@@ -587,6 +587,29 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     refute disabled_html =~ "Disable this runner"
   end
 
+  test "a lifecycle change made elsewhere repaints the page on the debounce tick", %{
+    conn: conn,
+    user: user,
+    account: account,
+    runner: runner
+  } do
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
+    refute html =~ "Enable this runner"
+    :erlang.trace(lv.pid, true, [:receive, tracer: self()])
+
+    subject = Fixtures.Subjects.subject_for(user)
+    {:ok, _disabled} = Runners.disable_runner(runner, subject)
+
+    pid = lv.pid
+    assert_receive {:trace, ^pid, :receive, :refresh_runner}, 1_000
+    assert render(lv) =~ "Enable this runner"
+
+    {:ok, _deleted} = Runners.delete_runner(Emisar.Repo.reload!(runner), subject)
+
+    assert_receive {:trace, ^pid, :receive, :refresh_runner}, 1_000
+    assert_redirect(lv, ~p"/app/#{account}/runners")
+  end
+
   test "disable redirects when the runner disappears after mount", %{
     conn: conn,
     user: user,

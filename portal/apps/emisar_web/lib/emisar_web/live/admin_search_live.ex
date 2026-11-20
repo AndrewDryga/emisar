@@ -45,7 +45,7 @@ defmodule EmisarWeb.AdminSearchLive do
 
   # `Admin.search_accounts/2` trims before it decides whether to search or list
   # the newest accounts, so the page's own wording trims too — otherwise a query
-  # of spaces gets recent accounts under a "Matching accounts" heading.
+  # of spaces gets recent accounts under a "Matching workspaces" heading.
   defp blank_query?(query), do: String.trim(query) == ""
 
   defp results_title(query) do

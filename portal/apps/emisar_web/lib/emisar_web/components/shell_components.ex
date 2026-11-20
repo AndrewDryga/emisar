@@ -11,7 +11,6 @@ defmodule EmisarWeb.ShellComponents do
   file you read.
   """
   use Phoenix.Component
-  use Gettext, backend: EmisarWeb.Gettext
 
   use Phoenix.VerifiedRoutes,
     endpoint: EmisarWeb.Endpoint,
@@ -26,13 +25,11 @@ defmodule EmisarWeb.ShellComponents do
   @doc """
   Shell for authenticated product pages: sidebar + topbar + main.
   Expects @current_account, @current_membership and @current_subject in assigns.
-  `:pending_approvals_count` is set by the `:track_pending_approvals`
-  on_mount hook (UserAuth) — defaults to 0 so the shell still renders
-  in test contexts that haven't gone through the hook.
-  `:switchable_accounts` lists the workspaces this browser is signed in
-  to (including the current one); defaults to a list with just the
-  current account so the shell still renders without the on_mount hook
-  in unit tests.
+  `:chrome` (an `EmisarWeb.ShellChrome`, seeded by the UserAuth on_mount hooks)
+  carries the nav cues and account facts such as the pending-approval count and
+  the workspaces this browser is signed in to. It defaults to `%ShellChrome{}`
+  (a zero count, an empty account list), so the shell still renders in unit tests
+  that skip the hooks.
   """
   attr :current_account, :map, required: true
   attr :current_subject, :map, required: true
@@ -220,10 +217,7 @@ defmodule EmisarWeb.ShellComponents do
 
   # Content width tiers: one column width per page kind so every screen lines up
   # (the shell owns it — pages pass `width=`, never hand-roll `mx-auto max-w-*`).
-  # Dense DATA TABLES go FULL-BLEED (founder: "centering tables like the audit log
-  # is a no-go — too much data") for column density; card-lists + dashboard stay
-  # capped so a single-column card doesn't stretch thin; reading/forms bounded for
-  # line length. Literal classes so Tailwind's purge keeps them.
+  # Literal classes so Tailwind's purge keeps them.
   # ONE operating width: every top-level console page caps at 7xl (`:full`
   # died — dashboard/runs/audit stretching edge-to-edge beside 7xl-capped
   # peers made adjacent clicks feel like different products). The ladder:
@@ -511,7 +505,7 @@ defmodule EmisarWeb.ShellComponents do
       <.nav_link_external href={~p"/docs"} icon="product.docs">Docs</.nav_link_external>
       <.nav_link_external href={~p"/changelog"} icon="product.changelog">Changelog</.nav_link_external>
       <.nav_link_external
-        href={Application.get_env(:emisar_web, :status_page_url, "https://status.emisar.dev")}
+        href={Application.fetch_env!(:emisar_web, :status_page_url)}
         icon="product.service_status"
       >
         Status
@@ -574,7 +568,7 @@ defmodule EmisarWeb.ShellComponents do
       <div class="flex items-center gap-3">
         <.link
           navigate={~p"/app/#{@current_account}/settings/profile"}
-          phx-click={JS.hide(to: "#mobile-nav") |> JS.remove_class("overflow-hidden", to: "body")}
+          phx-click={close_mobile_nav()}
           class="flex min-w-0 flex-1 items-center gap-3 rounded-lg p-1 -m-1 transition hover:bg-white/[0.04]"
           aria-label="Open profile settings"
         >
@@ -642,7 +636,7 @@ defmodule EmisarWeb.ShellComponents do
          half its icons emerald at rest and the active row lost its signal. --%>
     <.link
       navigate={@to}
-      phx-click={JS.hide(to: "#mobile-nav") |> JS.remove_class("overflow-hidden", to: "body")}
+      phx-click={close_mobile_nav()}
       class={[
         "emisar-icon-mono flex items-center gap-3 rounded-lg px-3 py-1.5 transition",
         @active && "bg-white/[0.06] font-medium text-zinc-50",

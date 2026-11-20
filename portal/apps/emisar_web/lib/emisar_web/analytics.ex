@@ -62,16 +62,20 @@ defmodule EmisarWeb.Analytics do
   `uri` + the mount-captured `%RequestContext{}`. Always authenticated
   (distinct_id = the Member id). The path is normalized (account slug + detail
   UUIDs collapsed to `/app/:account/…/:id`) so console pages aggregate.
+  `$current_url` carries the same normalized path and drops userinfo, query and
+  fragment: console queries hold device codes and filter values.
   """
   def track_console_pageview(%Accounts.Membership{} = member, account, uri, context) do
-    %URI{path: path} = URI.parse(uri)
+    %URI{scheme: scheme, host: host, port: port, path: path} = URI.parse(uri)
+    path = normalize_console_path(path)
+    current_url = URI.to_string(%URI{scheme: scheme, host: host, port: port, path: path})
     ua = EmisarWeb.UserAgent.parse(context.user_agent)
 
     props =
       %{
-        "path" => normalize_console_path(path),
+        "path" => path,
         "authenticated" => true,
-        "$current_url" => uri,
+        "$current_url" => current_url,
         "$browser" => ua.browser,
         "$browser_version" => ua.browser_version,
         "$os" => ua.os,

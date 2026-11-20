@@ -700,19 +700,32 @@ defmodule EmisarWeb.BillingLiveTest do
       refute html =~ "/mo"
     end
 
-    test "dead cycle-note fields (cancel_at/trial_end) render nothing", %{conn: conn} do
-      # No prod path writes cancel_at_period_end/trial_end, and the apply path
-      # leaves current_period_start null. With status set but those columns at
-      # their defaults, none of the cycle-note chips render.
+    test "with no trial or billing-period dates, no cycle note renders", %{conn: conn} do
+      # With status set but the trial and period columns at their defaults,
+      # none of the cycle-note chips render.
       {conn, _owner, account} = register_and_log_in(conn)
       insert_subscription_with(account, %{plan: "team", status: "active"})
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
-      refute html =~ "Cancels on"
       refute html =~ "Trial ends"
       # current_period_end is also unset here, so even the "Next charge" note is absent.
       refute html =~ "Next charge"
+    end
+
+    test "a subscription with a trial end shows when the trial ends", %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+
+      insert_subscription_with(account, %{
+        plan: "team",
+        status: "trialing",
+        trial_end: DateTime.add(DateTime.utc_now(), 7 * 86_400, :second)
+      })
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
+
+      assert has_element?(lv, "#billing-current-plan", "Trial ends")
+      assert has_element?(lv, "#billing-trial-ends")
     end
   end
 

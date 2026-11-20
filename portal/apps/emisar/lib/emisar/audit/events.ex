@@ -20,7 +20,7 @@ defmodule Emisar.Audit.Events do
   # Staff access renders to the CUSTOMER as the team, never the employee: this
   # label keeps a support engineer's identity out of the customer's own audit
   # trail. It is set explicitly by the events that carry it — the staff read
-  # event and the two support erasures. Ordinary staff mutations run through the
+  # event and the support erasure. Ordinary staff mutations run through the
   # actorless support Subject and `actor/1`, which records them as `system` with
   # no label (the authenticated staff action run in the employee's own account
   # is the internal who); see `Emisar.Admin.support_subject/1`.
@@ -427,7 +427,7 @@ defmodule Emisar.Audit.Events do
 
   # Connection-lifecycle events fired by the runner socket process. The
   # runner itself is the actor — there is no acting `%Subject{}` — so the
-  # actor/subject fields point at the runner row.
+  # actor/target fields point at the runner row.
   def runner_connected(%Runners.Runner{} = runner, token_id, context \\ %RequestContext{}) do
     Audit.changeset(runner.account_id, "runner.connected",
       actor_kind: "runner",
@@ -714,7 +714,7 @@ defmodule Emisar.Audit.Events do
   end
 
   # Client-prepared self-rotation at the MCP boundary — the expiring key is
-  # both the actor and the superseded subject; the payload names the installed
+  # both the actor and the superseded target; the payload names the installed
   # successor so the credential chain is auditable without storing plaintext.
   def api_key_auto_rotated(
         %Subject{} = subject,
@@ -1618,7 +1618,6 @@ defmodule Emisar.Audit.Events do
       :pack_ref,
       :expected_pack_hash,
       :operation_id,
-      :source,
       :runbook_id,
       :runbook_execution_id,
       :runbook_execution_item_id,
@@ -1782,7 +1781,7 @@ defmodule Emisar.Audit.Events do
   # IdP-pushed membership changes are their own actor class: the actor is
   # the directory connection (`directory_sync` + the provider id), so an
   # operator auditing an offboarding sees *which* directory did it, not a
-  # generic "system" (decision 7).
+  # generic "system".
 
   @doc "A Member provisioned by inbound SCIM. Actor is the directory-sync connection, not a member."
   def user_provisioned_via_scim(
@@ -1865,7 +1864,7 @@ defmodule Emisar.Audit.Events do
     directory_sync_membership_event(membership, provider, "membership.reprovisioned_via_scim")
   end
 
-  @doc "A membership role recomputed from the member's mapped IdP groups (Slice 2b). `membership` is the pre-update row, for the from→to payload."
+  @doc "A membership role recomputed from the member's mapped IdP groups. `membership` is the pre-update row, for the from→to payload."
   def membership_role_synced_via_scim(
         %Accounts.Membership{} = membership,
         %SSO.IdentityProvider{} = provider,
@@ -1969,7 +1968,7 @@ defmodule Emisar.Audit.Events do
     )
   end
 
-  @doc "An IdP group→role mapping created by an operator (Slice 2b config)."
+  @doc "An IdP group→role mapping created by an operator."
   def group_role_mapping_created(
         %Subject{} = subject,
         %SSO.IdentityProvider{} = provider,
@@ -2401,7 +2400,7 @@ defmodule Emisar.Audit.Events do
 
   defp export_payload(opts, count) do
     case Keyword.fetch(opts, :filter) do
-      {:ok, filters} -> csv_export_payload(filters, count)
+      {:ok, filters} -> csv_export_payload(filters, opts, count)
       :error -> siem_export_payload(opts, count)
     end
   end
@@ -2418,14 +2417,18 @@ defmodule Emisar.Audit.Events do
   end
 
   # CSV downloads walk the complete filtered LiveTable view. Preserve every
-  # applied facet, normalizing the two fields shared with the SIEM receipt.
-  defp csv_export_payload(filters, count) do
+  # applied facet, normalizing the two fields shared with the SIEM receipt,
+  # plus the actor/target pivots that ride outside the filter form.
+  defp csv_export_payload(filters, opts, count) do
+    pivots = for key <- [:actor_id, :target_id], id = opts[key], do: {key, id}
+
     filters
     |> Map.new(fn
       {:event_type, event_types} -> {:event_types, event_types}
       {name, %DateTime{} = datetime} -> {name, DateTime.to_iso8601(datetime)}
       pair -> pair
     end)
+    |> Map.merge(Map.new(pivots))
     |> Map.put_new(:event_types, [])
     |> Map.put_new(:from, "beginning")
     |> Map.put(:count, count)

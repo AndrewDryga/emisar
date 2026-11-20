@@ -25,7 +25,7 @@ defmodule EmisarWeb.StaticImage.Header do
   end
 
   # VP8X is the EXTENDED form cwebp emits whenever a file carries alpha, ICC, or
-  # animation — 18 of ours do. Its canvas size is two 24-bit little-endian values
+  # animation, and several of ours do. Its canvas size is two 24-bit little-endian values
   # stored minus one, and it must be matched before nothing else claims the file:
   # missing this clause silently measured only the simple-lossy files, which the
   # coverage test in static_image_test.exs is there to catch.
@@ -52,12 +52,12 @@ defmodule EmisarWeb.StaticImage do
 
   An `<img>` without `width`/`height` reserves no space until the bytes decode,
   so the page reflows as each one arrives. The docs screenshots are the worst
-  case for that — thirteen pages, up to eleven shots each, aspect ratios from
-  1680x328 to 1680x2142 — and they are the pages that rank.
+  case for that — many pages carry several shots of widely varying aspect
+  ratio — and they are the pages that rank.
 
-  Reading the files beats writing the numbers at each call site. There are 66 of
-  those, and a recapture at a different size would silently make every hand-typed
-  pair a lie; here the sizes cannot disagree with the bytes we ship. Each file is
+  Reading the files beats writing the numbers at each call site. There are many
+  of those, and a recapture at a different size would silently make every
+  hand-typed pair a lie; here the sizes cannot disagree with the bytes we ship. Each file is
   an `@external_resource`, so replacing a screenshot recompiles this.
   """
 

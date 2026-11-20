@@ -92,6 +92,32 @@ defmodule EmisarWeb.Components.ConsoleShellTest do
       refute html =~ "Resend email"
     end
 
+    test "profile and nav links close the mobile drawer and reset the hamburger", %{
+      assigns: assigns
+    } do
+      document = assigns |> render_shell() |> LazyHTML.from_fragment()
+
+      for href <- ["/app/both-connected/settings/profile", "/app/both-connected/runs"] do
+        clicks =
+          document |> LazyHTML.query(~s(a[href="#{href}"])) |> LazyHTML.attribute("phx-click")
+
+        assert clicks != []
+
+        for click <- clicks do
+          ops = Map.new(Jason.decode!(click), fn [kind, args] -> {kind, args} end)
+
+          assert ops["hide"]["to"] == "#mobile-nav"
+          assert ops["remove_class"]["names"] == ["overflow-hidden"]
+          assert ops["remove_class"]["to"] == "body"
+
+          assert ops["set_attr"] == %{
+                   "to" => "#mobile-nav-open",
+                   "attr" => ["aria-expanded", "false"]
+                 }
+        end
+      end
+    end
+
     defp render_shell_as(assigns, role, section \\ :dashboard) do
       membership = %{assigns.current_membership | role: role}
 

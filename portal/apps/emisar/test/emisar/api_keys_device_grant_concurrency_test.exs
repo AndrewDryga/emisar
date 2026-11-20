@@ -71,7 +71,13 @@ defmodule Emisar.ApiKeysDeviceGrantConcurrencyTest do
 
             assert {:ok, %Membership{role: :viewer}} = Task.await(demoter, 30_000)
             assert Repo.reload!(state.grant).status == :claimed
-            assert %ApiKey{revoked_at: %DateTime{}} = Repo.one!(ApiKey)
+
+            key =
+              ApiKey.Query.all()
+              |> ApiKey.Query.by_account_id(state.account.id)
+              |> Repo.one!()
+
+            assert %ApiKey{revoked_at: %DateTime{}} = key
           after
             stop_tasks([demoter])
           end
@@ -124,7 +130,8 @@ defmodule Emisar.ApiKeysDeviceGrantConcurrencyTest do
           # defense-in-depth invalidation, so the surviving approved row proves
           # the claim-time membership check caused the denial.
           assert Repo.reload!(state.grant).status == :approved
-          assert Repo.all(ApiKey) == []
+          keys = ApiKey.Query.all() |> ApiKey.Query.by_account_id(state.account.id) |> Repo.all()
+          assert keys == []
         after
           stop_tasks([claimant])
         end

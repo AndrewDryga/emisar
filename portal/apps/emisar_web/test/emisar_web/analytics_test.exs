@@ -120,6 +120,24 @@ defmodule EmisarWeb.AnalyticsTest do
       assert props["utm_campaign"] == "launch"
     end
 
+    test "a query string cannot claim the first-touch referrer", %{conn: conn} do
+      query =
+        URI.encode_query(%{
+          "$initial_referrer" => "https://forged.example/",
+          "$initial_referring_domain" => "forged.example",
+          "utm_source" => "partner"
+        })
+
+      conn = get(conn, "/pricing?#{query}")
+
+      assert_receive {:mixpanel_track, [%{"event" => "page_viewed", "properties" => props}]}
+      assert props["utm_source"] == "partner"
+      refute Map.has_key?(props, "$initial_referrer")
+      refute Map.has_key?(props, "$initial_referring_domain")
+
+      assert get_session(conn, :analytics_campaign_attribution) == %{"utm_source" => "partner"}
+    end
+
     test "first external referrer values are byte-bounded", %{conn: conn} do
       long_host =
         [70, 70, 70, 70]
@@ -349,6 +367,45 @@ defmodule EmisarWeb.AnalyticsTest do
     end
   end
 
+  describe "MarketingAttribution.enforce_privacy_signal/1" do
+    # A fetched session as a request arrives: seeding it marks a write, so the
+    # marker is cleared to observe only what the plug itself does.
+    defp gpc_conn(attribution) do
+      build_conn()
+      |> init_test_session(attribution_session(attribution))
+      |> Map.update!(:private, &Map.delete(&1, :plug_session_info))
+      |> put_req_header("sec-gpc", "1")
+    end
+
+    defp attribution_session(nil), do: %{}
+    defp attribution_session(stored), do: %{analytics_campaign_attribution: stored}
+
+    test "leaves the session unwritten when there is no click id to remove" do
+      for stored <- [nil, %{"utm_source" => "partner"}] do
+        conn = stored |> gpc_conn() |> EmisarWeb.MarketingAttribution.enforce_privacy_signal()
+
+        refute conn.private[:plug_session_info]
+        assert get_session(conn, :analytics_campaign_attribution) == stored
+      end
+    end
+
+    test "removes a stored click id, and the whole entry when nothing else remains" do
+      conn =
+        %{"utm_source" => "partner", "twclid" => "private-click"}
+        |> gpc_conn()
+        |> EmisarWeb.MarketingAttribution.enforce_privacy_signal()
+
+      assert get_session(conn, :analytics_campaign_attribution) == %{"utm_source" => "partner"}
+
+      conn =
+        %{"twclid" => "private-click"}
+        |> gpc_conn()
+        |> EmisarWeb.MarketingAttribution.enforce_privacy_signal()
+
+      assert get_session(conn, :analytics_campaign_attribution) == nil
+    end
+  end
+
   test "footer subscribe carries the session's first-touch attribution", %{conn: conn} do
     conn =
       conn
@@ -556,6 +613,16 @@ defmodule EmisarWeb.AnalyticsTest do
       # account_id rides every console event so Group Analytics can roll usage
       # up by account (the group key).
       assert props["account_id"] == account.id
+    end
+
+    test "a console pageview's $current_url drops the query and the slug", %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+
+      {:ok, _lv, _html} = live(conn, ~p"/app/#{account.slug}?code=WXYZ-1234")
+
+      assert_receive {:mixpanel_track, [%{"event" => "page_viewed", "properties" => props}]}
+      assert props["$current_url"] == "http://www.example.com/app/:account"
+      assert props["path"] == "/app/:account"
     end
 
     test "the disconnected render does not touch membership activity", %{conn: conn} do

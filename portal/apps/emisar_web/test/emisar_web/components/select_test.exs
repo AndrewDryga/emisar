@@ -3,8 +3,8 @@ defmodule EmisarWeb.Components.SelectTest do
   Renders `EmisarWeb.CoreComponents.select/1` — the per-option select for the
   cases `options_for_select/2` can't express. Asserts the contract: each option
   map's `value`/`label`/`disabled`/`selected` reaches the markup, the optional
-  prompt + its `selected`, the label/box association, and that labels are
-  HTML-escaped (option text carries account data — IL-16).
+  prompt + its `selected`, and that labels are HTML-escaped (option text carries
+  account data — IL-16).
   """
   use ExUnit.Case, async: true
   import Phoenix.Component
@@ -100,26 +100,6 @@ defmodule EmisarWeb.Components.SelectTest do
       refute html =~ ~s(value="")
     end
 
-    test "an optional label renders above the select; absent by default" do
-      with_label =
-        render_select(%{
-          name: "target",
-          label: "Apply to",
-          options: [%{value: "a", label: "Alpha", disabled: false, selected: false}]
-        })
-
-      assert with_label =~ ~s(<label)
-      assert with_label =~ "Apply to"
-
-      without_label =
-        render_select(%{
-          name: "target",
-          options: [%{value: "a", label: "Alpha", disabled: false, selected: false}]
-        })
-
-      refute without_label =~ ~s(<label)
-    end
-
     test "option labels are HTML-escaped — they carry account data (IL-16)" do
       html =
         render_select(%{
@@ -133,32 +113,7 @@ defmodule EmisarWeb.Components.SelectTest do
       assert html =~ "&lt;script&gt;"
     end
 
-    test "a label is associated with its box, with or without a caller id" do
-      # No caller passed an `id`, so `<label for>` matched nothing and the one
-      # labelled select shipped a combo box with no accessible name.
-      derived =
-        render_select(%{
-          name: "target",
-          label: "Apply to",
-          options: [%{value: "a", label: "Alpha", disabled: false, selected: false}]
-        })
-
-      assert derived =~ ~s(<label for="input-target")
-      assert derived =~ ~s(id="input-target")
-
-      explicit =
-        render_select(%{
-          id: "policy-target-1",
-          name: "target",
-          label: "Apply to",
-          options: [%{value: "a", label: "Alpha", disabled: false, selected: false}]
-        })
-
-      assert explicit =~ ~s(<label for="policy-target-1")
-      assert explicit =~ ~s(id="policy-target-1")
-    end
-
-    test "an unlabelled select carries no id — its name repeats across editors" do
+    test "a select carries no derived id — its name repeats across editors" do
       html = render_select(%{name: "policy[defaults][low]", options: []})
 
       refute html =~ ~s(id=)

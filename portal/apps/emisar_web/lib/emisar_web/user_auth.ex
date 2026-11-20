@@ -311,7 +311,7 @@ defmodule EmisarWeb.UserAuth do
   cleared, browser id included. Sockets disconnect after the commit. A
   rolled-back sign-out raises rather than reach the browser as a completed one.
   """
-  def log_out_user(conn, to \\ ~p"/") do
+  def log_out_user(conn) do
     tokens = Enum.map(session_entries(conn), fn {_account_id, token} -> token end)
     context = RequestContext.from_conn(conn)
 
@@ -320,7 +320,7 @@ defmodule EmisarWeb.UserAuth do
         conn
         |> Analytics.track_sign_out(members)
         |> renew_session([], nil)
-        |> redirect(to: to)
+        |> redirect(to: ~p"/")
 
       {:error, reason} ->
         raise "could not complete sign-out: #{inspect(reason)}"
@@ -512,10 +512,6 @@ defmodule EmisarWeb.UserAuth do
 
   # -- LiveView on_mount hooks ----------------------------------------
 
-  # Flags that this render needs the full `app.js` (LiveSocket + hooks).
-  # Attached to every LiveView via `EmisarWeb.live_view/0`, so the dead
-  # render carries `@app_js?` up to `root.html.heex`; controller-rendered
-  # marketing pages never set it and get the lean `marketing.js` instead.
   # A LIVE-navigated tab keeps executing the JS bundle it loaded until a FULL
   # page load — after a deploy, markup (fresh, over the socket) skews against
   # hooks (stale), which has shipped "the feature doesn't work" reports twice
@@ -539,6 +535,10 @@ defmodule EmisarWeb.UserAuth do
     end
   end
 
+  # Flags that this render needs the full `app.js` (LiveSocket + hooks).
+  # Attached to every LiveView via `EmisarWeb.live_view/0`, so the dead
+  # render carries `@app_js?` up to `root.html.heex`; controller-rendered
+  # marketing pages never set it and get the lean `marketing.js` instead.
   def on_mount(:assign_app_bundle, _params, _session, socket) do
     {:cont, Phoenix.Component.assign(socket, :app_js?, true)}
   end

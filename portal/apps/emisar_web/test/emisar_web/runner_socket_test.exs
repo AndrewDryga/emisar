@@ -1,5 +1,6 @@
 defmodule EmisarWeb.RunnerSocketTest do
   use EmisarWeb.ConnCase, async: true
+  import ExUnit.CaptureLog
   alias Emisar.{Catalog, Fixtures, Repo, Runners, Runs}
   alias Emisar.RequestContext
   alias Emisar.Runners.{Presence, Runner}
@@ -627,6 +628,11 @@ defmodule EmisarWeb.RunnerSocketTest do
 
     test "unknown type is logged-and-ignored, socket stays up", %{state: state} do
       raw = Jason.encode!(%{"type" => "from_the_future", "data" => 1})
+      assert {:ok, ^state} = RunnerSocket.handle_in({raw, text()}, state)
+    end
+
+    test "an object-valued unknown type is ignored, socket stays up", %{state: state} do
+      raw = Jason.encode!(%{"type" => %{"nested" => 1}})
       assert {:ok, ^state} = RunnerSocket.handle_in({raw, text()}, state)
     end
 

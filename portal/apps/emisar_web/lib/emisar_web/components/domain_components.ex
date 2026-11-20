@@ -9,7 +9,6 @@ defmodule EmisarWeb.DomainComponents do
   invisible while all four audiences lived in one 6,836-line file.
   """
   use Phoenix.Component
-  use Gettext, backend: EmisarWeb.Gettext
 
   use Phoenix.VerifiedRoutes,
     endpoint: EmisarWeb.Endpoint,
@@ -104,7 +103,6 @@ defmodule EmisarWeb.DomainComponents do
       <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
         Housekeeping
       </h3>
-      <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — self-contained control card, the team-security rail grammar --%>
       <div id={@id} class="mt-3 rounded-xl border border-zinc-800/80 p-4">
         <h4 class="text-sm font-medium text-zinc-100">Automatic cleanup</h4>
         <p class="mt-1 text-xs leading-relaxed text-zinc-400">
@@ -505,7 +503,7 @@ defmodule EmisarWeb.DomainComponents do
   The dispatch ORIGIN of a run — a small leading icon + the actor label on one
   truncating line. The ICON (not color) distinguishes an LLM/MCP-dispatched run
   (sparkles — the same glyph as the AI agents menu item) from an operator (a
-  person), a runbook, or a schedule, so agent-origin is pre-attentive without
+  person) or a runbook, so agent-origin is pre-attentive without
   spending the emerald-means-allowed semantic on it (who dispatched is metadata,
   not an outcome). The canonical origin shape — reuse it instead of re-pairing an
   icon with an actor label. The caller caps the width (`max-w-*`) where the column
@@ -1528,8 +1526,7 @@ defmodule EmisarWeb.DomainComponents do
 
   # Risk is a SEVERITY ramp, not a policy outcome: low is the quiet neutral floor,
   # NOT brand-green — green means "the gate allowed this", and a risk tier has had
-  # no decision. So it climbs neutral → amber → rose → deeper-rose, and the policy
-  # editor's tier cards (`tier_border/tier_dot`) mirror it exactly.
+  # no decision. So it climbs neutral → amber → rose → deeper-rose.
   defp risk_classes("low"), do: "bg-zinc-500/10 text-zinc-300 ring-zinc-500/30"
 
   defp risk_classes("medium"), do: "bg-amber-500/10 text-amber-300 ring-amber-500/30"

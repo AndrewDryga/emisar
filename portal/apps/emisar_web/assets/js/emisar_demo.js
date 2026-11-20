@@ -3,7 +3,7 @@
 //
 // Marketing pages are controller-rendered (no LiveSocket), so this runs as a
 // plain DOM module on load — same reasoning as the clipboard delegation in
-// app.js. CSP-safe: it ships inside the bundled app.js (script-src 'self'),
+// copy.js. CSP-safe: it ships inside the bundled marketing.js (script-src 'self'),
 // never as an inline script, and builds the spinner from DOM nodes (no
 // innerHTML).
 //

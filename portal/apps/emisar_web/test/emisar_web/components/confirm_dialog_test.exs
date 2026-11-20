@@ -164,11 +164,11 @@ defmodule EmisarWeb.Components.ConfirmDialogTest do
       </CoreComponents.confirm_dialog>
       """)
 
-    assert :binary.match(html, ~s(data-order="fields")) <
-             :binary.match(html, ~s(data-order="consequence"))
-
-    assert :binary.match(html, ~s(data-order="consequence")) <
-             :binary.match(html, "data-dialog-actions")
+    assert {fields, _length} = :binary.match(html, ~s(data-order="fields"))
+    assert {consequence, _length} = :binary.match(html, ~s(data-order="consequence"))
+    assert {actions, _length} = :binary.match(html, "data-dialog-actions")
+    assert fields < consequence
+    assert consequence < actions
   end
 
   test "a blank token can never be confirmed (page-level dialog with no target)" do

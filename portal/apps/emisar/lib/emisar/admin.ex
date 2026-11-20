@@ -864,6 +864,12 @@ defmodule Emisar.Admin do
   end
 
   defp dispatch(
+         "emisar.admin.account.erase",
+         %{"account_id" => _account_id, "confirmation" => _confirmation, "reason" => _reason}
+       ),
+       do: {:error, :confirmation_mismatch}
+
+  defp dispatch(
          "emisar.admin.member.erase",
          %{"member" => member, "confirmation" => confirmation, "reason" => _reason} = args
        )
@@ -876,6 +882,12 @@ defmodule Emisar.Admin do
       {:ok, %{erased_member_id: membership.id, erased_account_id: erased_account && account_id}}
     end
   end
+
+  defp dispatch(
+         "emisar.admin.member.erase",
+         %{"member" => _member, "confirmation" => _confirmation, "reason" => _reason}
+       ),
+       do: {:error, :confirmation_mismatch}
 
   defp dispatch(action_id, _args),
     do: {:error, {:unsupported_admin_action, action_id}}

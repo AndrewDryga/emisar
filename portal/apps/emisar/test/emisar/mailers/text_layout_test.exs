@@ -110,6 +110,18 @@ defmodule Emisar.Mailers.TextLayoutTest do
     UserNotifier.deliver_account_invitation(member, "Andrew Dryga", account, "tok-invite")
     invitation = sent_text_body()
 
+    new_email = "new@example.com"
+
+    context = request_context()
+    UserNotifier.deliver_email_change_code(member, "ABC234", new_email, context, account)
+    email_change_code = sent_text_body()
+
+    UserNotifier.deliver_new_email_code(member, new_email, "ABC234", context, account)
+    new_email_code = sent_text_body()
+
+    UserNotifier.deliver_email_changed_notice(member, new_email, context, account)
+    email_changed_notice = sent_text_body()
+
     [
       {"magic link", magic_link},
       {"sign-up code", sign_up_code},
@@ -118,6 +130,9 @@ defmodule Emisar.Mailers.TextLayoutTest do
       {"staff sign-in code", staff_sign_in_code_body()},
       {"billing link code", billing_link_code},
       {"invitation", invitation},
+      {"email change code", email_change_code},
+      {"new email code", new_email_code},
+      {"email changed notice", email_changed_notice},
       {"approval request", approval_request_body(member, account)},
       {"approval request to its requester", approval_request_body(member, account, :requester)},
       {"runbook approval request", runbook_approval_request_body(member, account)},

@@ -242,9 +242,6 @@ defmodule Emisar.Auth.UserToken.Query do
   def lock_tokens_for_update(queryable),
     do: lock(queryable, [tokens: t], fragment("FOR NO KEY UPDATE OF ?", t))
 
-  def ordered_by_recent(queryable \\ all()),
-    do: order_by(queryable, [tokens: t], desc: t.inserted_at)
-
   # -- Pagination ------------------------------------------------------
 
   @impl Emisar.Repo.Query

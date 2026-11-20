@@ -130,11 +130,12 @@ defmodule EmisarWeb.AuditSummary do
   end
 
   defp summarize(type, p)
-       when type in ["sso.group_mapping_created", "sso.group_mapping_updated"],
+       when type in [
+              "sso.group_mapping_created",
+              "sso.group_mapping_updated",
+              "sso.group_mapping_deleted"
+            ],
        do: pairs(mapped_role: role_label(get(p, :role)))
-
-  defp summarize("sso.group_mapping_deleted", p),
-    do: pairs(mapped_role: role_label(get(p, :role)))
 
   defp summarize("membership.renamed_via_scim", p),
     do: recorded_change(p, :from, :to, "Name", &display_setting/1)
@@ -399,7 +400,8 @@ defmodule EmisarWeb.AuditSummary do
   defp summarize("approval.grant_revoked", p),
     do: pairs(action: get(p, :action_id))
 
-  defp summarize("approval.decision_revoked", p), do: pairs(decision: get(p, :decision))
+  defp summarize("approval.decision_revoked", p),
+    do: pairs(decision: decision_label(get(p, :decision)))
 
   defp summarize("run.cancel_requested", p),
     do: pairs(action: get(p, :action), reason: get(p, :reason))
@@ -799,6 +801,7 @@ defmodule EmisarWeb.AuditSummary do
   defp limit_step("mfa_enrollment_issue"), do: "Enrollment code delivery"
   defp limit_step("email_change_issue"), do: "Code delivery"
   defp limit_step("inbox_step_up"), do: "Code verification"
+  defp limit_step("oidc_identity_step_up_issue"), do: "Code delivery"
   defp limit_step(_), do: nil
 
   defp grant_uses(p) do

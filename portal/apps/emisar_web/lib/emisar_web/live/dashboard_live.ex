@@ -84,6 +84,11 @@ defmodule EmisarWeb.DashboardLive do
       ),
       do: {:noreply, load(socket)}
 
+  # Any other team change (a member removed, a role changed) can move the Team
+  # pillar's count and manager facts and the checklist's team step.
+  def handle_info({:list_changed, :team, _event_type, _id}, socket),
+    do: {:noreply, schedule_refresh(socket, :team)}
+
   def handle_info(:refresh_dashboard, socket) do
     socket =
       socket.assigns.pending_refreshes
@@ -167,6 +172,9 @@ defmodule EmisarWeb.DashboardLive do
   defp refresh_domain(:runs, socket), do: refresh_runs(socket)
   defp refresh_domain(:approvals, socket), do: refresh_approvals(socket)
   defp refresh_domain(:agents, socket), do: refresh_agents(socket)
+
+  defp refresh_domain(:team, socket),
+    do: assign(socket, :team_security, team_security(socket.assigns.current_subject))
 
   defp refresh_agents(socket) do
     api_keys_read = ApiKeys.list_api_keys_for_account(socket.assigns.current_subject)
@@ -429,7 +437,7 @@ defmodule EmisarWeb.DashboardLive do
   #   3. Pending approvals (amber) — only when a decision actually waits.
   #      Approvals is the escape hatch, not the centerpiece: most actions are
   #      read-only and never gate, so this surface earns space only when live.
-  #   4. Recent runs — the activity proof, with the 24h digest in its header.
+  #   4. Recent runs — the activity proof, with a digest of the shown runs in its header.
   attr :runners_connected, :integer, required: true
   attr :runners_total, :integer, required: true
   attr :runners_error?, :boolean, required: true
@@ -595,9 +603,9 @@ defmodule EmisarWeb.DashboardLive do
       </ul>
     </section>
 
-    <%!-- Recent runs — the activity proof, full width, with the 24h digest as
-         the header's quiet annotation (a zero window is a non-event, not a
-         hero number). No parallel "activity" mirror; that's the audit page. --%>
+    <%!-- Recent runs — the activity proof, full width, with a digest of the
+         shown runs as the header's quiet annotation (no runs, no digest, not a
+         hero zero). No parallel "activity" mirror; that's the audit page. --%>
     <%!-- Recent runs sits DIRECTLY on the canvas — a section title, a quiet
          digest, and borderless rows under a single hairline. The activity feed
          is content, not a framed widget. --%>
@@ -1327,13 +1335,8 @@ defmodule EmisarWeb.DashboardLive do
   # onto the naked stats. No box, no icon — emerald lives only on the action
   # line, the one bit of energy a to-do step earns.
   #
-  # Each line carries a DISTINCT payload — the fix for "AI agents / Connect an
-  # AI agent / Connect an agent" saying one thing three times:
-  #   label    = the noun (what is this?)          — "AI agents"
-  #   headline = the outcome (what do I get?)      — "Connect any MCP client"
-  #   action   = verb + mechanism (what's the cost?) — "Mint a scoped key →"
-  # The headline never repeats the label's noun; the action names the effort in
-  # the destination page's own words, so the promise is fulfilled verbatim.
+  # Each line carries its own payload: the label names the tile, the headline
+  # invites the first step, and the action names what the destination page does.
   defp pillar_cta(assigns) do
     ~H"""
     <.link
@@ -1390,7 +1393,7 @@ defmodule EmisarWeb.DashboardLive do
       <.callout
         tone={:amber}
         icon="state.warning"
-        title={"One runner slot left on the #{String.capitalize(@billing.plan)} plan (#{@billing.runner_count} of #{@billing.runner_limit})."}
+        title={"One runner slot left on the #{@billing.plan_name} plan (#{@billing.runner_count} of #{@billing.runner_limit})."}
         class="mt-10"
       >
         Your next install will use the last slot. Upgrade now if you expect to

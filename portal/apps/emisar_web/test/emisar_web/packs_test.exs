@@ -645,15 +645,6 @@ defmodule EmisarWeb.PacksTest do
     end
   end
 
-  # Every external (`href="http…"`) anchor in rendered HTML, so a test can
-  # assert the whole set carries the safe-rel pair (mirrors the helper in
-  # marketing_test.exs — the packs pages are a separate suite).
-  defp external_links(html) do
-    ~r{<a\s[^>]*href="https?://[^>]*>}
-    |> Regex.scan(html)
-    |> Enum.map(&hd/1)
-  end
-
   # The shell.run_script `script` arg spec straight from the bundled catalog
   # artifact — the same bytes the registry serves and PackBaseline pins.
   defp shell_script_spec do

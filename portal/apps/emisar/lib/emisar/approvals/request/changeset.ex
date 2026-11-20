@@ -30,8 +30,7 @@ defmodule Emisar.Approvals.Request.Changeset do
       greater_than_or_equal_to: 1,
       less_than_or_equal_to: Emisar.Policies.max_min_approvals()
     )
-    # One request per run — the standalone insert maps a duplicate to a clean
-    # changeset error; the atomic dispatch path upserts on this index instead.
+    # One request per run: a duplicate maps to a clean changeset error.
     |> unique_constraint(:run_id, name: :approval_requests_run_id_index)
     |> unique_constraint(:runbook_execution_id,
       name: :approval_requests_runbook_execution_index

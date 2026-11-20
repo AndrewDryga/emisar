@@ -22,6 +22,18 @@ defmodule Emisar.Runs.RunnerErrorTest do
       assert error.message == "bootlog"
     end
 
+    test "cuts code and message by code points, so combining marks cannot grow them" do
+      # One grapheme each, far past both caps in code points.
+      cluster = "a" <> String.duplicate(<<0x0301::utf8>>, 1_000)
+
+      error =
+        RunnerError.new(@account, @runner, %{code: cluster, message: cluster}, %RequestContext{})
+
+      assert String.length(error.code) == 1
+      assert length(String.codepoints(error.code)) == 100
+      assert length(String.codepoints(error.message)) == 500
+    end
+
     test "a non-string diagnostic becomes nil" do
       error = RunnerError.new(@account, @runner, %{code: 42, message: %{}}, %RequestContext{})
 

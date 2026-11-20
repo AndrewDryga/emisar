@@ -26,7 +26,7 @@ defmodule EmisarWeb.AuditDownloadController do
   plug EmisarWeb.Plugs.EnsureAccountCompliance
 
   @filter_params ~w[
-    category from to event_type outcome request_id auth_method
+    category from to event_type request_id auth_method
     actor_kind actor_id target_kind target_id
   ]
 
@@ -35,7 +35,7 @@ defmodule EmisarWeb.AuditDownloadController do
     account = conn.assigns.current_account
 
     cond do
-      not Audit.subject_can_view_audit?(subject) ->
+      not Audit.subject_can_export_audit?(subject) ->
         conn
         |> put_flash(:error, "You don't have permission to export the audit log.")
         |> redirect(to: ~p"/app/#{account}")
@@ -94,13 +94,14 @@ defmodule EmisarWeb.AuditDownloadController do
     Logger.error("audit CSV preparation did not complete: #{inspect(reason)}")
   end
 
-  # A client that goes away mid-download ends the walk; the stream's receipt
-  # still records the rows that left.
+  # A client that goes away or stalls mid-download ends the walk (the adapter
+  # reports `:closed`, a socket timeout, a reset...); the stream's receipt still
+  # records the rows that left.
   defp stream_chunks(conn, csv) do
     Enum.reduce_while(csv, conn, fn data, conn ->
       case chunk(conn, data) do
         {:ok, conn} -> {:cont, conn}
-        {:error, :closed} -> {:halt, conn}
+        {:error, _reason} -> {:halt, conn}
       end
     end)
   end

@@ -156,9 +156,10 @@ defmodule Emisar.Mailers.UserNotifier do
 
   # A small, human "who/when/where" block so the recipient can tell their own
   # sign-in from a stranger's. Time is always present; IP and a parsed
-  # device summary are shown only when the request carried them. Two-space
-  # indent and `Label:` keys are the same label/value grammar the approval
-  # emails use, and the block is short enough to survive a `<pre>` on a phone.
+  # device summary are shown only when the request carried them. `Label:` keys
+  # are the same label/value grammar the approval emails use (the `:pre` block
+  # adds the two-space indent), and the block is short enough to survive a
+  # `<pre>` on a phone.
   defp request_details(%RequestContext{} = context) do
     [
       {"Time", Calendar.strftime(DateTime.utc_now(), "%-d %b %Y at %H:%M UTC")},
@@ -167,7 +168,7 @@ defmodule Emisar.Mailers.UserNotifier do
     ]
     |> Enum.reject(fn {_label, value} -> is_nil(value) end)
     |> Enum.map_join("\n", fn {label, value} ->
-      "  #{String.pad_trailing("#{label}:", 8)}#{value}"
+      "#{String.pad_trailing("#{label}:", 8)}#{value}"
     end)
   end
 
@@ -635,24 +636,20 @@ defmodule Emisar.Mailers.UserNotifier do
 
   defp format_matched_rules(_), do: nil
 
-  # Two-space indented args block. Approvers reading on a phone get a
-  # readable preview; a long-tail of huge args still produces tidy
+  # Pretty-printed args for the `:pre` block, which adds the indent. Approvers
+  # reading on a phone get a readable preview; a long-tail of huge args still produces tidy
   # output because Jason's pretty-print already wraps reasonably. A run whose
   # stored payload won't project says so rather than guessing at content — the
   # approval page is the fallback, and a mail can't ask for a second opinion.
   defp format_args_for_email(projection) do
     case projection do
-      {:ok, args} when map_size(args) > 0 -> indented_args(args)
-      {:ok, _empty} -> "  (none)"
-      {:error, _reason} -> "  (unavailable)"
+      {:ok, args} when map_size(args) > 0 -> Jason.encode!(args, pretty: true)
+      {:ok, _empty} -> "(none)"
+      {:error, _reason} -> "(unavailable)"
     end
   end
 
-  defp indented_args(args) do
-    Jason.encode!(args, pretty: true)
-  end
-
-  defp format_execution_items([]), do: "  (no items)"
+  defp format_execution_items([]), do: "(no items)"
 
   defp format_execution_items(stages) when is_list(stages) do
     items =
@@ -748,7 +745,6 @@ defmodule Emisar.Mailers.UserNotifier do
   end
 
   defp account_name(%{name: name}) when is_binary(name), do: one_line(name)
-  defp account_name(%{account_name: name}) when is_binary(name), do: one_line(name)
   defp account_name(%{slug: slug}) when is_binary(slug), do: one_line(slug)
   defp account_name(_account), do: "Account"
 
@@ -1004,8 +1000,7 @@ defmodule Emisar.Mailers.UserNotifier do
         preview: one_line(preview),
         blocks: blocks,
         action: action,
-        secondary_action: Keyword.get(opts, :secondary_action),
-        footer: Keyword.get(opts, :footer)
+        secondary_action: Keyword.get(opts, :secondary_action)
       })
 
     deliver(

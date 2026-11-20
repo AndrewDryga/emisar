@@ -35,7 +35,9 @@ defmodule EmisarWeb.ActivateLive do
   end
 
   def handle_params(params, _uri, socket) do
-    code = params["code"] || socket.assigns.code
+    # A crafted `?code[]=x` / `?code[a]=b` arrives as a list or map; only a
+    # string is a code, anything else leaves the empty lookup form.
+    code = if is_binary(params["code"]), do: params["code"], else: socket.assigns.code
 
     socket =
       socket
@@ -51,7 +53,7 @@ defmodule EmisarWeb.ActivateLive do
     end
   end
 
-  def handle_event("lookup", %{"lookup" => %{"code" => code}}, socket) do
+  def handle_event("lookup", %{"lookup" => %{"code" => code}}, socket) when is_binary(code) do
     code = String.trim(code)
 
     if code == "" do
@@ -60,6 +62,8 @@ defmodule EmisarWeb.ActivateLive do
       {:noreply, socket |> assign(:code, code) |> lookup(code)}
     end
   end
+
+  def handle_event("lookup", _params, socket), do: {:noreply, socket}
 
   def handle_event("pick_account", %{"account" => slug}, socket) do
     {:noreply, push_navigate(socket, to: ~p"/app/#{slug}/activate?code=#{socket.assigns.code}")}

@@ -234,6 +234,21 @@ defmodule EmisarWeb.AgentClientConfigTest do
 
       assert config.auto_permit.pointer =~ ~S|%USERPROFILE%\.codex\config.toml|
     end
+
+    test "Cursor scopes optional permissions to emisar and the selected OS" do
+      config =
+        AgentClientConfig.render(
+          "cursor",
+          "https://emisar.dev",
+          "emk-test",
+          :windows,
+          @paths.windows
+        )
+
+      assert config.auto_permit.pointer =~ "emisar:*"
+      assert config.auto_permit.pointer =~ ~S|%USERPROFILE%\.cursor\permissions.json|
+      refute config.auto_permit.pointer =~ "Yolo"
+    end
   end
 
   describe "sandbox_setup/3" do
@@ -338,21 +353,6 @@ defmodule EmisarWeb.AgentClientConfigTest do
       assert manual =~ "MCP: List Servers"
       assert installer =~ "MCP: List Servers"
       assert manual =~ "Local target and Agent role"
-    end
-
-    test "Cursor scopes optional permissions to emisar and the selected OS" do
-      config =
-        AgentClientConfig.render(
-          "cursor",
-          "https://emisar.dev",
-          "emk-test",
-          :windows,
-          @paths.windows
-        )
-
-      assert config.auto_permit.pointer =~ "emisar:*"
-      assert config.auto_permit.pointer =~ ~S|%USERPROFILE%\.cursor\permissions.json|
-      refute config.auto_permit.pointer =~ "Yolo"
     end
   end
 

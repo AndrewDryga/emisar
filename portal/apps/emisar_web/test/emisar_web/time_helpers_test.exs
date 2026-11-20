@@ -34,25 +34,37 @@ defmodule EmisarWeb.TimeHelpersTest do
       assert relative_time(DateTime.add(now, 7_200, :second), now: now) == "in 2h"
       assert relative_time(DateTime.add(now, 2 * 86_400, :second), now: now) == "in 2d"
     end
-
-    test "nil renders the placeholder; NaiveDateTime is treated as UTC" do
-      assert relative_time(nil) == "—"
-      assert relative_time(nil, placeholder: "n/a") == "n/a"
-
-      naive = NaiveDateTime.add(NaiveDateTime.utc_now(), -300, :second)
-      assert relative_time(naive) == "5m ago"
-    end
   end
 
-  describe "absolute_time/2" do
-    test "renders the UTC stamp, tolerating nil and naive datetimes" do
+  describe "absolute_time/1" do
+    test "renders the UTC stamp" do
       assert absolute_time(~U[2026-05-21 14:03:00Z]) == "May 21, 14:03 UTC"
-      assert absolute_time(~N[2026-05-21 14:03:00]) == "May 21, 14:03 UTC"
-      assert absolute_time(nil) == "—"
     end
   end
 
   describe "local_time/1" do
+    test "nil renders the placeholder" do
+      assigns = %{}
+
+      assert rendered_to_string(~H"<.local_time value={nil} />") =~ ">—</span>"
+
+      custom =
+        rendered_to_string(~H"""
+        <.local_time value={nil} placeholder="n/a" />
+        """)
+
+      assert custom =~ ">n/a</span>"
+    end
+
+    test "a NaiveDateTime is rendered as UTC" do
+      assigns = %{}
+
+      html = rendered_to_string(~H"<.local_time value={~N[2026-05-21 14:03:00]} />")
+
+      assert html =~ ~s(datetime="2026-05-21T14:03:00Z")
+      assert html =~ "May 21, 14:03 UTC"
+    end
+
     test "styled timestamps use the shared flipping tooltip with stable ids" do
       assigns = %{value: ~U[2026-05-21 14:03:00Z]}
 
@@ -119,6 +131,7 @@ defmodule EmisarWeb.TimeHelpersTest do
 
     test "unknown types are humanized, never raw machine code" do
       assert format_event_type("warp.core_breach") == "Warp core breach"
+      assert format_event_type("foo") == "Foo"
       assert format_event_type(nil) == "—"
     end
   end

@@ -1926,6 +1926,23 @@ defmodule Emisar.SSOTest do
       refute Repo.reload!(provider).enabled
     end
 
+    test "a second verified connection of the same kind cannot be enabled" do
+      {_owner, account, subject} = enterprise_owner()
+      _enabled = provider_fixture(account, %{kind: :okta})
+
+      second =
+        provider_fixture(account, %{kind: :okta, name: "Okta 2", enabled: false})
+        |> Fixtures.SSO.verify_provider_sign_in(subject.actor)
+
+      assert {:error, changeset} = SSO.update_provider(second, %{enabled: true}, subject)
+
+      assert errors_on(changeset) == %{
+               enabled: ["another connection of this provider type is already enabled"]
+             }
+
+      refute Repo.reload!(second).enabled
+    end
+
     test "another account may claim the same allowed email domain" do
       # The domain gate is a per-provider sign-in restriction, not a route, so
       # nothing needs it unique across tenants — and global uniqueness let one
@@ -7439,7 +7456,7 @@ defmodule Emisar.SSOTest do
       assert SSO.list_group_access(provider, viewer_in(account)) == {:error, :unauthorized}
     end
 
-    test "a downgraded plan still reads its mappings — removing one needs no plan" do
+    test "a downgraded plan still reads its mappings" do
       {_owner, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
       provider = provider_fixture(account)
 

@@ -2,7 +2,7 @@ defmodule Emisar.SSO.IssuerUrl do
   @moduledoc """
   Validates an operator-supplied OIDC issuer URL before we fetch its discovery
   document. The issuer is attacker-influenceable — a `manage_sso` admin types it —
-  and both the "Test connection" capstone and every real login fetch
+  and both the "Check issuer" capstone and every real login fetch
   `<issuer>/.well-known/openid-configuration` from the portal's egress, so an
   unguarded issuer is an SSRF primitive (cloud metadata, loopback, internal
   RFC-1918 hosts). We require https and reject hosts that are a loopback / private /

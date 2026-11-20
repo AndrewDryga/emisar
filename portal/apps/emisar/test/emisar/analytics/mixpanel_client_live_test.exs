@@ -1,11 +1,9 @@
 defmodule Emisar.Analytics.MixpanelClient.LiveTest do
-  use ExUnit.Case, async: false
+  use ExUnit.Case, async: true
   alias Emisar.Analytics.MixpanelClient.Live
 
-  @config_key :mixpanel_token
-
   setup do
-    Emisar.Config.put_override(:emisar, @config_key, "test-token")
+    Emisar.Config.put_override(:emisar, :mixpanel_token, "test-token")
   end
 
   test "returns an error instead of raising when a payload cannot be encoded" do

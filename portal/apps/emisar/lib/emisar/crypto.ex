@@ -2,8 +2,9 @@ defmodule Emisar.Crypto do
   @moduledoc """
   The single home for the portal's opaque-token-secret mechanism. Every
   bearer credential — MCP API keys (`emk-`), runner enrollment keys
-  (`emkey-enroll-`), per-runner tokens (`rnrtok-`), and OAuth access /
-  refresh / authorization-code secrets (`emo-` / `emor-` / `emoc-`) — is
+  (`emkey-enroll-`), per-runner tokens (`rnrtok-`), SCIM tokens (`ems-`),
+  device-grant codes (`emdg-`), and OAuth access / refresh /
+  authorization-code secrets (`emo-` / `emor-` / `emoc-`) — is
   minted, hashed, and compared here, so there is one place to audit the
   RNG, the encoding, and the hash algorithm.
 
@@ -170,7 +171,8 @@ defmodule Emisar.Crypto do
 
   # The emailed magic-link secret is a short, typable code; the browser-side
   # nonce carries the entropy, so a 6-char code + the attempt cap is safe (an
-  # email interceptor lacks the nonce and gets @magic_link_attempts guesses).
+  # email interceptor lacks the nonce and gets Auth's magic-link attempt cap in
+  # guesses).
   @code_length 6
 
   # Unambiguous uppercase alphabet for the typed sign-in code — no 0/O, 1/I/L,
@@ -211,8 +213,8 @@ defmodule Emisar.Crypto do
   end
 
   # Crypto-random zero-padded N-digit code. 8 random bytes mod 10^N — the
-  # modulo bias over 64 bits is ~5e-14, negligible for a code whose security
-  # is the nonce, not its own entropy.
+  # modulo bias over 64 bits is ~5e-14, negligible next to the authenticated
+  # session, attempt budget and short expiry that bound guessing a step-up code.
   defp numeric_code(digits) when is_integer(digits) and digits > 0 do
     max = Integer.pow(10, digits)
 
@@ -334,14 +336,6 @@ defmodule Emisar.Crypto do
 
   def valid_run_request_id?(_value), do: false
 
-  # Auto-generated runner names only need to avoid casual collision (the
-  # partial unique index on the name is the real guarantee), so a short
-  # tail keeps them readable.
-  @runner_name_suffix_bytes 4
-
-  @doc "Random tail for an auto-generated runner name (`runner-…`)."
-  def runner_name_suffix, do: random_secret(@runner_name_suffix_bytes)
-
   @doc """
   PKCE S256 challenge transform (RFC 7636): the url-safe-base64 (no
   padding) encoding of `hash/1`. Lives here so the OAuth context never
@@ -422,15 +416,12 @@ defmodule Emisar.Crypto do
   def totp_secret, do: NimbleTOTP.secret()
 
   @doc """
-  Whether `otp` is a valid TOTP for `secret`. The two-argument form samples the
-  current system time for enrollment. Locked consume paths pass their exact
-  post-lock `%DateTime{}` through the three-argument form so validation and the
-  caller's replay stamp cannot straddle different buckets. No replay guard lives
-  here — that remains the locked Users operation's responsibility.
+  Whether `otp` is a valid TOTP for `secret` at the supplied `%DateTime{}`.
+  Callers pass the timestamp their replay stamp uses (the locked consume paths
+  pass their exact post-lock time) so validation and that stamp cannot straddle
+  different buckets. No replay guard lives here — replay prevention is the
+  caller's responsibility.
   """
-  def valid_totp?(secret, otp) when is_binary(secret) and is_binary(otp),
-    do: NimbleTOTP.valid?(secret, otp)
-
   def valid_totp?(secret, otp, %DateTime{} = at) when is_binary(secret) and is_binary(otp),
     do: NimbleTOTP.valid?(secret, otp, time: at)
 

@@ -312,7 +312,8 @@ defmodule Emisar.Approvals.Request.Query do
         decided_by_membership_id: ^by_membership_id,
         decided_at: ^now,
         decision_reason: ^reason,
-        overridden: ^overridden?
+        overridden: ^overridden?,
+        updated_at: ^now
       ]
     )
   end
@@ -389,13 +390,6 @@ defmodule Emisar.Approvals.Request.Query do
         updated_at: ^now
       ]
     )
-  end
-
-  @doc "Audit label-lookup helper: `{id, field}` for the rows `ids` names."
-  def select_labels(queryable, ids, field) do
-    queryable
-    |> where([requests: r], r.id in ^ids)
-    |> select([requests: r], {r.id, field(r, ^field)})
   end
 
   @doc """

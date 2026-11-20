@@ -154,15 +154,13 @@ defmodule Emisar.Mailers.StyleTest do
           {:link_paragraph, "Sign in to ", "Fleet Ops", "https://emisar.dev/app", "."},
           {:emphasis, "Sent to ", "olivia@example.com", "."},
           {:status, "This action ", "needs your approval", ".", :warning},
-          {:status, "It is ", "unchanged", ".", :neutral},
           {:facts, [{"Action", "linux.uptime"}, {"Account", {:link, "Fleet Ops", "https://e"}}]},
           {:section, "Redacted arguments"},
           {:pre, "host  web-01"},
           {:code, "834 512"}
         ],
         action: {"Review approval", "https://emisar.dev/a"},
-        secondary_action: {"Open runner", "https://emisar.dev/r"},
-        footer: "You're receiving this because you can approve actions."
+        secondary_action: {"Open runner", "https://emisar.dev/r"}
       })
 
     [{"monthly report", monthly.html}, {"transactional", transactional.html}]

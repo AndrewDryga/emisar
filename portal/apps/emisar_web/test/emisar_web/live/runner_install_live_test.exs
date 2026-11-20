@@ -4,9 +4,15 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
   alias Emisar.Runners.EnrollmentKey
 
   describe "GET /app/runners/install" do
-    test "explains single-use and reusable enrollment keys beside the command", %{conn: conn} do
+    setup %{conn: conn} do
       {conn, _owner, account} = register_and_log_in(conn)
-      conn = local_conn(conn)
+      %{conn: local_conn(conn), account: account}
+    end
+
+    test "explains single-use and reusable enrollment keys beside the command", %{
+      conn: conn,
+      account: account
+    } do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/install")
 
       assert html =~ "single-use"
@@ -21,11 +27,6 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
              )
 
       refute has_element?(lv, ~s|aside a[href="/app/#{account.slug}/runners/keys"]|)
-    end
-
-    setup %{conn: conn} do
-      {conn, _owner, account} = register_and_log_in(conn)
-      %{conn: local_conn(conn), account: account}
     end
 
     test "renders the install one-liner and copies it with its leading space", %{
@@ -190,12 +191,10 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
 
       assert html =~ "curl -fsSL"
       assert html =~ ~s(data-copy-text=" curl -fsSL)
-      refute html =~ "couldn't mint a bootstrap enrollment key"
+      refute html =~ "Couldn&#39;t create the install command"
     end
 
-    test "a viewer is redirected at mount — install is issue-tier", %{conn: conn} do
-      {_conn, _owner, account} = register_and_log_in(conn)
-
+    test "a viewer is redirected at mount — install is issue-tier", %{account: account} do
       viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
       dest = ~p"/app/#{account}/runners"
@@ -214,8 +213,7 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
     # Minting is what the wizard does at mount, and a key is a fleet-wide grant
     # — the enrolling host names its own group — so the reach matters as much as
     # the role. An admin with only part of the fleet is turned away too.
-    test "a runner-restricted admin is redirected at mount", %{conn: conn} do
-      {_conn, _owner, account} = register_and_log_in(conn)
+    test "a runner-restricted admin is redirected at mount", %{account: account} do
       {:ok, production} = Emisar.Accounts.RunnerAccess.restricted(["production"], [])
 
       membership =

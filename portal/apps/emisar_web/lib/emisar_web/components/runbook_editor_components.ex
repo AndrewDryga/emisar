@@ -6,10 +6,19 @@ defmodule EmisarWeb.RunbookEditorComponents do
   alias EmisarWeb.{RunbookDraft, RunbookMarkdown, RunbookWorkflowComponents}
 
   defp issue_target(path) when is_binary(path) do
-    case Regex.run(~r{^/stages/(\d+)(?:/steps/(\d+))?}, path) do
-      [_, stage, step] -> "runbook-stage-#{stage}-step-#{step}"
-      [_, stage] -> "runbook-stage-#{stage}"
-      _other -> "runbook-editor-form"
+    cond do
+      match = Regex.run(~r{^/stages/(\d+)(?:/steps/(\d+))?}, path) ->
+        case match do
+          [_, stage, step] -> "runbook-stage-#{stage}-step-#{step}"
+          [_, stage] -> "runbook-stage-#{stage}"
+        end
+
+      match = Regex.run(~r{^/inputs/(\d+)(?:/|$)}, path) ->
+        [_, input] = match
+        "runbook-input-#{input}"
+
+      true ->
+        "runbook-editor-form"
     end
   end
 
@@ -934,13 +943,11 @@ defmodule EmisarWeb.RunbookEditorComponents do
   attr :dirty?, :boolean, required: true
 
   defp publish_panel(assigns) do
-    {panel_title, blocked_title, ready_title, ready_body} =
+    {panel_title, blocked_title, ready_title} =
       if live_in_sync?(assigns.runbook, assigns.dirty?) do
-        {"Run check", "Resolve these issues before running", "Checks passed",
-         "The workflow passes checks for current runners, actions, pack trust, and policy."}
+        {"Run check", "Resolve these issues before running", "Checks passed"}
       else
-        {"Publish check", "Resolve these issues before publishing", "Ready to publish",
-         "The workflow passes checks for current runners, actions, pack trust, and policy."}
+        {"Publish check", "Resolve these issues before publishing", "Ready to publish"}
       end
 
     assigns =
@@ -948,7 +955,6 @@ defmodule EmisarWeb.RunbookEditorComponents do
       |> assign(:panel_title, panel_title)
       |> assign(:blocked_title, blocked_title)
       |> assign(:ready_title, ready_title)
-      |> assign(:ready_body, ready_body)
 
     ~H"""
     <section id="runbook-check">
@@ -1022,7 +1028,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
       <div :if={@preview.state == :ready} class="space-y-4">
         <.event_block icon="state.success" tone={:brand} title={@ready_title}>
           <:body>
-            {@ready_body}
+            The workflow passes checks for current runners, actions, pack trust, and policy.
           </:body>
         </.event_block>
       </div>

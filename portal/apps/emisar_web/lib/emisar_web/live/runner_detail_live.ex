@@ -15,6 +15,7 @@ defmodule EmisarWeb.RunnerDetailLive do
 
     if connected?(socket) do
       Runners.subscribe_account_credentials(socket.assigns.current_account.id)
+      Runners.subscribe_account_inventory(socket.assigns.current_account.id)
       mount_runner(id, socket)
     else
       {:ok, socket}
@@ -79,27 +80,22 @@ defmodule EmisarWeb.RunnerDetailLive do
   def handle_params(params, _uri, socket),
     do: {:noreply, load_lists(socket, socket.assigns.runner, params)}
 
-  # The paginated actions table + the recent-runs sidebar. Gated on connected?
-  # so the two reads run once on the live mount, not also on the dead render
-  # (IL-18) — the dead render shows <.loading_state>. Both reads tolerate an
-  # {:error, …} (a hand-edited page/filter URL, a permission tightened
+  # The paginated actions table + the recent-runs sidebar. Only a connected
+  # socket holds a runner (IL-18), so the dead render never reaches here and shows
+  # <.loading_state>. Both reads tolerate an {:error, …} (a hand-edited page/filter URL, a permission tightened
   # mid-session) rather than raising a MatchError that would crash the whole
   # LiveView — and each carries its failure so the empty section says the read
   # failed instead of making a claim about the host.
   defp load_lists(socket, runner, params) do
-    if connected?(socket) do
-      subject = socket.assigns.current_subject
+    subject = socket.assigns.current_subject
 
-      {runs, runs_error?} = recent_runs(runner, subject)
+    {runs, runs_error?} = recent_runs(runner, subject)
 
-      socket
-      |> assign(:loading?, false)
-      |> assign(:recent_runs, runs)
-      |> assign(:recent_runs_error?, runs_error?)
-      |> load_actions(runner, subject, params)
-    else
-      assign(socket, :loading?, true)
-    end
+    socket
+    |> assign(:loading?, false)
+    |> assign(:recent_runs, runs)
+    |> assign(:recent_runs_error?, runs_error?)
+    |> load_actions(runner, subject, params)
   end
 
   defp load_actions(socket, runner, subject, params) do
@@ -189,6 +185,12 @@ defmodule EmisarWeb.RunnerDetailLive do
     do: {:noreply, LiveTable.schedule_reload(socket, :refresh_runner)}
 
   def handle_info({:pack_trust_changed, _account_id}, socket),
+    do: {:noreply, LiveTable.schedule_reload(socket, :refresh_runner)}
+
+  # Enable, disable, delete, and the retention sweep announce on the account's
+  # runner inventory topic, so a lifecycle change made elsewhere reaches this page
+  # (and a deleted runner sends the viewer back to the list).
+  def handle_info({:runner_inventory_changed, _account_id}, socket),
     do: {:noreply, LiveTable.schedule_reload(socket, :refresh_runner)}
 
   def handle_info(:refresh_runner, %{assigns: %{runner: %Runners.Runner{}}} = socket),

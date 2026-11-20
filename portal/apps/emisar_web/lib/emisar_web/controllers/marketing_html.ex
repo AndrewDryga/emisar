@@ -396,7 +396,10 @@ defmodule EmisarWeb.MarketingHTML do
         navigate={~p"/docs/agents-and-keys#no-scope"}
         class="text-brand-400 hover:text-brand-300"
       >how a key inherits its operator's scope</.link>). Revoke it any time from
-      <strong>AI agents</strong>
+      <a
+        href={~p"/app/agents"}
+        class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+      >AI agents</a>
       in the console, or from the connector settings in Claude or ChatGPT.
     </p>
     """
@@ -480,7 +483,7 @@ defmodule EmisarWeb.MarketingHTML do
     {44, "server", "srv-out", " "},
     {45, "server", "srv-out", "  ✓  connection    connected · heartbeat sent 3s ago"},
     {46, "server", "srv-out",
-     "  ✓  catalog       5 packs · 191 actions advertised · all available"},
+     "  ✓  catalog       5 packs · 193 actions advertised · all available"},
     {47, "server", "srv-out", "  ✓  process       PID 2214 · up 9s · 1 connection attempt(s)"},
     {48, "server", "srv-out", "  ✓  runs          0 in flight (last reported by the daemon)"},
     {49, "server", "srv-out", "  ✓  checks        7 local readiness checks passed"},
@@ -490,7 +493,7 @@ defmodule EmisarWeb.MarketingHTML do
     {53, "server", "srv-log",
      "time=2026-10-28T13:41:06.873Z level=INFO msg=cloud.dial url=wss://emisar.dev/runner/socket/websocket external_id=nomad-hvn03"},
     {54, "server", "srv-log",
-     "time=2026-10-28T13:41:07.412Z level=INFO msg=cloud.connected actions=191 packs=5 inflight_runs=0 requeued_starts=0 requeued_results=0"},
+     "time=2026-10-28T13:41:07.412Z level=INFO msg=cloud.connected actions=193 packs=5 inflight_runs=0 requeued_starts=0 requeued_results=0"},
 
     # --- Claude Code: the alarm, then investigate through emisar -----
     {55, "llm", "cc-meta",
@@ -522,7 +525,7 @@ defmodule EmisarWeb.MarketingHTML do
 
     # --- Claude Code: stop the bleed — one approval -----------------
     {70, "llm", "cc-tool",
-     "emisar · nomad.alloc_stop(alloc: \"a1b2c3d4\", reason: \"CSI reformatted a live LUN — halt writes to preserve recoverable blocks\")"},
+     "emisar · nomad.alloc_stop(alloc_id: \"a1b2c3d4\", reason: \"CSI reformatted a live LUN — halt writes to preserve recoverable blocks\")"},
     {71, "llm", "cc-pending",
      "⏸ pending approval — nomad.alloc_stop is high-risk; a human approves in the portal"},
     {72, "llm", "cc-spin-wait", "Waiting for approval"},

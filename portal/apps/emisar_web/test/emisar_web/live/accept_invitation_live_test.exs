@@ -1,6 +1,6 @@
 defmodule EmisarWeb.AcceptInvitationLiveTest do
   @moduledoc """
-  The invitation page (plan §3 "Invitations"): an invitation names an address
+  The invitation page: an invitation names an address
   and a pending Member, and whoever proves that address in this browser joins as
   that Member. Two states: unavailable, or the name form, which posts to the
   invitation's code request; the code goes to the invited address only, and

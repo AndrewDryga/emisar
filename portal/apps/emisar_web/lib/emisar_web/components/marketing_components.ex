@@ -9,7 +9,6 @@ defmodule EmisarWeb.MarketingComponents do
   console screen.
   """
   use Phoenix.Component
-  use Gettext, backend: EmisarWeb.Gettext
 
   use Phoenix.VerifiedRoutes,
     endpoint: EmisarWeb.Endpoint,
@@ -40,11 +39,10 @@ defmodule EmisarWeb.MarketingComponents do
   # -- emisar-specific layout helpers -----------------------------------
 
   @doc """
-  Brand mark used across the marketing site, auth flows, onboarding,
-  and the in-app shell. With `wordmark` (default) it renders the full
-  horizontal lockup — the gate icon plus the emisar wordmark — otherwise
-  just the icon. Both SVGs bake the dark-theme white + emerald palette,
-  so they render correctly on any zinc-950 background without tinting.
+  Brand mark used across the marketing site, auth flows, and error pages:
+  the full horizontal lockup — the gate icon plus the emisar wordmark — as one
+  `<img>`, sized by `class`. The SVG bakes the dark-theme white + emerald
+  palette, so it renders correctly on any zinc-950 background without tinting.
   """
   attr :class, :string, default: nil
 
@@ -446,7 +444,7 @@ defmodule EmisarWeb.MarketingComponents do
   @doc """
   The one call-to-action button for the marketing site — every "Start free",
   "Get started", "Talk to sales", "Read the docs"-style button routes through
-  here so they stay visually identical across the 27 pages. The in-app
+  here so they stay visually identical across the marketing pages. The in-app
   `<.button>` is a separate visual world; marketing buttons live here.
 
   Renders an `<.link>` when given `href`/`navigate` in `:rest`, otherwise a
@@ -881,9 +879,7 @@ defmodule EmisarWeb.MarketingComponents do
                 </li>
                 <li>
                   <a
-                    href={
-                      Application.get_env(:emisar_web, :status_page_url, "https://status.emisar.dev")
-                    }
+                    href={Application.fetch_env!(:emisar_web, :status_page_url)}
                     target="_blank"
                     rel="noopener noreferrer"
                     class="inline-flex items-center gap-1 text-zinc-400 hover:text-zinc-100"

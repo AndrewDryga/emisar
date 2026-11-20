@@ -106,9 +106,9 @@ defmodule EmisarWeb.AccountSignInLiveTest do
   end
 
   test "a disabled account shows support contact and no authentication controls", %{conn: conn} do
-    # owner_subject builds a support subject scoped to the account it creates,
-    # which is what set_account_disabled_for_support now requires.
-    {_actor, account, support_subject} = Fixtures.Subjects.owner_subject()
+    # owner_subject builds an owner subject scoped to the account it creates,
+    # which is what set_account_disabled_for_support requires.
+    {_actor, account, owner_subject} = Fixtures.Subjects.owner_subject()
     provider = enabled_provider(account, "Paused Okta")
 
     assert {:ok, _account} =
@@ -116,7 +116,7 @@ defmodule EmisarWeb.AccountSignInLiveTest do
                account.id,
                true,
                "Temporary hold",
-               support_subject
+               owner_subject
              )
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/sign_in")

@@ -958,8 +958,8 @@ defmodule Emisar.BillingTest do
     end
   end
 
-  describe "check_limit/2 — downgrade past current usage is not reconciled" do
-    test "a manual plan write is not dropped by the vendor staleness guard" do
+  describe "upsert_subscription/3 — vendor staleness guard" do
+    test "a timestamp-less update cannot overwrite a timestamped mirror" do
       account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_manual_01"})
 
       {:ok, _} =
@@ -971,22 +971,15 @@ defmodule Emisar.BillingTest do
         })
 
       # Once the mirror carries Paddle's timestamp, an ordinary upsert with none
-      # cannot prove it is newer and is dropped — so `mix emisar.set_plan` wrote
-      # nothing while reporting success.
+      # cannot prove it is newer and is dropped.
       {:ok, unchanged} =
         Billing.upsert_subscription(account.id, %{plan: "enterprise", status: "active"})
 
       assert unchanged.plan == "team"
-
-      {:ok, updated} =
-        Billing.upsert_subscription(account.id, %{plan: "enterprise", status: "active"},
-          manual: true
-        )
-
-      assert updated.plan == "enterprise"
-      assert is_nil(updated.paddle_updated_at)
     end
+  end
 
+  describe "check_limit/2 — downgrade past current usage is not reconciled" do
     test "a cancel is ordered by the webhook occurred_at when data has no updated_at" do
       account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_cancel_01"})
 
@@ -3459,17 +3452,15 @@ defmodule Emisar.BillingTest do
   describe "billing_summary/2" do
     test "rolls plan limits + live counts + subscription mirror into one map" do
       {_owner, account, subject} = Fixtures.Subjects.owner_subject()
-      _ = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Runners.create_runner(account_id: account.id)
 
       assert {:ok, summary} = Billing.billing_summary(account, subject)
       assert summary.plan == "free"
       assert summary.runner_count == 1
       assert summary.runner_limit == 3
       assert summary.member_count == 1
-      # Free plan is priced at 0, so the total is 0 — and the
-      # never-subscribed mirror fields read nil.
-      assert summary.monthly_total_cents == 0
-      # No subscription → the cadence reads monthly, priced at free's $0.
+      # No subscription → the cadence reads monthly, priced at free's $0, and
+      # the never-subscribed mirror fields read nil.
       assert summary.billing_interval == :month
       assert summary.period_total_cents == 0
       refute summary.subscription_status
@@ -3485,8 +3476,6 @@ defmodule Emisar.BillingTest do
       assert summary.billing_interval == :year
       # 2 runners × $200/runner/yr (annual_price_cents), not the monthly rate.
       assert summary.period_total_cents == 40_000
-      # The monthly fields stay the monthly rate — both are exposed.
-      assert summary.monthly_per_runner_cents == 2000
     end
 
     test "a complimentary plan retains its entitlements without a recurring charge" do
@@ -3500,8 +3489,6 @@ defmodule Emisar.BillingTest do
       assert summary.runner_limit == 100
       assert summary.features == %{sso: true, scim: false, audit_export: true}
       assert summary.period_total_cents == 0
-      assert summary.monthly_per_runner_cents == 0
-      assert summary.monthly_total_cents == 0
       refute summary.subscription_managed?
       refute summary.payment_method_updatable?
       refute summary.cancel_available?
@@ -3613,8 +3600,6 @@ defmodule Emisar.BillingTest do
       assert summary.runner_limit == 50
       assert summary.member_limit == 1
       # …and nil pricing (custom), never the free plan's $0.
-      refute summary.monthly_per_runner_cents
-      refute summary.monthly_total_cents
       refute summary.period_total_cents
     end
 
@@ -3648,15 +3633,16 @@ defmodule Emisar.BillingTest do
       assert {:ok, %{plan: "free"}} = Billing.billing_summary(account, owner_subject)
     end
 
-    test "an api_client and a runner subject are denied the billing summary", %{account: account} do
-      # Neither api_client nor runner appears in list_permissions_for_role, so
-      # view_billing is absent and the read is refused.
+    test "an api_client and a permissionless subject are denied the billing summary", %{
+      account: account
+    } do
+      # Neither carries view_billing, so the read is refused.
       {_raw, api_key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
       api_subject = Subject.for_api_key(api_key, account)
       assert Billing.billing_summary(account, api_subject) == {:error, :unauthorized}
 
-      runner_subject = Fixtures.Subjects.permissionless_subject(account)
-      assert Billing.billing_summary(account, runner_subject) == {:error, :unauthorized}
+      permissionless_subject = Fixtures.Subjects.permissionless_subject(account)
+      assert Billing.billing_summary(account, permissionless_subject) == {:error, :unauthorized}
     end
   end
 
@@ -3728,14 +3714,6 @@ defmodule Emisar.BillingTest do
 
     test ":unlimited bypasses everything" do
       assert Billing.headroom(%{runner_count: 100, runner_limit: :unlimited}, :runners) ==
-               :unlimited
-    end
-
-    test "members uses the member_count/limit fields" do
-      assert Billing.headroom(%{member_count: 0, member_limit: 1}, :members) == :warning
-      assert Billing.headroom(%{member_count: 1, member_limit: 1}, :members) == :at_limit
-
-      assert Billing.headroom(%{member_count: 5, member_limit: :unlimited}, :members) ==
                :unlimited
     end
   end

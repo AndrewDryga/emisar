@@ -2018,6 +2018,9 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       html = change(lv, valid_draft(inputs: [input]))
 
       assert html =~ "Input 1 · Default"
+      # The issue links to the input card it names, not the top of the form.
+      assert has_element?(lv, ~s(a[href="#runbook-input-0"]), "Input 1 · Default")
+      assert has_element?(lv, "#runbook-input-0")
       assert has_element?(lv, "#runbook-actions-desktop-save:not([disabled])", "Save draft")
       refute has_element?(lv, "#runbook-actions-desktop-save-reason")
       assert has_element?(lv, "button[disabled]", "Publish")

@@ -81,7 +81,7 @@ defmodule Emisar.ApiKeys.ApiKey.Changeset do
   end
 
   # Newly-minted MCP keys default to a 30-day expiry when the operator gives no
-  # explicit one, so a leaked key self-heals (`usable?/1` enforces it). Audit-
+  # explicit one, so a leaked key self-heals (`ApiKeys.key_usable?/2` enforces it). Audit-
   # export tokens (`kind: :audit_export`) are exempt — a log-shipping credential
   # expiring out from under a SIEM would silently break ingestion.
   @default_mcp_key_ttl_s 30 * 24 * 3_600

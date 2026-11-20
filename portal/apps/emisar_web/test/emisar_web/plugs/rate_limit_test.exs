@@ -2,9 +2,9 @@ defmodule EmisarWeb.Plugs.RateLimitTest do
   @moduledoc """
   The route-scoped fixed-window limiter. The suite-wide config disables
   it (shared counters would make unrelated tests flaky), so these tests
-  flip it on locally — hence `async: false`.
+  flip it on with a per-process override and use their own buckets.
   """
-  use EmisarWeb.ConnCase, async: false
+  use EmisarWeb.ConnCase, async: true
   alias EmisarWeb.Plugs.RateLimit
 
   defp unique_bucket, do: "test-bucket-#{System.unique_integer([:positive])}"

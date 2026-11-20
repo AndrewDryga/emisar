@@ -1,7 +1,6 @@
 defmodule EmisarWeb.RequireSSOTest do
   @moduledoc """
-  A workspace's `require_sso` (plan §3 "Sign-in", §3.1 "Workspace policy
-  change"): while it is on, only an SSO session of this workspace reaches it.
+  A workspace's `require_sso`: while it is on, only an SSO session of this workspace reaches it.
   An email-code session is dropped and sent to the workspace's sign-in, the
   email code is refused on the server (behind the same decoy page), and turning
   the requirement on ends the workspace's email-code sessions at once, open

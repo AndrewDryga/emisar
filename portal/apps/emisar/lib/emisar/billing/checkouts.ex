@@ -178,6 +178,9 @@ defmodule Emisar.Billing.Checkouts do
        when status in ["draft", "ready", "billed"] do
     with {:ok, disposition} <- unpaid_disposition(intent) do
       case disposition do
+        {:terminal, current} ->
+          {:ok, current}
+
         {:retire, retiring} ->
           cancel_transaction(retiring)
 
@@ -520,10 +523,8 @@ defmodule Emisar.Billing.Checkouts do
   end
 
   defp pending(intent, category) do
-    case transition(intent, &CheckoutIntent.Changeset.record_failure(&1, category)) do
-      {:ok, _intent} -> {:error, :checkout_pending}
-      _failure -> {:error, :checkout_pending}
-    end
+    _recorded = transition(intent, &CheckoutIntent.Changeset.record_failure(&1, category))
+    {:error, :checkout_pending}
   end
 
   defp with_intent(intent, fun) do

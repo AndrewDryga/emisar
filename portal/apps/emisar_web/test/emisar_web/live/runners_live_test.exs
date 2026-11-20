@@ -447,7 +447,7 @@ defmodule EmisarWeb.RunnersLiveTest do
 
       assert html =~ "still-listed"
       # The retry rendered the real list, not the danger load-error state.
-      refute html =~ "Couldn't load your fleet"
+      refute html =~ "Couldn&#39;t load runners"
     end
 
     test "operator action access does not hide fleet rows or aggregate counts", %{conn: conn} do
@@ -727,7 +727,6 @@ defmodule EmisarWeb.RunnersLiveTest do
       Fixtures.Runners.create_runner(account_id: account.id, name: "existing")
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/install")
-      assert html =~ "Connect a runner"
       assert html =~ "Connect a runner"
       assert html =~ "curl -fsSL"
       assert html =~ "EMISAR_ENROLLMENT_KEY=emkey-enroll-"

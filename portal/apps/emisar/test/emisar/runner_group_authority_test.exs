@@ -55,6 +55,32 @@ defmodule Emisar.RunnerGroupAuthorityTest do
       assert {:ok, []} = Runners.refs_outside_runner_access(["group:database"], subject)
     end
 
+    test "a disabled runner in scope stays nameable; disabled and foreign ones outside do not",
+         %{
+           account: account,
+           membership: membership,
+           subject: subject,
+           inside: inside,
+           outside: outside
+         } do
+      foreign = Fixtures.Runners.create_runner()
+      {:ok, access} = RunnerAccess.restricted([], [inside.id])
+      Fixtures.Memberships.force_runner_access(membership, access)
+      Fixtures.Runners.disable_runner(inside)
+      Fixtures.Runners.disable_runner(outside)
+      Fixtures.Runners.disable_runner(foreign)
+      {:ok, inside_ref} = Runners.public_ref(inside)
+      {:ok, outside_ref} = Runners.public_ref(outside)
+      {:ok, foreign_ref} = Runners.public_ref(foreign)
+
+      refs = ["runner:#{inside_ref}", "runner:#{outside_ref}", "runner:#{foreign_ref}"]
+
+      assert Runners.refs_outside_runner_access(refs, subject) ==
+               {:ok, ["runner:#{outside_ref}", "runner:#{foreign_ref}"]}
+
+      refute foreign.account_id == account.id
+    end
+
     test "complete individual coverage and explicit empty groups remain valid",
          %{
            account: account,

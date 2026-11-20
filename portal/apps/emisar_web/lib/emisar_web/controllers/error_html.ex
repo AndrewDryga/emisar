@@ -83,7 +83,7 @@ defmodule EmisarWeb.ErrorHTML do
     })
   end
 
-  # Catch-all for any other status code Phoenix raises (403, 400…).
+  # Catch-all for any other status code Phoenix raises (400, 418…).
   def render(template, _assigns) do
     status = Phoenix.Controller.status_message_from_template(template)
 

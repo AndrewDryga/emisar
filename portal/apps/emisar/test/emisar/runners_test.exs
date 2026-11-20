@@ -264,7 +264,7 @@ defmodule Emisar.RunnersTest do
           connected?: false
         )
 
-      _ = Fixtures.Runners.create_runner(account_id: other_account.id, group: "web")
+      Fixtures.Runners.create_runner(account_id: other_account.id, group: "web")
 
       assert {:ok, list, _} = Runners.list_runners_for_account(subject)
       assert length(list) == 2
@@ -934,9 +934,9 @@ defmodule Emisar.RunnersTest do
   describe "list_group_summaries/1" do
     test "returns {group, count} tuples for the account's non-deleted runners" do
       {account, _user, subject} = account_with_owner_subject()
-      _ = Fixtures.Runners.create_runner(account_id: account.id, group: "web", connected?: false)
-      _ = Fixtures.Runners.create_runner(account_id: account.id, group: "web", connected?: false)
-      _ = Fixtures.Runners.create_runner(account_id: account.id, group: "db", connected?: false)
+      Fixtures.Runners.create_runner(account_id: account.id, group: "web", connected?: false)
+      Fixtures.Runners.create_runner(account_id: account.id, group: "web", connected?: false)
+      Fixtures.Runners.create_runner(account_id: account.id, group: "db", connected?: false)
 
       assert {:ok, rows} = Runners.list_group_summaries(subject)
       assert Enum.sort(rows) == [{"db", 1}, {"web", 2}]
@@ -945,7 +945,7 @@ defmodule Emisar.RunnersTest do
     test "is account-scoped — another account's groups don't leak in" do
       {_account_a, _ua, subject_a} = account_with_owner_subject()
       other = Fixtures.Accounts.create_account()
-      _ = Fixtures.Runners.create_runner(account_id: other.id, group: "secret", connected?: false)
+      Fixtures.Runners.create_runner(account_id: other.id, group: "secret", connected?: false)
 
       assert Runners.list_group_summaries(subject_a) == {:ok, []}
     end
@@ -1196,7 +1196,7 @@ defmodule Emisar.RunnersTest do
       assert Runners.count_billable_runners(account.id) == 0
       assert is_integer(Runners.count_billable_runners(account.id))
 
-      _ = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
       assert Runners.count_billable_runners(account.id) == 1
     end
 
@@ -1215,7 +1215,7 @@ defmodule Emisar.RunnersTest do
     test "is account-scoped" do
       account_a = Fixtures.Accounts.create_account()
       account_b = Fixtures.Accounts.create_account()
-      _ = Fixtures.Runners.create_runner(account_id: account_b.id, connected?: false)
+      Fixtures.Runners.create_runner(account_id: account_b.id, connected?: false)
 
       assert Runners.count_billable_runners(account_a.id) == 0
     end
@@ -1236,26 +1236,25 @@ defmodule Emisar.RunnersTest do
       never = fn -> Fixtures.Runners.create_runner(connected?: false) end
 
       # never-connected: no connection timestamps, across two accounts.
-      _ = never.()
+      never.()
 
-      _ =
-        Fixtures.Runners.create_runner(
-          connected?: false,
-          account_id: Fixtures.Accounts.create_account().id
-        )
+      Fixtures.Runners.create_runner(
+        connected?: false,
+        account_id: Fixtures.Accounts.create_account().id
+      )
 
       # connected: last connect is the most recent event (no disconnect, or older).
-      _ = never.() |> put_connection(last_connected_at: now)
-      _ = never.() |> put_connection(last_connected_at: now, last_disconnected_at: earlier)
+      never.() |> put_connection(last_connected_at: now)
+      never.() |> put_connection(last_connected_at: now, last_disconnected_at: earlier)
 
       # disconnected: last disconnect is at/after the last connect.
-      _ = never.() |> put_connection(last_connected_at: earlier, last_disconnected_at: now)
+      never.() |> put_connection(last_connected_at: earlier, last_disconnected_at: now)
 
       # disabled: counted as disabled regardless of its connection timestamps.
-      _ = never.() |> put_connection(last_connected_at: now, disabled_at: now)
+      never.() |> put_connection(last_connected_at: now, disabled_at: now)
 
       # deleted: excluded from every bucket.
-      _ = never.() |> put_connection(last_connected_at: now, deleted_at: now)
+      never.() |> put_connection(last_connected_at: now, deleted_at: now)
 
       assert %{connected: 2, disconnected: 1, never_connected: 2, disabled: 1} =
                Runners.connection_counts()
@@ -1297,7 +1296,7 @@ defmodule Emisar.RunnersTest do
     test "is account-scoped — the same external_id in another account is :not_found" do
       account_a = Fixtures.Accounts.create_account()
       account_b = Fixtures.Accounts.create_account()
-      _ = Fixtures.Runners.create_runner(account_id: account_a.id, external_id: "shared")
+      Fixtures.Runners.create_runner(account_id: account_a.id, external_id: "shared")
 
       assert Runners.fetch_runner_by_external_id_for_account("shared", account_b.id) ==
                {:error, :not_found}
@@ -2669,7 +2668,7 @@ defmodule Emisar.RunnersTest do
     test "is account-scoped — an account with no presence reads as empty" do
       account_a = Fixtures.Accounts.create_account()
       account_b = Fixtures.Accounts.create_account()
-      _ = Fixtures.Runners.create_runner(account_id: account_a.id, connected?: true)
+      Fixtures.Runners.create_runner(account_id: account_a.id, connected?: true)
 
       assert Runners.connection_metas(account_b.id) == %{}
     end
@@ -3564,7 +3563,7 @@ defmodule Emisar.RunnersTest do
       # Tracking a runner pushes a presence_diff on the topic just joined.
       # Phoenix.Presence broadcasts that diff asynchronously through a single
       # shared tracker and exposes no synchronous "diff delivered" hook.
-      _ = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
+      Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
       assert_receive %Phoenix.Socket.Broadcast{event: "presence_diff"}
     end
 
@@ -3573,7 +3572,7 @@ defmodule Emisar.RunnersTest do
       account_b = Fixtures.Accounts.create_account()
       :ok = Runners.subscribe_connections(account_a.id)
 
-      _ = Fixtures.Runners.create_runner(account_id: account_b.id, connected?: true)
+      Fixtures.Runners.create_runner(account_id: account_b.id, connected?: true)
       refute_receive %Phoenix.Socket.Broadcast{event: "presence_diff"}
     end
   end
@@ -4064,6 +4063,9 @@ defmodule Emisar.RunnersTest do
     test "returns {:error, :token_invalid} for garbage" do
       assert Runners.verify_runner_token("rnrtok-garbage") == {:error, :token_invalid}
       assert Runners.verify_runner_token("") == {:error, :token_invalid}
+
+      assert Runners.verify_runner_token("rnrtok-" <> :binary.copy(<<0xFF>>, 40)) ==
+               {:error, :token_invalid}
     end
 
     test "returns {:error, :runner_disabled} only for a disabled runner's valid token" do
@@ -4371,6 +4373,14 @@ defmodule Emisar.RunnersTest do
   end
 
   describe "register_via_enrollment_key/3" do
+    test "a malformed-UTF-8 key is refused as invalid, not a database error" do
+      assert Runners.register_via_enrollment_key(:binary.copy(<<0xFF>>, 40), %{
+               hostname: "demo-1",
+               group: "demo",
+               external_id: "ext-#{System.unique_integer([:positive])}"
+             }) == {:error, :enrollment_key_invalid}
+    end
+
     test "mints an runner + token on success" do
       account = Fixtures.Accounts.create_account()
       user = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
@@ -4721,9 +4731,9 @@ defmodule Emisar.RunnersTest do
       account = Fixtures.Accounts.create_account(plan: "free")
       user = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-      _ = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Runners.create_runner(account_id: account.id)
 
       {raw, _key} =
         Fixtures.Runners.create_enrollment_key(
@@ -4754,8 +4764,8 @@ defmodule Emisar.RunnersTest do
       assert {:ok, %Runner{}, _, _} =
                Runners.register_via_enrollment_key(raw, %{external_id: "ext-keep", group: "g"})
 
-      _ = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Runners.create_runner(account_id: account.id)
 
       # Now at 3/3. Re-registering the SAME runner (e.g. it lost its token on a
       # redeploy) must NOT be blocked by its own seat — regression for the
@@ -4929,8 +4939,8 @@ defmodule Emisar.RunnersTest do
 
       assert {:ok, %{plan: "team"}} = Billing.support_plan(account)
       # Two runners on a Team plan is well under the cap → check_limit is :ok.
-      _ = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Runners.create_runner(account_id: account.id)
       assert Billing.check_limit(account, :runners) == :ok
 
       {raw, _key} =

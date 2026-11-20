@@ -783,21 +783,10 @@ defmodule Emisar.SSO do
   # Verification may test a connection that is not enabled yet, so only the
   # namespace the ceremony began with must still hold.
   defp lock_identity_link_provider(repo, started_provider, stashed) do
-    current =
-      IdentityProvider.Query.not_deleted()
-      |> IdentityProvider.Query.by_account_id(started_provider.account_id)
-      |> IdentityProvider.Query.by_id(started_provider.id)
-      |> IdentityProvider.Query.lock_for_update()
-      |> repo.peek()
-
-    case current do
-      %IdentityProvider{} = provider ->
-        if callback_namespace(provider) == stashed.namespace,
-          do: {:ok, provider},
-          else: {:error, :identity_namespace_changed}
-
-      nil ->
-        {:error, :provider_disabled}
+    with {:ok, provider} <- lock_provider_row(started_provider, repo) do
+      if callback_namespace(provider) == stashed.namespace,
+        do: {:ok, provider},
+        else: {:error, :identity_namespace_changed}
     end
   end
 
@@ -938,7 +927,11 @@ defmodule Emisar.SSO do
 
   defp hide_result_secret(result), do: result
 
-  @doc "Update a connection's config (locked re-read). `manage_sso` + Team or Enterprise. `{:ok, provider} | {:error, reason}`."
+  @doc """
+  Update a connection's config (locked re-read). `manage_sso` + Team or Enterprise;
+  an update that only turns sign-in off needs `manage_sso` alone, so a downgraded
+  account can still disable a connection. `{:ok, provider} | {:error, reason}`.
+  """
   def update_provider(%IdentityProvider{id: id}, attrs, %Subject{} = subject) do
     cleanup_only? = provider_disable_only?(attrs)
 
@@ -1058,7 +1051,10 @@ defmodule Emisar.SSO do
     end
   end
 
-  @doc "Soft-delete a connection. `manage_sso` + Team or Enterprise. `{:ok, provider} | {:error, reason}`."
+  @doc """
+  Soft-delete a connection. `manage_sso` on any plan, so a downgraded account can
+  still remove a connection. `{:ok, provider} | {:error, reason}`.
+  """
   def delete_provider(%IdentityProvider{id: id}, %Subject{} = subject) do
     with :ok <- ensure_can_manage_sso(subject),
          {:ok, scoped_provider} <- fetch_provider_by_id(id, subject) do
@@ -1144,28 +1140,19 @@ defmodule Emisar.SSO do
     end
   end
 
-  # Lock-out guard — the mirror of team_live's enable-side check: when the account
-  # requires SSO, the LAST enabled connection can't be disabled or deleted out from
-  # under it (else everyone, owners included, is bricked). Judged inside the
-  # provider's fetch_and_update :with (under the row lock); the reads join the same
-  # transaction. Returning the atom (not a changeset) aborts as {:error, atom}.
+  # Last-connection guard — the disable half of "require_sso on ⇒ at least one
+  # enabled connection"; `Accounts.ensure_sso_requirement_has_a_way_in/2` owns the
+  # enable half. When the account requires SSO, the LAST enabled connection can't
+  # be disabled or deleted out from under it: enforcement fails open with no
+  # enabled connection, so losing it would silently re-admit email sign-in rather
+  # than lock anyone out. Judged in update_provider's and delete_provider's Multi
+  # steps, under the account and provider row locks. Returning the atom (not a
+  # changeset) aborts the step as {:error, atom}.
   defp disabling_last_required_provider?(provider, changeset) do
     Ecto.Changeset.get_change(changeset, :enabled) == false and
       last_required_provider?(provider)
   end
 
-  # An identity is keyed on `(provider_id, provider_identifier)`, and that
-  # identifier is whatever the configured claim carries in a token from this
-  # issuer + client. Change any of those three while identities exist and the
-  # SAME stored row starts matching a DIFFERENT person: an admin can repoint a
-  # connection at an IdP they control and mint a token whose claim equals an
-  # existing owner's identifier, then sign in as that owner. Even an innocent
-  # `sub` → `oid` switch can collide with an identifier captured earlier.
-  #
-  # So the namespace is settled by the first identity. Rotating the secret,
-  # renaming, retargeting roles and runner access all stay editable — only the
-  # three fields that decide WHO a stored identifier refers to are frozen. A
-  # genuine move to another IdP is a new connection.
   # A connection's default role and its group mappings are BOTH ways to hand a
   # role to whoever the directory sends, so they need the same no-escalation rule
   # a team role change gets: you may only grant what you already hold. Derived
@@ -1292,8 +1279,10 @@ defmodule Emisar.SSO do
   defp put_kind_issuer(attrs, %{kind: :jumpcloud}) do
     # Region selection owns this value. Clear another kind's fixed prefill, but
     # let the changeset reject any other unsupported issuer instead of hiding it.
+    google_issuer = provider_fixed_issuer(:google_workspace)
+
     case fetch_attr(attrs, :issuer) do
-      {:ok, "https://accounts.google.com"} -> put_attr(attrs, :issuer, "")
+      {:ok, ^google_issuer} -> put_attr(attrs, :issuer, "")
       _ -> attrs
     end
   end
@@ -1365,6 +1354,18 @@ defmodule Emisar.SSO do
     :ok
   end
 
+  # An identity is keyed on `(provider_id, provider_identifier)`, and that
+  # identifier is whatever the configured claim carries in a token from this
+  # issuer + client. Change any of those three while identities exist and the
+  # SAME stored row starts matching a DIFFERENT person: an admin can repoint a
+  # connection at an IdP they control and mint a token whose claim equals an
+  # existing owner's identifier, then sign in as that owner. Even an innocent
+  # `sub` → `oid` switch can collide with an identifier captured earlier.
+  #
+  # So the namespace is settled by the first identity. Rotating the secret,
+  # renaming, retargeting roles and runner access all stay editable — only the
+  # three fields that decide WHO a stored identifier refers to are frozen. A
+  # genuine move to another IdP is a new connection.
   defp rebinding_identity_namespace?(provider, changeset) do
     Enum.any?(@identity_namespace_fields, &Ecto.Changeset.changed?(changeset, &1)) and
       provider_has_identities?(provider)
@@ -1379,16 +1380,16 @@ defmodule Emisar.SSO do
   defp removing_last_required_provider?(provider),
     do: provider.enabled and last_required_provider?(provider)
 
-  # Take the ACCOUNT row lock before reading either half of the invariant
-  # "require_sso on ⇒ at least one enabled connection". The two halves live in
-  # different tables and are written by different transactions, so without a
-  # shared serialization point two concurrent disables could each observe the
-  # other's provider still enabled and both proceed — leaving require_sso on
-  # with zero providers, which enforcement treats as fail-open. Accounts takes
-  # the same lock when it turns require_sso on.
+  # Both callers run inside update_provider/delete_provider after their
+  # put_active_account_lock step, so the ACCOUNT row lock is already held before
+  # either half of the invariant "require_sso on ⇒ at least one enabled
+  # connection" is read. The two halves live in different tables and are
+  # written by different transactions, so without that shared serialization
+  # point two concurrent disables could each observe the other's provider still
+  # enabled and both proceed — leaving require_sso on with zero providers, which
+  # enforcement treats as fail-open. Accounts takes the same lock when it turns
+  # require_sso on.
   defp last_required_provider?(provider) do
-    _ = Accounts.fetch_and_lock_account(provider.account_id)
-
     account_requires_sso?(provider.account_id) and
       Billing.sso_available_for_account_id?(provider.account_id) and
       not another_enabled_provider?(provider)
@@ -1582,17 +1583,6 @@ defmodule Emisar.SSO do
 
   defp recompute_authorization_if_changed(%IdentityProvider{}, _changeset), do: :ok
 
-  # Disabling or deleting a connection stopped NEW sign-ins and left every
-  # session already minted through it valid — for up to their full lifetime — and
-  # the API keys behind them working. An operator pulling a compromised
-  # connection reasonably reads "disabled" as "nobody is coming in through this
-  # any more", so the credentials it vouched for have to go with it.
-  #
-  # Session rows carry the identity that authenticated them, so removal is exact:
-  # unrelated magic-link and other-provider credentials and sockets survive.
-  # API keys end only for a Member without a verified address that is left with
-  # no usable identity (`revoke_stranded_member_credentials/3`); a verified
-  # address still signs in, so it still backs the keys of a Member that has one.
   # A pending request is a person waiting on an admin. Once the connection they
   # arrived through is gone, approval is impossible — `approve_link_request` can
   # no longer fetch the provider — so leaving them queued showed admins a
@@ -1613,6 +1603,17 @@ defmodule Emisar.SSO do
     dismissed
   end
 
+  # Disabling or deleting a connection stopped NEW sign-ins and left every
+  # session already minted through it valid — for up to their full lifetime — and
+  # the API keys behind them working. An operator pulling a compromised
+  # connection reasonably reads "disabled" as "nobody is coming in through this
+  # any more", so the credentials it vouched for have to go with it.
+  #
+  # Session rows carry the identity that authenticated them, so removal is exact:
+  # unrelated magic-link and other-provider credentials and sockets survive.
+  # API keys end only for a Member without a verified address that is left with
+  # no usable identity (`revoke_stranded_member_credentials/3`); a verified
+  # address still signs in, so it still backs the keys of a Member that has one.
   defp delete_provider_sessions(%IdentityProvider{} = provider, repo) do
     # Retired identities can still carry valid cookies. Revoke every identity
     # the provider vouched for, not just the currently visible ones.
@@ -2302,15 +2303,8 @@ defmodule Emisar.SSO do
 
   defp put_callback_provider_lock(multi, started_provider, namespace, claims) do
     Multi.run(multi, :locked_provider, fn repo, _changes ->
-      current =
-        IdentityProvider.Query.not_deleted()
-        |> IdentityProvider.Query.by_account_id(started_provider.account_id)
-        |> IdentityProvider.Query.by_id(started_provider.id)
-        |> IdentityProvider.Query.lock_for_update()
-        |> repo.peek()
-
-      case current do
-        %IdentityProvider{enabled: true} = provider ->
+      case lock_provider_row(started_provider, repo) do
+        {:ok, %IdentityProvider{enabled: true} = provider} ->
           if callback_namespace(provider) != namespace do
             {:error, :identity_namespace_changed}
           else
@@ -2976,11 +2970,13 @@ defmodule Emisar.SSO do
 
   @doc """
   Internal — recompute one identity's role from its synced group memberships:
-  the HIGHEST mapped role over the groups it belongs to (`:admin > :operator >
-  :viewer`; never `:owner`), applied to its membership in the provider's account
-  via `Accounts.sync_set_membership_authorization/4`. An identity in NO mapped group
+  the HIGHEST mapped role over the groups it belongs to (`:admin >
+  :billing_manager > :operator > :viewer`; never `:owner`), applied to its
+  membership in the provider's account via
+  `Accounts.sync_set_membership_authorization/4`. An identity in NO mapped group
   resets to the provider's `default_role` (least-privilege on directory
-  removal); a member who is currently an account `:owner` is left untouched.
+  removal). A member who is currently an account `:owner` keeps that role and its
+  account-wide runner access; only its directory authorization state is reconciled.
   `{:ok, membership} | {:error, reason}`.
   """
   def recompute_role_for_identity(%IdentityProvider{} = provider, %UserIdentity{} = identity) do
@@ -2992,8 +2988,6 @@ defmodule Emisar.SSO do
     )
   end
 
-  # `mappings` is hoisted once per group push by `recompute_role_for_affected/2`
-  # (#12 — fetched once, not once per affected member).
   defp recompute_authorization_for_identity(
          %IdentityProvider{} = provider,
          %UserIdentity{} = identity,
@@ -3202,8 +3196,8 @@ defmodule Emisar.SSO do
   Search a provider's synced groups by display name or external id, capped at
   #{@synced_group_search_limit} rows — the mapping picker's source, so choosing
   a group never depends on the console having preloaded the whole directory. A
-  blank term returns the first groups by display name. `manage_sso` +
-  Enterprise; account-scoped. Returns `{:ok, [%DirectoryGroup{}]}`.
+  blank term returns the first groups by display name. Requires `manage_sso`;
+  account-scoped. Returns `{:ok, [%DirectoryGroup{}]}`.
   """
   def search_synced_groups(%IdentityProvider{} = provider, term, %Subject{} = subject) do
     with {:ok, provider} <- fetch_provider_by_id(provider.id, subject) do
@@ -3866,8 +3860,6 @@ defmodule Emisar.SSO do
       _ ->
         :ok
     end
-
-    Accounts.after_membership_activation_committed(changes)
   end
 
   # Approving a MATCH binds a new IdP credential to an EXISTING Member, so

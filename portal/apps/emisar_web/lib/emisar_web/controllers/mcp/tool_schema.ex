@@ -21,17 +21,17 @@ defmodule EmisarWeb.MCP.ToolSchema do
     properties = Map.new(args, &{&1["name"], arg_property(&1)})
     required = args |> Enum.filter(& &1["required"]) |> Enum.map(& &1["name"])
 
-    schema_object(properties, required, false)
+    schema_object(properties, required)
     |> Map.put("x-emisar-maxEncodedBytes", @max_action_args_bytes)
   end
 
-  defp schema_object(properties, required, additional_properties?) do
+  defp schema_object(properties, required) do
     %{
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       type: "object",
       properties: properties,
       required: required,
-      additionalProperties: additional_properties?
+      additionalProperties: false
     }
   end
 
@@ -149,8 +149,8 @@ defmodule EmisarWeb.MCP.ToolSchema do
   defp validation_count(value) when is_integer(value) and value >= 0, do: value
   defp validation_count(_), do: nil
 
-  # Single replacement for the 4 prior `maybe_put_*` variants. Empty
-  # string / empty list count as "no value", matching Emisar's
+  # Omits nil and empty values. Empty string / empty list / empty map count
+  # as "no value", matching Emisar's
   # args_schema convention of omitting empty fields rather than
   # serialising them.
   defp put_if_present(map, _key, nil), do: map

@@ -8,8 +8,6 @@ defmodule EmisarWeb.MarketingAttribution do
   """
 
   import Plug.Conn
-  # Preserve the live session key so an in-flight campaign journey survives the
-  # deployment that moves ownership out of EmisarWeb.Analytics.
   @session_key :analytics_campaign_attribution
   @campaign_params ~w(utm_source utm_medium utm_campaign utm_term utm_content)
   @campaign_touch_params @campaign_params ++ ["twclid"]
@@ -80,6 +78,9 @@ defmodule EmisarWeb.MarketingAttribution do
       conn
       |> fetch_query_params()
       |> Map.fetch!(:query_params)
+      # Only campaign keys come from the URL; the referrer pair is derived from
+      # a real external Referer below, never typed into a query string.
+      |> Map.take(@campaign_touch_params)
       |> normalize()
 
     referrer_params = conn |> external_referrer_params() |> normalize()
@@ -163,12 +164,15 @@ defmodule EmisarWeb.MarketingAttribution do
     if not global_privacy_control?(conn), do: params["twclid"]
   end
 
+  # Only an actual removal writes the session: Plug marks even an unchanged
+  # put_session or an absent-key delete_session for rewriting the cookie.
   defp delete_x_click_id(conn) do
     params = session_params(conn)
 
-    case Map.delete(params, "twclid") do
-      remaining when map_size(remaining) == 0 -> delete_session(conn, @session_key)
-      remaining -> put_session(conn, @session_key, remaining)
+    cond do
+      not Map.has_key?(params, "twclid") -> conn
+      map_size(params) == 1 -> delete_session(conn, @session_key)
+      true -> put_session(conn, @session_key, Map.delete(params, "twclid"))
     end
   end
 

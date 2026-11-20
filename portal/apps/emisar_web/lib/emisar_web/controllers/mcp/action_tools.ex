@@ -89,7 +89,6 @@ defmodule EmisarWeb.MCP.ActionTools do
              :runner_not_found,
              :runner_out_of_scope,
              :action_not_found,
-             :pack_ref_mismatch,
              :pack_untrusted,
              :pack_retired,
              :action_contract_changed,

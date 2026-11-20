@@ -523,7 +523,8 @@ defmodule Emisar.CatalogTest do
       assert {:ok, actions, _} = Catalog.list_actions_for_runner(runner.id, subject)
       assert length(actions) == 3
 
-      _ = Catalog.observe_state(runner, state_payload(actions: [action("linux.a")]))
+      assert {:ok, _runner} =
+               Catalog.observe_state(runner, state_payload(actions: [action("linux.a")]))
 
       assert {:ok, [%RunnerAction{action_id: "linux.a"}], _} =
                Catalog.list_actions_for_runner(runner.id, subject)
@@ -560,6 +561,29 @@ defmodule Emisar.CatalogTest do
 
       assert {:ok, actions, _metadata} = Catalog.list_actions_for_runner(runner.id, subject)
       assert Enum.map(actions, & &1.action_id) == ["linux.a", "linux.b"]
+    end
+
+    test "the rejection warning names a valid id but never echoes an invalid one", %{
+      runner: runner
+    } do
+      oversized = "demo." <> String.duplicate("a", 200)
+
+      actions = [
+        action(oversized),
+        action("Not A Valid Id"),
+        action("demo.long-title", title: String.duplicate("t", 256))
+      ]
+
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          assert {:ok, _runner} = Catalog.observe_state(runner, state_payload(actions: actions))
+        end)
+
+      assert log =~ "advertised 3 descriptor(s)"
+      assert log =~ "<invalid action_id> (action_id)"
+      assert log =~ "demo.long-title (title)"
+      refute log =~ oversized
+      refute log =~ "Not A Valid Id"
     end
 
     test "rejects a non-array actions field with a stable error", %{runner: runner} do
@@ -733,36 +757,31 @@ defmodule Emisar.CatalogTest do
     end
   end
 
-  describe "observe_state/2 — runner_id variant" do
-    test "looks up the runner by id" do
-      runner = Fixtures.Runners.create_runner()
-      account = Emisar.Repo.preload(runner, :account).account
-      subject = owner_subject_for(account)
-
-      assert {:ok, _runner} =
-               Catalog.observe_state(runner.id, state_payload(actions: [action("linux.a")]))
-
-      assert {:ok, [%RunnerAction{action_id: "linux.a"}], _} =
-               Catalog.list_actions_for_runner(runner.id, subject)
-    end
-
+  describe "observe_state_from_connection/4" do
     test "returns {:error, :unknown_runner} for an unknown id" do
-      assert Catalog.observe_state(Ecto.UUID.generate(), %{}) == {:error, :unknown_runner}
+      assert Catalog.observe_state_from_connection(
+               Ecto.UUID.generate(),
+               %{},
+               1,
+               Ecto.UUID.generate()
+             ) == {:error, :unknown_runner}
     end
 
     test "rejects an advertisement from a disabled runner" do
       {account, subject} = account_with_owner()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
       {:ok, _disabled} = Runners.disable_runner(runner, subject)
 
-      assert Catalog.observe_state(runner.id, state_payload(actions: [action("linux.uptime")])) ==
-               {:error, :unknown_runner}
+      assert Catalog.observe_state_from_connection(
+               runner.id,
+               state_payload(actions: [action("linux.uptime")]),
+               runner.connection_generation,
+               runner.connection_lease_id
+             ) == {:error, :connection_superseded}
 
       assert {:ok, [], _} = Catalog.list_actions_for_runner(runner.id, subject)
     end
-  end
 
-  describe "observe_state_from_connection/4" do
     test "rejects a superseded connection before runner or catalog mutation" do
       runner = Fixtures.Runners.create_runner(connected?: true)
 
@@ -5323,7 +5342,7 @@ defmodule Emisar.CatalogTest do
       subject: subject,
       runner: runner
     } do
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
 
       assert {:ok, action} = Catalog.fetch_action_by_id("linux.uptime", runner.id, subject)
       assert action.account_id == account.id
@@ -5335,7 +5354,7 @@ defmodule Emisar.CatalogTest do
       subject: subject,
       runner: runner
     } do
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
 
       assert {:ok, _} = Catalog.fetch_action_by_id("linux.uptime", runner.id, subject)
 
@@ -5357,7 +5376,7 @@ defmodule Emisar.CatalogTest do
     test "resolves an action scoped to the explicit account (the subject-less system path)" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
 
       assert {:ok, %RunnerAction{action_id: "linux.uptime", account_id: id}} =
                Catalog.fetch_action_for_account("linux.uptime", runner.id, account.id)
@@ -5368,7 +5387,7 @@ defmodule Emisar.CatalogTest do
     test "is account-scoped — a different account_id resolves to :not_found" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
 
       other_account = Fixtures.Accounts.create_account()
 
@@ -5390,9 +5409,9 @@ defmodule Emisar.CatalogTest do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       other_runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.disk_usage")
-      _ = Fixtures.Catalog.create_action(runner: other_runner, action_id: "linux.uptime")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.disk_usage")
+      Fixtures.Catalog.create_action(runner: other_runner, action_id: "linux.uptime")
 
       pairs = [
         {runner.id, "linux.uptime"},
@@ -5415,7 +5434,7 @@ defmodule Emisar.CatalogTest do
     test "is account-scoped — another account's id resolves nothing, and no pairs read nothing" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
       other_account = Fixtures.Accounts.create_account()
 
       assert Catalog.actions_for_account_pairs(other_account.id, [{runner.id, "linux.uptime"}]) ==
@@ -6953,7 +6972,7 @@ defmodule Emisar.CatalogTest do
       assert pending.trust_state == :pending
       # The diff compares every descriptor field, so its input is the WHOLE
       # advertised rows — the sandbox holds only this test's — never a
-      # summary-column read like `list_pack_actions/3`.
+      # summary-column read like `RunnerAction.Query.select_console_columns/1`.
       advertised = Repo.all(RunnerAction)
 
       diff = ConsoleProjection.action_set_changes(pending, advertised)

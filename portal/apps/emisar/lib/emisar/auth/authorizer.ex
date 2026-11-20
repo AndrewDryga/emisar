@@ -15,9 +15,7 @@ defmodule Emisar.Auth.Authorizer do
   alias Emisar.{Accounts, ApiKeys, Runners}
   alias Emisar.Auth.{ContextAuthorizer, SessionSubject, Subject}
 
-  defdelegate build(module, action), to: ContextAuthorizer
   defdelegate has_permission?(subject, permission), to: ContextAuthorizer
-  defdelegate query_source(queryable), to: ContextAuthorizer
 
   @doc """
   Top-level gate. Returns `:ok` if the subject holds every required

@@ -111,8 +111,11 @@ defmodule Emisar.Repo.FilterTest do
     end
 
     test "a boolean false negates the filter's condition" do
-      assert {:q, %Ecto.Query.DynamicExpr{}} =
-               Filter.build_dynamic(:q, [{:active, false}], definitions(), nil)
+      {:q, applied} = Filter.build_dynamic(:q, [{:active, true}], definitions(), nil)
+      {:q, negated} = Filter.build_dynamic(:q, [{:active, false}], definitions(), nil)
+
+      assert inspect(applied) == inspect(dynamic(true))
+      assert inspect(negated) == inspect(dynamic(not true))
     end
 
     test "an unknown filter name is a clean error" do

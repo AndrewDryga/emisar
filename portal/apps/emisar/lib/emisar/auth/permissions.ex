@@ -4,14 +4,12 @@ defmodule Emisar.Auth.Permissions do
   `list_permissions_for_role/1` into the permission set a `%Subject{}`
   carries, and answers role-coverage questions derived from it.
 
-  Lives OUTSIDE `Emisar.Auth.Authorizer` on purpose: every context
-  authorizer compile-depends on that module via `use`, so the core a
-  module `use`s should not also hold a registry of its own users — the
-  mutual reference put the auth core and all twelve authorizers in one
-  xref cycle. (Measured note: Elixir's checksum + exports-aware
-  compiler already kept body-edit recompile fanout at 1 file, so the
-  split is about ownership, not build time — editing the auth core
-  still rebuilds the authorizers, the irreducible `use` cost.)
+  Lives OUTSIDE `Emisar.Auth.ContextAuthorizer` on purpose: every
+  context authorizer compile-depends on that kit via `use`, so the
+  module they `use` should not also hold a registry of its own users —
+  the mutual reference put the auth core and all twelve authorizers in
+  one xref cycle. (`Emisar.Auth.Authorizer` is the runtime gate that
+  re-reads session authority; no authorizer `use`s or imports it.)
   """
   alias Emisar.Auth.Subject
 

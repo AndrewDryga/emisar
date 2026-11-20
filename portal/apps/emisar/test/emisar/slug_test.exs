@@ -19,6 +19,10 @@ defmodule Emisar.SlugTest do
       assert Slug.slugify(String.duplicate("a", 100), max_length: 10) == String.duplicate("a", 10)
     end
 
+    test "a cap that lands on a separator does not leave a trailing hyphen" do
+      assert Slug.slugify("hello world", max_length: 6) == "hello"
+    end
+
     test "returns :default when slugification is empty" do
       assert Slug.slugify("!!!", default: "team") == "team"
       assert Slug.slugify("", default: "team") == "team"

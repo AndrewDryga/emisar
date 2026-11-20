@@ -28,8 +28,10 @@ defmodule Emisar.Checks.IL08ChangesetPure do
       not String.contains?(filename, "lib/emisar/repo/")
   end
 
+  # `fun != :{}` skips a grouped alias such as `alias Emisar.Repo.{A, B}`, whose
+  # dot-node ends in `:Repo` but is not a `Repo.<fn>()` call (see IL06).
   defp walk({{:., _, [{:__aliases__, meta, parts}, fun]}, _, args} = ast, ctx)
-       when is_atom(fun) and is_list(args) do
+       when is_atom(fun) and fun != :{} and is_list(args) do
     if List.last(parts) == :Repo do
       {ast, put_issue(ctx, issue_for(ctx, meta, "Repo.#{fun}"))}
     else

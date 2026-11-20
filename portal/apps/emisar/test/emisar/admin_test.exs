@@ -494,6 +494,25 @@ defmodule Emisar.AdminTest do
       assert found.id == account.id
     end
 
+    test "orders matches by name, once each, before the cap", %{staff_session: staff_session} do
+      tag = "ordered#{System.unique_integer([:positive])}"
+      # Created first, so its id sorts before the later account's.
+      zeta = Fixtures.Accounts.create_account(name: "Zeta #{tag}")
+      alpha = Fixtures.Accounts.create_account(name: "Alpha #{tag}")
+
+      for _ <- 1..2 do
+        Fixtures.Memberships.create_membership(
+          account_id: zeta.id,
+          email: "#{tag}-#{System.unique_integer([:positive])}@example.test"
+        )
+      end
+
+      assert {:ok, found} = Admin.search_accounts(tag, staff_session)
+      assert Enum.map(found, & &1.id) == [alpha.id, zeta.id]
+      assert [capped] = tag |> Admin.Query.accounts_matching(1) |> Repo.all()
+      assert capped.id == alpha.id
+    end
+
     test "matches a typed LIKE wildcard literally", %{staff_session: staff_session} do
       account = Fixtures.Accounts.create_account(name: "Acme_One")
       Fixtures.Accounts.create_account(name: "AcmeXOne")
@@ -574,6 +593,15 @@ defmodule Emisar.AdminTest do
         account_id: account.id,
         created_by_membership_id: owner_membership.id
       )
+
+      # An expired key no longer authenticates, so it is not an active one.
+      {_raw, expired_key} =
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_membership_id: owner_membership.id
+        )
+
+      Fixtures.ApiKeys.backdate_api_key_expiry(expired_key)
 
       {:ok, event} = Audit.log(account.id, "policy.updated", actor_kind: "user")
 
@@ -729,7 +757,7 @@ defmodule Emisar.AdminTest do
                  "confirmation=not-the-member-id",
                  "reason=typo in the confirmation"
                ]
-             ) == {:error, {:unsupported_admin_action, "emisar.admin.member.erase"}}
+             ) == {:error, :confirmation_mismatch}
 
       assert Repo.reload(owner)
 
@@ -749,6 +777,21 @@ defmodule Emisar.AdminTest do
       # The sole owner's workspace goes with it, and the result says so.
       assert erased_account == account.id
       assert Emisar.Accounts.fetch_account_by_id(account.id) == {:error, :not_found}
+    end
+
+    test "a mismatched account-erasure confirmation erases nothing" do
+      {_owner, account, _subject} = Fixtures.Subjects.owner_subject()
+
+      assert Admin.execute(
+               "emisar.admin.account.erase",
+               [
+                 "account_id=#{account.id}",
+                 "confirmation=#{Ecto.UUID.generate()}",
+                 "reason=typo in the confirmation"
+               ]
+             ) == {:error, :confirmation_mismatch}
+
+      assert {:ok, _account} = Emisar.Accounts.fetch_account_by_id(account.id)
     end
 
     test "erasing a Member beside another owner keeps the workspace" do
@@ -900,6 +943,13 @@ defmodule Emisar.AdminTest do
 
       Fixtures.Auth.create_session_token!(membership, :sso, nil, %{},
         user_identity_id: identity.id
+      )
+
+      # A session past its validity window signs no one in; it is not active.
+      Fixtures.Auth.create_aged_token!(
+        membership,
+        "session",
+        DateTime.add(DateTime.utc_now(), -400, :day)
       )
 
       args = ["account=#{account.slug}", "member=#{membership.id}"]
@@ -1201,6 +1251,23 @@ defmodule Emisar.AdminTest do
                Admin.execute("emisar.admin.analytics.revenue", [])
 
       assert %{plan: "team", status: "complimentary", accounts: 1} in subscriptions
+    end
+
+    test "security analytics counts approval statuses inside the window only" do
+      account = Fixtures.Accounts.create_account()
+
+      for status <- [nil, nil, :approved] do
+        Fixtures.Approvals.create_request(account_id: account.id, status: status)
+      end
+
+      Fixtures.Approvals.create_request(account_id: account.id, status: :denied)
+      |> Ecto.Changeset.change(inserted_at: DateTime.add(DateTime.utc_now(), -2, :day))
+      |> Repo.update!()
+
+      assert {:ok, %{approvals: approvals}} =
+               Admin.execute("emisar.admin.analytics.security", ["days=1"])
+
+      assert approvals == [%{status: :pending, count: 2}, %{status: :approved, count: 1}]
     end
 
     test "groups terminal non-success outcomes without counting fan-out as operations" do

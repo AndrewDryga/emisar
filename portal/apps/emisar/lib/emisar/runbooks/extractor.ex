@@ -230,18 +230,20 @@ defmodule Emisar.Runbooks.Extractor do
   defp regex_capture(value, expression, capture) do
     with {:ok, compiled} <- :re.compile(expression, [:unicode]),
          capture_spec <- regex_capture_spec(capture),
-         {:match, [matched]} <-
+         # Index captures tell an unset or undefined group ({-1, 0}) apart from a
+         # group that matched the empty string; :binary returns "" for both.
+         {:match, [{offset, length}]} when offset >= 0 <-
            :re.run(value, compiled, [
-             {:capture, [capture_spec], :binary},
+             {:capture, [capture_spec], :index},
              {:match_limit, @regex_match_limit},
              {:match_limit_recursion, @regex_match_limit}
            ]) do
-      {:ok, matched}
+      {:ok, binary_part(value, offset, length)}
     else
       :nomatch ->
         {:error, "Regex did not match."}
 
-      {:match, [nil]} ->
+      {:match, [{-1, 0}]} ->
         {:error, "Regex capture did not participate in the match."}
 
       {:error, :match_limit} ->

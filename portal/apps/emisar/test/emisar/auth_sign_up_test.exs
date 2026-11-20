@@ -344,6 +344,16 @@ defmodule Emisar.AuthSignUpTest do
       assert %{account_name: [_ | _]} = errors_on(changeset)
       refute Map.has_key?(errors_on(changeset), :slug)
     end
+
+    test "accepts a name whose slug cap lands on a word break" do
+      account_name = String.duplicate("a", 59) <> " b"
+
+      assert {:ok, %SignUpInput{account_name: ^account_name}} =
+               Accounts.validate_sign_up(%{
+                 "email" => "owner@example.test",
+                 "account_name" => account_name
+               })
+    end
   end
 
   describe "change_sign_up/1" do

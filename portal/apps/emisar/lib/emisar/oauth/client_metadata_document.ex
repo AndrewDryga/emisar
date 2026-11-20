@@ -240,12 +240,19 @@ defmodule Emisar.OAuth.ClientMetadataDocument do
 
   defp stream_document(http, conn, uri, deadline) do
     path = (uri.path || "/") <> if(uri.query, do: "?" <> uri.query, else: "")
-    headers = [{"accept", "application/json"}, {"host", uri.host}]
+    # Mint derives Host from the connection's hostname, keeping a non-default
+    # port and IPv6 brackets.
+    headers = [{"accept", "application/json"}]
 
     try do
       with {:ok, conn, ref} <- http.request(conn, "GET", path, headers, nil),
-           {:ok, _conn, {status, body}} <- receive_document(http, conn, ref, {nil, ""}, deadline) do
-        if status == 200, do: {:ok, body}, else: {:error, :document_unavailable}
+           {:ok, _conn, {status, body, judged?}} <-
+             receive_document(http, conn, ref, {nil, "", false}, deadline) do
+        cond do
+          status != 200 -> {:error, :document_unavailable}
+          not judged? -> {:error, :invalid_content_type}
+          true -> {:ok, body}
+        end
       else
         {:error, _conn, _reason} -> {:error, :document_unavailable}
         {:error, _reason} -> {:error, :document_unavailable}
@@ -284,16 +291,27 @@ defmodule Emisar.OAuth.ClientMetadataDocument do
   defp collect_response({:done, ref}, {:cont, acc}, ref), do: {:done, acc}
   defp collect_response(_response, state, _ref), do: state
 
-  defp collect({:status, status}, {_status, body}), do: {status, body}
+  # Mint reports an informational (1xx) response's headers and a chunked body's
+  # trailers as headers events on the same request. Only the final response's
+  # own headers carry its content type, so they are judged once; a later headers
+  # event is a trailer.
+  defp collect({:status, status}, {_status, body, judged?}), do: {status, body, judged?}
 
-  defp collect({:headers, headers}, acc) do
-    if json_headers?(headers), do: acc, else: throw({:document, :invalid_content_type})
+  defp collect({:headers, _headers}, {status, _body, _judged?} = acc) when status in 100..199,
+    do: acc
+
+  defp collect({:headers, _trailers}, {_status, _body, true} = acc), do: acc
+
+  defp collect({:headers, headers}, {status, body, false}) do
+    if json_headers?(headers),
+      do: {status, body, true},
+      else: throw({:document, :invalid_content_type})
   end
 
-  defp collect({:data, chunk}, {status, body}) do
+  defp collect({:data, chunk}, {status, body, judged?}) do
     body = body <> chunk
     if byte_size(body) > @max_document_bytes, do: throw({:document, :document_too_large})
-    {status, body}
+    {status, body, judged?}
   end
 
   defp collect(_event, acc), do: acc

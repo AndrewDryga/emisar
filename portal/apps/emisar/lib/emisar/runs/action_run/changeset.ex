@@ -24,12 +24,7 @@ defmodule Emisar.Runs.ActionRun.Changeset do
     structured_output
   ]a
 
-  # Generous caps — every schema-legal args object fits (the largest declared
-  # arg, the shell pack's 5459-byte `script`, encodes within the args envelope
-  # even at worst-case 6x JSON escaping) — but they bound a hostile MCP client
-  # that would otherwise write a multi-MB row and fan it onto the runner's
-  # PubSub topic. The runner re-validates args per-spec at execution, but the
-  # cloud-side cost is paid before that rejection.
+  # The dispatch justification `reason`, a text column.
   @max_reason_length 2_000
   # The optional justification chain (evidence: what was observed; expected: the
   # outcome that confirms success). Caps mirror the published input schema so a
@@ -52,6 +47,10 @@ defmodule Emisar.Runs.ActionRun.Changeset do
   @max_runner_text_length 16_384
   @max_executed_command_bytes 16_384
   @max_db_string_length 255
+  # Bounds serialized arguments before they are persisted and relayed: a hostile
+  # MCP client would otherwise write a multi-MB row and fan it onto the runner's
+  # PubSub topic. The runner re-validates args per-spec at execution, but the
+  # cloud-side cost is paid before that rejection.
   @max_action_args_bytes 32_768
   @max_structured_output_bytes 8_192
   @min_db_integer -2_147_483_648
@@ -261,7 +260,7 @@ defmodule Emisar.Runs.ActionRun.Changeset do
     |> validate_length(:error_message, max: @max_runner_text_length)
     |> validate_change(:executed_command, &validate_executed_command/2)
     # count: :codepoints, because varchar(255) counts CODEPOINTS and Ecto's
-    # validate_length defaults to GRAPHEMES. These three come straight off the
+    # validate_length defaults to GRAPHEMES. `event_id` comes straight off the
     # runner's result payload, so 255 multi-codepoint graphemes passed validation
     # and then raised Postgrex 22001 on insert — a raise, not a changeset error,
     # so it never reached the socket's {:error, _} branch. The socket died, the

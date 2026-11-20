@@ -601,22 +601,21 @@ defmodule Emisar.ApprovalsTest do
 
     mcp_subject = Emisar.Auth.Subject.for_api_key(key, account)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
-    _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "high")
+    Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "high")
 
-    _ =
-      Fixtures.Policies.create_policy(
-        account_id: account.id,
-        rules: %{
-          "schema_version" => 2,
-          "defaults" => %{
-            "low" => "allow",
-            "medium" => "allow",
-            "high" => "require_approval",
-            "critical" => "deny"
-          },
-          "overrides" => []
-        }
-      )
+    Fixtures.Policies.create_policy(
+      account_id: account.id,
+      rules: %{
+        "schema_version" => 2,
+        "defaults" => %{
+          "low" => "allow",
+          "medium" => "allow",
+          "high" => "require_approval",
+          "critical" => "deny"
+        },
+        "overrides" => []
+      }
+    )
 
     attrs = %{
       runner_id: runner.id,
@@ -2253,10 +2252,12 @@ defmodule Emisar.ApprovalsTest do
     test "creates an approval request in :pending status" do
       {_account, run} = run_fixture()
 
-      assert {:ok, %Request{status: :pending, run_id: run_id}} =
+      assert {:ok, %Request{status: :pending, run_id: run_id} = request} =
                Approvals.create_request(run, "high-risk action")
 
       assert run_id == run.id
+      # The returned struct reads like the stored row, without a reload.
+      assert Approvals.request_name(request) == run.action_id
     end
 
     test "sets expires_at 24h from now by default" do
@@ -2565,7 +2566,7 @@ defmodule Emisar.ApprovalsTest do
 
       # Drive the composed step directly: seed the run under the run_key the
       # Multi reads, then assert the :approval_request step inserted the row.
-      assert {:ok, %{approval_request: %Request{run_id: run_id, status: :pending}}} =
+      assert {:ok, %{approval_request: %Request{run_id: run_id, status: :pending} = request}} =
                Multi.new()
                |> Multi.put(:run, run)
                |> Approvals.create_request_in_multi(
@@ -2576,6 +2577,7 @@ defmodule Emisar.ApprovalsTest do
                |> Repo.transaction()
 
       assert run_id == run.id
+      assert Approvals.request_name(request) == run.action_id
     end
   end
 
@@ -4352,7 +4354,7 @@ defmodule Emisar.ApprovalsTest do
       assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}
     end
 
-    test "an absent legacy User requester cannot bypass exact Member self denial or quorum" do
+    test "the requesting Member cannot self-approve and quorum requires two distinct approvers" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       Fixtures.Catalog.create_action(runner: runner)
@@ -4671,16 +4673,15 @@ defmodule Emisar.ApprovalsTest do
 
       # The account policy is tightened to forbid self-approval AFTER the request
       # was filed — this must not reach back into the parked request.
-      _ =
-        Fixtures.Policies.create_policy(
-          account_id: account.id,
-          rules: %{
-            "schema_version" => 2,
-            "defaults" => %{"low" => "allow", "medium" => "allow"},
-            "overrides" => [],
-            "approval" => %{"min_approvals" => 1, "allow_self_approval" => false}
-          }
-        )
+      Fixtures.Policies.create_policy(
+        account_id: account.id,
+        rules: %{
+          "schema_version" => 2,
+          "defaults" => %{"low" => "allow", "medium" => "allow"},
+          "overrides" => [],
+          "approval" => %{"min_approvals" => 1, "allow_self_approval" => false}
+        }
+      )
 
       # The requester self-approves and it finalizes + dispatches — the snapshot,
       # not the now-stricter live policy, governs.
@@ -4726,6 +4727,22 @@ defmodule Emisar.ApprovalsTest do
                |> elem(1),
                &(&1.event_type == "approval.denied")
              )
+    end
+
+    test "stamps updated_at with the decision", %{run: run, subject: subject} do
+      {:ok, request} = Approvals.create_request(run, "needs approve")
+      stale = DateTime.add(DateTime.utc_now(), -3_600, :second)
+
+      {1, _} =
+        Request.Query.all()
+        |> Request.Query.by_id(request.id)
+        |> Repo.update_all(set: [updated_at: stale])
+
+      assert {:ok, {%Request{status: :denied}, _run}} =
+               Approvals.deny_request(request, subject, "not now")
+
+      denied = Repo.reload!(request)
+      assert denied.updated_at == denied.decided_at
     end
 
     test "emails the requester that it was denied", %{run: run, subject: subject} do
@@ -5243,7 +5260,7 @@ defmodule Emisar.ApprovalsTest do
       runner_a = Fixtures.Runners.create_runner(account_id: account.id)
       runner_b = Fixtures.Runners.create_runner(account_id: account.id)
 
-      _ = insert_grant(account, key, action_id: "linux.uptime", granted_by_membership_id: user.id)
+      insert_grant(account, key, action_id: "linux.uptime", granted_by_membership_id: user.id)
 
       assert %Grant{} =
                Approvals.peek_matching_grant(
@@ -5272,7 +5289,7 @@ defmodule Emisar.ApprovalsTest do
 
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
-      _ = insert_grant(account, key, action_id: "linux.uptime", granted_by_membership_id: user.id)
+      insert_grant(account, key, action_id: "linux.uptime", granted_by_membership_id: user.id)
 
       assert %Grant{} =
                Approvals.peek_matching_grant(
@@ -5304,12 +5321,11 @@ defmodule Emisar.ApprovalsTest do
       runner_a = Fixtures.Runners.create_runner(account_id: account.id)
       runner_b = Fixtures.Runners.create_runner(account_id: account.id)
 
-      _ =
-        insert_grant(account, key,
-          action_id: "x",
-          runner_id: runner_a.id,
-          granted_by_membership_id: user.id
-        )
+      insert_grant(account, key,
+        action_id: "x",
+        runner_id: runner_a.id,
+        granted_by_membership_id: user.id
+      )
 
       assert %Grant{} =
                Approvals.peek_matching_grant(
@@ -5338,14 +5354,13 @@ defmodule Emisar.ApprovalsTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       past = DateTime.add(DateTime.utc_now(), -60, :second)
 
-      _ =
-        insert_grant(account, key,
-          action_id: "x",
-          runner_id: runner.id,
-          granted_by_membership_id: user.id,
-          granted_at: past,
-          expires_at: past
-        )
+      insert_grant(account, key,
+        action_id: "x",
+        runner_id: runner.id,
+        granted_by_membership_id: user.id,
+        granted_at: past,
+        expires_at: past
+      )
 
       assert Approvals.peek_matching_grant(
                account.id,
@@ -5384,7 +5399,7 @@ defmodule Emisar.ApprovalsTest do
       {_, key_b} =
         Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_membership_id: user.id)
 
-      _ = insert_grant(account, key_a, action_id: "x", granted_by_membership_id: user.id)
+      insert_grant(account, key_a, action_id: "x", granted_by_membership_id: user.id)
 
       assert %Grant{} =
                Approvals.peek_matching_grant(
@@ -5413,7 +5428,7 @@ defmodule Emisar.ApprovalsTest do
       {_, key} =
         Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_membership_id: user.id)
 
-      _ = insert_grant(account, key, action_id: "x", granted_by_membership_id: user.id)
+      insert_grant(account, key, action_id: "x", granted_by_membership_id: user.id)
 
       # The grant matches while grants are enabled…
       assert %Grant{} =
@@ -5459,20 +5474,19 @@ defmodule Emisar.ApprovalsTest do
       observe_trusted_grant_action(account, member, runner, "high")
       Emisar.Runners.subscribe_runner_transport(runner)
 
-      _ =
-        Fixtures.Policies.create_policy(
-          account_id: account.id,
-          rules: %{
-            "schema_version" => 2,
-            "defaults" => %{
-              "low" => "allow",
-              "medium" => "allow",
-              "high" => "require_approval",
-              "critical" => "deny"
-            },
-            "overrides" => []
-          }
-        )
+      Fixtures.Policies.create_policy(
+        account_id: account.id,
+        rules: %{
+          "schema_version" => 2,
+          "defaults" => %{
+            "low" => "allow",
+            "medium" => "allow",
+            "high" => "require_approval",
+            "critical" => "deny"
+          },
+          "overrides" => []
+        }
+      )
 
       grant =
         insert_grant(
@@ -5574,20 +5588,19 @@ defmodule Emisar.ApprovalsTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       observe_trusted_grant_action(account, member, runner, "high")
 
-      _ =
-        Fixtures.Policies.create_policy(
-          account_id: account.id,
-          rules: %{
-            "schema_version" => 2,
-            "defaults" => %{
-              "low" => "allow",
-              "medium" => "allow",
-              "high" => "require_approval",
-              "critical" => "deny"
-            },
-            "overrides" => []
-          }
-        )
+      Fixtures.Policies.create_policy(
+        account_id: account.id,
+        rules: %{
+          "schema_version" => 2,
+          "defaults" => %{
+            "low" => "allow",
+            "medium" => "allow",
+            "high" => "require_approval",
+            "critical" => "deny"
+          },
+          "overrides" => []
+        }
+      )
 
       Emisar.Runners.subscribe_runner_transport(runner)
       %{mcp_subject: mcp_subject, operator_subject: operator_subject, key: key, runner: runner}
@@ -6449,7 +6462,7 @@ defmodule Emisar.ApprovalsTest do
           created_by_membership_id: user_a.id
         )
 
-      _ = insert_grant(account_a, key_a, action_id: "x", granted_by_membership_id: user_a.id)
+      insert_grant(account_a, key_a, action_id: "x", granted_by_membership_id: user_a.id)
 
       subject_a = operator_subject(account_a)
       assert {:ok, [%Grant{}], _} = Approvals.list_grants_for_account(subject_a)

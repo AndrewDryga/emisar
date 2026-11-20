@@ -9,10 +9,14 @@ defmodule Emisar.Runs.ActionRun do
   Terminal outcomes are `success`, `failed`, `error`, `validation_failed`,
   `unknown_action`, `cancelled`, `timed_out`, and `refused`.
 
-  Or:    pending -> pending_approval -> sent -> ...
+  An approval-gated run is created `pending_approval` and released on approval:
 
-  The policy gate can settle a run at creation: `pending -> denied` is a
-  terminal outcome — the run is never sent to a runner.
+      pending_approval -> pending -> sent -> ...
+
+  A runner's concurrency-cap refusal requeues a sent run: `sent -> pending`.
+
+  The policy gate can settle a run at creation: a denied run is created
+  `denied`, a terminal outcome — it is never sent to a runner.
   """
   use Emisar, :schema
 
@@ -189,8 +193,6 @@ defmodule Emisar.Runs.ActionRun do
     belongs_to :initiating_membership, Emisar.Accounts.Membership,
       foreign_key: :initiating_membership_id,
       define_field: false
-
-    has_many :events, Emisar.Runs.RunEvent, foreign_key: :run_id
 
     timestamps()
   end

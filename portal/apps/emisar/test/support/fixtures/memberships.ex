@@ -12,12 +12,14 @@ defmodule Emisar.Fixtures.Memberships do
   @passthrough_fields [
     :invited_by_membership_id,
     :invitation_token_digest,
-    :invitation_accepted_at,
     :directory_managed,
     :runner_access_directory_managed,
-    :directory_provider_id,
-    :directory_authorization_pending_version
+    :directory_provider_id
   ]
+
+  # States no create path writes (a later transition does), so the fixture
+  # rigs them directly onto the insert rather than through `create/1`.
+  @rigged_fields [:invitation_accepted_at, :directory_authorization_pending_version]
 
   @mfa_state_fields [:mfa_secret, :mfa_enabled_at, :mfa_recovery_codes, :mfa_last_used_at]
 
@@ -43,13 +45,16 @@ defmodule Emisar.Fixtures.Memberships do
       }
       |> Map.merge(Map.take(attrs, @passthrough_fields))
 
+    rigged = Map.take(attrs, @rigged_fields)
+
     pending_invitee? =
-      is_binary(params[:invitation_token_digest]) and is_nil(params[:invitation_accepted_at])
+      is_binary(params[:invitation_token_digest]) and is_nil(rigged[:invitation_accepted_at])
 
     verified? = Map.get(attrs, :email_verified?, not pending_invitee?)
 
     params
     |> Membership.Changeset.create()
+    |> Ecto.Changeset.change(rigged)
     |> then(fn changeset ->
       if verified? and is_binary(params.email),
         do: Ecto.Changeset.put_change(changeset, :email_verified_at, DateTime.utc_now()),

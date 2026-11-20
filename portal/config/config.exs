@@ -12,12 +12,12 @@ import Config
 # Configure Mix tasks and generators
 config :emisar,
   ecto_repos: [Emisar.Repo],
-  # Web-side handler `Emisar.Auth` calls when it needs to disconnect
-  # active LiveView sockets (the broadcast struct itself lives in the
-  # `phoenix` package, which emisar deliberately doesn't depend on).
+  # Web-side handler `Emisar.Auth` and `Emisar.Admin` call when they need
+  # to disconnect active LiveView sockets; it broadcasts through the web
+  # endpoint, which the data layer does not reference directly.
   session_disconnect_handler: {:emisar_web, EmisarWeb.SessionDisconnector},
   # Supervised Task fan-out for detached domain work (Analytics,
-  # Approvals, Marketing.Conversions). Lives in Emisar's supervision tree
+  # Approvals, Marketing.Conversions, emailed sign-in codes). Lives in Emisar's supervision tree
   # so SIGTERM gracefully drains in-flight tasks instead of dropping them
   # on the floor. Resolved by name at call-time.
   task_supervisor: Emisar.TaskSupervisor,
@@ -29,7 +29,7 @@ config :emisar,
   mixpanel_enabled: false,
   mixpanel_api_host: "https://api.mixpanel.com",
   mixpanel_groups_enabled: false,
-  # Secret salt for the cookieless daily anonymous-visitor hash. Prod overrides
+  # Secret salt for the cookieless weekly anonymous-visitor hash. Prod overrides
   # it with SECRET_KEY_BASE (runtime.exs); this non-secret default is dev/test.
   analytics_salt: "emisar-dev-analytics-salt",
   # HMAC key for privacy-safe MCP client/call correlation in logs. Production
@@ -119,12 +119,10 @@ config :logger, :console,
   metadata: [
     :request_id,
     :account_id,
-    :user_id,
     :membership_id,
-    :runner_id,
-    :run_id,
     :req_id,
     :mcp_tool,
+    :stage,
     :mcp_validation_stage,
     :mcp_validation_kind,
     :mcp_validation_issues,
@@ -139,9 +137,7 @@ config :logger, :console,
     :mcp_client_name,
     :mcp_client_version,
     :mcp_bridge_version,
-    :policy_decision,
     :paddle_subscription_id,
-    :reason,
     :error,
     :count,
     :job,

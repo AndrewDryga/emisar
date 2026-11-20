@@ -109,8 +109,14 @@ defmodule EmisarWeb.Components.OsSwitchTest do
       assert html =~ ~s(id="install-macos")
       # The pre carries the OS marker os_tabs.js toggles, and the variants the
       # visitor is not on start hidden.
-      assert html =~ ~s(data-os="windows")
-      assert html =~ "hidden"
+      document = LazyHTML.from_fragment(html)
+
+      os_of = fn selector ->
+        document |> LazyHTML.query(selector) |> LazyHTML.attribute("data-os")
+      end
+
+      assert os_of.("pre[data-os]:not(.hidden)") == ["macos"]
+      assert os_of.("pre[data-os].hidden") == ["linux", "windows"]
     end
 
     test "each variant copies its exact code, preserving significant whitespace" do

@@ -12,7 +12,9 @@ defmodule Emisar.Checks.IL12NoFloatMoney do
       """
     ]
 
-  @money_prefix ~r/^(price|amount|cost|total|subtotal|balance|fee|rate|charge|payment|salary|wage|budget|revenue|discount|tax|cents|money)/
+  # A money word at the start of any snake_case segment, so `unit_price_amount`
+  # counts as well as `price`.
+  @money_segment ~r/(^|_)(price|amount|cost|total|subtotal|balance|fee|rate|charge|payment|salary|wage|budget|revenue|discount|tax|cents|money)/
 
   @doc false
   @impl true
@@ -24,7 +26,7 @@ defmodule Emisar.Checks.IL12NoFloatMoney do
 
   defp walk({fun, meta, [name, :float | _]} = ast, ctx)
        when fun in [:field, :add] and is_atom(name) do
-    if Regex.match?(@money_prefix, Atom.to_string(name)) do
+    if Regex.match?(@money_segment, Atom.to_string(name)) do
       {ast, put_issue(ctx, issue_for(ctx, meta, "#{fun} :#{name}"))}
     else
       {ast, ctx}

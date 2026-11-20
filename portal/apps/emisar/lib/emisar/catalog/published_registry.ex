@@ -12,8 +12,8 @@ defmodule Emisar.Catalog.PublishedRegistry do
 
   ## Source of truth
 
-  A published `catalog.json` (built out-of-band by `emisar pack catalog
-  build`, so the portal, the runner, and the catalog agree on every content
+  A published `catalog.json` (built out-of-band by `packctl catalog build`,
+  so the portal, the runner, and the catalog agree on every content
   hash byte-for-byte). `Cache` loads the bundled catalog at boot and
   refreshes from the published URL, keeping the last-good copy on any
   outage. This module reads the current catalog from that cache — it holds

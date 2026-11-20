@@ -15,15 +15,6 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert Approvals.subscribe_account_approvals(account.id) == :ok
   end
 
-  # What audit retention leaves behind: the override's receipt is gone, the
-  # request row (and its durable `overridden` marker) is not.
-  defp prune_override_receipt(request) do
-    Audit.Event.Query.all()
-    |> Audit.Event.Query.by_target_id(request.id)
-    |> Audit.Event.Query.by_event_type("approval.overridden")
-    |> Repo.delete_all()
-  end
-
   defp assert_approval_broadcast(lv, request) do
     request_id = request.id
     assert_receive {:approval_updated, ^request_id}
@@ -307,7 +298,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
         runner_id: runner.id,
         action_id: "linux.uptime",
         source: "mcp",
-        reason: "restart the stuck worker",
+        reason: "restart the stuck worker\nafter the queue drains",
         evidence: "run 0f9c showed the queue depth climbing for 20m",
         expected: "queue depth drops to zero within a minute",
         args: %{},
@@ -317,6 +308,10 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {:ok, request} = Approvals.create_request(run, run.reason)
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    # The reason keeps its line breaks, like evidence and expected outcome.
+    assert html =~
+             ~s(<span class="whitespace-pre-wrap">restart the stuck worker\nafter the queue drains</span>)
 
     assert html =~ "Evidence"
     assert html =~ "run 0f9c showed the queue depth climbing for 20m"
@@ -1940,7 +1935,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert confirm_dialog(lv, "override-approval-reviews", "Approve with override") =~
              "Approval override recorded."
 
-    assert {1, _} = prune_override_receipt(request)
+    assert {1, _} = Fixtures.Approvals.prune_override_receipt(request)
     assert Repo.reload!(request).overridden
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
@@ -1980,7 +1975,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert confirm_dialog(lv, "override-approval-reviews", "Approve with override") =~
              "Approval override recorded."
 
-    assert {1, _} = prune_override_receipt(request)
+    assert {1, _} = Fixtures.Approvals.prune_override_receipt(request)
     assert Repo.reload!(request).overridden
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")

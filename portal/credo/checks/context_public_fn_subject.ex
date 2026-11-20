@@ -23,7 +23,7 @@ defmodule Emisar.Checks.ContextPublicFnSubject do
       """
     ]
 
-  @infra ~w(repo application release mailer telemetry pubsub pub_sub)
+  @infra ~w(repo application release mailer telemetry pubsub)
   @exempt_structs [:Subject, :RequestContext]
 
   @doc false

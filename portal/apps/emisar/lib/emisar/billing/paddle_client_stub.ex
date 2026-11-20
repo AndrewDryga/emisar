@@ -1,8 +1,8 @@
 defmodule Emisar.Billing.PaddleClient.Stub do
   @moduledoc """
-  Stub Paddle implementation. Used for dev + test until real PADDLE_API_KEY
-  credentials are provisioned. Returns predictable stubs so tests pass
-  without a real API.
+  Stub Paddle implementation. Backs dev and test, and a release started with
+  `EMISAR_DISABLE_BILLING=1` (no Paddle credentials). Returns predictable stubs
+  so tests pass without a real API.
   """
 
   @behaviour Emisar.Billing.PaddleClient

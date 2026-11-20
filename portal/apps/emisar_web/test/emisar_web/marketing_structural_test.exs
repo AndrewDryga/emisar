@@ -4,7 +4,8 @@ defmodule EmisarWeb.MarketingStructuralTest do
   marketing surface — the lean-JS split, the self-referential canonical
   tag, junk-query-param resilience, BreadcrumbList structured data, and
   the title/OG head — asserted with one parametrized loop per family so a
-  new page inherits the coverage by being added to `@indexable_routes`.
+  new page inherits the coverage through `MarketingRoutes.battery_paths/0`
+  (router-derived static routes, every guide, and pinned pack pages).
 
   Companion to `marketing_test.exs` (per-page copy + the CSP/indexable
   loop) and `js_bundle_test.exs` (the marketing-vs-app bundle split on a
@@ -17,8 +18,8 @@ defmodule EmisarWeb.MarketingStructuralTest do
   # Mirrors `marketing_test.exs` @routes. Each is controller-rendered, so
   # each must load the lean bundle, carry a self-canonical, ignore junk
   # query params, and emit a complete <title>/OG head.
-  # Derived from the router (plus pinned dynamic representatives) — a page
-  # added there joins the structural + breadcrumb battery automatically.
+  # Derived from the router and the guide list (plus pinned pack pages) — a
+  # page added there joins the structural + breadcrumb battery automatically.
   @indexable_routes EmisarWeb.MarketingRoutes.battery_paths()
 
   # The pages that emit a BreadcrumbList block. Home and /pricing carry
@@ -286,7 +287,11 @@ defmodule EmisarWeb.MarketingStructuralTest do
            {"/app/agents", "AI agents"}
          ]},
         {"/docs/connect-cli-agent",
-         [{"/app/agents/connect", "Connect an agent"}, {"/app/audit", "Audit log"}]},
+         [
+           {"/app/agents/connect", "Connect an agent"},
+           {"/app/audit", "Audit log"},
+           {"/app/agents", "AI agents"}
+         ]},
         {"/docs/connect-agent-sandboxes",
          [
            {"/app/agents/connect", "Connect an agent"},
@@ -357,8 +362,6 @@ defmodule EmisarWeb.MarketingStructuralTest do
            {"/app/runbooks/import", "Import runbook"}
          ]},
         {"/docs/troubleshooting", [{"/app/runners", "Runners"}]},
-        {"/docs/pack-updates", [{"/app/packs", "Packs"}]},
-        {"/docs/connect-cli-agent", [{"/app/agents", "AI agents"}]},
         {"/docs/runs", [{"/app/runs", "Runs"}]},
         {"/docs/production",
          [{"/app/audit", "Audit log"}, {"/app/audit/export", "audit-export token"}]},
@@ -394,6 +397,21 @@ defmodule EmisarWeb.MarketingStructuralTest do
         for {href, label} <- expected_links do
           assert_link(html, page, href, label)
         end
+      end
+    end
+
+    test "the cloud-connector sign-in grants link the revocation page", %{conn: conn} do
+      for page <- ["/docs/connect-claude-ai", "/docs/connect-chatgpt"] do
+        hrefs =
+          conn
+          |> recycle()
+          |> get(page)
+          |> html_response(200)
+          |> LazyHTML.from_document()
+          |> LazyHTML.query("h2#sign-in-grants + p a")
+          |> LazyHTML.attribute("href")
+
+        assert "/app/agents" in hrefs, "#{page}: the AI agents revocation page must be a link"
       end
     end
 

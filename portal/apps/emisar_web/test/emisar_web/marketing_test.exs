@@ -1,16 +1,10 @@
 defmodule EmisarWeb.MarketingTest do
   use EmisarWeb.ConnCase, async: true
 
-  # Derived from the router (plus pinned dynamic representatives) — a page
-  # added there joins the render + CSP + indexability battery automatically.
+  # Derived from the router and the guide list (plus pinned pack pages) — a
+  # page added there joins the CSP + indexability battery automatically. The
+  # indexability test's html_response(200) is also the render-200 check.
   @routes EmisarWeb.MarketingRoutes.battery_paths()
-
-  for route <- @routes do
-    test "GET #{route} renders 200", %{conn: conn} do
-      conn = get(conn, unquote(route))
-      assert html_response(conn, 200)
-    end
-  end
 
   describe "indexable + CSP on every server-rendered marketing page" do
     # @routes is the full public marketing surface; every one is server-
@@ -395,6 +389,18 @@ defmodule EmisarWeb.MarketingTest do
     assert html =~ "spec.nodeName"
   end
 
+  test "kubernetes docs prerequisites include the official image's pull hosts", %{conn: conn} do
+    html = conn |> get(~p"/docs/kubernetes") |> html_response(200)
+
+    # Every node pulls the DaemonSet image from ghcr.io, whose blobs redirect to
+    # pkg-containers.githubusercontent.com (the network page's image-pull row).
+    assert html =~ "image</span>: ghcr.io/"
+    assert html =~ ~s(<code class="text-zinc-300">ghcr.io:443</code>)
+
+    assert html =~
+             ~s(<code class="text-zinc-300">pkg-containers.githubusercontent.com:443</code>)
+  end
+
   test "nomad docs page keeps raw_exec runner state on the client, not in a volume",
        %{conn: conn} do
     html = conn |> get(~p"/docs/nomad") |> html_response(200)
@@ -573,7 +579,24 @@ defmodule EmisarWeb.MarketingTest do
     assert html =~ ">Runner is connected and healthy.</div>"
     assert html =~ "msg=cloud.run_finished"
 
-    assert html =~ "emisar · nomad.alloc_stop(alloc:"
+    # The advertised-action count is the bundled catalog's total for the five
+    # installed packs, in both `emisar status` and the runner log.
+    demo_packs = ~w(linux-core debugging fs-search docker nomad)
+
+    action_count =
+      :emisar
+      |> Application.app_dir("priv/packs/catalog.json")
+      |> File.read!()
+      |> Jason.decode!()
+      |> Map.fetch!("packs")
+      |> Enum.filter(&(&1["id"] in demo_packs))
+      |> Enum.map(&length(&1["actions"]))
+      |> Enum.sum()
+
+    assert html =~ "5 packs · #{action_count} actions advertised"
+    assert html =~ "msg=cloud.connected actions=#{action_count} packs=5"
+
+    assert html =~ "emisar · nomad.alloc_stop(alloc_id:"
     assert html =~ "read NodeStageVolume in src/driver/index.js"
     assert html =~ "⏸ pending approval — nomad.alloc_stop is high-risk"
     assert html =~ "✓ approved by you · one use · audit event recorded"
@@ -627,6 +650,15 @@ defmodule EmisarWeb.MarketingTest do
 
     assert map |> LazyHTML.query("[data-hiw-cap]") |> LazyHTML.text() |> squish() =~
              "Everything is on the record. The audit trail holds all three decisions"
+
+    # The packs caption carries the live catalog totals, never a hand-typed count.
+    action_count =
+      Emisar.Catalog.published_action_count()
+      |> Integer.to_string()
+      |> String.replace(~r/(\d)(?=(\d{3})+$)/, "\\1,")
+
+    assert map |> LazyHTML.query(~s([data-hiw-cap-n="6"])) |> LazyHTML.text() =~
+             "The catalog has #{action_count} actions in #{Emisar.Catalog.published_pack_count()} packs"
 
     # The refused example is an action the drawn runner has (linux-core), so policy refuses it;
     # an action from a pack no runner has would be unavailable, not refused.
@@ -2390,7 +2422,8 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "emisar audit verify --all"
     end
 
-    test "the five new operator pages render their key facts", %{conn: conn} do
+    test "the runs, keys, runner CLI, and billing docs pages render their key facts",
+         %{conn: conn} do
       runs = conn |> get(~p"/docs/runs") |> html_response(200)
       assert runs =~ "Run statuses"
       assert runs =~ "most recent 500"
@@ -2601,6 +2634,37 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Failure modes"
     end
 
+    test "the custom-MCP comparison's pack excerpt matches the published action",
+         %{conn: conn} do
+      action =
+        :emisar
+        |> Application.app_dir("priv/packs/catalog.json")
+        |> File.read!()
+        |> Jason.decode!()
+        |> Map.fetch!("packs")
+        |> Enum.find(&(&1["id"] == "postgres"))
+        |> Map.fetch!("actions")
+        |> Enum.find(&(&1["id"] == "postgres.terminate_backend"))
+
+      [%{"name" => "pid", "validation" => %{"min" => min, "max" => max}}] = action["args"]
+      %{"binary" => binary, "argv" => argv} = action["command"]
+
+      html = conn |> get(~p"/compare/custom-mcp-server") |> html_response(200)
+      assert html =~ "actions/terminate_backend.yaml · emisar pack action"
+
+      [excerpt] =
+        html
+        |> LazyHTML.from_document()
+        |> LazyHTML.query("div.font-mono")
+        |> Enum.map(&(&1 |> LazyHTML.text() |> String.replace("\u00A0", " ") |> squish()))
+        |> Enum.filter(&String.starts_with?(&1, "id: #{action["id"]}"))
+
+      assert excerpt =~ "risk: #{action["risk"]}"
+      assert excerpt =~ "validation: min: #{min} max: #{max}"
+      assert excerpt =~ "binary: #{binary}"
+      assert excerpt =~ "argv: [" <> Enum.map_join(argv, ", ", &~s("#{&1}")) <> "]"
+    end
+
     test "the copy-paste comparison renders the manual workflow, honest tradeoffs, and both table layouts",
          %{conn: conn} do
       html = conn |> get(~p"/compare/copy-paste-ai-ops") |> html_response(200)
@@ -2720,6 +2784,29 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "--lines"
       refute html =~ "--caller"
       refute Regex.match?(~r/--event(?![-\w])/, html)
+    end
+
+    test "the pack install flags on the CLI page are the ones the runner registers",
+         %{conn: conn} do
+      html = conn |> get(~p"/docs/runner-cli") |> html_response(200)
+      golden_path = Path.expand("../../../../../runner/testdata/cli_surface.golden", __DIR__)
+
+      [install_line] =
+        golden_path
+        |> File.read!()
+        |> String.split("\n")
+        |> Enum.filter(&String.starts_with?(&1, "emisar pack install "))
+
+      flags =
+        ~r/--([a-z-]+):/
+        |> Regex.scan(install_line, capture: :all_but_first)
+        |> List.flatten()
+
+      assert "no-verify" in flags
+
+      for flag <- flags do
+        assert html =~ "--#{flag}", "the runner-CLI page does not document pack install --#{flag}"
+      end
     end
 
     test "upgrades states the verified version commands and the interruption they cause",
@@ -2978,6 +3065,26 @@ defmodule EmisarWeb.MarketingTest do
 
       assert html =~ "TCP 443"
       assert html =~ "Only while install.sh or install-mcp.sh runs"
+
+      # Installers and default pack fetches use the fixed public hosts, not the
+      # control plane the runner connects to (install.sh, install-mcp.sh,
+      # and the runner's default registry all name https://emisar.dev).
+      destinations =
+        html
+        |> LazyHTML.from_document()
+        |> LazyHTML.query("tbody tr")
+        |> Map.new(fn row ->
+          [operation, _direction, destination | _] =
+            row |> LazyHTML.query("td") |> Enum.map(&LazyHTML.text/1)
+
+          {operation, destination}
+        end)
+
+      assert destinations["Installer release download (runner and bridge)"] ==
+               "emisar.dev, TCP 443"
+
+      assert destinations["Pack install and update"] ==
+               "emisar.dev and registry.emisar.dev, TCP 443, or your configured artifact hosts"
     end
 
     test "network requirements ends with completion conditions, not a made-up probe",
@@ -3043,6 +3150,21 @@ defmodule EmisarWeb.MarketingTest do
                       /docs/connect-cli-agent /docs/audit-and-siem) do
         page = conn |> get(owner) |> html_response(200)
         assert page =~ ~s(id="troubleshooting"), "#{owner} lost its troubleshooting section"
+      end
+
+      # A sub-area inside a troubleshooting section is an h3 under that h2, so
+      # the section never renders as an empty heading.
+      sub_areas = [{"/docs/audit-and-siem", "audit"}, {"/docs/connect-cli-agent", "mcp"}]
+
+      for {owner, sub_area} <- sub_areas do
+        nested =
+          conn
+          |> get(owner)
+          |> html_response(200)
+          |> LazyHTML.from_document()
+          |> LazyHTML.query("h2#troubleshooting + h3##{sub_area}")
+
+        assert Enum.count(nested) == 1, "#{owner}: ##{sub_area} must sit under Troubleshooting"
       end
     end
 
@@ -3663,7 +3785,6 @@ defmodule EmisarWeb.MarketingTest do
     end
 
     test "each legal page carries its own title-suffix and last-updated date", %{conn: conn} do
-      # {route, title, date} — the title suffix proves the right head, and
       # Each legal surface declares the date of its current published text.
       for {route, date} <- [
             {"/privacy", "September 25, 2026"},
@@ -3968,15 +4089,6 @@ defmodule EmisarWeb.MarketingTest do
     if Keyword.has_key?(plan.features, :team),
       do: plan.features ++ team_features,
       else: plan.features
-  end
-
-  # Pull every external (`href="http…"`) anchor out of rendered HTML so a
-  # test can assert the whole set carries the safe-rel pair, not just the
-  # one link it happened to name.
-  defp external_links(html) do
-    ~r{<a\s[^>]*href="https?://[^>]*>}
-    |> Regex.scan(html)
-    |> Enum.map(&hd/1)
   end
 
   # Parse the page's bespoke JSON-LD @graph (home / pricing carry a

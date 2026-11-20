@@ -175,9 +175,9 @@ defmodule Emisar.Fixtures.Runs do
   persists and relays, and the validated value dispatch attrs carry.
 
   Override any bound fact (`:action_id`, `:pack_ref`, `:args_raw`,
-  `:runner_refs`, `:reason`, `:operation_id`, `:portal_origin`), the certificate
-  identity (`:ca_id`, `:key_id`), or either window bound (`:issued_at`,
-  `:valid_until`).
+  `:runner_refs`, `:reason`, `:evidence`, `:expected`, `:operation_id`,
+  `:portal_origin`) or either window bound: `:issued_at` as an ISO8601 string,
+  `:valid_until` as a `%DateTime{}`.
   """
   def signed_attestation(attrs \\ %{}) do
     attrs = Map.new(attrs)

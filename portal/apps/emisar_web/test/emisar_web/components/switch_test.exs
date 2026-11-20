@@ -1,9 +1,9 @@
 defmodule EmisarWeb.Components.SwitchTest do
   @moduledoc """
-  Renders `EmisarWeb.CoreComponents.switch/1` — the ONE enforcement toggle
-  (team MFA + SSO). Asserts the two-state contract: solid brand + off_label
-  while OFF (the enabling action), rose outline + on_label while ON, correct
-  aria-checked, and passthrough of phx-click / data-confirm.
+  Renders `EmisarWeb.CoreComponents.switch/1` — the ONE enforcement toggle.
+  Asserts the two-state contract: bordered neutral + off_label while OFF (the
+  enabling action), rose outline + on_label while ON, correct aria-checked, and
+  passthrough of phx-click / data-confirm.
   """
   use ExUnit.Case, async: true
   import Phoenix.Component

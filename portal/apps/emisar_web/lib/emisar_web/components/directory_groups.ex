@@ -63,7 +63,6 @@ defmodule EmisarWeb.DirectoryGroups do
           Enum.any?(groups, &(&1.id == selected)) -> options
           group -> [{group.id, group_name(group)} | options]
           is_binary(selected) -> [{selected, "Group unavailable"} | options]
-          true -> options
         end
 
       assign(socket, :directory_group_picker, %{
@@ -82,8 +81,6 @@ defmodule EmisarWeb.DirectoryGroups do
         if selected in [nil, ""] do
           nil
         else
-          selected = if is_binary(selected), do: selected, else: "__unavailable__"
-
           %{
             selected: selected,
             group: nil,
@@ -364,7 +361,7 @@ defmodule EmisarWeb.DirectoryGroups do
           >
             {if @expanded?,
               do: "Close groups",
-              else: "+#{@summary.count - length(@summary.groups)} groups"}
+              else: "+" <> groups_label(@summary.count - length(@summary.groups))}
           </.button>
         <% end %>
       </div>
@@ -405,7 +402,7 @@ defmodule EmisarWeb.DirectoryGroups do
           />
         </div>
         <nav :if={@list.metadata} aria-label="Member groups pages" class="flex items-center gap-3">
-          <span class="tabular-nums text-zinc-400">{@list.metadata.count} groups</span>
+          <span class="tabular-nums text-zinc-400">{groups_label(@list.metadata.count)}</span>
           <.button
             :if={@list.groups == [] and @list.page != []}
             variant={:secondary}
@@ -440,4 +437,7 @@ defmodule EmisarWeb.DirectoryGroups do
     do: if(String.trim(value) == "", do: nil, else: value)
 
   defp present(_), do: nil
+
+  defp groups_label(1), do: "1 group"
+  defp groups_label(count), do: "#{count} groups"
 end

@@ -151,8 +151,8 @@ defmodule Emisar.SSO.SCIMGroupPatch do
 
   defp identity_value(group, path) when is_binary(path) do
     case downcase(path) do
-      "id" -> group[:id] || group["id"]
-      "externalid" -> group[:external_group_id] || group["external_group_id"]
+      "id" -> group.id
+      "externalid" -> group.external_group_id
       _ -> :not_identity
     end
   end
@@ -179,7 +179,7 @@ defmodule Emisar.SSO.SCIMGroupPatch do
   defp replace?(op), do: downcase(Map.get(op, "op")) == "replace"
 
   # Reduce the member operations to one of:
-  #   {:replace, ids}         — a whole-set `members` replace (route to upsert),
+  #   {:replace, ids}         — a whole-set `members` replace (route to replace),
   #   {:delta, adds, removes} — add/remove member deltas (route to patch),
   #   :unsupported            — any op we don't model (→ honest SCIM error).
   defp member_ops(operations) do

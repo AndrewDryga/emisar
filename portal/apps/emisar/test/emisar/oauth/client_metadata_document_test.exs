@@ -32,6 +32,9 @@ defmodule Emisar.OAuth.ClientMetadataDocumentTest do
     def recv(%{failure: :receive} = conn, 0, _timeout),
       do: {:error, conn, :closed, []}
 
+    def recv(%{responses: responses} = conn, 0, _timeout),
+      do: {:ok, conn, responses.(conn.ref)}
+
     def recv(conn, 0, timeout) do
       send(conn.owner, {:recv_timeout, timeout})
 
@@ -153,11 +156,65 @@ defmodule Emisar.OAuth.ClientMetadataDocumentTest do
       assert dns_timeout <= 5_000
       refute Keyword.has_key?(opts[:transport_opts], :verify)
       assert_receive {:request, "/oauth/client-metadata.json", headers}
-      assert {"host", "app.example.com"} in headers
+      assert headers == [{"accept", "application/json"}]
       assert_receive {:recv_timeout, receive_timeout}
       assert receive_timeout <= opts[:transport_opts][:timeout]
       assert_receive :http_closed
       refute_receive {:resolve, _, _, _, _}
+    end
+
+    test "dials a non-default port and leaves the Host header to the connection" do
+      url = "https://app.example.com:8443/client.json"
+      configure_fetch(%{body: Jason.encode!(document(%{"client_id" => url}))})
+
+      assert ClientMetadataDocument.fetch(url) == {:ok, document(%{"client_id" => url})}
+      assert_receive {:connect, _worker, :https, {8, 8, 8, 8}, 8443, opts}
+      assert opts[:hostname] == "app.example.com"
+      assert_receive {:request, "/client.json", headers}
+      refute List.keymember?(headers, "host", 0)
+    end
+
+    test "judges the final response's content type, not informational headers or trailers" do
+      body = Jason.encode!(document())
+      json = [{"content-type", "application/json"}]
+
+      for {responses, expected} <- [
+            {fn ref ->
+               [
+                 {:status, ref, 103},
+                 {:headers, ref, [{"link", "</style.css>; rel=preload"}]},
+                 {:status, ref, 200},
+                 {:headers, ref, json},
+                 {:data, ref, body},
+                 {:done, ref}
+               ]
+             end, {:ok, document()}},
+            {fn ref ->
+               [
+                 {:status, ref, 200},
+                 {:headers, ref, json},
+                 {:data, ref, body},
+                 {:headers, ref, [{"x-checksum", "abc"}]},
+                 {:done, ref}
+               ]
+             end, {:ok, document()}},
+            {fn ref ->
+               [
+                 {:status, ref, 103},
+                 {:headers, ref, json},
+                 {:status, ref, 200},
+                 {:headers, ref, [{"content-type", "text/html"}]},
+                 {:data, ref, body},
+                 {:done, ref}
+               ]
+             end, {:error, :invalid_content_type}},
+            {fn ref -> [{:status, ref, 200}, {:data, ref, body}, {:done, ref}] end,
+             {:error, :invalid_content_type}}
+          ] do
+        configure_fetch(%{responses: responses})
+        assert ClientMetadataDocument.fetch(@url) == expected
+        assert_receive :http_closed
+      end
     end
 
     test "a mixed public and private DNS answer never reaches HTTP" do

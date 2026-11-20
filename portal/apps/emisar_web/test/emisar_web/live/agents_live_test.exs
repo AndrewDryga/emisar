@@ -859,6 +859,31 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert has_element?(lv, "#agent-connection-status[data-state='connected']")
     end
 
+    test "a delayed sandbox setup never points at manual setup", %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents/connect")
+      render_click(lv, "select_sandbox", %{"client" => "nono"})
+      {attempt, _timer} = :sys.get_state(lv.pid).socket.assigns.connection_wait
+      send(lv.pid, {:agent_connection_timeout, attempt})
+
+      assert has_element?(lv, "#agent-connection-status[data-state='delayed']")
+      assert has_element?(lv, "#agent-connection-status ol", "nono command allows")
+      refute has_element?(lv, "#agent-connection-status", "Confirm the bridge path")
+    end
+
+    test "sandbox rotation notes link to this workspace's AI agents page", %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents/connect")
+
+      sections = [{"nono", "#nono-limits"}, {"dev_containers", "#dev-containers-limits"}]
+
+      for {sandbox, section} <- sections do
+        render_click(lv, "select_sandbox", %{"client" => sandbox})
+        assert has_element?(lv, "#{section} a[href='#{~p"/app/#{account}/agents"}']")
+        refute has_element?(lv, "#{section} a[href='/app/agents']")
+      end
+    end
+
     test "custom setup only starts waiting after a key is created", %{conn: conn} do
       {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents/connect")
@@ -2401,8 +2426,9 @@ defmodule EmisarWeb.AgentsLiveTest do
     end
 
     # an operator holds
-    # view_api_keys (the page renders) and issue_quick_key (quick-mint is the
-    # operator's LEGIT flow) — while custom create + revoke stay manage-gated.
+    # view_api_keys (the page renders) and issue_quick_key (quick-mint and custom
+    # create are the operator's LEGIT flow) — while revoking a teammate's key stays
+    # manage-gated.
     test "an operator quick-mints and custom-creates; revoke stays gated", %{conn: conn} do
       {_owner_conn, owner, account} = register_and_log_in(conn)
 

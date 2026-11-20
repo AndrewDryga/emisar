@@ -28,8 +28,7 @@ defmodule Emisar.Umbrella.MixProject do
           applications: [
             emisar: :permanent,
             emisar_web: :permanent
-          ],
-          steps: [:assemble, :tar]
+          ]
         ]
       ]
     ]

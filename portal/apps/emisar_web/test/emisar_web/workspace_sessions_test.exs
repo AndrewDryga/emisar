@@ -1,7 +1,6 @@
 defmodule EmisarWeb.WorkspaceSessionsTest do
   @moduledoc """
-  The browser's workspace sessions (plan §3 "Sessions" and the §3.1 rows they
-  pin): the `_emisar_web_key` cookie holds up to six `{account_id, token}`
+  The browser's workspace sessions: the `_emisar_web_key` cookie holds up to six `{account_id, token}`
   entries, one per workspace, and a request uses only the entry for the
   workspace its URL names. A sign-in renews the session and carries the other
   entries over; the entry it replaces, and the oldest one a seventh workspace

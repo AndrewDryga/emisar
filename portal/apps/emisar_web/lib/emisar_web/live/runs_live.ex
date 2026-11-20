@@ -17,7 +17,7 @@ defmodule EmisarWeb.RunsLive do
     # For the zero state's copy fork only — a runner-less account is told to
     # install a runner first, not to dispatch from pages that are also empty.
     any_runners? =
-      connected?(socket) and Emisar.Runners.any_runners?(socket.assigns.current_subject)
+      connected?(socket) and Runners.any_runners?(socket.assigns.current_subject)
 
     {:ok,
      socket
@@ -310,25 +310,24 @@ defmodule EmisarWeb.RunsLive do
             <.local_time value={run.inserted_at} mode={:relative} />
           </div>
         </:card>
-        <%!-- No row-stable id: this responsive table renders each :col TWICE
-             (desktop <td> + mobile card), so a value-based id would duplicate.
-             local_time falls back to a per-render unique id; dropping
-             phx-update="ignore" is what keeps the WHEN correct across a patch. --%>
+        <%!-- The table shows from sm up; below that the :card above owns the
+             phone layout. local_time falls back to a per-render unique id;
+             dropping phx-update="ignore" is what keeps the WHEN correct across a
+             patch. --%>
         <:col :let={run} label="When" class="w-24">
           <.local_time value={run.inserted_at} mode={:relative} class="text-xs text-zinc-400" />
         </:col>
         <:col :let={run} label="Action">
-          <%!-- The action id is the row's headline — on a phone it wraps to show
-               in full (break-all) rather than clipping mid-token to "…"; the
-               desktop table cell still truncates to its column width. --%>
+          <%!-- The action id is the row's headline; the table cell truncates it
+               to its column width (the phone card shows it in full). --%>
           <.link
             navigate={~p"/app/#{@current_account}/runs/#{run.id}"}
-            class="block break-all font-mono text-sm hover:text-brand-300 sm:truncate"
+            class="block truncate font-mono text-sm hover:text-brand-300"
           >
             {run.action_id}
           </.link>
-          <%!-- Source is a column only at lg+; on a phone surface the origin here so an
-               agent run still reads distinctly from a human one (the product's point). --%>
+          <%!-- Source is a column only at lg+; from sm to lg surface the origin here so
+               an agent run still reads distinctly from a human one (the product's point). --%>
           <.source_badge
             id={"run-source-action-#{run.id}"}
             source={run.source}
@@ -336,10 +335,7 @@ defmodule EmisarWeb.RunsLive do
             class="mt-0.5 max-w-[44vw] text-[11px] lg:hidden"
           />
         </:col>
-        <%!-- Runner drops on a phone so When + Action + Status (the run's outcome,
-             the column you scan for) fit without a horizontal scroll; it's on the
-             run detail and reappears at sm+. --%>
-        <:col :let={run} label="Runner" class="hidden sm:table-cell">
+        <:col :let={run} label="Runner">
           <span :if={run.runner} class="text-xs text-zinc-400">{run.runner.name}</span>
           <.removed_runner
             :if={is_nil(run.runner)}

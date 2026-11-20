@@ -29,8 +29,8 @@ defmodule Emisar.RunsTelemetryTest do
     test "a terminal transition emits [:emisar, :run, :finished], tagged by status" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
-      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      Fixtures.Policies.create_policy(account_id: account.id)
       membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       subject = Fixtures.Subjects.subject_for(membership)

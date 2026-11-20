@@ -6,12 +6,13 @@ defmodule Emisar.RequestContext do
   Built once at the boundary (auth plug, LiveView mount, MCP plug,
   runner connect / register), then carried on `%Auth.Subject{}` for an
   authenticated caller and passed explicitly on pre-auth flows (sign-in,
-  MFA, password reset) that have no subject yet. A struct, not a bare
+  MFA) that have no subject yet. A struct, not a bare
   map, so the field set is fixed: every audit write merges the same three
   request keys. An event with the default request fields — a system / engine
   origin — carries no request metadata, which is the point.
 
-  Behind a proxy without `Plug.RemoteIp`, `ip_address` is the proxy IP.
+  The web layer (`EmisarWeb.RequestContext`) takes `ip_address` from the
+  GCP-appended tail of `x-forwarded-for`, falling back to the socket peer.
 
   `mcp_client_metadata` is the self-reported key/value map an MCP caller
   configures on its bridge/client (validated at the MCP boundary). It is

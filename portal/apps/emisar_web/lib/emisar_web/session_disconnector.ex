@@ -5,20 +5,22 @@ defmodule EmisarWeb.SessionDisconnector do
   LiveView socket (a sign-out or revoked session; a Member's suspension,
   removal or role change; an MFA reset; an admin's "end all sessions").
 
-  Lives in `emisar_web` because the broadcast message has to be a
-  `%Phoenix.Socket.Broadcast{}` struct (that's what `Phoenix.LiveView.Channel`
-  pattern-matches on for the "disconnect" event), and that struct is in
-  the `phoenix` package — which the data-layer `emisar` app deliberately
-  doesn't pull in.
+  Workspace LiveViews subscribe to their session topic themselves and
+  `EmisarWeb.UserAuth` answers the broadcast with a full-page redirect. Staff
+  sessions carry a `live_socket_id`, so Phoenix closes their socket transport
+  (`Phoenix.Socket`) on the same "disconnect" event.
+
+  Lives in `emisar_web` because it broadcasts through `EmisarWeb.Endpoint`,
+  which the data-layer `emisar` app does not reference directly.
 
   Wired via
   `config :emisar, :session_disconnect_handler, {:emisar_web, EmisarWeb.SessionDisconnector}`.
   """
 
   @doc """
-  Broadcast a `disconnect` event to each `live_socket_id` topic so any
-  attached LiveView tears down server-side. Best-effort + idempotent;
-  Phoenix.LiveView ignores topics with no subscribers.
+  Broadcast a `disconnect` event to each session topic so any attached
+  LiveView reloads or closes. Best-effort + idempotent; a topic with no
+  subscribers drops the broadcast.
   """
   def disconnect_live_sessions(topics) when is_list(topics) do
     Enum.each(topics, &EmisarWeb.Endpoint.broadcast(&1, "disconnect", %{}))

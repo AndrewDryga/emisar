@@ -58,8 +58,8 @@ defmodule EmisarWeb.MixProject do
       {:telemetry_metrics, "~> 1.1"},
       {:telemetry_metrics_prometheus_core, "~> 1.2"},
       {:telemetry_poller, "~> 1.3"},
-      # Optional: error reporting via Sentry. Compiled out when
-      # SENTRY_DSN isn't set (init/0 short-circuits on no-DSN).
+      # Error reporting via Sentry. Always in the release; uploads stay off
+      # unless SENTRY_DSN is set (config/runtime.exs).
       {:sentry, "~> 14.0"},
       {:gettext, "~> 1.0"},
       {:emisar, in_umbrella: true},

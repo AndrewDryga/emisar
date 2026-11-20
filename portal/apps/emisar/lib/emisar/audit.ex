@@ -248,7 +248,7 @@ defmodule Emisar.Audit do
 
   # Positive signing evidence for a bridge-attested run's terminal audit event
   # (see `run_event_changeset/1`). `attestation` carries the relayed v5 envelope;
-  # its `cert` names the CA and leaf key that authorized the dispatch.
+  # its `cert_chain` names the CA and leaf key that authorized the dispatch.
   defp signed?(%Runs.ActionRun{attestation: %{"cert_chain" => [_leaf | _rest]}}), do: true
   defp signed?(%Runs.ActionRun{}), do: false
 
@@ -300,27 +300,33 @@ defmodule Emisar.Audit do
   """
   def list_events(%Subject{} = subject, opts \\ []) do
     with {:ok, subject} <- fetch_audit_reader(subject) do
-      # actor_id / target_id ride as opts — the dynamic "by actor" / "by
-      # subject" pickers aren't in the static filters/0 list, so they can't go
-      # through :filter. Everything else is a LiveTable filter, applied via :filter.
-      {actor_id, opts} = Keyword.pop(opts, :actor_id)
-      {target_id, opts} = Keyword.pop(opts, :target_id)
-
-      # Events are append-only, so ANY view of them — a date window or outcome
-      # chip as much as the unnarrowed trail — can grow past what an exact
-      # aggregate should scan. `:auto` counts exactly while the planner says
-      # the set is affordable and reports its estimate once it isn't. `put_new`
-      # leaves an explicit `count:` alone, so the CSV export's cursor walk
-      # keeps its `count: false`.
-      opts = Keyword.put_new(opts, :count, :auto)
-
-      Event.Query.all()
-      |> filter_by_actor_id(actor_id)
-      |> filter_by_target_id(target_id)
-      |> Authorizer.for_subject(subject)
-      |> Repo.list(Event.Query, opts)
-      |> safe_event_page()
+      list_authorized_events(subject, opts)
     end
+  end
+
+  # The list body behind an already-refreshed reader or exporter Subject, so
+  # `list_events_for_export/2` checks its stricter gate once per page, not twice.
+  defp list_authorized_events(%Subject{} = subject, opts) do
+    # actor_id / target_id ride as opts — the dynamic "by actor" / "by
+    # target" pickers aren't in the static filters/0 list, so they can't go
+    # through :filter. Everything else is a LiveTable filter, applied via :filter.
+    {actor_id, opts} = Keyword.pop(opts, :actor_id)
+    {target_id, opts} = Keyword.pop(opts, :target_id)
+
+    # Events are append-only, so ANY view of them — a date window or category
+    # chip as much as the unnarrowed trail — can grow past what an exact
+    # aggregate should scan. `:auto` counts exactly while the planner says
+    # the set is affordable and reports its estimate once it isn't. `put_new`
+    # leaves an explicit `count:` alone, so the CSV export's cursor walk
+    # keeps its `count: false`.
+    opts = Keyword.put_new(opts, :count, :auto)
+
+    Event.Query.all()
+    |> filter_by_actor_id(actor_id)
+    |> filter_by_target_id(target_id)
+    |> Authorizer.for_subject(subject)
+    |> Repo.list(Event.Query, opts)
+    |> safe_event_page()
   end
 
   @doc """
@@ -620,6 +626,9 @@ defmodule Emisar.Audit do
 
   defp filter_by_target_id(queryable, _id), do: Event.Query.none(queryable)
 
+  @default_export_limit 100
+  @max_export_limit 1_000
+
   @doc """
   SIEM export — cursor-paginated forward sweep of every event the
   subject can see, sorted ascending by `(occurred_at, id)`. This is the
@@ -644,16 +653,14 @@ defmodule Emisar.Audit do
       over `:since`
     * `:event_types` — list of event_type strings to include (empty list
       = all types)
-    * `:limit` — page size, default #{100}, hard-capped at #{1_000}
+    * `:limit` — page size, default #{@default_export_limit}, hard-capped at
+      #{@max_export_limit}
 
   Returns `{:ok, events}` — a plain list of `%Audit.Event{}` rows in
   ascending order, or `{:error, :unauthorized | :audit_export_not_available}`
   (export is the paid surface — see `list_events_for_export/2`). The
   controller projects to NDJSON; the context just hands back rows.
   """
-  @default_export_limit 100
-  @max_export_limit 1_000
-
   def list_for_export(%Subject{} = subject, opts \\ []) do
     with {:ok, subject} <- fetch_audit_exporter(subject) do
       types = Keyword.get(opts, :event_types, [])
@@ -682,7 +689,7 @@ defmodule Emisar.Audit do
   """
   def list_events_for_export(%Subject{} = subject, opts \\ []) do
     with {:ok, subject} <- fetch_audit_exporter(subject) do
-      list_events(subject, opts)
+      list_authorized_events(subject, opts)
     end
   end
 
@@ -797,7 +804,7 @@ defmodule Emisar.Audit do
   defp safe_request_metadata(value), do: value
 
   @doc """
-  Bulk-resolves the labels for every actor + subject referenced by the
+  Bulk-resolves the labels for every actor + target referenced by the
   given events. Returns live labels as `%{kind => %{id => label}}` and
   readable historical fallbacks under `"historical"`, keyed by `{kind, side}`
   then ID. The ids are trusted (they were stamped on the audit row at write time
@@ -867,8 +874,8 @@ defmodule Emisar.Audit do
   end
 
   # Resolve a %{kind => [id]} map to %{kind => %{id => label}}, each kind's
-  # lookup scoped to account_id. Shared by resolve_references/2 (event
-  # actor/subject refs) and the option pickers.
+  # lookup scoped to account_id. Used by resolve_references/2 for the events'
+  # actor/target refs.
   defp resolve_labels(ids_by_kind, account_id) do
     %{
       # Exact account-owned Members, including removed ones; another account's
@@ -1097,14 +1104,17 @@ defmodule Emisar.Audit do
   """
   def available_event_kinds(%Subject{} = subject) do
     with {:ok, subject} <- fetch_audit_reader(subject) do
-      scoped = Event.Query.all() |> Authorizer.for_subject(subject)
-
-      {:ok,
-       %{
-         actor_kind: scoped |> Event.Query.distinct_actor_kinds() |> Repo.all(),
-         target_kind: scoped |> Event.Query.distinct_target_kinds() |> Repo.all()
-       }}
+      {:ok, authorized_event_kinds(subject)}
     end
+  end
+
+  defp authorized_event_kinds(%Subject{} = subject) do
+    scoped = Event.Query.all() |> Authorizer.for_subject(subject)
+
+    %{
+      actor_kind: scoped |> Event.Query.distinct_actor_kinds() |> Repo.all(),
+      target_kind: scoped |> Event.Query.distinct_target_kinds() |> Repo.all()
+    }
   end
 
   @doc """

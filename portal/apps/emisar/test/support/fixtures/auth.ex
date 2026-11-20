@@ -97,17 +97,6 @@ defmodule Emisar.Fixtures.Auth do
     :ok
   end
 
-  @doc "Expires a session's local-factor proof without ending the session or its SSO route."
-  def expire_local_mfa_proof!(raw) when is_binary(raw) do
-    expired_at = DateTime.add(DateTime.utc_now(), -1, :second)
-
-    {1, _} =
-      UserToken.Query.by_token_digest(Crypto.hash(raw))
-      |> Repo.update_all(set: [local_mfa_expires_at: expired_at])
-
-    :ok
-  end
-
   @doc """
   Persists a session row for one Member with arbitrary provenance and returns
   the raw token. `mfa_verified_at` is when this session proved a second factor,

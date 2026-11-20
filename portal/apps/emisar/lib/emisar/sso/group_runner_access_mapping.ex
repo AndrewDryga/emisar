@@ -14,7 +14,7 @@ defmodule Emisar.SSO.GroupRunnerAccessMapping do
   """
   use Emisar, :schema
 
-  @runner_access_modes [:none, :all, :restricted]
+  @runner_access_modes Emisar.Accounts.RunnerAccess.modes()
   @pack_access_modes Emisar.Accounts.RunnerAccess.pack_modes()
 
   schema "sso_directory_group_runner_access_mappings" do

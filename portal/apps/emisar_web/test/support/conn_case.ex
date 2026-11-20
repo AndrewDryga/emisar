@@ -102,6 +102,17 @@ defmodule EmisarWeb.ConnCase do
   def page_text(html), do: html |> LazyHTML.from_document() |> LazyHTML.text()
 
   @doc """
+  Every external (`href="http…"`) anchor tag in rendered HTML, so a test can
+  assert the whole set carries the safe-rel pair, not just the one link it
+  happened to name.
+  """
+  def external_links(html) do
+    ~r{<a\s[^>]*href="https?://[^>]*>}
+    |> Regex.scan(html)
+    |> Enum.map(&hd/1)
+  end
+
+  @doc """
   Creates a workspace, its owner Member (a verified address, every runner), the
   default policy and the `account.created` audit row, as a sign-up does, and
   signs the owner in. Returns `{conn, owner, account}`. `attrs[:member]`

@@ -249,7 +249,7 @@ defmodule EmisarWeb.RunnersLive do
         # without a detour to /runners/install (the LLM-agents page does the same).
         #
         # `meta.count` is the FILTERED count, so a filter that matches nothing —
-        # `?group=` a retired group — otherwise reads as an empty fleet: a
+        # `?group_or_name=retired-group` — otherwise reads as an empty fleet: a
         # 500-runner account gets "connect your first runner" AND a freshly
         # minted root-capable install key on every visit. A filtered miss is an
         # empty RESULT, never an empty fleet.
@@ -468,7 +468,7 @@ defmodule EmisarWeb.RunnersLive do
                 filters={@filters}
                 filter_params={@filter_params}
                 wrapper_class="divide-y divide-zinc-800/70"
-                group_by={fn runner -> runner.group || "(no group)" end}
+                group_by={& &1.group}
               >
                 <:empty>No runners match this search.</:empty>
 
@@ -621,12 +621,11 @@ defmodule EmisarWeb.RunnersLive do
     """
   end
 
-  # Visible (this-page) runners, grouped + sorted by group name so the
   # Pre-sort the page's runners by group so `<.live_table group_by={…}>`
   # walks them in stable order and emits one `:group_header` per group.
   # Within a group the natural ordering from the context (recently active
   # first) is preserved.
-  defp sort_by_group(runners), do: Enum.sort_by(runners, &(&1.group || ""))
+  defp sort_by_group(runners), do: Enum.sort_by(runners, & &1.group)
 
   # Whether the notice stack above the fleet has anything to say. Not all of it
   # is attention: a dark fleet and a signed-only posture are, while an available

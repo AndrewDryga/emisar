@@ -181,7 +181,6 @@ defmodule Emisar.CryptoTest do
       refute Crypto.valid_run_request_id?("req_short")
       refute Crypto.valid_run_request_id?("req_000000000000000000000!")
       refute Crypto.valid_run_request_id?(nil)
-      assert Crypto.runner_name_suffix() =~ ~r/\A[A-Za-z0-9_-]+\z/
       assert Crypto.oidc_state() =~ ~r/\A[A-Za-z0-9_-]{43}\z/
       assert Crypto.oidc_nonce() =~ ~r/\A[A-Za-z0-9_-]{43}\z/
       assert Crypto.pkce_verifier() =~ ~r/\A[A-Za-z0-9_-]{86}\z/
@@ -205,18 +204,27 @@ defmodule Emisar.CryptoTest do
     end
   end
 
-  describe "valid_totp?/2 and valid_totp?/3" do
+  describe "valid_totp?/3" do
     # replay defense is the CALLER's, not Crypto's: the
     # same code validates as many times as it's presented within its window.
-    # Crypto only answers "is this a currently-valid code"; the stamped-bucket
+    # Crypto only answers "is this a valid code at that moment"; the stamped-bucket
     # replay guard lives in Accounts.verify_and_consume_member_mfa under a row lock.
     test "accepts the same code repeatedly — no replay guard here" do
       secret = Crypto.totp_secret()
-      code = Emisar.Fixtures.Auth.totp_code(secret)
+      at = ~U[2026-01-01 00:00:10.000000Z]
+      code = NimbleTOTP.verification_code(secret, time: at)
 
-      assert Crypto.valid_totp?(secret, code)
-      assert Crypto.valid_totp?(secret, code)
-      refute Crypto.valid_totp?(secret, "000000")
+      wrong =
+        code
+        |> String.to_integer()
+        |> Kernel.+(1)
+        |> rem(1_000_000)
+        |> Integer.to_string()
+        |> String.pad_leading(6, "0")
+
+      assert Crypto.valid_totp?(secret, code, at)
+      assert Crypto.valid_totp?(secret, code, at)
+      refute Crypto.valid_totp?(secret, wrong, at)
     end
 
     test "the explicit timestamp form judges exactly one TOTP bucket" do

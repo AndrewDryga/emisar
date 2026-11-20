@@ -107,9 +107,9 @@ defmodule EmisarWeb.SCIM.Resource do
     end
   end
 
-  # Prefer `name.formatted`; else join `givenName` + `familyName`; else
-  # `displayName`. Returns nil when the IdP sent nothing usable.
-  # `displayName` first. Serving `name.formatted` back to the IdP means the IdP
+  # `displayName` first; else join `givenName` + `familyName`; else
+  # `name.formatted`. Returns nil when the IdP sent nothing usable.
+  # Serving `name.formatted` back to the IdP means the IdP
   # echoes it on the next write — Okta sends a stale `name.formatted` alongside a
   # FRESH `displayName` and fresh name components, and preferring the formatted
   # value meant a rename was accepted, reported successful, and silently kept the
@@ -164,10 +164,10 @@ defmodule EmisarWeb.SCIM.Resource do
   back to the externalId when the IdP suppressed it. An externalId-less probe
   must supply a display name. `members` is the array of User resource ids.
   """
-  def to_group(%{} = summary, member_ids \\ []) when is_list(member_ids) do
-    id = summary[:id] || summary["id"]
-    external_id = summary[:external_group_id] || summary["external_group_id"]
-    display = summary[:display] || summary["display"] || external_id || id
+  def to_group(%{} = summary, member_ids) when is_list(member_ids) do
+    id = summary[:id]
+    external_id = summary[:external_group_id]
+    display = summary[:display] || external_id || id
 
     # `externalId` matters as much on a group as on a user. Without it Entra reads
     # back the group it just created, sees the field missing, and PATCHes to set
@@ -206,18 +206,16 @@ defmodule EmisarWeb.SCIM.Resource do
     end
   end
 
-  @doc """
-  Pull the server-issued User ids from a SCIM `members` array. Defensive: a missing array, a
-  non-list, or entries without a usable `"value"` yield `[]` / are dropped.
-  """
-  def parse_members(members) when is_list(members) do
+  # Pull the server-issued User ids from a SCIM `members` array. Defensive: a missing array, a
+  # non-list, or entries without a usable `"value"` yield `[]` / are dropped.
+  defp parse_members(members) when is_list(members) do
     Enum.flat_map(members, fn
       %{"value" => value} when is_binary(value) and value != "" -> [value]
       _ -> []
     end)
   end
 
-  def parse_members(_members), do: []
+  defp parse_members(_members), do: []
 
   @doc "Whether a SCIM Group `members` value is absent or a well-formed member array."
   def valid_members?(nil), do: true

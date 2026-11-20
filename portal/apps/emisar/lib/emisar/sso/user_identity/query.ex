@@ -236,7 +236,7 @@ defmodule Emisar.SSO.UserIdentity.Query do
   def offset_page(queryable, offset, limit),
     do: queryable |> offset(^offset) |> limit(^limit)
 
-  # Keyset-pagination cursor for `Repo.list/3` (the SCIM `GET /Users` probe).
+  # Keyset-pagination cursor for `Repo.list/3` (the console's synced-members list).
   # Matches `ordered_by_recent/1` so the page order and the cursor agree.
   @impl Emisar.Repo.Query
   def cursor_fields,

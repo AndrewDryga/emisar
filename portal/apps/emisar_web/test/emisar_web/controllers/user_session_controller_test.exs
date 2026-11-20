@@ -1,9 +1,8 @@
 defmodule EmisarWeb.UserSessionControllerTest do
   @moduledoc """
-  The emailed-code flows (plan §3 "Sign-in", "Sign-up", "Invitations" and the
-  §3.1 "Email code" rows): every start sends one split code — the nonce in this
-  browser's signed cookie, the code in the inbox — and only this browser can
-  finish it. The code goes only to a verified, active Member of the workspace
+  The emailed-code flows (sign-in, sign-up and invitations): every start sends
+  one split code — the nonce in this browser's signed cookie, the code in the
+  inbox — and only this browser can finish it. The code goes only to a verified, active Member of the workspace
   the URL names; anything else gets the same page and a decoy. One budget per
   address covers every flow in every workspace.
   """

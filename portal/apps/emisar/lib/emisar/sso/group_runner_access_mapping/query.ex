@@ -36,12 +36,4 @@ defmodule Emisar.SSO.GroupRunnerAccessMapping.Query do
   end
 
   def lock_for_update(queryable), do: lock(queryable, "FOR NO KEY UPDATE")
-
-  @impl Emisar.Repo.Query
-  def cursor_fields do
-    [
-      {:group_runner_access_mappings, :asc, :directory_group_id},
-      {:group_runner_access_mappings, :asc, :id}
-    ]
-  end
 end

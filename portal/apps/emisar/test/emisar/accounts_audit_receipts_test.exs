@@ -208,6 +208,21 @@ defmodule Emisar.AccountsAuditReceiptsTest do
                member.id => "Riley Removed"
              }
     end
+
+    test "a role change announces its committed event; a re-submitted role announces none" do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+      :ok = Audit.subscribe_account_audit(account.id)
+
+      assert {:ok, _unchanged} = Accounts.update_membership_role(member, "operator", subject)
+      refute_receive {:audit_event, _event}
+
+      assert {:ok, _promoted} = Accounts.update_membership_role(member, "admin", subject)
+      assert [event] = events("membership.role_changed")
+      assert event.payload == %{"from" => "operator", "to" => "admin"}
+      event_id = event.id
+      assert_receive {:audit_event, %Audit.Event{id: ^event_id}}
+    end
   end
 
   describe "invitation resend receipts" do

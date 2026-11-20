@@ -13,7 +13,7 @@ defmodule Emisar.Runbooks.Scheduler.Recovery do
     callbacks = Runs.list_terminal_runbook_callbacks(@batch_size)
 
     Enum.each(callbacks, fn callback ->
-      isolated(callback, "runbook_recovery.callback_crashed", fn ->
+      isolated(callback.id, "runbook_recovery.callback_crashed", fn ->
         Scheduler.action_run_settled(callback)
       end)
     end)

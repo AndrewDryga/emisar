@@ -33,25 +33,8 @@ export function onFirstVisible(el, fn, {threshold = 0.3} = {}) {
   return () => io.disconnect()
 }
 
-// Shows or hides a filtered row by inline `display`, never the `hidden`
-// attribute: the rows carry Tailwind `flex`/`grid`/`inline-flex` classes whose
-// `display` beats `[hidden]`, so only an inline style reliably hides them.
+// Shows or hides a filtered row with an inline `display: none`; showing it
+// clears the inline style so the row's stylesheet `display` applies again.
 export function toggleDisplay(el, visible) {
   el.style.display = visible ? "" : "none"
-}
-
-// A cancellable set of pending timers, for an animation that has to be able to
-// abandon everything it scheduled — a replay, or a tab switch mid-sequence.
-export function timers() {
-  let pending = []
-
-  return {
-    after(ms, fn) {
-      pending.push(window.setTimeout(fn, ms))
-    },
-    clear() {
-      pending.forEach((id) => window.clearTimeout(id))
-      pending = []
-    }
-  }
 }

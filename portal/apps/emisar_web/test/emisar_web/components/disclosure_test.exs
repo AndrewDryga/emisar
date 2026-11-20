@@ -9,6 +9,10 @@ defmodule EmisarWeb.Components.DisclosureTest do
   import Phoenix.LiveViewTest
   alias EmisarWeb.CoreComponents
 
+  defp open_details(html) do
+    html |> LazyHTML.from_fragment() |> LazyHTML.query("details[open]") |> Enum.count()
+  end
+
   describe "disclosure/1" do
     test "renders summary + bordered body with the chevron affordance" do
       assigns = %{}
@@ -29,6 +33,7 @@ defmodule EmisarWeb.Components.DisclosureTest do
       # The body divider is line-as-light inside the lit island surface.
       assert html =~ "border-t border-zinc-800"
       refute html =~ ~s( open)
+      assert open_details(html) == 0
     end
 
     test "open renders the details expanded (server-owned state, design-console-ux §7.6)" do
@@ -42,7 +47,7 @@ defmodule EmisarWeb.Components.DisclosureTest do
         </CoreComponents.disclosure>
         """)
 
-      assert html =~ ~s(open)
+      assert open_details(html) == 1
     end
 
     test "sizes scale the summary and body density" do

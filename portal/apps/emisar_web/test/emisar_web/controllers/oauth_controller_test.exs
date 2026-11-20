@@ -755,9 +755,8 @@ defmodule EmisarWeb.OAuthControllerTest do
       refute html =~ "Stay connected"
     end
 
-    # the consent screen carries a noindex assign (the
-    # controller's put_noindex + the :noindex pipeline), keeping the auth surface
-    # out of search-engine indexes.
+    # the consent screen carries a noindex assign (the router's :noindex
+    # pipeline), keeping the auth surface out of search-engine indexes.
     test "the consent screen is noindex", %{
       conn: conn,
       user: user,

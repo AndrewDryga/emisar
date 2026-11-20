@@ -20,6 +20,7 @@ defmodule Emisar.Slug do
       |> String.replace(~r/[^a-z0-9]+/, "-")
       |> String.trim("-")
       |> String.slice(0, Keyword.get(opts, :max_length, @default_max_length))
+      |> String.trim_trailing("-")
 
     case slug do
       "" -> Keyword.get(opts, :default, "")

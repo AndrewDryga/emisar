@@ -16,7 +16,7 @@ defmodule Emisar.OAuth.Client.Query do
     do: lock(queryable, "FOR NO KEY UPDATE")
 
   # Never-authorized registrations (no operator ever consented) registered
-  # before `cutoff` — the daily sweep's prune set. A once-authorized client is
+  # before `cutoff` — the hourly sweep's prune set. A once-authorized client is
   # never matched here (its `last_authorized_at` is set), so a live connection
   # is never pruned regardless of age.
   def never_authorized_before(queryable \\ all(), %DateTime{} = cutoff) do

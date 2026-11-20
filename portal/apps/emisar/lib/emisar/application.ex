@@ -14,13 +14,13 @@ defmodule Emisar.Application do
       Emisar.Runners.Presence,
       {Finch, name: Emisar.Finch},
 
-      # Owns the ETS table behind Emisar.Throttle (MFA challenge cap, web
-      # request rate limiting); starts before the contexts and the web
+      # Owns the ETS table behind Emisar.Throttle (sign-in, OAuth, MCP and
+      # other request rate limits); starts before the contexts and the web
       # endpoint so the table exists when the first check arrives.
       Emisar.RateLimiter,
 
       # Fan-out for detached domain work (analytics, approval notifications,
-      # marketing conversions). Explicit child id because the OIDC guard below
+      # marketing conversions, emailed sign-in codes). Explicit child id because the OIDC guard below
       # also starts a Task.Supervisor, whose default id would collide.
       Supervisor.child_spec(
         {Task.Supervisor, name: Emisar.TaskSupervisor},
@@ -39,7 +39,7 @@ defmodule Emisar.Application do
       {Task.Supervisor, name: Emisar.SSO.OIDC.GuardTasks},
       Emisar.SSO.OIDC.Guard,
 
-      # Do not start database-backed contexts until a new node has stable SQL access.
+      # Do not start database-backed contexts until one SQL probe succeeds.
       Emisar.DatabaseReadiness,
 
       # Contexts

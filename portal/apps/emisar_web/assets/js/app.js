@@ -278,8 +278,9 @@ const FilterableList = {
 //   >May 30, 18:59 UTC</time>
 //
 // `data-format`:
-//   - "absolute" → "May 30, 14:59 (your time)" / "May 30, 2027, 14:59"
+//   - "absolute" → "May 30, 14:59" / "May 30, 2027, 14:59"
 //   - "relative" → "3m ago" / "Jul 14"
+//   - "forensic" → "2026-05-30 14:59:00" (local time, to the second)
 const LocalTime = {
   mounted() { this.format() },
   updated() { this.format() },

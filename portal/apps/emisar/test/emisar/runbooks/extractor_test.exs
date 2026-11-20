@@ -83,6 +83,33 @@ defmodule Emisar.Runbooks.ExtractorTest do
              }
     end
 
+    test "a regex capture that matched the empty string or Unicode text extracts it" do
+      outputs = [
+        regex_output("empty", "stdout", "tag=([a-z]*);", "1"),
+        regex_output("name", "stdout", "name=(?<name>\\S+)", "name")
+      ]
+
+      assert {:ok, result} =
+               Extractor.extract_outputs(outputs, %{"stdout" => "tag=; name=größe"})
+
+      assert result.raw == %{"empty" => "", "name" => "größe"}
+    end
+
+    test "a regex capture that did not participate, or does not exist, is an error" do
+      for {expression, capture} <- [
+            {"ready(=(true))?", "2"},
+            {"ready", "3"},
+            {"ready", "missing"}
+          ] do
+        outputs = [regex_output("state", "stdout", expression, capture)]
+
+        assert {:error, "extraction_failed", message, _evidence} =
+                 Extractor.extract_outputs(outputs, %{"stdout" => "ready"})
+
+        assert message == "Regex capture did not participate in the match."
+      end
+    end
+
     test "fails when grep would exceed the matching-line cap" do
       line_count = Definition.limit!(:max_grep_lines) + 1
       text = Enum.map_join(1..line_count, "\n", &"MATCH #{&1}")

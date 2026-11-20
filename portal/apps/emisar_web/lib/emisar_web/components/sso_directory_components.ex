@@ -11,7 +11,6 @@ defmodule EmisarWeb.SSODirectoryComponents do
   the words.
   """
   use Phoenix.Component
-  use Gettext, backend: EmisarWeb.Gettext
 
   use Phoenix.VerifiedRoutes,
     endpoint: EmisarWeb.Endpoint,
@@ -57,12 +56,12 @@ defmodule EmisarWeb.SSODirectoryComponents do
       <:header>
         <.section_header
           title="Groups & access"
-          count={if @show_mappings? and not @load_error?, do: @metadata.count}
+          count={if not @load_error?, do: @metadata.count}
           count_tone={:neutral}
         >
           <:actions>
             <.button
-              :if={@show_mappings? and not @adding_mapping}
+              :if={not @adding_mapping}
               variant={:secondary}
               size={:sm}
               phx-click="add_mapping_form"
@@ -146,7 +145,9 @@ defmodule EmisarWeb.SSODirectoryComponents do
                 panel_class="z-10 mt-2 w-40 p-1 text-xs shadow-xl"
               >
                 <:trigger>
-                  {if group.mapping, do: role_label(group.mapping.role), else: "Map role"}
+                  {if group.mapping,
+                    do: Emisar.Auth.role_label(group.mapping.role),
+                    else: "Map role"}
                   <span class="text-zinc-500 group-open:hidden">▾</span><span class="hidden text-zinc-500 group-open:inline">▴</span>
                 </:trigger>
                 <.menu_item
@@ -295,8 +296,8 @@ defmodule EmisarWeb.SSODirectoryComponents do
       </ul>
       <div
         :if={
-          @show_mappings? and
-            (@groups != [] or LiveTable.stale_page?(0, @metadata, @filter_params, "group_access_"))
+          @groups != [] or
+            LiveTable.stale_page?(0, @metadata, @filter_params, "group_access_")
         }
         class="mt-4"
       >
@@ -312,7 +313,7 @@ defmodule EmisarWeb.SSODirectoryComponents do
 
       <%!-- Missing groups are distinct from a failed read or an empty cursor page. --%>
       <.empty_state
-        :if={@show_mappings? and @load_error?}
+        :if={@load_error?}
         variant={:hint}
         tone={:danger}
         icon="state.warning"
@@ -323,7 +324,7 @@ defmodule EmisarWeb.SSODirectoryComponents do
       </.empty_state>
       <.empty_state
         :if={
-          @show_mappings? and not @load_error? and @groups == [] and not @adding_mapping and
+          not @load_error? and @groups == [] and not @adding_mapping and
             not LiveTable.stale_page?(0, @metadata, @filter_params, "group_access_")
         }
         variant={:hint}
@@ -346,7 +347,7 @@ defmodule EmisarWeb.SSODirectoryComponents do
            are server-side. The group must be an exact synced resource; there is
            deliberately no free-text identity fallback. --%>
       <div
-        :if={@show_mappings? and @adding_mapping and @mapping_form}
+        :if={@adding_mapping and @mapping_form}
         class={["mt-4 max-w-3xl", @groups != [] && "border-t border-zinc-800/70 pt-5"]}
       >
         <.simple_form
@@ -393,7 +394,7 @@ defmodule EmisarWeb.SSODirectoryComponents do
         <p>
           Members get the highest role from their mapped groups, or the default
           <.chip id="connection-default-role-note" class="mr-1">
-            {role_label(@provider.default_role)}
+            {Emisar.Auth.role_label(@provider.default_role)}
           </.chip>
           {" "}role if none of their groups is mapped. Directory sync never grants Owner.
         </p>
@@ -874,10 +875,11 @@ defmodule EmisarWeb.SSODirectoryComponents do
               </.tooltip>
             </div>
             <%!-- Keep the email and last-seen time readable at narrow widths. --%>
-            <div class="mt-0.5 text-xs text-zinc-400">
+            <div id={"synced-member-meta-#{member.identity.id}"} class="mt-0.5 text-xs text-zinc-400">
               <span :if={email = Accounts.secondary_member_email(member.profile)}>{email}</span>
               <span :if={member.identity.last_seen_at}>
-                · last seen
+                <span :if={Accounts.secondary_member_email(member.profile)}>·</span>
+                last seen
                 <.local_time
                   id={"scim-member-synced-#{member.identity.id}"}
                   value={member.identity.last_seen_at}
@@ -1139,8 +1141,6 @@ defmodule EmisarWeb.SSODirectoryComponents do
 
   defp role_lock_tip(false),
     do: "Role is managed by directory sync. Change this member's groups in your IdP."
-
-  defp role_label(role), do: Emisar.Auth.role_label(role)
 
   defp members_label(1), do: "1 member"
   defp members_label(count), do: "#{count} members"

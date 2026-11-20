@@ -21,6 +21,6 @@ defmodule Emisar.OAuth.Client do
     field :scope, :string
     field :metadata, :map, default: %{}
     field :last_authorized_at, :utc_datetime_usec
-    timestamps(type: :utc_datetime_usec)
+    timestamps()
   end
 end

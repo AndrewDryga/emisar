@@ -2,7 +2,7 @@ defmodule Emisar.Auth.Role do
   @moduledoc """
   The canonical set of account membership roles — the single source of
   truth for the `Membership` schema's `Ecto.Enum` and the team UI's role
-  list. Authorization compares *permissions* (`Authorizer.covers_role?/2`),
+  list. Authorization compares *permissions* (`Auth.Permissions.covers_role?/2`),
   never role rank — there is deliberately no rank/`at_least?` here.
 
   Listed most-privileged first (the order the team UI renders). Actor-kind

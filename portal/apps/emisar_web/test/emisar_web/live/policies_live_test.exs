@@ -7,7 +7,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
   expected v2 JSON shape `Emisar.Policies.evaluate/2` consumes.
   """
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.{Fixtures, Policies}
+  alias Emisar.Policies
 
   describe "GET /app/policies" do
     test "redirects anonymous users to the workspace sign-in", %{conn: conn} do

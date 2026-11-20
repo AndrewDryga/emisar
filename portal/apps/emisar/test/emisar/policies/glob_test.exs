@@ -2,50 +2,48 @@ defmodule Emisar.Policies.GlobTest do
   use ExUnit.Case, async: true
   alias Emisar.Policies.Glob
 
-  describe "match?/2" do
+  describe "compile/1 + match_compiled?/2" do
     test "a trailing * matches any suffix" do
-      assert Glob.match?("nginx_*", "nginx_reload")
-      assert Glob.match?("nginx_*", "nginx_")
-      refute Glob.match?("nginx_*", "apache_reload")
+      assert glob_match?("nginx_*", "nginx_reload")
+      assert glob_match?("nginx_*", "nginx_")
+      refute glob_match?("nginx_*", "apache_reload")
     end
 
     test "a bare * matches anything, including empty" do
-      assert Glob.match?("*", "anything")
-      assert Glob.match?("*", "")
+      assert glob_match?("*", "anything")
+      assert glob_match?("*", "")
     end
 
     test "matches case-insensitively" do
-      assert Glob.match?("NginX_*", "nginx_x")
-      assert Glob.match?("nginx_*", "NGINX_RELOAD")
+      assert glob_match?("NginX_*", "nginx_x")
+      assert glob_match?("nginx_*", "NGINX_RELOAD")
     end
 
     test "a literal pattern matches only its (case-folded) equal" do
-      assert Glob.match?("nginx_reload", "NGINX_RELOAD")
-      refute Glob.match?("nginx_reload", "nginx_stop")
+      assert glob_match?("nginx_reload", "NGINX_RELOAD")
+      refute glob_match?("nginx_reload", "nginx_stop")
     end
 
     test "non-* characters stay literal — dots and underscores aren't wildcards" do
-      refute Glob.match?("a.b", "axb")
-      assert Glob.match?("a.b", "A.B")
+      refute glob_match?("a.b", "axb")
+      assert glob_match?("a.b", "A.B")
     end
 
     test "the empty pattern matches only the empty string (as the original did)" do
-      assert Glob.match?("", "")
-      refute Glob.match?("", "x")
+      assert glob_match?("", "")
+      refute glob_match?("", "x")
     end
 
     test "* spans an embedded newline so a value can't evade a wildcard deny" do
       # A `$`-anchored, non-dotall regex matched only up to the first newline, so
       # a deny glob missed a value carrying one. Whole-string `\A…\z` + the `s`
       # flag close that evasion.
-      assert Glob.match?("*", "cassandra.drop\nrm -rf /")
-      assert Glob.match?("cassandra.*", "cassandra.drop_table\nmalicious")
-      assert Glob.match?("cassandra.drop*", "cassandra.drop\n")
+      assert glob_match?("*", "cassandra.drop\nrm -rf /")
+      assert glob_match?("cassandra.*", "cassandra.drop_table\nmalicious")
+      assert glob_match?("cassandra.drop*", "cassandra.drop\n")
     end
-  end
 
-  describe "compile/1 + match_compiled?/2" do
-    test "preserves match?/2 semantics for repeated matches" do
+    test "one compiled matcher answers repeated matches" do
       cases = [
         {"nginx_*", "NGINX_RELOAD", true},
         {"nginx_*", "apache_reload", false},
@@ -57,7 +55,6 @@ defmodule Emisar.Policies.GlobTest do
         matcher = Glob.compile(pattern)
 
         assert Glob.match_compiled?(matcher, string) == expected
-        assert Glob.match_compiled?(matcher, string) == Glob.match?(pattern, string)
       end
     end
   end
@@ -115,4 +112,7 @@ defmodule Emisar.Policies.GlobTest do
       refute Glob.subsumes?("a*c", "abd")
     end
   end
+
+  defp glob_match?(pattern, string),
+    do: pattern |> Glob.compile() |> Glob.match_compiled?(string)
 end

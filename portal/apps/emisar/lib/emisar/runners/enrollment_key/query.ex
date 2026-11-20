@@ -123,7 +123,7 @@ defmodule Emisar.Runners.EnrollmentKey.Query do
   end
 
   @doc """
-  WHERE clause for `consume_enrollment_key/1`'s conditional UPDATE: matches
+  WHERE clause for `consume_enrollment_key/2`'s conditional UPDATE: matches
   only rows whose every `usable?` condition still holds. The check
   happens at SQL level so two concurrent registrations can't both
   decrement a single-use key.

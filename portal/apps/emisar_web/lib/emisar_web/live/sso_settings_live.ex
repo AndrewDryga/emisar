@@ -82,7 +82,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       # The connection's recent SCIM refusals, loaded on :show and each refresh.
       |> assign(:refused_changes, [])
       |> assign(:edit_form, nil)
-      # The :new/:show create form. Only those actions assign it, but test_connection
+      # The :new create form. Only that action assigns it, but test_connection
       # reads it and is reachable over the socket from any route (IL-15), so default
       # it here — a nil default makes the crafted event a no-op, not a KeyError.
       |> assign(:form, nil)
@@ -115,26 +115,22 @@ defmodule EmisarWeb.SSOSettingsLive do
       |> assign(:test_result, nil)
       |> assign(:sign_in_verification, nil)
       |> OIDCStepUp.reset()
-      # False until the connected mount pass runs the list read — so the
-      # "No connections yet" empty state never flashes for a team that *has*
-      # connections (the first, unconnected pass renders chrome only).
+      # False until the connected pass loads the connection — the dead render of
+      # the detail and edit views shows the loading state, never half a page.
       |> assign(:loaded?, false)
       |> ConfirmDialog.init()
 
     {:ok, socket}
   end
 
-  # Action-dependent data loads. mount runs before the action is settled for live
-  # nav, and handle_params re-fires on navigation, so the per-action read lives
-  # here. IL-18: the DB reads run only once connected; the dead pass renders chrome.
-  # The SSO overview folded into the Team page — /settings/sso is gone; its
-  # connections, pending requests, and sign-in link all live on Team now. The
-  # per-connection detail (/settings/sso/:id) and Add (/new) stay.
   # Where single sign-on actually lives: the anchored card on the Team page. The
   # `:index` route redirects here, so crumbs must link THIS, not the route that
   # bounces to it.
   defp sso_card_path(account), do: ~p"/app/#{account}/settings/team" <> "#single-sign-on"
 
+  # The SSO overview folded into the Team page: /settings/sso only redirects to
+  # its card there, while the per-connection detail (/settings/sso/:id), edit,
+  # and Add (/new) stay.
   def handle_params(_params, _uri, %{assigns: %{live_action: :index}} = socket) do
     # The fragment lands the operator on Team's Single sign-on card (its DOM id)
     # instead of the top of a long page — docs and old bookmarks deep-link here.
@@ -142,6 +138,9 @@ defmodule EmisarWeb.SSOSettingsLive do
     {:noreply, socket |> cancel_directory_refresh() |> push_navigate(to: destination)}
   end
 
+  # Action-dependent data loads. mount runs before the action is settled for live
+  # nav, and handle_params re-fires on navigation, so the per-action read lives
+  # here. IL-18: the DB reads run only once connected; the dead pass renders chrome.
   def handle_params(params, _uri, socket) do
     socket =
       socket |> cancel_directory_refresh() |> DirectoryGroups.init() |> load_for_action(params)
@@ -178,8 +177,10 @@ defmodule EmisarWeb.SSOSettingsLive do
       end
     else
       # A blank form names no runners, so SSO resolves it without a read (IL-18)
-      # and /new still renders on the dead pass.
-      assign_form(socket, SSO.change_provider(socket.assigns.current_subject))
+      # and /new still renders on the dead pass. Only /new renders it.
+      if socket.assigns.live_action == :new,
+        do: assign_form(socket, SSO.change_provider(socket.assigns.current_subject)),
+        else: socket
     end
   end
 
@@ -190,25 +191,47 @@ defmodule EmisarWeb.SSOSettingsLive do
 
     case SSO.fetch_provider_by_id(id, socket.assigns.current_subject) do
       {:ok, provider} ->
+        provider_id = provider.id
+        same_provider? = match?(%SSO.IdentityProvider{id: ^provider_id}, socket.assigns.provider)
+
         socket
         |> assign(:loaded?, true)
         |> assign(:provider, provider)
         |> assign(:provider_load_error?, false)
         |> assign(:scim_token, current_scim_token(socket.assigns.scim_token, provider))
         |> assign(:mapping_filter_params, Map.drop(params, ["id"]))
-        |> assign(:adding_mapping, false)
-        |> load_group_mappings(provider, params)
+        |> load_show_mappings(provider, params, same_provider?)
         |> load_synced_members(provider, params)
         |> load_refused_changes(provider)
         |> load_runners()
         |> load_sign_in_verification(provider)
-        |> assign_form(SSO.change_provider(socket.assigns.current_subject))
 
       {:error, :not_found} ->
         socket
         |> put_flash(:error, "Connection not found.")
         |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/settings/team")
     end
+  end
+
+  # A URL patch on the connection already in view (a filter or a page link)
+  # refreshes the rows like `reload/1` does: an open Add mapping draft and a group
+  # access editor stay, and an editor whose group left the page says so. Any other
+  # load starts the mapping panels fresh.
+  defp load_show_mappings(
+         socket,
+         %SSO.IdentityProvider{scim_enabled: true} = provider,
+         _params,
+         true
+       ) do
+    socket
+    |> ensure_mapping_forms(provider)
+    |> reload_mappings(provider)
+  end
+
+  defp load_show_mappings(socket, provider, params, _same_provider?) do
+    socket
+    |> assign(:adding_mapping, false)
+    |> load_group_mappings(provider, params)
   end
 
   defp load_sign_in_verification(socket, provider) do
@@ -494,7 +517,7 @@ defmodule EmisarWeb.SSOSettingsLive do
          ~p"/app/#{socket.assigns.current_account}/settings/sso/#{socket.assigns.provider.id}",
          %{"group_access_search" => String.slice(term, 0, 200)},
          SSO.directory_group_filters(),
-         prefix: "group_access_",
+         prefix: @group_access_prefix,
          current_params: socket.assigns.mapping_filter_params
        )}
     else
@@ -521,7 +544,7 @@ defmodule EmisarWeb.SSOSettingsLive do
          ~p"/app/#{socket.assigns.current_account}/settings/sso/#{socket.assigns.provider.id}",
          params,
          SSO.directory_member_filters(),
-         prefix: "synced_members_",
+         prefix: @synced_member_prefix,
          current_params: socket.assigns.mapping_filter_params
        )}
     else
@@ -856,8 +879,6 @@ defmodule EmisarWeb.SSOSettingsLive do
     )
   end
 
-  # No-op for the on_mount badge/fleet hooks' broadcasts (approvals, packs,
-  # runner presence). Those nav cues are owned by the hooks; this page ignores them.
   def handle_info(
         {:refresh_directory, attempt, id},
         %{
@@ -871,6 +892,8 @@ defmodule EmisarWeb.SSOSettingsLive do
     {:noreply, socket |> refresh_directory() |> schedule_directory_refresh()}
   end
 
+  # No-op for the on_mount badge/fleet hooks' broadcasts (approvals, packs,
+  # runner presence). Those nav cues are owned by the hooks; this page ignores them.
   def handle_info(_msg, socket), do: {:noreply, socket}
 
   defp do_create(socket, params) do
@@ -972,6 +995,10 @@ defmodule EmisarWeb.SSOSettingsLive do
            socket
            |> put_flash(:info, "Connection enabled for members.")
            |> reload()}
+
+        {:error, %Ecto.Changeset{errors: errors}} ->
+          reason = if Keyword.has_key?(errors, :enabled), do: :provider_kind_enabled
+          {:noreply, put_flash(socket, :error, error_message(reason))}
 
         {:error, reason} ->
           {:noreply, put_flash(socket, :error, error_message(reason))}
@@ -1539,8 +1566,8 @@ defmodule EmisarWeb.SSOSettingsLive do
     "This provider can't push a directory to emisar, so there's no SCIM token to issue. Members are added on their first sign-in instead."
   end
 
-  defp error_message(:blocked_discovery_endpoint) do
-    "That issuer's discovery document points one of its endpoints at a private or non-HTTPS address, so emisar won't call it. Check the provider's configuration."
+  defp error_message(:provider_kind_enabled) do
+    "Another connection of this provider type is already enabled. Disable it before enabling this one."
   end
 
   defp error_message(:role_exceeds_your_permissions) do
@@ -1551,11 +1578,8 @@ defmodule EmisarWeb.SSOSettingsLive do
     "That action didn't complete. Refresh to see the connection's current state, then try again."
   end
 
-  # Member-lifecycle errors from Accounts (change role / suspend / reinstate) —
-  # kept separate from the SSO-config error_message/1 so each reads for its surface.
-
-  # The create form and any open inline edit form coexist in the DOM, so each
-  # gets its own `id` — otherwise their inputs collide on `provider_<field>`.
+  # The create and edit forms get distinct `id`s, so their inputs never share
+  # `provider_<field>` ids.
   # SSO owns the config form — it resolves the raw runner-scope selection
   # against the account — so a subject that may not manage single sign-on gets
   # no form and the page renders its permission state instead.
@@ -1565,7 +1589,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   defp assign_form(socket, %Ecto.Changeset{} = changeset),
     do: assign(socket, :form, to_form(changeset, as: "provider", id: "create-provider"))
 
-  # The inline edit form. `change_provider` returns a presentation-safe
+  # The edit view's form. `change_provider` returns a presentation-safe
   # changeset — the stored, write-only client_secret is never in it — so leaving
   # the field blank keeps the stored secret, unless the edit repoints the issuer
   # or client id, which the domain refuses without one. With no input it seeds
@@ -1609,8 +1633,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       <:title>
         <%!-- The detail view titles itself with the connection, like every
              other detail page (detail_header family); /new titles itself with
-             its JOB (§7.1); the list carries the section name with a back link
-             to Team, its owning page (SSO has no nav item of its own). --%>
+             its JOB (§3.1). --%>
         <%!-- SSO has no nav item of its own — it lives on the Team page — so every
              view here reads Team / Single sign-on / <this page>. The middle crumb
              points at Team's anchored SSO card, NOT /settings/sso: that route is a
@@ -1829,19 +1852,9 @@ defmodule EmisarWeb.SSOSettingsLive do
             </.simple_form>
           </div>
 
-          <div :if={not @loaded?} class="text-sm text-zinc-400">Loading…</div>
+          <.loading_state :if={not @loaded?} />
         </div>
 
-        <%!-- ── Pending access requests (needs attention) ──────────────────
-             People blocked waiting for an admin, across ALL connections. The
-             time-sensitive job, so it leads the overview. --%>
-        <%!-- ── Connections (overview) ──────────────────────────────────────
-             A bounded set; each row is a SUMMARY that opens its own detail page.
-             Config (edit, SCIM, group→role) lives on the detail, not here. --%>
-        <%!-- The branded sign-in link to hand to the team — a quiet utility, so it
-             sits at the bottom and lets the needs-attention block lead. Always
-             useful (email sign-in works without SSO), so it's not gated on
-             providers. NAKED — the code_line is the artifact. --%>
         <%!-- ── Connection detail (/settings/sso/:id) ───────────────────────
              One connection: identity + status + config (edit, directory sync,
              group→role). @provider is the one handle_params loaded. --%>
@@ -1897,7 +1910,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                           {sign_in_verification_label(@sign_in_verification)}
                         </p>
                         <p class="mt-0.5 text-xs leading-relaxed text-zinc-400">
-                          {sign_in_verification_copy(@sign_in_verification, @provider)}
+                          {sign_in_verification_copy(@sign_in_verification)}
                           <span :if={
                             @sign_in_verification &&
                               @sign_in_verification.status == :verified &&
@@ -2170,7 +2183,7 @@ defmodule EmisarWeb.SSOSettingsLive do
             </.confirm_dialog>
           </div>
 
-          <div :if={not @loaded?} class="text-sm text-zinc-400">Loading…</div>
+          <.loading_state :if={not @loaded?} />
         </div>
       </div>
     </.console_shell>
@@ -2237,9 +2250,9 @@ defmodule EmisarWeb.SSOSettingsLive do
           phx-click={show_confirm_dialog("delete-provider-#{@provider.id}")}
         >
           <:body>
-            Stops new sign-ins through this connection and removes the access it proved in
-            this workspace. Access proved another way, including access to other workspaces,
-            is unchanged. This can't be undone.
+            Stops new sign-ins through this connection and ends the sessions that signed in
+            through it. Email sign-in sessions stay. Members with no verified email and no
+            other enabled connection also lose their API keys and agent connections.
           </:body>
           Delete connection
         </.confirm_zone>
@@ -2259,17 +2272,18 @@ defmodule EmisarWeb.SSOSettingsLive do
       >
         <:body>
           Permanently removes the <span class="font-medium text-rose-100">{@provider.name}</span>
-          connection and the access it proved in this workspace. Access proved another way,
-          including access to other workspaces, is unchanged.
+          connection and ends the sessions that signed in through it. Email sign-in sessions
+          stay. Members with no verified email and no other enabled connection also lose their
+          API keys and agent connections.
         </:body>
       </.confirm_dialog>
     </section>
     """
   end
 
-  # The Enterprise upsell shown to anyone who can't configure SSO — a member
-  # without manage_sso, or any account below the Enterprise plan. Never crashes;
-  # the gate is also re-checked in every handler.
+  # The plan upsell shown to a member who may manage SSO on an account without a
+  # plan that includes it (Team or Enterprise). Never crashes; the gate is also
+  # re-checked in every handler.
   attr :current_account, :map, required: true
 
   defp locked(assigns) do
@@ -2350,6 +2364,10 @@ defmodule EmisarWeb.SSOSettingsLive do
     "That issuer only signs ID tokens with algorithms emisar won't accept. Configure it to sign with RS256 (or another public-key algorithm) and test again."
   end
 
+  defp test_error_message(:blocked_discovery_endpoint) do
+    "That issuer's discovery document points one of its endpoints at a private or non-HTTPS address, so emisar won't call it. Check the provider's configuration."
+  end
+
   defp test_error_message(_reason) do
     "Couldn't load the issuer's OIDC discovery document. Check the issuer URL and that the IdP is reachable from the internet."
   end
@@ -2373,7 +2391,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   attr :directory_sync?, :boolean, default: false
 
   # The connection form's fields, grouped into NAKED sibling sections (Provider ·
-  # OIDC connection · Member provisioning · Security) — §8.1: the fields are the
+  # OIDC connection · Member access · Sign-in security) — §8.1: the fields are the
   # controls; a panel per group was an island per group. Shared by both actions;
   # the outer <.simple_form> spaces the sections and renders the submit footer.
   defp provider_fields(assigns) do
@@ -2755,8 +2773,7 @@ defmodule EmisarWeb.SSOSettingsLive do
     """
   end
 
-  # The kind currently selected in the form (string), for the live setup guide;
-  # defaults to the first option — what the select shows before any change.
+  # The kind currently selected in the form (string), for the live setup guide.
   # Blank on a fresh /new form (nothing picked yet) — the guide/hints fall back
   # to generic and the issuer stays editable, rather than arbitrarily pre-picking
   # the first provider (and locking its issuer before the operator has chosen).
@@ -3031,13 +3048,12 @@ defmodule EmisarWeb.SSOSettingsLive do
   defp sign_in_verification_label(%{status: :stale}), do: "Verification needed"
   defp sign_in_verification_label(_verification), do: "Sign-in not verified"
 
-  defp sign_in_verification_copy(%{status: :verified}, _provider),
-    do: "A real provider sign-in passed "
+  defp sign_in_verification_copy(%{status: :verified}), do: "A real provider sign-in passed "
 
-  defp sign_in_verification_copy(%{status: :stale}, _provider),
+  defp sign_in_verification_copy(%{status: :stale}),
     do: "Connection settings changed. Verify sign-in again."
 
-  defp sign_in_verification_copy(_verification, _provider) do
+  defp sign_in_verification_copy(_verification) do
     "Verify sign-in before enabling this connection."
   end
 end

@@ -1,7 +1,7 @@
 defmodule Emisar.Auth do
   @moduledoc """
   Authentication: workspace sessions, the emailed sign-in and sign-up codes,
-  SSO sign-in completion, and the MFA scaffold.
+  SSO sign-in completion, and MFA.
 
   Every session and code belongs to exactly one workspace Member; a sign-up
   code alone belongs to none until its workspace exists. All token types share
@@ -32,10 +32,9 @@ defmodule Emisar.Auth do
     Supervisor.init([job_module("TokenRetention")], strategy: :one_for_one)
   end
 
-  # Resolved at runtime, like every sibling context's job supervision: naming
-  # the module directly puts a compile edge from Auth — which most of the schema
-  # reaches — into the Jobs infrastructure, and `mix xref` fails the gate on the
-  # cycle it closes.
+  # Resolved at runtime: naming the module directly puts a compile edge from
+  # Auth — which most of the schema reaches — into the Jobs infrastructure, and
+  # `mix xref` fails the gate on the cycle it closes.
   defp job_module(name), do: Module.safe_concat([__MODULE__, "Jobs", name])
 
   # -- Role vocabulary --------------------------------------------------
@@ -908,9 +907,9 @@ defmodule Emisar.Auth do
     |> case do
       {:ok, %{token: token}} ->
         delivery =
-          email
-          |> Mailers.UserNotifier.deliver_sign_up_code(token.id, secret, context)
-          |> delivery_outcome()
+          deliver_code(token.id, fn ->
+            Mailers.UserNotifier.deliver_sign_up_code(email, token.id, secret, context)
+          end)
 
         {:ok, %{token_id: token.id, nonce: nonce, delivery: delivery}}
 
@@ -1777,7 +1776,7 @@ defmodule Emisar.Auth do
             subject.context,
             subject.account
           )
-          |> code_delivery_outcome()
+          |> delivery_outcome()
 
         {:error, reason} ->
           {:error, reason}
@@ -1799,10 +1798,6 @@ defmodule Emisar.Auth do
         {:error, :unauthorized}
     end
   end
-
-  defp code_delivery_outcome({:ok, %{suppressed: true}}), do: {:ok, :suppressed}
-  defp code_delivery_outcome({:ok, _sent}), do: {:ok, :sent}
-  defp code_delivery_outcome({:error, reason}), do: {:error, reason}
 
   @doc """
   Confirm the fresh local proof for verifying `provider_id` and return an
@@ -2070,7 +2065,7 @@ defmodule Emisar.Auth do
             subject.context,
             subject.account
           )
-          |> code_delivery_outcome()
+          |> delivery_outcome()
 
         {:error, reason} ->
           {:error, reason}
@@ -2220,7 +2215,7 @@ defmodule Emisar.Auth do
             subject.context,
             subject.account
           )
-          |> code_delivery_outcome()
+          |> delivery_outcome()
 
         case delivery do
           {:ok, :sent} -> {:ok, %{token_id: token.id, nonce: nonce, email: new_email}}
@@ -2366,7 +2361,7 @@ defmodule Emisar.Auth do
       else: {:error, :email_change_unavailable}
   end
 
-  # -- MFA scaffold -----------------------------------------------------
+  # -- MFA --------------------------------------------------------------
 
   @doc """
   The caller's own second-factor state for display: is TOTP on, how many
@@ -2483,7 +2478,7 @@ defmodule Emisar.Auth do
               subject.context,
               subject.account
             )
-            |> code_delivery_outcome()
+            |> delivery_outcome()
 
           finalize_mfa_enrollment_delivery(token, locked, delivery)
 
@@ -2859,8 +2854,8 @@ defmodule Emisar.Auth do
     end
   end
 
-  # Revision 8: an SSO proof is only as good as the route it proved, rechecked
-  # under the entitlement, provider and identity locks, before the Member's.
+  # An SSO proof is only as good as the route it proved, rechecked under the
+  # entitlement, provider and identity locks, before the Member's.
   defp put_mfa_enrollment_reauthentication(multi, {:email, _payload}, _account_id, _id),
     do: multi
 
@@ -3544,7 +3539,7 @@ defmodule Emisar.Auth do
     end
   end
 
-  # Verifies a TOTP code with replay protection. A bare `Crypto.valid_totp?/2`
+  # Verifies a TOTP code with replay protection. A bare `Crypto.valid_totp?/3`
   # accepts the same code repeatedly within its 30-second window, so the
   # consume step stamps `mfa_last_used_at` on the **locked** Member row and
   # rejects a second claim of the same bucket — two concurrent submissions of

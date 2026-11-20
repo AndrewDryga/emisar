@@ -1,6 +1,5 @@
 defmodule EmisarWeb.DirectoryGroupsLiveTest do
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.Fixtures
 
   test "Team keeps normal member filters without directory groups or group reads", %{conn: conn} do
     {conn, _owner, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})

@@ -27,7 +27,6 @@ defmodule EmisarWeb.MetricsPlugTest do
 
     assert conn.status == 200
     assert Plug.Conn.get_resp_header(conn, "content-type") == ["text/plain; charset=utf-8"]
-    assert conn.private.prometheus_metrics_name == :prometheus_metrics
     assert conn.resp_body =~ "# TYPE emisar_web_metrics_plug_test_count counter"
     assert conn.resp_body =~ "emisar_web_metrics_plug_test_count 1"
   end

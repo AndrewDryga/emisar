@@ -338,6 +338,21 @@ defmodule Emisar.MailTest do
       end)
     end
 
+    test "indents the details two spaces, like every other label block", %{
+      member: member,
+      account: account
+    } do
+      context = %RequestContext{ip_address: "203.0.113.7"}
+      UserNotifier.deliver_magic_link(member, "tok", "ABC234", context, account)
+
+      assert_email_sent(fn email ->
+        assert email.text_body =~ "\n  Time:   "
+        assert email.text_body =~ "\n  From:   203.0.113.7"
+        refute email.text_body =~ "\n    Time:"
+        true
+      end)
+    end
+
     test "omits the lines it has no data for (no IP / unparseable device)", %{
       member: member,
       account: account
@@ -757,7 +772,8 @@ defmodule Emisar.MailTest do
       UserNotifier.deliver_approval_request(member_for(subject), args, request, run)
 
       assert_email_sent(fn email ->
-        assert email.text_body =~ "(unavailable)"
+        assert email.text_body =~ "\n  (unavailable)"
+        refute email.text_body =~ "\n    (unavailable)"
         refute email.text_body =~ "secret-value"
         refute email.text_body =~ "canary"
         true

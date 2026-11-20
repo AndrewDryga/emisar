@@ -103,8 +103,11 @@ defmodule Emisar.SSO.IdentityProvider.Changeset do
     |> validate_issuer()
     |> validate_issuer_region()
     |> normalize_allowed_email_domain()
-    |> unique_constraint([:account_id, :kind],
-      name: :sso_identity_providers_account_kind_enabled_index
+    # One enabled connection per (account, kind). Reported on `enabled`, the
+    # field the operator flipped — `account_id` is not on any form.
+    |> unique_constraint(:enabled,
+      name: :sso_identity_providers_account_kind_enabled_index,
+      message: "another connection of this provider type is already enabled"
     )
     # Named for the (account_id, allowed_email_domain) index, but reported on the
     # domain field the operator typed — `account_id` is not on the form.

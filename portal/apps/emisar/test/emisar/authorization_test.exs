@@ -104,7 +104,7 @@ defmodule Emisar.AuthorizationTest do
       # (mirrors what an opaque-id-based attacker would see).
       account_a = Fixtures.Accounts.create_account()
       account_b = Fixtures.Accounts.create_account()
-      _ = seed_policy_for(account_b)
+      seed_policy_for(account_b)
 
       subject = subject_with_role(account_a, :owner)
       # account_a never had a policy seeded → :not_found regardless.

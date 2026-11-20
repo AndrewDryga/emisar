@@ -55,7 +55,7 @@ defmodule EmisarWeb.DocsRedirectTest do
     for retired <- Map.keys(@moved_pages), do: refute(body =~ retired)
   end
 
-  test "removed pages and unknown docs return404 without redirects", %{conn: conn} do
+  test "removed pages and unknown docs return 404 without redirects", %{conn: conn} do
     for path <- [
           "/guides/caddy-reload-demo",
           "/docs/connect-an-llm",

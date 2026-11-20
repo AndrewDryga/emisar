@@ -13,8 +13,9 @@ defmodule Emisar.Marketing do
   Captures an early-access email. Idempotent: a repeat address updates the
   recorded source and still returns `{:ok, signup}`, so the response can't be
   used to probe whether an address is already on the list. Returns
-  `{:error, changeset}` for an invalid email. Unauthenticated pre-auth path;
-  threads the boundary's `%RequestContext{}` rather than a `%Subject{}`.
+  `{:error, changeset}` for an invalid email. Unauthenticated pre-auth path:
+  takes the standard optional `%RequestContext{}` rather than a `%Subject{}`,
+  but neither consumes nor stores its request metadata.
   """
   def capture_signup(attrs, _context \\ %RequestContext{}) do
     attrs

@@ -90,15 +90,22 @@ defmodule Emisar.IronLawChecksTest do
       assert issue.message =~ "IL-2"
     end
 
-    test "flags get!, get_by, and the fully qualified form" do
+    test "flags get!, get_by, get_by!, and the fully qualified form" do
       source = """
       defmodule Emisar.Runbooks do
         def one!(id), do: Emisar.Repo.get!(Runbook, id)
         def by_slug(slug), do: Repo.get_by(Runbook, slug: slug)
+        def by_slug!(slug), do: Repo.get_by!(Runbook, slug: slug)
+        def by_name!(name), do: Emisar.Repo.get_by!(Runbook, name: name)
       end
       """
 
-      assert triggers(il02(), source, @context) == ["Repo.get!", "Repo.get_by"]
+      assert triggers(il02(), source, @context) == [
+               "Repo.get!",
+               "Repo.get_by",
+               "Repo.get_by!",
+               "Repo.get_by!"
+             ]
     end
 
     test "allows a Query-module lookup read through Repo.fetch" do
@@ -254,6 +261,19 @@ defmodule Emisar.IronLawChecksTest do
       assert issues(il08(), source, @changeset) == []
     end
 
+    test "flags the Repo call but not a grouped Emisar.Repo alias" do
+      source = """
+      defmodule Emisar.Runbooks.Runbook.Changeset do
+        use Emisar, :changeset
+        alias Emisar.Repo.{Changeset, Filter}
+
+        def create(attrs), do: Repo.insert(cast(%Runbook{}, attrs, [:name]))
+      end
+      """
+
+      assert triggers(il08(), source, @changeset) == ["Repo.insert"]
+    end
+
     test "ignores the Repo's own changeset helpers" do
       source = """
       defmodule Emisar.Repo.Changeset do
@@ -291,13 +311,18 @@ defmodule Emisar.IronLawChecksTest do
           create table(:invoices) do
             add :price, :float
             add :tax_rate, :float
+            add :unit_price_amount, :float
             add :latency, :float
           end
         end
       end
       """
 
-      assert triggers(il12(), source, @migration) == ["add :price", "add :tax_rate"]
+      assert triggers(il12(), source, @migration) == [
+               "add :price",
+               "add :tax_rate",
+               "add :unit_price_amount"
+             ]
     end
 
     test "allows :decimal and integer cents" do

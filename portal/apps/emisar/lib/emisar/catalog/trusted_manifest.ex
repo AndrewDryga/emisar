@@ -138,8 +138,10 @@ defmodule Emisar.Catalog.TrustedManifest do
   Content digest of one complete descriptor — what a catalog listing compares
   instead of re-reading every descriptor column of every advertised action.
 
-  Equality of digests is equality of descriptors: the digest covers the same
-  map `from_runner_actions/1` builds, so a drifted field changes it.
+  Equal descriptors have equal digests: the digest covers the same map
+  `from_runner_actions/1` builds, so a drifted field changes it. The converse
+  does not hold, because canonicalization can collapse an object and the array
+  of pairs it becomes, so dispatch compares descriptors structurally.
   """
   @spec descriptor_digest(map()) :: String.t()
   def descriptor_digest(%{} = descriptor),

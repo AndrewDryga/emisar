@@ -52,7 +52,8 @@ defmodule Emisar.Repo.Filter do
           fun: fun(),
           default: term() | nil,
           prompt: String.t(),
-          span: :half | :row_start | :full
+          span: :half | :row_start | :full,
+          search: boolean()
         }
 
   # `span` places the filter in the LiveTable `:stacked` filter grid (two
@@ -60,7 +61,10 @@ defmodule Emisar.Repo.Filter do
   # flows into the next cell, `:full` takes its own row, and `:row_start` is a
   # half-width control forced to column 1 so it BEGINS a row — used for a picker
   # whose dependent control (a dynamically-revealed value dropdown) should pair
-  # in the cell beside it, e.g. the audit Actor/Subject kind pickers.
+  # in the cell beside it, e.g. the audit Actor/Target kind pickers.
+  #
+  # `search: true` renders the filter as LiveTable's searchable combobox
+  # instead of a plain dropdown, for a choice list too long to scan.
   #
   # `valid_values` is the set the value is VALIDATED against, when it's broader
   # than what the dropdown DISPLAYS (`values`). The audit Type filter collapses

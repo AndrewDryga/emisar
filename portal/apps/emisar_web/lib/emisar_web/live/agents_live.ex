@@ -3,18 +3,18 @@ defmodule EmisarWeb.AgentsLive do
   "Agents" — the operator-facing view of API keys.
 
   Each API key represents one LLM client (Claude Code, Cursor, etc.)
-  that can call the MCP tools API. The page mirrors the Runners page in
-  layout: a status grid at top, a list of "connections" with live
-  status badges, and a persistent "connect a new client" guide so the
-  copy-paste config snippets are always one click away — not buried
-  behind a "Generate key" button.
+  that can call the MCP tools API. The page leads with a posture line,
+  then lists the keys grouped by owner with live status. Connecting a new
+  client is its own flow on `/agents/connect` behind the title CTA; it
+  embeds inline only while onboarding or mid-setup
+  (`assign_connect_inline/1`).
 
   `ApiKeys.key_facts/2` classifies each key's activity, liveness, expiry
   and rotation state; this page composes the emisar-mcp bridge's version
   status onto it (`ApiKeys.with_bridge_compatibility/2`) and renders the
   result — words, colors and countdowns only.
 
-  Every #{15} s a self-scheduled `:tick` polls only the visible keys' ids and
+  Every 15 s a self-scheduled `:tick` polls only the visible keys' ids and
   `last_used_at`, then recomputes time-based facts in memory. Key lifecycle
   PubSub events still reload the full page, so membership, pagination, owner,
   and rotation changes reflow immediately without doing that work per tick.
@@ -1792,7 +1792,7 @@ defmodule EmisarWeb.AgentsLive do
       |> assign(
         :connection_step,
         cond do
-          assigns.selected_sandbox in ["docker_sandboxes", "nono", "dev_containers"] -> 5
+          assigns.selected_sandbox in @sandbox_guide_ids -> 5
           assigns.selected_client == "coop" -> 3
           true -> 2
         end
@@ -1899,12 +1899,10 @@ defmodule EmisarWeb.AgentsLive do
           </div>
         </div>
 
-        <%!-- Body. Empty state until the operator picks. Once picked we
-           render the per-transport setup section — for local clients
-           that's "install + paste snippet", for remote it's
-           "paste URL + choose OAuth". Scope picker only appears AFTER a
-           local client is chosen too; it's part of the per-client setup,
-           not a standalone step. --%>
+        <%!-- Body. Nothing until the operator picks. Once picked we render
+           that choice's setup: the sandbox guide, the custom-key builder,
+           co:op, the remote URL + OAuth steps, or the local client's
+           install-and-configure flow. --%>
         <%= cond do %>
           <% is_nil(@selected_client) and is_nil(@selected_sandbox) -> %>
             <%!-- Nothing picked → nothing rendered: the picker is the prompt;
@@ -1916,6 +1914,7 @@ defmodule EmisarWeb.AgentsLive do
               setup={@sandbox_setup}
               base_url={@base_url}
               ready?={is_binary(@quick_secret)}
+              current_account={@current_account}
             />
           <% @selected_client == "custom" -> %>
             <div id="custom-key-flow" class="mt-6 border-t border-zinc-800/70 pt-6">
@@ -2019,15 +2018,15 @@ defmodule EmisarWeb.AgentsLive do
                 id={"#{@selected_sandbox}-start"}
                 label={
                   if @selected_sandbox == "dev_containers",
-                    do: "Inside the container",
-                    else: "From your repository"
+                    do: "Run inside the container",
+                    else: "Run from your repository"
                 }
                 value={@sandbox_setup.start}
               />
             </div>
 
             <%= if @selected_client == "coop" do %>
-              <.code_line id="coop-start" label="From your repository" value="coop codex" />
+              <.code_line id="coop-start" label="Run from your repository" value="coop codex" />
               <p class="text-sm text-zinc-400">
                 Replace
                 <.inline_code>codex</.inline_code>
@@ -2102,7 +2101,9 @@ defmodule EmisarWeb.AgentsLive do
                         Restart {@setup_label} and check its MCP connection output for errors.
                     <% end %>
                   </:step>
-                  <:step :if={@selected_client not in ["custom", "coop"] && @quick_secret}>
+                  <:step :if={
+                    local_client?(@selected_client) && @selected_client != "coop" && @quick_secret
+                  }>
                     Confirm the bridge path and save the configuration shown in manual setup.
                   </:step>
                   <:step :if={@selected_client == "coop"}>
@@ -2189,7 +2190,7 @@ defmodule EmisarWeb.AgentsLive do
           </p>
           <.code_line
             id="coop-version"
-            label="On your computer"
+            label="Run on your computer"
             value="coop version"
           />
           <p>
@@ -2202,7 +2203,7 @@ defmodule EmisarWeb.AgentsLive do
           </p>
           <.code_panel
             id="coop-init"
-            label="From your repository"
+            label="Run from your repository"
             code={~s(coop init\ncoop login codex)}
             copy
           />
@@ -2293,7 +2294,7 @@ defmodule EmisarWeb.AgentsLive do
                   />
                   <.code_line
                     id="coop-build"
-                    label="From your repository"
+                    label="Run from your repository"
                     value="coop approve && coop build && coop doctor"
                   />
                   <p>
@@ -2329,7 +2330,7 @@ defmodule EmisarWeb.AgentsLive do
           <% end %>
         </div>
       </section>
-      <.sandbox_risks id="coop-limits" sandbox="coop" />
+      <.sandbox_risks id="coop-limits" sandbox="coop" current_account={@current_account} />
     </div>
     """
   end
@@ -2498,6 +2499,7 @@ defmodule EmisarWeb.AgentsLive do
   attr :setup, :map, required: true
   attr :base_url, :string, required: true
   attr :ready?, :boolean, required: true
+  attr :current_account, :any, required: true
 
   defp sandbox_setup(assigns) do
     ~H"""
@@ -2517,7 +2519,7 @@ defmodule EmisarWeb.AgentsLive do
                 </p>
                 <.code_panel
                   id="docker-sandboxes-versions"
-                  label="On your computer"
+                  label="Run on your computer"
                   code={@setup.versions}
                   copy
                 />
@@ -2541,7 +2543,7 @@ defmodule EmisarWeb.AgentsLive do
                 </p>
                 <.code_line
                   id="docker-sandboxes-directory"
-                  label="On your computer"
+                  label="Run on your computer"
                   value="mkdir -p ~/.config/emisar/docker-sandboxes"
                 />
                 <.code_panel
@@ -2558,7 +2560,7 @@ defmodule EmisarWeb.AgentsLive do
                 />
                 <.code_panel
                   id="docker-sandboxes-protect"
-                  label="On your computer"
+                  label="Run on your computer"
                   code={@setup.protect}
                   copy
                 />
@@ -2582,7 +2584,7 @@ defmodule EmisarWeb.AgentsLive do
                 </p>
                 <.code_panel
                   id="docker-sandboxes-register-command"
-                  label="On your computer"
+                  label="Run on your computer"
                   code={@setup.register}
                   copy
                 />
@@ -2594,7 +2596,11 @@ defmodule EmisarWeb.AgentsLive do
               </div>
             </section>
 
-            <.sandbox_risks id="docker-sandboxes-limits" sandbox="docker_sandboxes" />
+            <.sandbox_risks
+              id="docker-sandboxes-limits"
+              sandbox="docker_sandboxes"
+              current_account={@current_account}
+            />
           <% "nono" -> %>
             <section id="nono-install-step" class="space-y-4">
               <.step_header step={1} title="Check nono" />
@@ -2603,7 +2609,12 @@ defmodule EmisarWeb.AgentsLive do
                   Follow nono's <.doc_link href="https://nono.sh/#install">official installation guide</.doc_link>,
                   then check that nono is available:
                 </p>
-                <.code_panel id="nono-versions" label="On your computer" code={@setup.versions} copy />
+                <.code_panel
+                  id="nono-versions"
+                  label="Run on your computer"
+                  code={@setup.versions}
+                  copy
+                />
               </div>
             </section>
 
@@ -2647,14 +2658,14 @@ defmodule EmisarWeb.AgentsLive do
                 </p>
                 <.code_panel
                   id="nono-profile"
-                  label="From your repository"
+                  label="Run from your repository"
                   code={@setup.profile}
                   copy
                 />
               </div>
             </section>
 
-            <.sandbox_risks id="nono-limits" sandbox="nono" />
+            <.sandbox_risks id="nono-limits" sandbox="nono" current_account={@current_account} />
           <% "dev_containers" -> %>
             <section id="dev-containers-tools-step" class="space-y-4">
               <.step_header step={1} title="Check Dev Containers" />
@@ -2665,7 +2676,7 @@ defmodule EmisarWeb.AgentsLive do
                 </p>
                 <.code_panel
                   id="dev-containers-versions"
-                  label="On your computer"
+                  label="Run on your computer"
                   code={@setup.versions}
                   copy
                 />
@@ -2703,7 +2714,7 @@ defmodule EmisarWeb.AgentsLive do
                 />
                 <.code_panel
                   id="dev-containers-rebuild"
-                  label="From your repository"
+                  label="Run from your repository"
                   code={@setup.rebuild}
                   copy
                 />
@@ -2745,7 +2756,11 @@ defmodule EmisarWeb.AgentsLive do
               </div>
             </section>
 
-            <.sandbox_risks id="dev-containers-limits" sandbox="dev_containers" />
+            <.sandbox_risks
+              id="dev-containers-limits"
+              sandbox="dev_containers"
+              current_account={@current_account}
+            />
         <% end %>
       <% else %>
         <div id="sandbox-config-error" role="alert" class="space-y-3">
@@ -2767,6 +2782,7 @@ defmodule EmisarWeb.AgentsLive do
   # EmisarWeb.SandboxRisks; this renders it with the Console's components.
   attr :id, :string, required: true
   attr :sandbox, :string, required: true
+  attr :current_account, :any, required: true
 
   defp sandbox_risks(assigns) do
     assigns = assign(assigns, :copy, SandboxRisks.fetch!(assigns.sandbox))
@@ -2776,11 +2792,19 @@ defmodule EmisarWeb.AgentsLive do
       <h3 class="text-base font-semibold leading-6 text-zinc-200">{@copy.title}</h3>
       <ul class="list-disc space-y-2 pl-5 text-sm text-zinc-400">
         <li :for={risk <- @copy.risks}>
-          <.sandbox_risk_segment :for={segment <- risk} segment={segment} />
+          <.sandbox_risk_segment
+            :for={segment <- risk}
+            segment={segment}
+            current_account={@current_account}
+          />
         </li>
       </ul>
       <p :if={@copy.rotation} class="text-sm text-zinc-400">
-        <.sandbox_risk_segment :for={segment <- @copy.rotation} segment={segment} />
+        <.sandbox_risk_segment
+          :for={segment <- @copy.rotation}
+          segment={segment}
+          current_account={@current_account}
+        />
       </p>
     </section>
     """
@@ -2789,6 +2813,7 @@ defmodule EmisarWeb.AgentsLive do
   # One-line sigils on purpose: a heredoc's trailing newline would put a space
   # between a link and the full stop that follows it.
   attr :segment, :any, required: true
+  attr :current_account, :any, required: true
 
   defp sandbox_risk_segment(%{segment: {:code, code}} = assigns) do
     assigns = assign(assigns, :code, code)
@@ -2810,7 +2835,7 @@ defmodule EmisarWeb.AgentsLive do
   defp sandbox_risk_segment(%{segment: {:agents, label}} = assigns) do
     assigns = assign(assigns, :label, label)
 
-    ~H|<.link navigate={~p"/app/agents"} class="text-brand-400 hover:text-brand-300">{@label}</.link>|
+    ~H|<.link navigate={~p"/app/#{@current_account}/agents"} class="text-brand-400 hover:text-brand-300">{@label}</.link>|
   end
 
   defp sandbox_risk_segment(%{segment: text} = assigns) when is_binary(text) do
@@ -2834,7 +2859,7 @@ defmodule EmisarWeb.AgentsLive do
           <% {:ok, command} -> %>
             <.code_panel
               id={"#{@id}-commands"}
-              label="On your computer"
+              label="Run on your computer"
               code={command <> "\nemisar-mcp --version"}
               copy
             />

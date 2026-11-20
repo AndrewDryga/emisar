@@ -314,6 +314,25 @@ defmodule Emisar.RuntimeSafetyChecksTest do
              ]
     end
 
+    test "flags Mint's nested API modules outside a wrapper" do
+      source = """
+      defmodule Emisar.Sprockets do
+        def a(host), do: Mint.HTTP.connect(:https, host, 443)
+        def b(host), do: Mint.HTTP1.connect(:https, host, 443)
+        def c(host), do: Mint.HTTP2.connect(:https, host, 443)
+      end
+      """
+
+      assert triggers(vendor_wrapper(), source, @context) == [
+               "Mint.HTTP.connect",
+               "Mint.HTTP1.connect",
+               "Mint.HTTP2.connect"
+             ]
+
+      wrapper = "apps/emisar/lib/emisar/oauth/metadata_client.ex"
+      assert issues(vendor_wrapper(), source, wrapper) == []
+    end
+
     test "allows the wrapper module itself, the Finch pool child spec, and a wrapped call" do
       raw = """
       defmodule Emisar.Billing.PaddleClient.Live do

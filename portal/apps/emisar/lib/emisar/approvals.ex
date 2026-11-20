@@ -7,10 +7,11 @@ defmodule Emisar.Approvals do
   Flow:
 
     1. `Runs.dispatch_run` evaluates policy → `:require_approval`.
-    2. It calls `Approvals.peek_matching_grant/5` for the calling API
+    2. It calls `Approvals.peek_matching_grant/6` for the calling API
        key. If a usable grant exists, dispatch fast-paths past
-       approval (and increments the grant's use count).
-    3. Otherwise `Approvals.create_request/3` files an approval row
+       approval and burns one use through `consume_grant_in_multi/3`
+       in the dispatch transaction.
+    3. Otherwise `Approvals.create_request_in_multi/4` files an approval row
        and the LLM-facing endpoint returns `pending_approval` with a
        run id for the LLM to poll on.
     4. The operator decides in the UI. On approve, they pick a
@@ -57,7 +58,7 @@ defmodule Emisar.Approvals do
   @max_projected_decisions 20
 
   # The approver's decision note is free text typed into a textarea. Nothing
-  # bounded it: decide_pending/5 writes through a bare update_all, so there is no
+  # bounded it: decide_pending/6 writes through a bare update_all, so there is no
   # changeset in the path, and the column was varchar(255) — a note past that
   # raised Postgres 22001 INSIDE the decision transaction, which killed the
   # LiveView, left the request pending and its gated run parked, and wrote no
@@ -225,8 +226,7 @@ defmodule Emisar.Approvals do
     with {:ok, subject} <-
            Auth.fetch_current_subject(Authorizer.view_approvals_permission(), subject) do
       {status, opts} = Keyword.pop(opts, :status)
-      {limit, opts} = Keyword.pop(opts, :limit, 100)
-      opts = Keyword.put_new(opts, :page, limit: limit)
+      opts = Keyword.put_new(opts, :page, limit: 100)
 
       # No pre-ordering: the query module's cursor (recent-first) drives the
       # ORDER BY so it matches the keyset WHERE.
@@ -888,7 +888,7 @@ defmodule Emisar.Approvals do
   end
 
   # Default window for a pending approval to sit before the
-  # ApprovalExpiry worker auto-rejects it. Anything past this is
+  # Jobs.ExpireOverdueRequests sweep expires it. Anything past this is
   # almost certainly an on-call who lost the page / left the company —
   # an LLM agent should not be permitted to keep a high-risk action
   # held open for days. Override per-account in the future via a
@@ -908,8 +908,9 @@ defmodule Emisar.Approvals do
   @grant_durations [:once, :one_hour, :one_day, :thirty_days, :ninety_days]
 
   @doc """
-  Internal — called from `Runs.dispatch_run` (already authorized via its
-  own Subject) to file an approval request for a gated run.
+  Internal — the standalone insert of an approval request for a gated run,
+  used by seeds and tests; dispatch files its request inside the dispatch
+  transaction through `create_request_in_multi/4`.
   The run's exact initiating Member is the accountable requester, including
   calls through that Member's API key. `opts` carries the gate snapshot: `:min_approvals`
   (default 1) and `:allow_self_approval` (default true), stamped onto the
@@ -1083,9 +1084,9 @@ defmodule Emisar.Approvals do
       min_approvals: Keyword.get(opts, :min_approvals, 1),
       allow_self_approval: Keyword.get(opts, :allow_self_approval, true),
       context: %{
-        runner_id: run.runner_id,
-        action_id: run.action_id,
-        args_sha256: run.args_sha256
+        "runner_id" => run.runner_id,
+        "action_id" => run.action_id,
+        "args_sha256" => run.args_sha256
       }
     })
   end
@@ -1155,10 +1156,9 @@ defmodule Emisar.Approvals do
     end
   end
 
-  # Per-page batch size — large enough to cap page count (accounts top
-  # out in the hundreds of admins in practice) but small enough that one
-  # batch isn't a memory hazard if a future plan removes the cap entirely.
-  @notify_page_size 200
+  # Per-page batch size: the paginator's maximum page (Repo.Paginator clamps any
+  # larger limit to 100). The cursor walk still reaches every member.
+  @notify_page_size 100
 
   defp notify_approvers(%Request{} = request, run, requested_by_membership_id, event) do
     # Preload runner so the email body can show the runner's name
@@ -1466,7 +1466,7 @@ defmodule Emisar.Approvals do
 
     * `:status` — the EFFECTIVE status. A still-pending request whose deadline
       has been reached reads `:expired`, matching the decide gate
-      (`Request.Query.decide_pending/5` only claims a row while
+      (`Request.Query.decide_pending/6` only claims a row while
       `expires_at > now`), because the sweep may not have flipped it yet. A
       decided request keeps its stored status forever.
     * `:expired?` — whether that effective status is `:expired`.
@@ -1673,7 +1673,6 @@ defmodule Emisar.Approvals do
     end
   end
 
-  # The single decision path — both entry points run the decide permission gate.
   # The note is rendered back on the approval detail, quoted in the outcome
   # email, and exported with the audit trail, so it carries the same bidi
   # deception surface the dispatch justification is rejected for; reject rather
@@ -1720,6 +1719,7 @@ defmodule Emisar.Approvals do
 
   defp fetch_locked_actor_access(_repo, _subject, _permission), do: {:error, :unauthorized}
 
+  # The single decision path — both entry points run the decide permission gate
   # and hand it a validated input first. Fetch the request through the subject
   # scope before evaluating any request-derived guard: callers can hold a stale
   # struct, and must not be able to pair another account's id with their own
@@ -1937,7 +1937,7 @@ defmodule Emisar.Approvals do
          subject
        )
        when is_binary(execution_id) do
-    case Emisar.Runbooks.recheck_execution_approval(execution_id) do
+    case Runbooks.recheck_execution_approval(execution_id) do
       :ok ->
         :ok
 
@@ -2041,7 +2041,7 @@ defmodule Emisar.Approvals do
         fetch_locked_decision_request(repo, request, subject, access)
       end)
       |> Multi.run(:execution_recheck, fn _repo, _changes ->
-        {:ok, Emisar.Runbooks.recheck_execution_approval(request.runbook_execution_id)}
+        {:ok, Runbooks.recheck_execution_approval(request.runbook_execution_id)}
       end)
       |> Multi.merge(fn
         %{execution_recheck: :ok} ->
@@ -2127,7 +2127,7 @@ defmodule Emisar.Approvals do
 
   defp insert_decision_error(changeset) do
     # The shared unique-error test — never a per-context copy.
-    if Emisar.Repo.Changeset.unique_constraint_error?(changeset),
+    if Repo.Changeset.unique_constraint_error?(changeset),
       do: {:error, :already_decided},
       else: {:error, changeset}
   end
@@ -2136,9 +2136,6 @@ defmodule Emisar.Approvals do
   # distinct-approve count read INSIDE the transaction are the only inputs —
   # never the caller's stale struct. Returns an outcome map the audit step,
   # after-commit, and return shape all read from `changes`.
-  defp finalize(_repo, nil, _decision, _by_membership_id, _reason, _grant_attrs),
-    do: {:error, :not_found}
-
   defp finalize(
          repo,
          %Request{status: :pending, run_id: run_id} = locked,
@@ -2291,8 +2288,7 @@ defmodule Emisar.Approvals do
          overridden?
        )
        when is_binary(execution_id) do
-    with {:ok, execution} <-
-           Emisar.Runbooks.activate_pending_approval(repo, execution_id),
+    with {:ok, execution} <- Runbooks.activate_pending_approval(repo, execution_id),
          {:ok, approved} <-
            guarded_transition(locked, :approved, by_membership_id, reason, overridden?) do
       {:ok,
@@ -2455,7 +2451,7 @@ defmodule Emisar.Approvals do
       requester_event_kind(changes)
     )
 
-    _ = Emisar.Runbooks.approval_settled(request.runbook_execution_id)
+    _ = Runbooks.approval_settled(request.runbook_execution_id)
     :ok
   end
 
@@ -2908,8 +2904,9 @@ defmodule Emisar.Approvals do
     * `:scope`    — `:exact_args` keeps the args_sha256 lock from the
       original call; `:any_args` widens to "any args for this action"
 
-  The originating request, runner, and api_key are pulled off the
-  approval `request` so the grant carries the same shape.
+  The account and originating request id come from the approval `request`;
+  the api_key, action, pack_ref, runner, and args digest come from the `run`,
+  so the grant carries the same shape as the call it approved.
   """
   def create_grant(%Request{} = request, %Runs.ActionRun{} = run, granted_by_membership_id, attrs) do
     now = DateTime.utc_now()
@@ -3320,7 +3317,6 @@ defmodule Emisar.Approvals do
       {preloads, opts} = Keyword.pop(opts, :preload, [])
 
       Grant.Query.not_revoked()
-      |> Grant.Query.ordered_by_recent()
       |> Grant.Query.not_expired()
       |> apply_grant_preloads(preloads)
       |> Authorizer.for_subject(subject)
@@ -3522,7 +3518,7 @@ defmodule Emisar.Approvals do
 
   defp maybe_advance_expired_execution(%Request{runbook_execution_id: execution_id})
        when is_binary(execution_id),
-       do: Emisar.Runbooks.approval_settled(execution_id)
+       do: Runbooks.approval_settled(execution_id)
 
   defp maybe_advance_expired_execution(%Request{}), do: :ok
 end

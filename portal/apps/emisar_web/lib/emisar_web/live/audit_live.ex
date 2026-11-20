@@ -4,7 +4,7 @@ defmodule EmisarWeb.AuditLive do
   display labels in a single batched pass (`Audit.resolve_references/2`)
   and render as links into the relevant detail page when one exists.
   Click a row to drill into the full event (payload, IP, user agent,
-  request id) at `/app/audit/:id`.
+  request id) at `/app/:account_id_or_slug/audit/:id`.
   """
   use EmisarWeb, :live_view
   alias Emisar.{ApiKeys, Audit, Billing}
@@ -96,17 +96,18 @@ defmodule EmisarWeb.AuditLive do
   def handle_event("filter", params, socket) do
     params = Map.drop(params, ["option_search", "_target"])
     # The filter form doesn't carry actor_id when the "by actor" picker is
-    # hidden (it's set by clicking a row's actor), so merge it back or a
-    # dropdown change would silently drop an active actor filter. From/To now
+    # hidden (it arrives from a deep link or the conditional picker), so merge
+    # it back or a dropdown change would silently drop an active actor filter. From/To now
     # live in the form, so the form params carry them.
     preserved = Map.take(socket.assigns.filter_params, ["actor_id", "window"])
     merged = Map.merge(preserved, params)
 
     # A manually edited From/To supersedes the quick-range segment — its highlight
-    # would lie about the bound otherwise.
+    # would lie about the bound otherwise. A preset clears To, but the form still
+    # submits its empty input, so normalize blank/nil before comparing.
     merged =
-      if params["from"] != socket.assigns.filter_params["from"] or
-           params["to"] != socket.assigns.filter_params["to"],
+      if blank_to_nil(params["from"]) != blank_to_nil(socket.assigns.filter_params["from"]) or
+           blank_to_nil(params["to"]) != blank_to_nil(socket.assigns.filter_params["to"]),
          do: Map.delete(merged, "window"),
          else: merged
 
@@ -456,9 +457,15 @@ defmodule EmisarWeb.AuditLive do
     # control belongs next to its trigger), not tacked on at the end.
     # base_filters stays the opts source; the actor/target pickers are
     # render-only — actor_id/target_id apply via the opts path in `load/2`.
+    # A collapsed panel still loads the picker for a SELECTED identity, so the
+    # closed Filters line can name it instead of silently narrowing the trail.
     pickers =
-      if connected?(socket) and socket.assigns.filters_open? do
-        Map.new(@identity_fields, fn {field, {name, _kind_field, _side}} ->
+      if connected?(socket) do
+        @identity_fields
+        |> Enum.filter(fn {field, _spec} ->
+          socket.assigns.filters_open? or not is_nil(blank_to_nil(params[field]))
+        end)
+        |> Map.new(fn {field, {name, _kind_field, _side}} ->
           {name, identity_picker(field, params, subject)}
         end)
         |> Map.reject(fn {_name, picker} -> is_nil(picker) end)
@@ -475,10 +482,10 @@ defmodule EmisarWeb.AuditLive do
 
   defp assign_filter_summary(socket, params) do
     filters = socket.assigns.filters
-    # actor_id rides as a URL param outside the form (set by clicking a row's
-    # actor); target_id is set by its dynamic picker. Both aren't in
-    # base_filters, so they're threaded into list_events directly. From/To are
-    # LiveTable datetime filters — params_to_opts applies them via :filter.
+    # actor_id and target_id arrive from a deep link or their dynamic pickers.
+    # Neither is in base_filters, so they're threaded into list_events directly.
+    # From/To are LiveTable datetime filters — params_to_opts applies them via
+    # :filter.
     socket
     |> assign(:filter_params, params)
     |> assign(:active_facet_count, LiveTable.count_active_filters(params, filters))
@@ -643,15 +650,12 @@ defmodule EmisarWeb.AuditLive do
         </span>
       </button>
 
-      <%!-- The trail itself: one line per event, DAY-grouped, directly on the
-           canvas — no table chrome. Each row is dot (outcome) + the event's
-           human label (its ONE identity — the machine code lives on the
-           detail page) + a quiet who/what/where meta fragment, with a
-           UTC-forensic clock on the right edge. The whole page reads on one
-           clock: group headers carry the UTC date, rows the UTC time, and the
-           full stamp rides each row's title attribute — matching the UTC
-           filter bounds (the old per-row local_time hook silently disagreed
-           with them). --%>
+      <%!-- The trail itself: one line per event, directly on the canvas — no
+           table chrome. Each row is dot (outcome) + the event's human label
+           (its ONE identity — the machine code lives on the detail page) + a
+           quiet who/what/where meta fragment, folding into Actor / Target /
+           Source IP columns from xl. Row times are relative; each one's
+           tooltip carries the absolute stamp. --%>
       <LiveTable.live_table
         id="audit-events"
         path={~p"/app/#{@current_account}/audit"}
@@ -861,9 +865,8 @@ defmodule EmisarWeb.AuditLive do
     """
   end
 
-  # One quiet meta STRING per event — the accountable identity by name (the
-  # kind prefix + the generic ACTOR/SUBJECT/IP columns died with the grid),
-  # then "→ target" only when the event acted ON something other than its
+  # One quiet meta STRING per event for the folded (below-xl) row — the
+  # accountable identity by name (no kind prefix), then "→ target" only when the event acted ON something other than its
   # actor (a sign-in acts on itself; a role change acts on a teammate), then
   # the payload's notable pairs, then the source IP. Plain text on purpose:
   # the row's one link is the row itself (→ the event detail).
@@ -1015,8 +1018,6 @@ defmodule EmisarWeb.AuditLive do
   queue: the tone table (design-console-ux §2) reads rose as "denied", and one
   refusal must not wear two colors on two surfaces. Keyed off
   `Audit.event_outcome/1` for the shared event classification.
-  Public because the detail page's title dot must match the list (same sharing
-  mechanism as `ref/1`).
   """
   def outcome_tone(event_type) do
     case Audit.event_outcome(event_type) do
@@ -1061,8 +1062,8 @@ defmodule EmisarWeb.AuditLive do
   end
 
   # From/To now live in `filters`, so the shared LiveTable check covers them;
-  # actor_id is the one filter outside the bar (set by a row click), so it's
-  # tested explicitly.
+  # actor_id can arrive outside the bar (a deep link, or with the picker
+  # unloaded), so it's tested explicitly.
   defp any_filter_active?(params, filters),
     do: blank_to_nil(params["actor_id"]) != nil or LiveTable.has_active_filters?(params, filters)
 

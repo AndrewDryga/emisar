@@ -156,15 +156,13 @@ defmodule Emisar.Runs.ActionRun.Query do
 
   @doc """
   Id-only projection of one account's runs that reached a terminal state before
-  `ts`. Built for use as a subquery by `prunable_ids/3` (the action-run
-  retention sweep) — `finished_at` is the authoritative
-  "this run is old" signal, so still-running / never-finished runs (null
-  `finished_at`) are excluded.
+  `ts`, paged by `prunable_ids/3` (the action-run retention sweep) —
+  `finished_at` is the authoritative "this run is old" signal, so
+  still-running / never-finished runs (null `finished_at`) are excluded, while a
+  policy-denied run, which never gets one, ages by `queued_at`.
 
-  The account scope belongs INSIDE the subquery. Scoping only the outer query
-  left this enumerating every tenant's terminal runs on the largest table in the
-  schema, once per account per day, so each account's sweep cost grew with the
-  size of the whole fleet.
+  Always scoped to one account, so each account's sweep cost follows its own
+  runs, not the size of the whole fleet.
   """
   def finished_before_ids(queryable \\ all(), account_id, %DateTime{} = ts) do
     queryable
@@ -182,11 +180,8 @@ defmodule Emisar.Runs.ActionRun.Query do
 
   @doc "A bounded page of terminal action-run ids whose finished time is before `cutoff`."
   def prunable_ids(account_id, %DateTime{} = cutoff, limit) when is_integer(limit) do
-    all()
-    |> by_account_id(account_id)
-    |> where([runs: r], r.id in subquery(finished_before_ids(account_id, cutoff)))
+    finished_before_ids(account_id, cutoff)
     |> limit(^limit)
-    |> select([runs: r], r.id)
   end
 
   def by_ids(queryable \\ all(), ids) when is_list(ids),

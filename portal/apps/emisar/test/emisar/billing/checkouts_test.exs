@@ -355,6 +355,38 @@ defmodule Emisar.Billing.CheckoutsTest do
     refute_received {:paddle, :bind, _args, _caller}
   end
 
+  test "recovery returns an intent another path finished after the unpaid provider read", %{
+    account: account,
+    subject: subject
+  } do
+    for finished <- [:canceled, :subscribed] do
+      assert {:ok, _url} = Billing.start_checkout(account, "team", :month, subject)
+      assert_received {:paddle, :create, _attrs, _caller}
+      assert_received {:paddle, :bind, _args, _caller}
+      current = intent(account)
+
+      # The provider still reports the transaction unpaid, but the intent
+      # finishes before recovery re-reads it under the lock.
+      Config.put_override(:emisar, :billing_test_after_call, fn
+        :get_transaction, _id, result ->
+          current |> Ecto.Changeset.change(state: finished) |> Repo.update!()
+          result
+
+        _operation, _args, result ->
+          result
+      end)
+
+      assert {:ok, %CheckoutIntent{state: ^finished} = recovered} =
+               Billing.Checkouts.recover(current)
+
+      assert recovered.id == current.id
+      assert Repo.reload!(current).state == finished
+      refute_received {:paddle, :bind, _args, _caller}
+      refute_received {:paddle, :cancel_transaction, _id, _caller}
+      Config.put_override(:emisar, :billing_test_after_call, fn _op, _args, result -> result end)
+    end
+  end
+
   defp intent(account) do
     account.id
     |> CheckoutIntent.Query.by_account_id()

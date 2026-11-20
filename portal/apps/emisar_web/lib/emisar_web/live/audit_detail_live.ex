@@ -1,9 +1,10 @@
 defmodule EmisarWeb.AuditDetailLive do
   @moduledoc """
   Single audit event detail view. Shareable URL for incident response:
-  paste `/app/audit/:id` into a Slack thread, post in a postmortem.
+  paste `/app/:account_id_or_slug/audit/:id` into a Slack thread, post in a
+  postmortem.
 
-  Renders every field on the event: when, type, actor + subject (with
+  Renders every field on the event: when, type, actor + target (with
   links into their detail pages when one exists), IP, user agent,
   request id, and the full payload as pretty JSON.
   """
@@ -20,7 +21,7 @@ defmodule EmisarWeb.AuditDetailLive do
         # target kinds even use, so they wait for the connected mount instead
         # of being resolved twice per view.
         subject = socket.assigns.current_subject
-        linked_runner = if connected?(socket), do: subject_runner(event, subject)
+        linked_runner = if connected?(socket), do: target_runner(event, subject)
         linked_run = if connected?(socket), do: target_run(event, subject)
 
         {:ok,
@@ -28,7 +29,7 @@ defmodule EmisarWeb.AuditDetailLive do
          |> assign(:page_title, "Audit · #{event.event_type}")
          |> assign(:event, event)
          |> assign(:refs, refs)
-         |> assign(:subject_runner, linked_runner)
+         |> assign(:target_runner, linked_runner)
          |> assign(:target_run, linked_run)}
 
       {:error, _} ->
@@ -43,7 +44,7 @@ defmodule EmisarWeb.AuditDetailLive do
   # events now target the runner directly and this stays nil. nil unless the
   # target is a run still readable in the caller's account; the run fetch is
   # subject-gated, so cross-account ids resolve to nil rather than leaking.
-  defp subject_runner(%{target_kind: "action_run", target_id: id}, %{} = subject)
+  defp target_runner(%{target_kind: "action_run", target_id: id}, %{} = subject)
        when is_binary(id) do
     case Runs.fetch_run_by_id(id, subject, preload: [:runner]) do
       {:ok, %{runner: %Runners.Runner{} = runner}} -> runner
@@ -51,7 +52,7 @@ defmodule EmisarWeb.AuditDetailLive do
     end
   end
 
-  defp subject_runner(_event, _subject), do: nil
+  defp target_runner(_event, _subject), do: nil
 
   # The inverse for the CURRENT run-event shape (target = the runner, the run
   # in `payload.run_id`): the Target card links back to the run. Same
@@ -178,7 +179,7 @@ defmodule EmisarWeb.AuditDetailLive do
               label={@event.target_label}
               refs={@refs}
               current_account={@current_account}
-              runner={@subject_runner}
+              runner={@target_runner}
               run={@target_run}
             />
           </div>
@@ -489,7 +490,7 @@ defmodule EmisarWeb.AuditDetailLive do
            UUID in a full-width card. --%>
       <dl
         :if={@id || @runner || @run || @device || @auth_method || @mcp_client_label != ""}
-        class="mt-3 grid grid-cols-[max-content,minmax(0,1fr)] gap-x-3 gap-y-1 text-xs leading-5"
+        class="mt-3 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs leading-5"
         data-audit-facts
       >
         <dt :if={@id} class={entity_fact_label_class()}>ID</dt>
@@ -629,7 +630,7 @@ defmodule EmisarWeb.AuditDetailLive do
   defp device_label(ua) do
     # The runner (and any bare Go HTTP client that didn't set a custom UA)
     # isn't a "device" worth showing on the actor — return nil so the line
-    # hides. The runner appears under the Subject when an event is about one.
+    # hides. The runner appears under the Target when an event is about one.
     if is_nil(ua) or UserAgent.go_http_client?(ua), do: nil, else: UserAgent.label(ua)
   end
 
@@ -650,14 +651,14 @@ defmodule EmisarWeb.AuditDetailLive do
   # Pulls structured device-posture fields out of the MCP bridge's
   # User-Agent. The bridge stamps a parens-delimited posture:
   #
-  #   "emisar-mcp/0.2.0 (client=claude-desktop; host=andrews-mbp.local)"
+  #   "emisar-mcp/0.2.0 (client=claude-desktop; host=andrews-mbp.local; os=darwin)"
   #
-  # → %{bridge?: true, client: ..., host: ...}
+  # → %{bridge?: true, client: ..., host: ..., os: ...}
   #
   # For everything else (`Go-http-client/1.1` from runners,
   # `Mozilla/...` from browsers, nil), `:bridge?` is false and the
-  # detail page hides the Client/Host/MCP-bridge cells — they would
-  # otherwise misattribute the runner's HTTP UA as an "MCP bridge".
+  # detail page hides the MCP client row — it would otherwise
+  # misattribute the runner's HTTP UA as an "MCP bridge".
   defp parse_client_posture(nil),
     do: %{bridge?: false, client: nil, host: nil, os: nil}
 

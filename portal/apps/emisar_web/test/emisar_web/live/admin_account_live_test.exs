@@ -9,8 +9,8 @@ defmodule EmisarWeb.AdminAccountLiveTest do
   alias Emisar.{Audit, Repo}
 
   setup %{conn: conn} do
-    {conn, staff_session} = log_in_staff(conn)
-    %{conn: conn, staff_session: staff_session}
+    {conn, _staff_session} = log_in_staff(conn)
+    %{conn: conn}
   end
 
   # Every fixture in here writes audit rows of its own, so the staff event has
@@ -70,7 +70,10 @@ defmodule EmisarWeb.AdminAccountLiveTest do
       # in the markup — assert the segment that identifies this action.
       assert html =~ "replication_status"
       assert has_element?(live, "#run-#{run.id}")
-      assert html =~ "1 unrevoked API key."
+      assert html =~ "1 run created in the last 30 days."
+      assert has_element?(live, "#mcp-client-0", "1 run in the last 30 days")
+      refute has_element?(live, "#fleet-capped")
+      assert html =~ "1 unexpired, unrevoked API key."
 
       # The fixture subscription has no Paddle id, so its source (legacy_manual)
       # differs from the plan — the row renders, humanized.
@@ -106,6 +109,42 @@ defmodule EmisarWeb.AdminAccountLiveTest do
 
       assert has_element?(live, "#member-#{pending.id}", "Invitation pending")
       refute has_element?(live, "#member-#{owner.id}", "Invitation pending")
+    end
+
+    test "run counts read plural past one, and a capped runner list says so", %{
+      conn: conn,
+      account: account,
+      runner: runner
+    } do
+      Fixtures.Runs.create_run(
+        account_id: account.id,
+        runner_id: runner.id,
+        action_id: "postgres.replication_status",
+        source: :mcp
+      )
+
+      for index <- 1..50 do
+        Fixtures.Runners.create_runner(account_id: account.id, name: "extra-#{index}")
+      end
+
+      {:ok, live, html} = live(conn, ~p"/admin/accounts/#{account.id}")
+
+      assert html =~ "2 runs created in the last 30 days."
+      assert has_element?(live, "#mcp-client-0", "2 runs in the last 30 days")
+
+      assert has_element?(
+               live,
+               "#fleet-capped",
+               "Showing the 50 most recently connected runners."
+             )
+
+      rows =
+        html
+        |> LazyHTML.from_document()
+        |> LazyHTML.query("[id^='runner-connected-']")
+        |> Enum.count()
+
+      assert rows == 50
     end
 
     test "the account can be reached by slug as well as id", %{conn: conn, account: account} do

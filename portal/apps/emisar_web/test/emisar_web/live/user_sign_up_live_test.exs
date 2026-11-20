@@ -1,6 +1,6 @@
 defmodule EmisarWeb.UserSignUpLiveTest do
   @moduledoc """
-  Self-serve sign-up (plan §3 "Sign-up"): the form validates the owner's name
+  Self-serve sign-up: the form validates the owner's name
   and address and the workspace's name, then arms its POST to `/sign_up`, which
   sends the code and keeps the intent server-side. Nothing — no workspace,
   Member or slug — exists until that code comes back in this browser
@@ -134,8 +134,7 @@ defmodule EmisarWeb.UserSignUpLiveTest do
   test "an address already a Member somewhere signs up like any other address", %{conn: conn} do
     # Emails are not global: being a Member of another workspace, invited to
     # one, or provisioned by a directory hides nothing at sign-up.
-    {conn_owner, owner, _account} = register_and_log_in(build_conn())
-    assert conn_owner
+    {_conn_owner, owner, _account} = register_and_log_in(build_conn())
 
     {:ok, lv, _html} = live(conn, ~p"/sign_up")
 

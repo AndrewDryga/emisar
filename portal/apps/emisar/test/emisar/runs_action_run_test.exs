@@ -93,7 +93,7 @@ defmodule Emisar.Runs.ActionRunTest do
     end
   end
 
-  describe "create_changeset/2" do
+  describe "create/1" do
     test "requires account_id, runner_id, request_id, action_id" do
       changeset = ActionRun.Changeset.create(%{})
       refute changeset.valid?

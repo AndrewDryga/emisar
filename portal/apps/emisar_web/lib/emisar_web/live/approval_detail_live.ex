@@ -155,10 +155,8 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp target_noun(true), do: "runbook execution"
   defp target_noun(false), do: "action"
 
-  defp execution_action_label("draft_test", action),
-    do: "#{action} draft test"
-
-  defp execution_action_label(_execution_kind, action), do: "#{action} runbook"
+  defp execution_action_label("draft_test"), do: "Approve draft test"
+  defp execution_action_label(_execution_kind), do: "Approve runbook"
 
   # The labels + posted values are the web's; which durations may be offered is
   # the account's cap, owned by Approvals — so this only converts its atoms to
@@ -169,10 +167,11 @@ defmodule EmisarWeb.ApprovalDetailLive do
     Enum.filter(@grant_duration_options, fn {_label, value} -> value in allowed end)
   end
 
-  # Loads the recorded votes + the distinct-approve tally and derives the two
-  # server-side flags the decision panel reads — whether THIS user already
-  # decided, and whether self-approval is forbidden for them. The context still
-  # re-checks both on the decision event (IL-15); these only drive the UI.
+  # Loads the recorded votes + the distinct-approve tally and derives the
+  # server-side flag the decision panel reads — whether THIS user already
+  # decided. (`self_blocked?` comes from the domain review in
+  # assign_decision_authority/2.) The context still re-checks both on the
+  # decision event (IL-15); these only drive the UI.
   defp assign_decisions(socket, request) do
     subject = socket.assigns.current_subject
 
@@ -1136,7 +1135,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                     "text-sm leading-relaxed text-zinc-200",
                     not lone_reason?(@request, @run) && "mt-1"
                   ]}>
-                    {@request.reason}
+                    <span class="whitespace-pre-wrap">{@request.reason}</span>
                   </dd>
                 </div>
                 <%!-- The agent's justification chain, snapshotted on the request:
@@ -1368,7 +1367,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
     approve_label =
       if assigns.execution_request?,
-        do: execution_action_label(assigns.execution_kind, "Approve"),
+        do: execution_action_label(assigns.execution_kind),
         else: "Approve"
 
     assigns =

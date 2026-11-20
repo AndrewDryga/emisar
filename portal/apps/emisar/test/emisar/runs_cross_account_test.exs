@@ -15,7 +15,7 @@ defmodule Emisar.RunsCrossAccountTest do
       account_a = Fixtures.Accounts.create_account()
       account_b = Fixtures.Accounts.create_account()
       runner_b = Fixtures.Runners.create_runner(account_id: account_b.id)
-      _ = Fixtures.Policies.create_policy(account_id: account_a.id)
+      Fixtures.Policies.create_policy(account_id: account_a.id)
 
       attrs = %{
         runner_id: runner_b.id,
@@ -35,7 +35,7 @@ defmodule Emisar.RunsCrossAccountTest do
 
     test "rejects a missing runner_id" do
       account = Fixtures.Accounts.create_account()
-      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      Fixtures.Policies.create_policy(account_id: account.id)
       membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
       subject = Fixtures.Subjects.subject_for(membership)
 
@@ -51,7 +51,7 @@ defmodule Emisar.RunsCrossAccountTest do
     test "rejects a disabled runner (even within the same account)" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      Fixtures.Policies.create_policy(account_id: account.id)
       membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
       subject = Fixtures.Subjects.subject_for(membership)
 

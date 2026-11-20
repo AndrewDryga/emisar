@@ -548,9 +548,10 @@ defmodule EmisarWeb.PacksLive do
     if Map.has_key?(socket.assigns.inspected_actions, id) do
       socket
     else
-      # Three distinct values, because this list is what an admin reads before
-      # trusting bytes: nil (not read yet), :error (the read failed), or the
-      # actions. Collapsing the failure to [] said "advertises nothing" about a
+      # Distinct values, because this list is what an admin reads before
+      # trusting bytes: nil (not read yet), :error (the read failed),
+      # :incomplete_manifest (the trusted manifest lacks the complete shape), or
+      # the actions. Collapsing the failure to [] said "advertises nothing" about a
       # version whose contents we never saw.
       actions =
         case Catalog.list_console_pack_actions([id], socket.assigns.current_subject) do
@@ -919,7 +920,7 @@ defmodule EmisarWeb.PacksLive do
 
   attr :inspected, :any,
     required: true,
-    doc: "nil (unloaded), :error (read failed), [] (none), or the action list"
+    doc: "nil (unloaded), :error, :incomplete_manifest, [] (none), or the action list"
 
   attr :matched, :any, default: nil, doc: "MapSet of matched action_ids, or nil when unfiltered"
 
@@ -972,8 +973,8 @@ defmodule EmisarWeb.PacksLive do
   end
 
   # The contents a disclosure renders: everything when unfiltered, only the
-  # matched actions when a filter is active. nil (still loading) and :error (the
-  # read failed) pass through — neither is a list to filter.
+  # matched actions when a filter is active. nil (still loading), :error (the
+  # read failed), and :incomplete_manifest pass through — none is a list to filter.
   defp filtered_contents(nil, _matched), do: nil
   defp filtered_contents(:error, _matched), do: :error
   defp filtered_contents(:incomplete_manifest, _matched), do: :incomplete_manifest
@@ -1198,7 +1199,7 @@ defmodule EmisarWeb.PacksLive do
            hash is a plain identifier, so it reads neutral. --%>
       <dl
         :if={not is_nil(@version.hash)}
-        class="mt-3 grid grid-cols-[max-content,1fr] gap-x-3 gap-y-1 text-[11px]"
+        class="mt-3 grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 text-[11px]"
       >
         <.kv layout={:grid} label="Trusted hash">{@version.hash}</.kv>
         <.kv layout={:grid} label="Reported hash">
@@ -1382,9 +1383,7 @@ defmodule EmisarWeb.PacksLive do
           size={:sm}
           type="button"
           phx-click={
-            JS.push("open_reject",
-              value: %{id: @version.id, pack_id: @pack_id, version: @version.version}
-            )
+            JS.push("open_reject", value: %{id: @version.id})
             |> show_confirm_dialog("reject-pack")
           }
         >
@@ -1898,7 +1897,7 @@ defmodule EmisarWeb.PacksLive do
       >
         <.confirm_dialog
           id="pack-action"
-          tone={if @pending_pack_action.action == "trust", do: :amber, else: :neutral}
+          tone={if @pending_pack_action.action == "trust", do: :amber, else: :rose}
           title={pack_action_title(@pending_pack_action)}
           confirm_label={pack_action_label(@pending_pack_action)}
           on_confirm={confirm_pack_action(@pending_pack_action)}
@@ -2020,9 +2019,6 @@ defmodule EmisarWeb.PacksLive do
     end
   end
 
-  # The stored hash already carries the "sha256:" prefix the template
-  # labels — strip it before slicing, or the row reads "sha256:sha256:…"
-  # and shows five useful hex chars of the value operators verify.
   attr :pack_id, :string, required: true
 
   # A link out to the public pack-registry page. The registry page is

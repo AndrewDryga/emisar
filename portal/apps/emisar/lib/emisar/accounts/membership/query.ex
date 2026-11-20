@@ -32,9 +32,6 @@ defmodule Emisar.Accounts.Membership.Query do
   def by_id(queryable, id),
     do: where(queryable, [memberships: m], m.id == ^id)
 
-  def removed(queryable \\ all()),
-    do: where(queryable, [memberships: m], not is_nil(m.deleted_at))
-
   def not_id(queryable, id),
     do: where(queryable, [memberships: m], m.id != ^id)
 

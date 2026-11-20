@@ -62,7 +62,7 @@ defmodule Emisar.Auth.Jobs.TokenRetentionTest do
   test "sweeps every context once it is past its window", %{member: member} do
     contexts =
       ~w(session magic_link magic_link_verified mfa_enrollment_pending mfa_enrollment
-         oidc_identity_step_up)
+         oidc_identity_step_up email_change email_change_new)
 
     for context <- contexts do
       Fixtures.Auth.create_aged_token!(

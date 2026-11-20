@@ -46,6 +46,21 @@ defmodule Emisar.Seeds.Helpers do
   def now, do: DateTime.utc_now()
   def mins_ago(minutes), do: DateTime.add(now(), -minutes * 60, :second)
   def hours_ago(hours), do: DateTime.add(now(), -hours * 3600, :second)
+
+  @doc """
+  Stamps an audit changeset at `occurred_at` and moves its retention horizon by
+  the same amount, as a live write at that moment would have stamped it.
+  """
+  def backdate_event(%Ecto.Changeset{} = changeset, %DateTime{} = occurred_at) do
+    shift =
+      DateTime.diff(occurred_at, Ecto.Changeset.get_field(changeset, :occurred_at), :microsecond)
+
+    retain_until =
+      DateTime.add(Ecto.Changeset.get_field(changeset, :retain_until), shift, :microsecond)
+
+    Ecto.Changeset.change(changeset, occurred_at: occurred_at, retain_until: retain_until)
+  end
+
   def days_ago(days), do: DateTime.add(now(), -days * 86_400, :second)
   def days_out(days), do: DateTime.add(now(), days * 86_400, :second)
 
@@ -186,11 +201,10 @@ defmodule Emisar.Seeds.Helpers do
     account
   end
 
-  # Every "is this row already here?" lookup reads the account's WHOLE table. A
-  # paginated context read would only ever see its first page, and the seed
-  # deliberately fills each list past one page — so a page-scanning lookup stops
-  # finding the rows it wrote last time and tries to insert them again, which is
-  # a unique-violation crash, not a no-op reseed.
+  # An "is this row already here?" lookup must see every matching row in the
+  # account. A paginated context read sees only its first page, so a row past it
+  # would look missing and be inserted again: a unique-violation crash, not a
+  # no-op reseed.
   def account_api_keys(%Account{} = account) do
     ApiKeys.ApiKey.Query.not_deleted()
     |> ApiKeys.ApiKey.Query.by_account_id(account.id)

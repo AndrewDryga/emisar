@@ -1,6 +1,8 @@
 defmodule Emisar.Policies do
   @moduledoc """
-  Single policy per account. Two-layer model:
+  One live policy per scope: the account default plus optional runner and
+  group rulesets. Dispatch resolves the most specific scope (runner > group >
+  account) and evaluates it wholesale. Each policy has a two-layer model:
 
     * **risk-tier defaults** — one decision per catalog risk tier
       (`low`/`medium`/`high`/`critical`).
@@ -24,7 +26,8 @@ defmodule Emisar.Policies do
             "decision" => "allow"},
           %{"name" => "block-drop", "action" => "*.drop_*",
             "decision" => "deny"}
-        ]
+        ],
+        "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
       }
   """
   alias Ecto.Multi
@@ -615,9 +618,10 @@ defmodule Emisar.Policies do
   end
 
   @doc """
-  Subject-gated save: ONE upsert writes the account's policy whether
-  this is the first save or an edit — one policy per account, so the
-  partial unique index on `account_id` is the row's identity. The
+  Subject-gated save of the account-default scope: ONE upsert writes it whether
+  this is the first save or an edit. The partial unique index on
+  `(account_id, scope_type, scope_value) WHERE deleted_at IS NULL` is the row's
+  identity. The
   conflict update adopts the new rules and bumps `vsn` only when they
   actually changed; the audit diff reads its before-snapshot as a step
   of the same transaction. Because this default governs every runner and its
@@ -633,12 +637,14 @@ defmodule Emisar.Policies do
   dispatch resolution picks it over the account default for that runner/group.
 
   The scope must be one the subject's own runner access reaches:
-  `{:error, :runner_not_found}` for a runner that is foreign, deleted, malformed,
-  or outside their fleet. A `:group` scope is a name rather than a host, so an
+  `{:error, :runner_not_found}` for a runner that is foreign, deleted, or
+  malformed, and `{:error, :unauthorized}` for an existing runner of the account
+  outside their fleet. A `:group` scope is a name rather than a host, so an
   UNRESTRICTED subject may name any group — including one nothing is enrolled in
-  yet, so a ruleset can be prepared before the hosts join it — while a narrowed
-  subject gets `{:error, :group_not_found}` for any group outside their reach,
-  known or not.
+  yet, so a ruleset can be prepared before the hosts join it. A narrowed subject
+  gets `{:error, :unauthorized}` for a known group of the account (enrolled or
+  already holding a ruleset) outside their reach, and `{:error, :group_not_found}`
+  for a group the account does not know.
 
   Policy rules match action ids and risk tiers rather than pack ids, so the
   writer also needs CURRENT full pack access.
@@ -866,12 +872,8 @@ defmodule Emisar.Policies do
   # Policy rules match risk tiers and action globs, not pack ids, so every write
   # needs the whole pack dimension. The account default also governs every
   # runner; a targeted override stays confined by the reach check below.
-  defp ensure_policy_mutation_access(:account, %Subject{} = subject) do
-    ensure_policy_access(:account, Accounts.runner_access_for_subject(subject))
-  end
-
   defp ensure_policy_mutation_access(scope_type, %Subject{} = subject)
-       when scope_type in [:runner, :group] do
+       when scope_type in [:account, :runner, :group] do
     ensure_policy_access(scope_type, Accounts.runner_access_for_subject(subject))
   end
 

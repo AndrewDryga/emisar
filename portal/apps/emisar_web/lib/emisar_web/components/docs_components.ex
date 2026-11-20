@@ -143,7 +143,7 @@ defmodule EmisarWeb.DocsComponents do
     default: false,
     doc: """
     Collapse every group but the current one. The sticky rail is its own
-    overflow-y-auto scroll container, so 43 links run about twice its height and
+    overflow-y-auto scroll container, so its links run well past its height and
     the page you are on can load below the fold with nothing saying which way to
     scroll. Collapsed, the eight group labels stay visible as the map and the
     open group is the one you are in. `<details>` because these pages are
@@ -594,7 +594,7 @@ defmodule EmisarWeb.DocsComponents do
   the set.
   """
   attr :component, :atom, required: true, values: [:runner, :mcp]
-  attr :detected_os, :atom, default: nil
+  attr :detected_os, :atom, required: true
 
   def docs_verify_download(assigns) do
     assigns = assign(assigns, release_artifact(assigns.component))
@@ -688,20 +688,13 @@ defmodule EmisarWeb.DocsComponents do
             class="text-brand-400 hover:text-brand-300"
           >Network requirements</.link>.
         </p>
-        <.os_docs_code :if={@detected_os} detected={@detected_os}>
+        <.os_docs_code detected={@detected_os}>
           <:tab os={:linux} label="Linux" copy_text={@linux_commands}>{@linux_transcript}</:tab>
           <:tab os={:windows} label="Windows" copy_text={@windows_commands}>
             {@windows_transcript}
           </:tab>
           <:tab os={:macos} label="macOS" copy_text={@macos_commands}>{@macos_transcript}</:tab>
         </.os_docs_code>
-        <.docs_code
-          :if={!@detected_os}
-          label="Linux"
-          copy_text={@linux_commands}
-        >
-          {@linux_transcript}
-        </.docs_code>
         <p class="mt-3 text-xs leading-5 text-zinc-400">
           More on the signing pipeline: <.link
             href="/trust#release-integrity"
@@ -977,7 +970,7 @@ defmodule EmisarWeb.DocsComponents do
   and Replay stay manual. Honors prefers-reduced-motion: no autoplay, no
   cursor, instant swaps.
 
-  Each `:frame` is one real capture — `src`/`alt` for the image (1600x1475,
+  Each `:frame` is one real capture — `src`/`alt` for the image (1600x1650,
   from `./run capture docs loop-*`), `label` for its step tab, `caption` for
   the line under the image. `click` is where the cursor clicks to leave this
   frame ("x,y" percentages of the image, from the capture take's printed
@@ -1064,11 +1057,11 @@ defmodule EmisarWeb.DocsComponents do
                 src={frame.src}
                 alt={frame.alt}
                 width="1600"
-                height="1475"
+                height="1650"
                 loading="lazy"
                 class="w-full"
               />
-              <%!-- The spotlights (a frame may play up to two in sequence): a
+              <%!-- The spotlights (a frame may play up to three in sequence): a
                  transparent hole whose oversized shadow dims everything else in
                  the (overflow-clipped) frame; the label pins to the hole's
                  edge. --%>

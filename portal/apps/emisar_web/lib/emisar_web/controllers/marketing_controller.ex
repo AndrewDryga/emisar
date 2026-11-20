@@ -7,9 +7,9 @@ defmodule EmisarWeb.MarketingController do
 
   All SEO meta tags (page_title, meta_description, canonical_url, og_*,
   optional json_ld) flow into `layouts/root.html.heex` via assigns.
-  Pages are defined declaratively in @pages and the per-action defs are
-  generated below — keeps "add a page" to one row, and prevents drift
-  between routes, sitemap, and per-page metadata.
+  Pages are defined declaratively in @pages and the per-action defs and
+  their title, meta, canonical, and breadcrumb are generated below. Routes
+  (router.ex) and sitemap/docs-nav registration are maintained separately.
   """
   use EmisarWeb, :controller
   alias Emisar.{Billing, Catalog}
@@ -699,10 +699,7 @@ defmodule EmisarWeb.MarketingController do
   for {path, action, template, title, description} <- @pages do
     base_attrs = [page_title: title, canonical_url: @base <> path]
 
-    attrs =
-      if description,
-        do: Keyword.put(base_attrs, :meta_description, description),
-        else: base_attrs
+    attrs = Keyword.put(base_attrs, :meta_description, description)
 
     # BreadcrumbList structured data for every generated page (home + pricing
     # carry their own bespoke JSON-LD). Derived from the path — Home → Docs
@@ -816,15 +813,18 @@ defmodule EmisarWeb.MarketingController do
 
   # How it works draws the default policy as a line of the four risk tiers, each
   # with its live action count from the published catalog (like the home page's
-  # total), so the numbers never go stale. A tier with no actions shows 0.
+  # total), so the numbers never go stale. A tier with no actions shows 0. The
+  # map's packs caption reads the same live totals.
   defp assign_action_count_by_risk(conn, _opts) do
     counts = Catalog.published_action_count_by_risk()
 
-    assign(
-      conn,
+    conn
+    |> assign(
       :action_count_by_risk,
       Map.new(~w(low medium high critical), &{&1, delimit_int(Map.get(counts, &1, 0))})
     )
+    |> assign(:pack_count, Catalog.published_pack_count())
+    |> assign(:action_count, delimit_int(Catalog.published_action_count()))
   end
 
   # One dynamic action for every guide. The guide template (named by the

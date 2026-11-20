@@ -1,11 +1,26 @@
 defmodule EmisarWeb.PacksLiveTest do
   use EmisarWeb.ConnCase, async: true
 
-  @hcp_hash "sha256:7d808108fe995fbb94f0c44396a2df00f6bae257b1cccef204193063660d59c6"
   @hcp_denied ~w(tfc.apply_run tfc.discard_run tfc.cancel_run tfc.retry_run tfc.force_unlock_workspace)
 
+  # The current published hcp-terraform release, read from the trust baseline: a
+  # pinned literal leaves the rolling version window as new releases ship.
+  defp hcp_report do
+    version = Emisar.Catalog.PackBaseline.current_version("hcp-terraform")
+
+    %{
+      "version" => version,
+      "hash" => Emisar.Catalog.PackBaseline.lookup("hcp-terraform", version)
+    }
+  end
+
+  defp hcp_manifest do
+    %{"version" => version, "hash" => hash} = hcp_report()
+    Emisar.Catalog.PackBaseline.manifest("hcp-terraform", version, hash)
+  end
+
   defp advertise_hcp(runner, denied \\ @hcp_denied) do
-    manifest = Emisar.Catalog.PackBaseline.manifest("hcp-terraform", "0.8.9", @hcp_hash)
+    manifest = hcp_manifest()
 
     actions =
       Enum.map(manifest["actions"], fn {id, descriptor} ->
@@ -23,7 +38,7 @@ defmodule EmisarWeb.PacksLiveTest do
         "group" => runner.group,
         "version" => "0.9.0",
         "labels" => %{},
-        "packs" => %{"hcp-terraform" => %{"version" => "0.8.9", "hash" => @hcp_hash}},
+        "packs" => %{"hcp-terraform" => hcp_report()},
         "actions" => actions
       })
   end
@@ -40,16 +55,12 @@ defmodule EmisarWeb.PacksLiveTest do
         reporter =
           Fixtures.Runners.create_runner(account_id: account.id, name: name, connected?: false)
 
-        Fixtures.Runners.advertise_packs(reporter, %{
-          "hcp-terraform" => %{"version" => "0.8.9", "hash" => @hcp_hash}
-        })
+        Fixtures.Runners.advertise_packs(reporter, %{"hcp-terraform" => hcp_report()})
       end
 
       foreign = Fixtures.Runners.create_runner(name: "foreign-secret")
 
-      Fixtures.Runners.advertise_packs(foreign, %{
-        "hcp-terraform" => %{"version" => "0.8.9", "hash" => @hcp_hash}
-      })
+      Fixtures.Runners.advertise_packs(foreign, %{"hcp-terraform" => hcp_report()})
 
       subject = Fixtures.Subjects.subject_for(user)
       {:ok, [version], _} = Emisar.Catalog.list_pack_versions(subject)
@@ -77,7 +88,7 @@ defmodule EmisarWeb.PacksLiveTest do
                |> render()
                |> LazyHTML.from_fragment()
                |> LazyHTML.query("li[data-action-id]")
-             ) == 15
+             ) == map_size(hcp_manifest()["actions"])
 
       for id <- @hcp_denied do
         assert has_element?(lv, ~s(li[data-action-id="#{id}"]), "unavailable")
@@ -831,7 +842,7 @@ defmodule EmisarWeb.PacksLiveTest do
       # pack we don't ship a baseline for. Dispatch is blocked until you approve its
       # contents.") rather than the hash-drift copy. `observe_pending_pack!` lands
       # exactly that state.
-      _ = observe_pending_pack!(account)
+      observe_pending_pack!(account)
 
       {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
       html = render(lv)
@@ -1262,6 +1273,8 @@ defmodule EmisarWeb.PacksLiveTest do
       |> render_click()
 
       assert has_element?(lv, "#pack-action")
+      # A destructive confirm wears the rose face, never Cancel's neutral one.
+      assert has_element?(lv, "#pack-action-confirm.text-rose-200")
       html = confirm_dialog(lv, "pack-action", "Remove")
 
       assert html =~ "Removed #{pack_id} v0.0.0 from Packs."
@@ -1829,7 +1842,7 @@ defmodule EmisarWeb.PacksLiveTest do
     end
 
     test "a viewer sees the pack but no Trust/Reject controls", %{account: account} do
-      _ = observe_pending_pack!(account)
+      observe_pending_pack!(account)
 
       viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
@@ -1844,7 +1857,7 @@ defmodule EmisarWeb.PacksLiveTest do
       conn: conn,
       account: account
     } do
-      _ = observe_pending_pack!(account)
+      observe_pending_pack!(account)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
 
@@ -1885,7 +1898,7 @@ defmodule EmisarWeb.PacksLiveTest do
       # operator holds `view_catalog` (the pending banner that
       # explains WHY dispatch is blocked renders) but not `manage_catalog`, so the
       # Trust / Reject buttons are hidden (`subject_can_manage_packs?`).
-      _ = observe_pending_pack!(account)
+      observe_pending_pack!(account)
 
       operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
@@ -2052,7 +2065,7 @@ defmodule EmisarWeb.PacksLiveTest do
       # :trusted}`. A pending version already renders its full advertised action
       # set inline, so the disclosure must NOT appear on it (it's the trusted
       # row's after-the-fact re-inspection affordance).
-      _ = observe_pending_pack!(account)
+      observe_pending_pack!(account)
 
       {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
       html = render(lv)

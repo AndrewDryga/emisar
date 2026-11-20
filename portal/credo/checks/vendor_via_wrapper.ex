@@ -39,10 +39,17 @@ defmodule Emisar.Checks.VendorViaWrapper do
 
   defp walk({{:., _, [{:__aliases__, meta, parts}, fun]}, _, args} = ast, ctx)
        when is_atom(fun) and is_list(args) do
-    if List.last(parts) in @http_clients do
-      {ast, put_issue(ctx, issue_for(ctx, meta, "#{List.last(parts)}.#{fun}"))}
-    else
-      {ast, ctx}
+    cond do
+      List.last(parts) in @http_clients ->
+        {ast, put_issue(ctx, issue_for(ctx, meta, "#{List.last(parts)}.#{fun}"))}
+
+      # Mint has no top-level API module: its calls live in Mint.HTTP,
+      # Mint.HTTP1 and Mint.HTTP2, whose last segment is not `Mint`.
+      hd(parts) == :Mint ->
+        {ast, put_issue(ctx, issue_for(ctx, meta, "#{Enum.join(parts, ".")}.#{fun}"))}
+
+      true ->
+        {ast, ctx}
     end
   end
 

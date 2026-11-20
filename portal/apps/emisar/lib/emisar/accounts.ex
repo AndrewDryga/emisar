@@ -958,8 +958,8 @@ defmodule Emisar.Accounts do
     end
   end
 
-  # Requiring SSO with no enabled connection locks EVERYONE out, owners included.
-  # That check lived only in the Team page's click handler, so any other caller
+  # Requiring SSO with no enabled connection enforces nothing: enforcement fails
+  # open and keeps accepting email sign-in. That check lived only in the Team page's click handler, so any other caller
   # could set it, and even through the UI it was a read taken outside the write's
   # transaction: enabling could observe a provider a concurrent disable was
   # removing, and two concurrent disables could each observe the other still
@@ -1530,16 +1530,18 @@ defmodule Emisar.Accounts do
   defp actor_mfa_enrolled?(%Subject{}), do: false
 
   @doc """
-  Of this account's members and pending invitations, the set of emails on the
-  global deliverability suppression list — addresses that hard-bounced or filed
-  a complaint, so an invite/notification to them was dropped. Surfaced on the
-  Team page so an admin can see why a teammate never got their invite (and
-  contact support to clear it). Derives the emails server-side and only ever
-  checks this account's own addresses, so no caller can probe the global list.
+  Of the given members and pending invitations of this account (the rows a Team
+  page shows), the set of emails on the global deliverability suppression list —
+  addresses that hard-bounced or filed a complaint, so an invite/notification to
+  them was dropped. Surfaced on the Team page so an admin can see why a teammate
+  never got their invite (and contact support to clear it). Derives the emails
+  server-side and only ever checks this account's own addresses — an id from
+  another account matches nothing — so no caller can probe the global list.
   Requires `view_own_account` and that `subject` is in the account. Returns
   `{:ok, MapSet.t(String.t())}`.
   """
-  def suppressed_member_emails(%Account{id: account_id}, %Subject{} = subject) do
+  def suppressed_member_emails(%Account{id: account_id}, membership_ids, %Subject{} = subject)
+      when is_list(membership_ids) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
@@ -1549,6 +1551,7 @@ defmodule Emisar.Accounts do
       emails =
         Membership.Query.not_deleted()
         |> Membership.Query.by_account_id(account_id)
+        |> Membership.Query.by_ids(membership_ids)
         |> Membership.Query.select_user_emails()
         |> Authorizer.for_subject(subject)
         |> Repo.all()
@@ -1801,9 +1804,8 @@ defmodule Emisar.Accounts do
   defp sso_membership_changeset(attrs, false), do: Membership.Changeset.create_suspended(attrs)
 
   # One address is one live Member of an account, and the unique index has the
-  # last word. A provisioning path that found the address free can still lose it:
-  # a re-added person's old address was given away since, or an invitation, which
-  # takes no account lock, landed after the contact match.
+  # last word: a provisioning path that found the address free can still lose it
+  # at insert time, which surfaces here as `:member_email_taken`.
   defp tag_member_email_taken({:error, %Ecto.Changeset{errors: errors} = changeset} = error) do
     if Repo.Changeset.unique_constraint_error?(changeset) and Keyword.has_key?(errors, :email),
       do: {:error, :member_email_taken},
@@ -2371,8 +2373,11 @@ defmodule Emisar.Accounts do
           {:ok, access}
         end
       end)
-      |> Multi.run(:membership, fn repo, %{actor: actor, target: target, next_access: access} ->
-        write_membership_role(repo, target, new_role, access, actor, opts)
+      |> Multi.run(:membership, fn repo, %{target: target, next_access: access} ->
+        write_membership_role(repo, target, new_role, access, opts)
+      end)
+      |> Multi.run(:role_audit, fn repo, %{actor: actor, target: target} ->
+        insert_role_audit(repo, actor, target, new_role)
       end)
       |> Multi.run(:credential_revocation, fn repo, %{target: target, membership: updated} ->
         maybe_revoke_reduced_member_credentials(repo, target.role, updated)
@@ -2437,48 +2442,37 @@ defmodule Emisar.Accounts do
       else: {:ok, RunnerAccess.for_role(new_role, previous)}
   end
 
-  defp write_membership_role(
-         repo,
-         %Membership{} = membership,
-         new_role,
-         access,
-         %Subject{} = subject,
-         opts
-       ) do
-    Membership.Query.not_deleted()
-    |> Membership.Query.by_id(membership.id)
-    |> Authorizer.for_subject(subject)
-    |> repo.fetch_and_update(Membership.Query,
-      with: fn loaded_membership ->
-        # The outer Multi holds this row locked across authorization, the role
-        # and access write, and credential retirement.
-        changeset =
-          Membership.Changeset.update_role_and_access(loaded_membership, new_role, access)
+  # `membership` is the `:target` row the outer Multi holds locked across
+  # authorization, the role and access write, and credential retirement.
+  defp write_membership_role(repo, %Membership{} = membership, new_role, access, opts) do
+    changeset = Membership.Changeset.update_role_and_access(membership, new_role, access)
 
-        if Keyword.get(opts, :runner_access) == :directory do
-          version =
-            SSO.directory_authorization_version(
-              membership.account_id,
-              membership.directory_provider_id,
-              repo
-            )
+    if Keyword.get(opts, :runner_access) == :directory do
+      version =
+        SSO.directory_authorization_version(
+          membership.account_id,
+          membership.directory_provider_id,
+          repo
+        )
 
-          Membership.Changeset.return_to_directory(changeset, version)
-        else
-          changeset
-        end
-      end,
-      # `changeset.data` is the locked pre-update row — the audit
-      # payload records the role that was actually replaced. Re-submitting the
-      # role the member already holds leaves the changeset empty, and a
-      # `from: :admin, to: :admin` row would make the trail unreadable, so a
-      # no-op writes nothing. (A capture can't skip &1, so this stays a fn.)
-      audit: fn _updated, changeset ->
-        if changeset.data.role == new_role,
-          do: nil,
-          else: Audit.Events.membership_role_changed(subject, changeset.data, new_role)
-      end
-    )
+      changeset
+      |> Membership.Changeset.return_to_directory(version)
+      |> repo.update()
+    else
+      repo.update(changeset)
+    end
+  end
+
+  # `target` is the locked pre-update row, so the payload records the role that
+  # was actually replaced. Re-submitting the role the member already holds would
+  # write a `from: :admin, to: :admin` row that makes the trail unreadable, so a
+  # no-op writes nothing. A top-level step, so commit_multi broadcasts the event.
+  defp insert_role_audit(_repo, _subject, %Membership{role: role}, role), do: {:ok, nil}
+
+  defp insert_role_audit(repo, subject, %Membership{} = target, new_role) do
+    subject
+    |> Audit.Events.membership_role_changed(target, new_role)
+    |> repo.insert()
   end
 
   # -- PubSub ----------------------------------------------------------
@@ -2714,13 +2708,12 @@ defmodule Emisar.Accounts do
     end
   end
 
-  # Locked-target prefix for the membership mutations that go on to
-  # write OTHER rows (the member's user record, their session tokens):
-  # one `:target` step that re-reads the membership under the row lock
-  # and runs the hierarchy guard against the fresh copy and the CURRENT
-  # actor (`put_current_actor/3` runs before it) — the caller's structs
-  # are stale socket snapshots. Mutations that write the membership row
-  # itself use `Repo.fetch_and_update/3` instead.
+  # Locked-target prefix for composed Member mutations: one `:target` step
+  # that re-reads the membership under the row lock, scoped to the actor's
+  # account, and runs the hierarchy guard against the fresh copy and the
+  # CURRENT actor (`put_current_actor/3` runs before it) — the caller's
+  # structs are stale socket snapshots. Later steps may write the Member row
+  # itself or other rows (its session tokens).
   defp lock_target_membership(multi, %Membership{} = membership, guard) do
     Multi.run(multi, :target, fn repo, %{actor: actor} ->
       with {:ok, loaded_membership} <- lock_membership(repo, membership, actor),
@@ -2877,7 +2870,7 @@ defmodule Emisar.Accounts do
             # `ensure_suspended/1` runs last, mirroring suspend: an already-active
             # member is the same `{:ok, membership}` no-op, so a repeated or racing
             # submit cannot write a `membership.reinstated` row for a member who
-            # was never suspended, nor re-run the activation consequence.
+            # was never suspended.
             with :ok <- ensure_not_deactivated_in_idp(loaded_membership),
                  :ok <- ensure_can_modify_membership(loaded_membership, actor),
                  :ok <- ensure_suspended(loaded_membership) do
@@ -2903,10 +2896,8 @@ defmodule Emisar.Accounts do
     end
   end
 
-  defp manual_membership_reinstated_effects(%{membership: membership} = changes) do
-    :ok = broadcast_membership_reinstated(membership)
-    after_membership_activation_committed(changes)
-  end
+  defp manual_membership_reinstated_effects(%{membership: membership}),
+    do: broadcast_membership_reinstated(membership)
 
   defp sync_suspend_change(%Membership{} = membership, provider) do
     # Guards judge the locked row: it must live in the provider's account
@@ -3062,8 +3053,6 @@ defmodule Emisar.Accounts do
       nil ->
         :ok
     end
-
-    after_membership_activation_committed(changes)
   end
 
   defp ensure_directory_suspended(%Membership{directory_suspended: true}), do: :ok
@@ -3248,18 +3237,15 @@ defmodule Emisar.Accounts do
   defp ensure_sync_role_assignable(_role), do: :ok
 
   # `ensure_synced_role_transition/2` lets a synced owner through unchanged, and
-  # `sync_runner_authorization/4` then writes their reach without their role — so
-  # the role a sync leaves in force is the owner's own, not the directory's.
+  # `Membership.Changeset.sync_runner_authorization/3` then writes their reach
+  # without their role — so the role a sync leaves in force is the owner's own,
+  # not the directory's.
   defp role_in_force(%Membership{role: :owner}, _synced_role), do: :owner
   defp role_in_force(%Membership{}, synced_role), do: synced_role
 
   defp ensure_synced_role_transition(%Membership{role: :owner}, _role), do: :ok
 
-  defp ensure_synced_role_transition(%Membership{} = membership, role) do
-    with :ok <- ensure_sync_role_assignable(role) do
-      ensure_demotion_keeps_an_owner(membership, role)
-    end
-  end
+  defp ensure_synced_role_transition(%Membership{}, role), do: ensure_sync_role_assignable(role)
 
   # The provider's account IS the authorization on the directory-sync path (no
   # %Subject{}), so the locked membership must live in it before we write — the
@@ -3966,11 +3952,13 @@ defmodule Emisar.Accounts do
 
       case result do
         {:ok, member} ->
+          directory_managed? = member_profile_directory_managed?(member)
+
           {:ok,
            %{
              membership: member,
-             editable?: not member_profile_directory_managed?(member),
-             email_changeable?: member_email_changeable?(member)
+             editable?: not directory_managed?,
+             email_changeable?: verified_human_email?(member) and not directory_managed?
            }}
 
         {:error, reason} ->
@@ -3985,13 +3973,18 @@ defmodule Emisar.Accounts do
   Internal — whether `membership` may change its own sign-in email: a person
   whose address joining proved, and whose profile no directory owns.
   """
-  def member_email_changeable?(
-        %Membership{kind: :human, email: email, email_verified_at: %DateTime{}} = membership
-      )
-      when is_binary(email),
-      do: not member_profile_directory_managed?(membership)
+  def member_email_changeable?(%Membership{} = membership),
+    do: verified_human_email?(membership) and not member_profile_directory_managed?(membership)
 
-  def member_email_changeable?(%Membership{}), do: false
+  defp verified_human_email?(%Membership{
+         kind: :human,
+         email: email,
+         email_verified_at: %DateTime{}
+       })
+       when is_binary(email),
+       do: true
+
+  defp verified_human_email?(%Membership{}), do: false
 
   @doc """
   Internal — the normalized address `membership` asks to move to, or a changeset
@@ -4006,7 +3999,8 @@ defmodule Emisar.Accounts do
       not changeset.valid? ->
         {:error, %{changeset | action: :validate}}
 
-      not Map.has_key?(changeset.changes, :email) ->
+      not Map.has_key?(changeset.changes, :email) or
+          same_email?(membership.email, changeset.changes.email) ->
         {:error, add_email_error(changeset, "is already your email")}
 
       member_email_taken?(membership, changeset.changes.email) ->
@@ -4016,6 +4010,13 @@ defmodule Emisar.Accounts do
         {:ok, changeset.changes.email}
     end
   end
+
+  # Addresses match case-insensitively (`citext`), so a capitalisation-only
+  # change is the Member's own address, not a colleague's.
+  defp same_email?(current, email) when is_binary(current),
+    do: String.downcase(current) == String.downcase(email)
+
+  defp same_email?(nil, _email), do: false
 
   defp member_email_taken?(%Membership{} = membership, email) do
     Membership.Query.not_deleted()
@@ -4256,7 +4257,7 @@ defmodule Emisar.Accounts do
     end
   end
 
-  # The last-owner invariant lives in `ensure_not_last_active_owner/2`,
+  # The last-owner invariant lives in `ensure_not_last_active_owner/1`,
   # inside the Multi (see `ensure_role_change_allowed/3`'s note).
   defp ensure_delete_membership_allowed(%Membership{} = membership, %Subject{} = subject) do
     if Auth.Permissions.covers_role?(subject, membership.role) do
@@ -4378,8 +4379,9 @@ defmodule Emisar.Accounts do
   @doc """
   Invites an address into the account and emails it the join link.
 
-  Same authorization, persistence, and errors as `invite_user_to_account/2`;
-  the raw token is not returned by this workflow. `inviter` is who the email
+  Same authorization, persistence, and errors as `invite_user_to_account/2`,
+  plus `{:error, :rate_limited}` when the account's invitation send budget is
+  spent; the raw token is not returned by this workflow. `inviter` is who the email
   is attributed to — the acting `%Membership{}`, or a sender map for a support
   subject, which has no actor.
 
@@ -4577,9 +4579,10 @@ defmodule Emisar.Accounts do
   Resends a pending account invitation and emails the refreshed join link.
 
   Same authorization, persistence, and errors as
-  `resend_account_invitation/2`; the raw token is not returned by this workflow.
-  Returns `{:ok, %{membership: m, delivery: delivery}}` with the
-  same `delivery` shapes as `invite_user_to_account_and_deliver/5`.
+  `resend_account_invitation/2`, plus `{:error, :rate_limited}` when the
+  account's invitation send budget is spent; the raw token is not returned by
+  this workflow. Returns `{:ok, %{membership: m, delivery: delivery}}` with the
+  same `delivery` shapes as `invite_user_to_account_and_deliver/3`.
   """
   def resend_account_invitation_and_deliver(
         %Membership{} = membership,
@@ -4623,7 +4626,7 @@ defmodule Emisar.Accounts do
 
   # Inviting needs the base invite_member permission, and you can't invite
   # someone at a role whose permissions you don't already hold — the same
-  # no-escalation rule as role changes (Authorizer.covers_role?/2).
+  # no-escalation rule as role changes (`Auth.Permissions.covers_role?/2`).
   defp ensure_invite_permitted(role, %Subject{} = subject) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
@@ -4991,10 +4994,12 @@ defmodule Emisar.Accounts do
     end
   end
 
-  # -- Internal (Billing flows) ----------------------------------------
-  # Account/membership reads + the one account write the Billing context
-  # needs. Billing owns the plan/limit semantics; the row mechanics stay
-  # here. Never exposed to LiveView/controllers/MCP.
+  # -- Internal (Billing, system jobs, report unsubscribe) -------------
+  # Account/membership reads + the account writes the Billing context, system
+  # sweeps and the monthly report, and the token-authorized report unsubscribe
+  # need.
+  # Billing owns the plan/limit semantics; the row mechanics stay here. No
+  # `%Subject{}`: the unsubscribe link's signed token is its authority.
 
   @doc """
   Internal — Billing seat counting: membership rows in the account.

@@ -25,14 +25,8 @@
           # The custom checks are first-party code too — they get linted and
           # formatted like everything else (see .formatter.exs `inputs`).
           "credo/",
-          "lib/",
-          "src/",
-          "test/",
-          "web/",
           "apps/*/lib/",
-          "apps/*/src/",
           "apps/*/test/",
-          "apps/*/web/",
           "apps/*/priv/repo/migrations/"
         ],
         excluded: [
@@ -223,11 +217,12 @@
         ],
         disabled: [
           #
-          # House-rule conflicts (see portal/AGENTS.md):
+          # House-rule conflicts (see portal/.agent/kb/rules/README.md):
           #  * AliasUsage is the INVERSE of the alias rule — cross-context
           #    modules are referenced THROUGH the owning context's alias
-          #    (Users.User, Runners.Runner.Query); the PostToolUse hook
-          #    blocks deep aliases, and this check would ask them back.
+          #    (Accounts.Membership, Runners.Runner.Query);
+          #    Emisar.Checks.CrossContextDeepAlias enforces that, and this
+          #    check would ask the deep aliases back.
           #  * ModuleDoc — schema/query/changeset satellites are
           #    shape-standard by design and carry no moduledoc.
           #  * CyclomaticComplexity counts clause heads, punishing the

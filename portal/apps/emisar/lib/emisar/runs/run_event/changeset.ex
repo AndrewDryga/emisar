@@ -31,7 +31,9 @@ defmodule Emisar.Runs.RunEvent.Changeset do
       greater_than: 0,
       less_than_or_equal_to: @max_db_integer
     )
-    |> validate_length(:stream, max: @max_stream_length)
+    # Code points, not graphemes: combining marks fold hundreds of code points
+    # into one grapheme, and the varchar(255) column counts code points.
+    |> validate_length(:stream, max: @max_stream_length, count: :codepoints)
     |> RepoChangeset.validate_json_size(:payload, @max_payload_bytes)
     |> unique_constraint([:run_id, :seq])
     |> check_constraint(:seq,

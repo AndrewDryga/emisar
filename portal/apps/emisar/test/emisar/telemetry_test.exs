@@ -63,6 +63,35 @@ defmodule Emisar.TelemetryTest do
 
       assert measurements.age_seconds >= 86_400
     end
+
+    # The telemetry poller permanently drops a sampler that exits, so a single
+    # slow catalog call would freeze this gauge. A failed read skips the tick,
+    # logs only its failure class, and the next tick still measures.
+    test "a failed catalog read skips the tick and the next one still measures" do
+      name = Emisar.Catalog.PublishedRegistry.Cache
+      cache = Process.whereis(name)
+      true = Process.unregister(name)
+
+      log =
+        try do
+          ExUnit.CaptureLog.capture_log(fn ->
+            assert Emisar.Telemetry.measure_published_catalog() == :ok
+          end)
+        after
+          Process.register(cache, name)
+        end
+
+      assert log =~ "telemetry.sample_failed sampler=published_catalog"
+      assert log =~ "error=:exit"
+
+      measurements =
+        capture_measurements(
+          [:emisar, :catalog, :published],
+          &Emisar.Telemetry.measure_published_catalog/0
+        )
+
+      assert is_integer(measurements.age_seconds)
+    end
   end
 
   describe "measure_approval_queue/0" do

@@ -145,6 +145,16 @@ defmodule Emisar.Jobs.Executors.GloballyUnique do
 
         Emisar.Telemetry.job_failed(metadata.job, :error, duration)
         reraise error, __STACKTRACE__
+    catch
+      # An exit (a dead pool, a call timeout) or a throw still fails the tick.
+      # Log only its kind: the reason can carry arbitrary job data.
+      kind, reason when kind in [:exit, :throw] ->
+        duration = System.monotonic_time() - started_at
+
+        Logger.error("recurrent_job.failed", job: metadata.job, error: inspect(kind))
+
+        Emisar.Telemetry.job_failed(metadata.job, kind, duration)
+        :erlang.raise(kind, reason, __STACKTRACE__)
     end
   end
 

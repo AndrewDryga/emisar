@@ -60,9 +60,9 @@ defmodule Emisar.Catalog do
 
   defp job_module(name), do: Module.safe_concat([__MODULE__, "Jobs", name])
 
-  # The 1.0 catalog contains 80 packs and 1,270 actions. These limits leave
-  # substantial growth headroom while bounding the per-advertisement DB work
-  # an authenticated but hostile runner can trigger.
+  # These limits sit above the bundled catalog (see `priv/packs/catalog.json`)
+  # while bounding the per-advertisement DB work an authenticated but hostile
+  # runner can trigger.
   @max_advertised_packs 128
   @max_advertised_actions 2_048
 
@@ -81,7 +81,7 @@ defmodule Emisar.Catalog do
   @upsert_chunk_size 500
 
   # The console Packs page renders its whole inventory at once, so the read is
-  # bounded rather than paged — well above the 80 packs the 1.0 catalog ships.
+  # bounded rather than paged.
   @console_pack_version_limit 500
 
   # How many runners the page reads to answer "who is on this version". Above
@@ -100,18 +100,12 @@ defmodule Emisar.Catalog do
   latest advertisement. Also applies hostname/labels/version to the
   runner row in the same transaction.
 
-  Internal — called by the runner socket process which is itself
-  authenticated by the runner token. Not exposed to LV/MCP.
+  Internal — unfenced, for the dev seeds and tests that already hold a runner.
+  The authenticated runner socket ingests through
+  `observe_state_from_connection/4` instead. Not exposed to LV/MCP.
   """
   def observe_state(%Runners.Runner{} = runner, %{} = payload) do
     observe_state(runner, payload, nil)
-  end
-
-  def observe_state(runner_id, payload) when is_binary(runner_id) do
-    case Emisar.Runners.peek_runner_by_id(runner_id) do
-      %Runners.Runner{} = runner -> observe_state(runner, payload)
-      nil -> {:error, :unknown_runner}
-    end
   end
 
   @doc """
@@ -220,7 +214,7 @@ defmodule Emisar.Catalog do
     now = DateTime.utc_now()
 
     with {:ok, pending_changed?} <- pin_advertised_packs(runner, packs, connection, now),
-         {:ok, _seen_ids} <- sync_advertised_actions(runner, actions, packs, connection, now) do
+         {:ok, _pruned} <- sync_advertised_actions(runner, actions, packs, connection, now) do
       {:ok, pending_changed?}
     end
 
@@ -1534,7 +1528,7 @@ defmodule Emisar.Catalog do
   `:action_contract_changed`.
 
   Every action names a pack, so an action carrying no resolved
-  `(pack_id, pack_version, pack_hash)` fails closed as `:pack_ref_mismatch`
+  `(pack_id, pack_version, pack_hash)` fails closed as `:action_contract_changed`
   rather than dispatching from the runner's own advertisement.
   """
   def fetch_dispatch_contract(repo, account_id, runner_id, action_id, pack_ref) do
@@ -1595,7 +1589,7 @@ defmodule Emisar.Catalog do
          is_binary(observed.pack_hash) do
       {:ok, {observed.pack_id, observed.pack_version, observed.pack_hash}}
     else
-      {:error, :pack_ref_mismatch}
+      {:error, :action_contract_changed}
     end
   end
 
@@ -1722,8 +1716,16 @@ defmodule Emisar.Catalog do
     entries
   end
 
+  # A rejected action_id is runner-supplied junk (oversized or malformed), so the
+  # line names the shape and never echoes the value.
   defp describe_rejected_descriptor(%Ecto.Changeset{} = changeset) do
-    action_id = Ecto.Changeset.get_field(changeset, :action_id) || "<no action_id>"
+    action_id =
+      cond do
+        is_nil(Ecto.Changeset.get_field(changeset, :action_id)) -> "<no action_id>"
+        Keyword.has_key?(changeset.errors, :action_id) -> "<invalid action_id>"
+        true -> Ecto.Changeset.get_field(changeset, :action_id)
+      end
+
     fields = changeset.errors |> Keyword.keys() |> Enum.uniq() |> Enum.join(", ")
     "#{action_id} (#{fields})"
   end
@@ -1779,8 +1781,10 @@ defmodule Emisar.Catalog do
     # version from one registry) — it is hostile or corrupt input. Persisting
     # it with pack_version nil used to hand it the unversioned
     # row-authoritative dispatch path at the trusted-manifest boundary, so it
-    # is rejected here instead; the batch prune then retires any stale row a
-    # previous advertisement left behind.
+    # is rejected here instead. When at least one valid descriptor survives,
+    # the batch prune retires any stale row a previous advertisement left
+    # behind; a nonempty advertisement with no valid descriptor keeps the last
+    # valid catalog.
     if is_binary(pack_id) and is_nil(pack_version) do
       nil
     else
@@ -2783,9 +2787,6 @@ defmodule Emisar.Catalog do
   defp scope_actions_to_packs(queryable, %Accounts.RunnerAccess{pack_mode: :restricted} = access),
     do: RunnerAction.Query.by_pack_ids(queryable, access.pack_ids)
 
-  # Severity rank for `RunnerAction.risk` (an Ecto.Enum) — lets us pick the
-  # WORST risk when the same action is advertised by more than one runner.
-
   @doc """
   Builds `%{action_id => risk}` from already-fetched `%RunnerAction{}` rows
   (e.g. from `list_actions_for_runner/3`), keeping the MOST-SEVERE risk
@@ -2990,9 +2991,8 @@ defmodule Emisar.Catalog do
   `groups` (`%{id: pack_id,
   versions: [...], can_delete?: boolean, update: nil | %{version, hash}}` over the visible rows,
   packs ascending and versions newest-seen first), `actions_by_pack_ref`,
-  `matched_action_ids`, and
-  `version_facts` (see `list_console_packs/2`'s fact map) keyed by pack-version
-  id, and the visible `pack_count`/`version_count`, `pending_count`, and
+  `matched_action_ids`, and `version_facts` keyed by pack-version id, and the
+  visible `pack_count`/`version_count`, `pending_count`, and
   `decision_count` — or `{:error, :unauthorized}`.
 
   `version_facts` carries every lifecycle and trust judgment the console
@@ -3335,9 +3335,9 @@ defmodule Emisar.Catalog do
      end)}
   end
 
-  # Rendering concern: the Packs page passes `preload:
-  # [:retirement_override_label]` only where it renders the retirement-override
-  # note; a counting caller omits it and pays for no join. Unknown atoms raise.
+  # Rendering concern: `list_pack_versions/2`'s `preload:
+  # [:retirement_override_label]` option loads the retirement-override note's
+  # label; a counting caller omits it and pays for no join. Unknown atoms raise.
   defp apply_pack_version_preloads(queryable, preloads) do
     Enum.reduce(preloads, queryable, fn
       :retirement_override_label, queryable ->
@@ -3348,7 +3348,7 @@ defmodule Emisar.Catalog do
   @doc """
   Cheap account-wide count of pack versions awaiting an
   operator decision — pending trust reviews PLUS retired-blocked trusted versions (see
-  `pack_version_needs_decision?/1`) — drives the sidebar + dashboard badge.
+  `ConsoleProjection.pack_version_needs_decision?/1`) — drives the sidebar + dashboard badge.
   Same Subject gate + account scoping as `list_pack_versions/2`; returns `0`
   when the caller lacks permission so the badge silently disappears instead
   of erroring.

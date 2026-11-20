@@ -1,5 +1,6 @@
 defmodule Emisar.Runbooks.SchedulerTest do
   use Emisar.DataCase, async: true
+  import ExUnit.CaptureLog
   alias Ecto.Multi
   alias Emisar.Accounts.RunnerAccess
   alias Emisar.{ApiKeys, Audit, Auth.Subject, Catalog, Fixtures, Repo, Runbooks, Runners, Runs}
@@ -790,6 +791,41 @@ defmodule Emisar.Runbooks.SchedulerTest do
     assert succeeded.status == :succeeded
     assert is_nil(succeeded.inputs_raw)
     assert byte_size(succeeded.inputs_sha256) == 64
+  end
+
+  test "a recovery callback that crashes is logged by identifier, never by its arguments", %{
+    account: account,
+    subject: subject,
+    runner: runner
+  } do
+    runbook =
+      published_runbook(
+        subject,
+        definition([stage("inspect", "sequential", 1, [step("check", runner.group)])])
+      )
+
+    assert {:ok, result} = Runbooks.dispatch_runbook(runbook, "recover crashed callback", subject)
+    assert [attempt] = runs(account.id, result.execution_id)
+
+    _finished =
+      Fixtures.Runs.finish_without_runbook_callback(attempt, :success, %{"ready" => true})
+
+    {1, _} =
+      Runs.ActionRun.Query.all()
+      |> Runs.ActionRun.Query.by_id(attempt.id)
+      |> Repo.update_all(set: [args_raw: ~s({"token":"recovery-log-secret"})])
+
+    # An output declaration with no extractor cannot be evaluated, so settlement raises.
+    {1, _} =
+      ExecutionItem.Query.by_id(attempt.runbook_execution_item_id)
+      |> Repo.update_all(set: [output_plan: [%{"source" => "structured_output"}]])
+
+    log = capture_log(fn -> Scheduler.recover_due() end)
+
+    assert log =~ "runbook_recovery.callback_crashed subject=#{inspect(attempt.id)}"
+    assert log =~ "error=FunctionClauseError"
+    refute log =~ "recovery-log-secret"
+    assert item(result.execution_id).status == :running
   end
 
   test "the recovery sweep settles a lost peer callback without reopening a halted execution", %{

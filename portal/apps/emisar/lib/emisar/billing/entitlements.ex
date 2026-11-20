@@ -11,8 +11,9 @@ defmodule Emisar.Billing.Entitlements do
 
   Recognized keys: `plan` (the plan slug), `runners_limit`, `members_limit`,
   `audit_retention_days` (integers, or `"unlimited"` for the limits), and the
-  feature flags `features_sso_enabled?` / `features_scim_enabled?` (booleans —
-  the key names match what's typed in the Paddle dashboard). Values typed into
+  feature flags `features_sso_enabled?` / `features_scim_enabled?` /
+  `features_audit_export_enabled?` (booleans — the key names match what's typed
+  in the Paddle dashboard). Values typed into
   the dashboard arrive as strings, so `"100"`, `"true"`, and `"unlimited"` are
   normalized on the way in; anything unparseable (and any unknown key) is
   dropped rather than stored, so a dashboard typo degrades to the plan default

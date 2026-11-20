@@ -167,10 +167,6 @@ defmodule EmisarWeb.LiveTableTest do
     |> String.trim()
   end
 
-  defp bool_filter(name) do
-    %Filter{name: name, type: :boolean, fun: fn q -> {q, true} end}
-  end
-
   defp datetime_filter(name) do
     %Filter{name: name, type: :datetime, fun: fn q, _ -> {q, true} end}
   end
@@ -209,20 +205,6 @@ defmodule EmisarWeb.LiveTableTest do
 
       assert LiveTable.params_to_opts(%{"status" => ["a", "b"]}, filters) == [
                filter: [status: ["a", "b"]],
-               page: []
-             ]
-    end
-
-    test "boolean filters cast \"true\" / anything-else cleanly" do
-      filters = [bool_filter(:archived)]
-
-      assert LiveTable.params_to_opts(%{"archived" => "true"}, filters) == [
-               filter: [archived: true],
-               page: []
-             ]
-
-      assert LiveTable.params_to_opts(%{"archived" => "false"}, filters) == [
-               filter: [archived: false],
                page: []
              ]
     end
@@ -713,6 +695,53 @@ defmodule EmisarWeb.LiveTableTest do
       assert html =~ "group%3ARun"
     end
 
+    test "paginator drops route params and keeps another table's cursor" do
+      assigns = %{}
+
+      # handle_params merges the path params into the map hosts assign as
+      # filter_params; they belong in the path, never in the pager's query.
+      html =
+        rendered_to_string(~H"""
+        <LiveTable.live_table
+          layout={:cards}
+          id="runs"
+          path="/app/acme/runs"
+          prefix="runs_"
+          rows={[%{id: 1}]}
+          metadata={%Metadata{count: 1, previous_page_cursor: nil, next_page_cursor: "next-cursor"}}
+          filter_params={
+            %{
+              "account_id_or_slug" => "acme",
+              "id" => "runbook-1",
+              "runs_after" => "old-cursor",
+              "grants_after" => "grants-cursor",
+              "status" => ["failed", "succeeded"]
+            }
+          }
+        >
+          <:item :let={_t}>
+            <li>row</li>
+          </:item>
+        </LiveTable.live_table>
+        """)
+
+      [href] =
+        html
+        |> LazyHTML.from_document()
+        |> LazyHTML.query("nav#runs-pager a")
+        |> LazyHTML.attribute("href")
+
+      %URI{path: path, query: query} = URI.parse(href)
+
+      assert path == "/app/acme/runs"
+
+      assert Plug.Conn.Query.decode(query) == %{
+               "grants_after" => "grants-cursor",
+               "runs_after" => "next-cursor",
+               "status" => ["failed", "succeeded"]
+             }
+    end
+
     test "the default :cards wrapper is naked hairline rows — no island wash, no clipping" do
       assigns = %{}
 
@@ -762,7 +791,13 @@ defmodule EmisarWeb.LiveTableTest do
              |> LazyHTML.query("ul#pending.space-y-2.attention-style")
              |> Enum.count() == 1
 
-      refute html =~ "divide-y divide-zinc-900"
+      class =
+        html
+        |> LazyHTML.from_document()
+        |> LazyHTML.query("ul#pending")
+        |> LazyHTML.attribute("class")
+
+      assert class == ["emisar-icon-mono space-y-2 attention-style"]
     end
 
     test "group_by inserts a header before each new label and falls back to a plain text header when :group_header isn't given" do
@@ -791,15 +826,15 @@ defmodule EmisarWeb.LiveTableTest do
         </LiveTable.live_table>
         """)
 
-      # Default text-only group header renders the label as a <li>
-      assert html =~ "prod"
-      assert html =~ "stage"
-      # Order: header, alpha, beta, then stage header, gamma
-      assert String.contains?(html, [
-               ~s(data-name="alpha"),
-               ~s(data-name="beta"),
-               ~s(data-name="gamma")
-             ])
+      # Default text-only group header renders the label as a <li>, before the
+      # first row of each new label.
+      items =
+        html
+        |> LazyHTML.from_document()
+        |> LazyHTML.query("ul#runners > li")
+        |> Enum.map(&(&1 |> LazyHTML.text() |> String.trim()))
+
+      assert items == ["prod", "alpha", "beta", "stage", "gamma"]
     end
 
     test "custom :group_header slot wins over the default text-only header" do

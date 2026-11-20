@@ -51,4 +51,27 @@ defmodule EmisarWeb.TelemetryDashboardTest do
 
     assert %{tags: [:view]} = metric
   end
+
+  test "rejected catalog descriptors are summed by their count, not counted per event" do
+    ref = make_ref()
+    name = __MODULE__.DescriptorRejectedReporter
+
+    metric =
+      Enum.find(
+        EmisarWeb.Telemetry.metrics(),
+        &(&1.name == [:emisar, :catalog, :descriptor_rejected, :count])
+      )
+
+    start_supervised!(
+      {TelemetryMetricsPrometheus.Core,
+       name: name, start_async: false, metrics: [%{metric | keep: &(&1[:test_ref] == ref)}]}
+    )
+
+    event = [:emisar, :catalog, :descriptor_rejected]
+    :telemetry.execute(event, %{count: 3}, %{test_ref: ref})
+    :telemetry.execute(event, %{count: 2}, %{test_ref: ref})
+
+    assert TelemetryMetricsPrometheus.Core.scrape(name) =~
+             "emisar_catalog_descriptor_rejected_count 5"
+  end
 end

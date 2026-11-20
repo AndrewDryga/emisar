@@ -1,9 +1,8 @@
 defmodule EmisarWeb.Components.PageIntroTest do
   @moduledoc """
   Renders `EmisarWeb.CoreComponents.page_intro/1` — the line under an index
-  page's title. Asserts the three slots (subtitle lead, right-aligned actions,
-  and a "How this works" help card) and that interpolated text is escaped
-  (IL-16: index intros carry no `raw/1`).
+  page's title. Asserts the subtitle lead, that an empty intro renders nothing,
+  and that interpolated text is escaped (IL-16: index intros carry no `raw/1`).
   """
   use ExUnit.Case, async: true
   import Phoenix.Component
@@ -33,7 +32,6 @@ defmodule EmisarWeb.Components.PageIntroTest do
         """)
 
       refute html =~ "max-w-2xl"
-      refute html =~ "How this works"
     end
 
     test "escapes interpolated subtitle text (no raw HTML injection)" do

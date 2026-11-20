@@ -11,7 +11,7 @@
 
 ## 0. State
 
-- **Marketing site: redesigned + shipped.** The 28 marketing pages
+- **Marketing site: redesigned + shipped.** The marketing pages
   (`controllers/marketing_html/`) run the "Gate" direction: emerald `brand`
   accent, semantic pass/pending/deny palette, signature type, materiality
   primitives, restrained motion, and the new logo system. See
@@ -77,12 +77,12 @@ passing the gate). Plus a **custom geometric wordmark** "emisar".
 | Status lockups | `images/brand/emisar-status-logo-{light,dark}.png` | Better Stack's 200x29 header slot; never substitute the square icon |
 | Email lockup | `images/brand/emisar-email-lockup.png` | email mastheads only — a 3x tile rasterized on its dark ground (invisible on ours, a brand chip when a mail client inverts the body); the mark is padded 4px left / 7px right / 6px vertical so it sits flush with the text column, and a re-export takes a new filename because this path revalidates by ETag and Gmail's image proxy can hold old bytes; the rest of the email is held dark in Gmail by `design-emails-survive-forced-dark-mode.md` |
 | Favicon glyph (tile) | `/favicon.svg`, `/favicon.ico` | browser tab |
-| App icons | `/apple-touch-icon.png`, `/android-chrome-{192,512}.png` | iOS/Android/PWA |
+| App icons | `/apple-touch-icon.png`, `/android-chrome-{192x192,512x512}.png` | iOS/Android/PWA |
 | OG card | `images/og/emisar-og.webp` | social share |
 
 **Components (reuse — never re-inline the SVG):**
-- `<.brand size={:sm|:md|:lg} wordmark?>` — the lockup img (or icon-only). Used in
-  every nav/auth/error/oauth shell. White-baked (dark contexts).
+- `<.brand class>` — the lockup img. Used in the marketing nav and the
+  auth/error/oauth shells. White-baked (dark contexts).
 - `<.gate_mark class>` — the icon as inline SVG (so it inherits
   `currentColor` for ink). Static; anchors the /security architecture diagram.
   **For any "gate moment", reuse this — don't redraw.**
@@ -129,8 +129,8 @@ use `brand-*` for accent, primary action, links, and success/allowed/healthy.
 > `indigo-*`/`emerald-*` classes remain (the marketing demo terminal's deliberate
 > `emerald-400` is the only exception). The shared-component **tone vocabulary is
 > SEMANTIC** — `:brand` (healthy/pass), `:amber` (pending/caution), `:rose`
-> (deny/danger), `:neutral` (identity/metadata) — across the components that
-> declare an `attr :tone`, among them
+> (deny/danger), `:neutral` (identity/metadata) — across the policy/status
+> carriers that declare an `attr :tone`, among them
 > `chip`/`status_badge`/`status_dot`/`count_badge`. Each whitelists only the
 > subset it renders, so the four are the vocabulary, not every component's menu
 > (`count_badge` has no `:rose`). Two shapes that look like carriers are not:
@@ -142,7 +142,9 @@ use `brand-*` for accent, primary action, links, and success/allowed/healthy.
 > (two byte-identical greens that painted neutral metadata green, diluting "emerald
 > = passed the gate") and are gone. (`empty_state` keeps a deliberate
 > `tone={:zinc}`/`:danger` pair, but that axis is "is this emptiness fine or a
-> failure", not a policy outcome.) **Color names a MEANING, never a hue or
+> failure", not a policy outcome; likewise `confirm_zone`'s
+> `:danger`/`:success`/`:neutral` names the consequence of the action it
+> confirms, destructive, restorative or plain.) **Color names a MEANING, never a hue or
 > convenience** — a metadata label ("You", a scope, the current plan, a reusable
 > key) is `:neutral`, not green; green is reserved for a real pass/healthy state
 > (trusted, enabled, online, enrolled). **Enforcement:** each carrier's `attr
@@ -291,8 +293,7 @@ use `brand-*` for accent, primary action, links, and success/allowed/healthy.
     deliberately KEEPS gray borders — border = control, ring-light = surface.
 - **Icons:** the approved system is semantic: product code requests a namespaced
   meaning from the canonical registry, never a source-library drawing name.
-  Existing direct Heroicon calls are migration debt, not precedent; do not add
-  another raw glyph choice. First-party masters use the centered 24-unit grid,
+  Do not add a raw glyph choice. First-party masters use the centered 24-unit grid,
   literal-size optical correction, and the rendered approval gate in
   `design-semantic-icon-system.md`. Visible sizes remain 16 px (inline), 20 px,
   and 24 px (feature) unless the owning component specifies otherwise.
@@ -304,8 +305,8 @@ Decorative, non-animating, `aria-hidden`, used **sparingly** (1–2 per page):
   flat dark panels don't read digitally flat. Absolute, inset-0 layer.
 - `.glow-emerald` — soft brand-green radial bloom for hero/CTA moments.
 - `.surface-glass` — the lit-surface card (sheen + inner highlight + deep shadow).
-- Backdrops: `.hero-grid` (fading dotted), `.contract-grid` (blueprint lines),
-  `.hero-glow` (emerald radial). **Marketing only — keep them off the console.**
+- Backdrop: `.contract-grid` (blueprint lines). **Marketing only — keep it off
+  the console.**
 
 ### 3.5 Motion (`app.css`)
 
@@ -314,7 +315,7 @@ Decorative, non-animating, `aria-hidden`, used **sparingly** (1–2 per page):
   (hover/state).
 - **Transitions name their properties** (`transition-colors`,
   `transition-transform`, `transition-opacity`), never `transition-all`.
-- `.rise-1…5` — pure-CSS staggered hero assembly (delays `0/.08/.16/.24/.34s`);
+- `.rise-1…6` — pure-CSS staggered hero assembly (delays `0/.08/.16/.24/.34/.42s`);
   no-JS safe.
 - `[data-reveal]` under `.js-reveal` — on-scroll reveals via `reveal.js`
   (IntersectionObserver adds `.is-in`). **Progressive enhancement:** hiding only
@@ -340,11 +341,11 @@ shape.** Never hand-roll a card / chip / banner / button / empty-state / page
 width / stat. Grep `core_components.ex` first; extend the primitive if it's
 genuinely missing (then it's shared, not one-off).
 - **The forward-CTA "→" is `<.cta_arrow>`, never a hand-rolled
-  `<.icon name="hero-arrow-right">` or a literal "→" in text.** It's the ONE
+  `<.icon name="action.next">` or a literal "→" in text.** It's the ONE
   animated arrow — slides right on the enclosing `group`'s hover, inherits the
   line's colour — so every call-to-action reads identically; the parent link
   carries `class="group"`. (Only for FORWARD navigation: an external link keeps
-  its up-right/`top-right-on-square` icon, and a "changed X→Y" / "flows-to"
+  its `action.external_link` icon, and a "changed X→Y" / "flows-to"
   glyph is not a CTA and doesn't animate.)
 - **The arrow rides in the text flow after the last word — never as a flex
   sibling of its label.** `inline-flex items-center` makes label and arrow two
@@ -363,7 +364,7 @@ genuinely missing (then it's shared, not one-off).
   cannot wrap — keep their `inline-flex` links; the enforcement is scoped to
   marketing for that reason.)
   Sweep: `inline-flex items-center` on any link whose label is a sentence, and
-  any `<.icon name="hero-arrow-right">` or literal "→"/`&rarr;` inside a link.
+  any `<.icon name="action.next">` or literal "→"/`&rarr;` inside a link.
 
 ### Brand / gate (`marketing_components.ex`)
 `brand`, `gate_mark`.
@@ -435,7 +436,8 @@ genuinely missing (then it's shared, not one-off).
   full are one design). And
   a table's **empty state is mandatory**, not optional — check it every time.
   The demo stack has accounts staged at each volume (`demo`=power, `acme`/`globex`=
-  partial, `foo`/`helio`/`blank`=empty) — use them, or stage rows in the dev DB.
+  partial, `blank`=empty; `both-connected` = runner + agent connected with an empty
+  action catalog) — use them, or stage rows in the dev DB.
 - **A whole-page / table / section empty gets the gray DASHED-border placeholder
   box (`empty_state`'s default `:boxed`); a SUB-SECTION empty the page already
   frames stays naked (`:bare`).** A page whose primary list is empty otherwise
@@ -532,7 +534,7 @@ the calm register:
   everywhere — replace a hand-rolled chip or count with the shared primitive.
   There is no shared `stat` and no `card`: a hand-rolled island gets DELETED, not
   swapped (`Emisar.Checks.NoIslandContainers`).
-- Don't import `.grain`/`.glow-emerald`/`.surface-glass`/`.hero-*`/the gate
+- Don't import `.grain`/`.glow-emerald`/`.surface-glass`/`.contract-grid`/the gate
   device into console workflows. Calm is the console brand.
 - Don't add scroll reveals or the rise stagger to the app.
 - Don't touch the marketing demo terminal styles or the marketing-only kit.
@@ -624,7 +626,7 @@ after being taught, so every one is checked EVERY time, mechanically:
 
 - **Tokens:** the `@theme` block in `assets/css/app.css` (the `brand` scale and
   the Tailwind 3 line-heights the rhythm was tuned on; everything else is
-  Tailwind default — `zinc`/`amber`/`rose`/Heroicons). The same file keeps the
+  Tailwind default — `zinc`/`amber`/`rose`). The same file keeps the
   `space-*` contract: a parent owns the gap between its children.
 - **CSS layer:** `assets/css/app.css` (`@font-face` Inter, `.font-display`, the
   a11y tokens, materiality primitives, all motion keyframes).

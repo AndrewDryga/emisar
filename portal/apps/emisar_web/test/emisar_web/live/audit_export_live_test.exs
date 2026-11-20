@@ -6,7 +6,6 @@ defmodule EmisarWeb.AuditExportLiveTest do
   tests when the panel moved to its own page.
   """
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.Fixtures
 
   describe "SIEM export keys" do
     setup %{conn: conn} do
@@ -26,11 +25,18 @@ defmodule EmisarWeb.AuditExportLiveTest do
 
       # Mint: the raw emk- secret is rendered exactly once.
       html = render_click(lv, "create_export_key", %{})
-      assert html =~ "emk-"
       assert html =~ "Audit export —"
 
+      raw =
+        html
+        |> LazyHTML.from_fragment()
+        |> LazyHTML.query("#export-secret")
+        |> LazyHTML.text()
+
+      assert String.starts_with?(raw, "emk-")
+
       html = render_click(lv, "dismiss_export_secret", %{})
-      refute html =~ "emk-NOSUCH"
+      refute html =~ raw
 
       # The minted key row is in the export list; revoke it.
       {:ok, [key], _meta} =
@@ -482,7 +488,7 @@ defmodule EmisarWeb.AuditExportLiveTest do
       {:ok, [key], _meta} =
         Emisar.ApiKeys.list_audit_export_keys_for_account(subject, page_size: 50)
 
-      _ = render_click(lv, "revoke_export_key", %{"id" => key.id})
+      render_click(lv, "revoke_export_key", %{"id" => key.id})
 
       denied =
         build_conn() |> put_req_header("authorization", "Bearer #{raw}") |> get(~p"/api/audit")

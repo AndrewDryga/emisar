@@ -10,9 +10,9 @@ defmodule Emisar.Fixtures.Policies do
   Seeds or replaces the account's policy. Defaults to "allow
   everything". Override `:rules` to test other shapes.
 
-  Since there's exactly one policy per account, this either inserts on
-  first call OR updates the existing row's rules — never creates a
-  second row.
+  There is one live policy per account and scope (`:scope_type` /
+  `:scope_value`, the account scope by default), so a repeat call for the
+  same scope updates that row's rules rather than creating a second row.
   """
   def create_policy(attrs \\ %{}) do
     attrs = Map.new(attrs)

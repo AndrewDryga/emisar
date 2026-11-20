@@ -1,6 +1,5 @@
 defmodule EmisarWeb.AuditDetailLiveTest do
   use EmisarWeb.ConnCase, async: true
-  import Phoenix.LiveViewTest
   alias Emisar.{Audit, Repo, RequestContext, Runs}
 
   test "current-account targets use a short label without repeating the account ID", %{conn: conn} do
@@ -152,7 +151,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
     refute html =~ "\u200D"
   end
 
-  test "an action_run event shows the runner under the subject, not as a device", %{conn: conn} do
+  test "an action_run event shows the runner under the target, not as a device", %{conn: conn} do
     {conn, _owner, account} = register_and_log_in(conn)
 
     runner =
@@ -172,7 +171,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
         args: %{}
       })
 
-    # An action_run.denied event (system actor, action_run subject) the
+    # An action_run.denied event (system actor, action_run target) the
     # runbook engine writes — stamped with the runner's connect UA, as it
     # was before the source fix, to prove the device line no longer surfaces
     # "Runner (Go)" for it.
@@ -189,7 +188,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
 
     # Runner is a target property: name (group) version. The "Runner" label is
-    # plain; only the name links to the runner. The subject's id renders too.
+    # plain; only the name links to the runner. The target's id renders too.
     assert html =~ ">Runner<"
     assert html =~ "web-01 (frontend) 0.7.4"
     assert html =~ ~p"/app/#{account}/runners/#{runner.id}"
@@ -326,7 +325,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
     refute secondary =~ "via"
     # The label track measures this card's own labels — a hardcoded width sized
     # for the longest fact stranded the two-character ID label far from its UUID.
-    assert facts =~ "grid-cols-[max-content,minmax(0,1fr)]"
+    assert facts =~ "grid-cols-[max-content_minmax(0,1fr)]"
     assert facts =~ "gap-y-1"
     assert facts =~ "text-xs"
     assert facts =~ "leading-5"
@@ -400,7 +399,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
     assert to == ~p"/app/#{account}/sign_in"
   end
 
-  test "an action_run subject whose run is in another account resolves to nil, never leaks the runner",
+  test "an action_run target whose run is in another account resolves to nil, never leaks the runner",
        %{conn: conn} do
     {conn, _owner, account} = register_and_log_in(conn)
 
@@ -425,8 +424,8 @@ defmodule EmisarWeb.AuditDetailLiveTest do
         args: %{}
       })
 
-    # An event stored in the VIEWER's account, but whose action_run subject id
-    # points at the foreign account's run (a mis-stamped / forged subject id).
+    # An event stored in the VIEWER's account, but whose action_run target id
+    # points at the foreign account's run (a mis-stamped / forged target id).
     # The event itself is readable (it's in `account`); the run is not.
     {:ok, event} =
       Audit.log(account.id, "action_run.denied",
@@ -444,11 +443,11 @@ defmodule EmisarWeb.AuditDetailLiveTest do
     refute html =~ ">Runner<"
   end
 
-  # when the action_run subject has been deleted since the
-  # event, the page still renders: the subject label falls back to the stamped
+  # when the action_run target has been deleted since the
+  # event, the page still renders: the target label falls back to the stamped
   # `target_label` (no live row to resolve), and the runner line simply hides
   # because the subject-gated run fetch finds nothing.
-  test "a deleted action_run subject falls back to its stamped label and hides the runner line",
+  test "a deleted action_run target falls back to its stamped label and hides the runner line",
        %{conn: conn} do
     {conn, _owner, account} = register_and_log_in(conn)
 
@@ -489,9 +488,9 @@ defmodule EmisarWeb.AuditDetailLiveTest do
     refute html =~ "runner:"
   end
 
-  # an event with no recorded actor/subject kind renders the
+  # an event with no recorded actor/target kind renders the
   # "Not recorded" entity card rather than a broken or blank card.
-  test "an event with nil actor and subject kind renders the not-recorded card", %{conn: conn} do
+  test "an event with nil actor and target kind renders the not-recorded card", %{conn: conn} do
     {conn, _owner, account} = register_and_log_in(conn)
 
     # A bare event: no actor_kind / target_kind stamped at all.
@@ -500,15 +499,15 @@ defmodule EmisarWeb.AuditDetailLiveTest do
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
 
     assert html =~ "Not recorded"
-    # Both cards render the placeholder (Actor + Subject), one each.
+    # Both cards render the placeholder (Actor + Target), one each.
     assert length(String.split(html, "Not recorded")) == 3
   end
 
-  test "a self-action renders the subject as 'Same as actor', not a duplicate card",
+  test "a self-action renders the target as 'Same as actor', not a duplicate card",
        %{conn: conn} do
     {conn, owner, account} = register_and_log_in(conn)
 
-    # A sign-in acts on itself: actor and subject are the same user.
+    # A sign-in acts on itself: actor and target are the same user.
     {:ok, event} =
       Audit.log(account.id, "user.signed_in",
         actor_kind: "user",

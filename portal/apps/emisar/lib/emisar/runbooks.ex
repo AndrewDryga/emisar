@@ -18,8 +18,8 @@ defmodule Emisar.Runbooks do
   alias Emisar.Runbooks.{Runbook, RunbookExecution, Scheduler}
   alias Emisar.SafeText
 
-  # One runbook list page is 35 rows; 64 bounds the batch without capping the
-  # page it serves.
+  # One runbook list page is 20 rows (the paginator default); 64 bounds the
+  # batch without capping the page it serves.
   @max_risk_runbook_ids 64
   # The published `<slug>@<version>` identity a model executes by. The version is
   # bounded to 9 digits because it is String.to_integer'd into an int4 column: an
@@ -200,12 +200,11 @@ defmodule Emisar.Runbooks do
     |> Catalog.max_risk()
   end
 
-  # Steps name their action as `action_id` or `action` interchangeably, same as
-  # the dispatch path; a step naming neither stays unresolved.
+  # Steps name their action as `action`, the only key the compiler reads; a step
+  # without one stays unresolved.
   defp step_action_ids(%Runbook{} = runbook),
     do: runbook |> expand() |> Enum.map(&step_action_id/1)
 
-  defp step_action_id(%{"action_id" => action_id}) when is_binary(action_id), do: action_id
   defp step_action_id(%{"action" => action}) when is_binary(action), do: action
   defp step_action_id(_step), do: nil
 

@@ -10,6 +10,7 @@ defmodule EmisarWeb.RuntimeConfigTest do
     SECRET_KEY_BASE DATABASE_URL EMISAR_DISABLE_BILLING EMISAR_DISABLE_MAIL EMISAR_DEV_ROUTES
     PHX_HOST FORCE_SSL POSTMARK_API_TOKEN POSTMARK_WEBHOOK_SECRET SENTRY_DSN
     MIXPANEL_TOKEN STATUS_PAGE_URL X_ADS_CONVERSIONS_JSON MAILER_FROM_EMAIL
+    EMISAR_SSO_ALLOWED_IDP_HOSTS
   ]
 
   setup do
@@ -111,6 +112,25 @@ defmodule EmisarWeb.RuntimeConfigTest do
       refute Keyword.has_key?(config[:emisar_web], :status_page_url)
       refute Keyword.has_key?(config[:emisar], :mailer_from_email)
       assert config[:emisar][:postmark_webhook_secret] == nil
+    end
+  end
+
+  describe "EMISAR_SSO_ALLOWED_IDP_HOSTS" do
+    test "the test build ignores an exported allowlist" do
+      System.put_env("EMISAR_SSO_ALLOWED_IDP_HOSTS", "localhost:8443,keycloak:8443")
+
+      config = Config.Reader.read!(@runtime_config, env: :test, imports: :disabled)
+
+      assert config[:emisar][:sso_allowed_idp_hosts] == []
+    end
+
+    test "a production build ignores an exported allowlist with a warning" do
+      System.put_env("EMISAR_SSO_ALLOWED_IDP_HOSTS", "localhost:8443")
+
+      {config, warning} = ExUnit.CaptureIO.with_io(:stderr, &read_prod_config/0)
+
+      assert config[:emisar][:sso_allowed_idp_hosts] == []
+      assert warning =~ "EMISAR_SSO_ALLOWED_IDP_HOSTS is ignored outside development builds"
     end
   end
 

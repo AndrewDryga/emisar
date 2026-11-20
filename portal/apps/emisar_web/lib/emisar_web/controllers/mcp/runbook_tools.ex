@@ -21,7 +21,6 @@ defmodule EmisarWeb.MCP.RunbookTools do
     :action_denied_by_admission,
     :incomplete_contract,
     :not_found,
-    :pack_ref_mismatch,
     :pack_retired,
     :pack_untrusted,
     :runner_not_found,
@@ -369,7 +368,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
   defp execution_failure(:runbook_capacity_exceeded, _allow_draft) do
     "runbook_capacity_exceeded"
     |> error(
-      "This account already has 1,024 active runbook items. Wait for an execution to finish or cancel one, then try again."
+      "This run would exceed the account limit for active runbook items. Wait for an execution to finish or cancel one, then try again."
     )
     |> put_in([:error, :retryable], true)
   end

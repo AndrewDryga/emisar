@@ -35,6 +35,8 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
     |> validate_required([:title])
     |> validate_length(:title, min: 1, max: 80)
     |> validate_length(:title, max: @max_title_bytes, count: :bytes)
+    |> validate_length(:description, max: 4_096)
+    |> validate_length(:description, max: @max_description_bytes, count: :bytes)
     |> validate_format(:slug, ~r/\A[a-z][a-z0-9_-]{0,79}\z/)
   end
 

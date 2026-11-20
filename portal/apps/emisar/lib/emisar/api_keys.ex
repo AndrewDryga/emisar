@@ -1,6 +1,6 @@
 defmodule Emisar.ApiKeys do
-  # Per-account ring cap for auto-generated, unused API keys. Agents
-  # page mounts mint into the ring; when capacity is exceeded, the
+  # Per-account ring cap for auto-generated, unused API keys. Snippet
+  # mints on the Agents page go into the ring; when capacity is exceeded, the
   # oldest auto-unused entry is evicted. Declared above the moduledoc
   # so the cap can be interpolated there.
   @quick_ring_cap 42
@@ -268,7 +268,7 @@ defmodule Emisar.ApiKeys do
   @doc """
   Internal — label resolver for audit attribution: batch `%{key_id => label}`
   naming the member each key acts as — a person or a service account — the way
-  `account_id` knows them (directory name → nonblank full name → email). Takes
+  `account_id` knows them (trimmed workspace display name, else email). Takes
   ids and an explicit already-authorized `account_id` rather than a
   `%Subject{}` — the caller is Audit's subject-less reference resolver. A key
   outside the account, or one whose acting membership is gone, suspended, or in
@@ -1484,7 +1484,9 @@ defmodule Emisar.ApiKeys do
   def peek_api_key_by_secret(raw) when is_binary(raw) do
     prefix_size = raw_prefix_size(raw)
 
-    if String.length(raw) < prefix_size do
+    # A malformed-UTF-8 secret can never match and must not reach Postgres,
+    # which raises on an invalid text parameter.
+    if not String.valid?(raw) or String.length(raw) < prefix_size do
       nil
     else
       prefix = String.slice(raw, 0, prefix_size)
@@ -1643,9 +1645,9 @@ defmodule Emisar.ApiKeys do
   @doc """
   Internal — called from `Emisar.OAuth` during the authorize step (the
   operator's consent is the authorization), to mint a backing MCP key
-  for an OAuth grant. Scoped to actions:read + actions:execute and owned
-  by the member the connection acts as, so the existing MCP
-  scope/attribution logic applies unchanged. The raw secret is generated
+  for an OAuth grant. Identity only, like every key: it is owned by the
+  member the connection acts as, so that member's authorization and the
+  existing MCP attribution logic apply unchanged. The raw secret is generated
   then DISCARDED — the OAuth client never sees it; it authenticates with
   OAuth access tokens that resolve to this key. Returns `{:ok, key}`.
 
@@ -1740,21 +1742,34 @@ defmodule Emisar.ApiKeys do
   OAuth resolve path (`OAuth.resolve_access_token/2`) holds the backing key's id,
   not its raw secret, so it can't bump usage through `peek_api_key_by_secret/1`;
   without this an OAuth connection's agent row reads "never used" forever and the
-  active-agent counts are wrong. Bumps `last_used_at` (an unconditional set —
-  last-writer-wins is exactly "last call"), and on the first call broadcasts the
-  list reflow so the row flips off "never used" live. Returns the bumped key.
+  active-agent counts are wrong. Bumps `last_used_at` (last-writer-wins is exactly
+  "last call") unless the stamp is fresher than the same rewrite window the
+  static-key path honors, and on the first call broadcasts the list reflow so
+  the row flips off "never used" live. Returns the key with its current stamp.
   """
-  def record_backing_key_usage(%ApiKey{last_used_at: previous_use} = key) do
+  def record_backing_key_usage(%ApiKey{last_used_at: %DateTime{} = at} = key) do
+    if DateTime.diff(DateTime.utc_now(), at, :second) < @usage_stamp_interval_seconds,
+      do: key,
+      else: stamp_backing_key_usage(key)
+  end
+
+  def record_backing_key_usage(%ApiKey{last_used_at: nil} = key) do
+    stamped = stamp_backing_key_usage(key)
+
+    # Telemetry-only judgment off the resolve-time struct: a rare concurrent
+    # double-broadcast just reflows the list twice, so no lock is warranted.
+    broadcast_api_key_first_used(key)
+
+    stamped
+  end
+
+  defp stamp_backing_key_usage(%ApiKey{} = key) do
     now = DateTime.utc_now()
 
     {_count, _} =
       ApiKey.Query.not_deleted()
       |> ApiKey.Query.by_id(key.id)
       |> Repo.update_all(set: [last_used_at: now, updated_at: now])
-
-    # Telemetry-only judgment off the resolve-time struct: a rare concurrent
-    # double-broadcast just reflows the list twice, so no lock is warranted.
-    if is_nil(previous_use), do: broadcast_api_key_first_used(key)
 
     %{key | last_used_at: now}
   end

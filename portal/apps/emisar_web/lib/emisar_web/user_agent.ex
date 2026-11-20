@@ -130,9 +130,9 @@ defmodule EmisarWeb.UserAgent do
 
     case %{facts | browser: browser} do
       %{browser: nil, os: nil} -> short_ua(user_agent)
-      %{browser: browser, os: nil} -> display_browser(browser)
+      %{browser: browser, os: nil} -> browser
       %{browser: nil, os: os} -> display_os(os)
-      %{browser: browser, os: os} -> "#{display_browser(browser)} on #{display_os(os)}"
+      %{browser: browser, os: os} -> "#{browser} on #{display_os(os)}"
     end
   end
 

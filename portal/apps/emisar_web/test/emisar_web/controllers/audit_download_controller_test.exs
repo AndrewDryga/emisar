@@ -58,6 +58,58 @@ defmodule EmisarWeb.AuditDownloadControllerTest do
              }
     end
 
+    test "the actor and target pivots narrow the rows and ride on the receipt", %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+      Fixtures.Accounts.create_subscription(account, "team")
+      alice_id = Ecto.UUID.generate()
+      target_id = Ecto.UUID.generate()
+
+      {:ok, _} =
+        Audit.log(account.id, "user.invited",
+          actor_kind: "user",
+          actor_id: alice_id,
+          actor_label: "alice@example.com",
+          target_kind: "membership",
+          target_id: target_id
+        )
+
+      {:ok, _} =
+        Audit.log(account.id, "user.invited",
+          actor_kind: "user",
+          actor_id: Ecto.UUID.generate(),
+          actor_label: "bob@example.com"
+        )
+
+      pivots = [
+        %{actor_id: alice_id},
+        %{target_id: target_id},
+        %{actor_id: alice_id, target_id: target_id}
+      ]
+
+      for pivot <- pivots do
+        body =
+          conn
+          |> get(~p"/app/#{account}/audit/download?#{pivot}")
+          |> response(200)
+
+        assert body =~ "alice@example.com"
+        refute body =~ "bob@example.com"
+      end
+
+      receipts =
+        Repo.all(Audit.Event)
+        |> Enum.filter(&(&1.event_type == "audit.exported"))
+        |> Enum.map(&Map.take(&1.payload, ["actor_id", "target_id"]))
+        |> Enum.sort()
+
+      assert receipts ==
+               Enum.sort([
+                 %{"actor_id" => alice_id},
+                 %{"target_id" => target_id},
+                 %{"actor_id" => alice_id, "target_id" => target_id}
+               ])
+    end
+
     test "a free-plan account is redirected to billing, exporting nothing", %{conn: conn} do
       {conn, _owner, account} = register_and_log_in(conn)
       {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user", actor_label: "x")
@@ -68,6 +120,26 @@ defmodule EmisarWeb.AuditDownloadControllerTest do
 
       assert Phoenix.Flash.get(conn.assigns.flash, :info) ==
                "Audit export is available on the Team plan."
+
+      assert Repo.all(Audit.Event) |> Enum.filter(&(&1.event_type == "audit.exported")) == []
+    end
+
+    test "a billing manager is refused with the permission message, exporting nothing", %{
+      conn: conn
+    } do
+      {_owner_conn, _owner, account} = register_and_log_in(conn)
+      Fixtures.Accounts.create_subscription(account, "team")
+      {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user", actor_label: "x")
+
+      finance =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "billing_manager")
+
+      conn = conn |> log_in_member(finance) |> get(~p"/app/#{account}/audit/download")
+
+      assert redirected_to(conn) == ~p"/app/#{account}"
+
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) ==
+               "You don't have permission to export the audit log."
 
       assert Repo.all(Audit.Event) |> Enum.filter(&(&1.event_type == "audit.exported")) == []
     end

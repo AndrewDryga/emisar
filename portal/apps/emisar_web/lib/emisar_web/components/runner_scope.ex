@@ -48,8 +48,6 @@ defmodule EmisarWeb.RunnerScope do
   attr :validation_error, :string, default: nil
   attr :loading?, :boolean, default: false
   attr :load_error, :string, default: nil
-  attr :class, :any, default: nil
-  attr :rest, :global
 
   def runner_scope_select(assigns) do
     tree = tree(assigns.runners, assigns.selected)
@@ -66,8 +64,6 @@ defmodule EmisarWeb.RunnerScope do
       load_error={@load_error}
       empty?={@empty?}
       empty_message="No runners available to grant."
-      class={@class}
-      {@rest}
     >
       <div :for={group <- @tree.groups}>
         <.checkbox
@@ -228,10 +224,9 @@ defmodule EmisarWeb.RunnerScope do
   end
 
   @doc """
-  The access fieldset every grant form asks: which runners, then which packs on
-  them. Four forms rendered their own copy of it — the invite form, the team
-  scope editor, the SSO provider defaults, and the role editor — and the three
-  choices had drifted into three different descriptions of the same thing.
+  The shared access fieldset: which runners, then which packs on them. The
+  invite form, the service-account form, the role editor, and the SSO provider
+  defaults render it, so the three runner choices read the same in each.
 
   The caller supplies the field names (they differ per form: `invite[...]`,
   `provider[default_...]`, bare) and where the values come from; the copy, the
@@ -345,7 +340,7 @@ defmodule EmisarWeb.RunnerScope do
 
   @doc """
   The `load_error` message for a failed runner read, or `nil`. The picker's own
-  empty state ("No runners registered yet.") would otherwise invite an admin to
+  empty state ("No runners available to grant.") would otherwise invite an admin to
   widen a grant because the fleet it reaches looks empty.
   """
   def runner_load_error(true) do
@@ -436,8 +431,6 @@ defmodule EmisarWeb.RunnerScope do
   attr :validation_error, :string, default: nil
   attr :loading?, :boolean, default: false
   attr :load_error, :string, default: nil
-  attr :class, :any, default: nil
-  attr :rest, :global
 
   def pack_scope_select(assigns) do
     nodes = pack_nodes(assigns.packs, assigns.selected)
@@ -453,8 +446,6 @@ defmodule EmisarWeb.RunnerScope do
       load_error={@load_error}
       empty?={@empty?}
       empty_message={@empty_message}
-      class={@class}
-      {@rest}
     >
       <.checkbox
         :for={pack <- @nodes.available}
@@ -645,8 +636,6 @@ defmodule EmisarWeb.RunnerScope do
   attr :load_error, :string, default: nil
   attr :empty?, :boolean, required: true
   attr :empty_message, :string, required: true
-  attr :class, :any, default: nil
-  attr :rest, :global
   slot :inner_block, required: true
 
   # The chrome both pickers wear — label, the one visible error, the loading and
@@ -663,7 +652,7 @@ defmodule EmisarWeb.RunnerScope do
       )
 
     ~H"""
-    <div class={[scope_container_class(@variant), @class]} {@rest}>
+    <div class={[scope_container_class(@variant)]}>
       <p :if={@label} class="mb-2 text-sm font-medium text-zinc-300">{@label}</p>
 
       <div :if={@visible_error} class={scope_feedback_class(@variant)}>

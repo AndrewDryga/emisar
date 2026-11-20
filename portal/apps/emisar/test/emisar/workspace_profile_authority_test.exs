@@ -66,6 +66,17 @@ defmodule Emisar.WorkspaceProfileAuthorityTest do
       assert {:error, changeset} = Accounts.validate_member_email_change(member, colleague.email)
       assert "is already used by a member of this workspace" in errors_on(changeset).email
 
+      own_recased = " " <> String.upcase(member.email) <> " "
+      assert {:error, changeset} = Accounts.validate_member_email_change(member, own_recased)
+      assert "is already your email" in errors_on(changeset).email
+
+      colleague_recased = " " <> String.upcase(colleague.email) <> " "
+
+      assert {:error, changeset} =
+               Accounts.validate_member_email_change(member, colleague_recased)
+
+      assert "is already used by a member of this workspace" in errors_on(changeset).email
+
       assert {:error, changeset} = Accounts.validate_member_email_change(member, "no-at-sign")
       assert "must have the @ sign and no spaces" in errors_on(changeset).email
     end

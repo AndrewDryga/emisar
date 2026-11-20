@@ -40,7 +40,7 @@ defmodule Emisar.Catalog.Jobs.PackVersionRetention do
   defp retired_removed(%Accounts.Account{id: account_id}, batch_opts) do
     case Catalog.delete_unadvertised_retired_pack_versions(account_id, batch_opts) do
       {:ok, deleted} -> deleted
-      {:error, _reason} -> 0
+      {:error, reason} -> sweep_failed("retired", account_id, reason)
     end
   end
 
@@ -49,9 +49,28 @@ defmodule Emisar.Catalog.Jobs.PackVersionRetention do
          {:ok, deleted} <- Catalog.delete_unseen_pack_versions(account.id, days, nil, batch_opts) do
       deleted
     else
-      {:error, _reason} -> 0
+      # Automatic cleanup is off for this account: the normal answer, not a failure.
+      {:error, :retention_disabled} -> 0
+      {:error, reason} -> sweep_failed("unseen", account.id, reason)
     end
   end
+
+  # Earlier committed batches stand; only this account's remaining work is
+  # skipped until the next tick. A changeset reason carries row data, so the
+  # warning names only the kind of failure.
+  defp sweep_failed(stage, account_id, reason) do
+    Logger.warning("pack_version_retention.failed",
+      stage: stage,
+      account_id: account_id,
+      error: error_kind(reason)
+    )
+
+    0
+  end
+
+  defp error_kind(%Ecto.Changeset{}), do: "changeset"
+  defp error_kind(reason) when is_atom(reason), do: Atom.to_string(reason)
+  defp error_kind(_reason), do: "other"
 
   defp list_accounts(limit, cursor),
     do: Accounts.list_accounts_for_system_sweep(limit: limit, after_account_id: cursor)

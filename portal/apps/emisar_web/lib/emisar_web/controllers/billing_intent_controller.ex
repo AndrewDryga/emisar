@@ -30,12 +30,6 @@ defmodule EmisarWeb.BillingIntentController do
     end
   end
 
-  def capture(conn, _params) do
-    conn
-    |> delete_session(:billing_intent)
-    |> redirect(to: default_destination(conn))
-  end
-
   def show(conn, _params) do
     case pending_intent(conn) do
       {:ok, token, intent} ->

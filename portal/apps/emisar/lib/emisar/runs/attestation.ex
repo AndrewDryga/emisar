@@ -62,6 +62,8 @@ defmodule Emisar.Runs.Attestation do
           required(:args_raw) => binary(),
           required(:runner_refs) => [String.t()],
           required(:reason) => String.t(),
+          required(:evidence) => String.t() | nil,
+          required(:expected) => String.t() | nil,
           required(:operation_id) => String.t(),
           required(:portal_origin) => String.t()
         }

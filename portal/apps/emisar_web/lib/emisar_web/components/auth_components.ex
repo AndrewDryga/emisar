@@ -3,11 +3,12 @@ defmodule EmisarWeb.AuthComponents do
   The sign-in, registration and MFA chrome — the centred card layout, the
   one-time-code input, and the enrollment steps.
 
-  Split out of CoreComponents. These render only on the unauthenticated auth
-  pages and the profile MFA flow.
+  Split out of CoreComponents. These render on the auth and consent pages, and
+  some pieces are reused in the console: the code input and MFA/OIDC steps in
+  verification prompts (Team, Billing, SSO settings), the or-separator in
+  runbook import.
   """
   use Phoenix.Component
-  use Gettext, backend: EmisarWeb.Gettext
 
   use Phoenix.VerifiedRoutes,
     endpoint: EmisarWeb.Endpoint,
@@ -199,7 +200,8 @@ defmodule EmisarWeb.AuthComponents do
 
   @doc """
   Two-column auth-flow layout: marketing copy on the left, form on the
-  right. Used by sign in / sign up / magic link / password reset.
+  right. Used by the auth pages, such as sign-in, sign-up, magic link,
+  invitations, MFA and workspace selection.
   """
   attr :title, :string, required: true
   slot :inner_block, required: true
@@ -386,14 +388,6 @@ defmodule EmisarWeb.AuthComponents do
     </div>
     """
   end
-
-  # -- Generic page primitives ---------------------------------------
-
-  # `.card`/`.panel` are GONE (§8.1 content-on-canvas): every console surface
-  # is a naked `<section>` + `<.section_header>`; boxes are earned by secrets
-  # (`secret_reveal`), code artifacts (`code_panel`), or actionable warnings
-  # (`callout`). The stat tile below keeps the one sanctioned island surface
-  # inline (the dashboard pillar grammar).
 
   @doc """
   The centered auth/consent card — the focused, chrome-less decision surface

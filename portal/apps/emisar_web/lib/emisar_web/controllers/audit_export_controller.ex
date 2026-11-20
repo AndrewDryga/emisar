@@ -19,7 +19,7 @@ defmodule EmisarWeb.AuditExportController do
     * `?cursor=<opaque>` — every subsequent call. The previous
       response's `next_cursor` value, verbatim. Takes precedence over
       `since` so resuming a poll doesn't accidentally rewind.
-    * `?event_type=<a>&event_type=<b>` — restrict to specific types
+    * `?event_type[]=<a>&event_type[]=<b>` — restrict to specific types
       (comma-supported too).
     * `?limit=<n>` — page size. Default #{Emisar.Audit.default_export_limit()},
       hard cap #{Emisar.Audit.max_export_limit()}.

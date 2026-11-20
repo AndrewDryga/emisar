@@ -591,8 +591,7 @@ defmodule Emisar.Runbooks.Definition do
     ref_issues ++ selection_issues
   end
 
-  defp valid_target_ref?("group:" <> ref),
-    do: byte_size(ref) <= 80 and Regex.match?(@group_ref, ref)
+  defp valid_target_ref?("group:" <> ref), do: Regex.match?(@group_ref, ref)
 
   defp valid_target_ref?("runner:" <> ref), do: Regex.match?(@runner_ref, ref)
   defp valid_target_ref?(_ref), do: false

@@ -54,7 +54,7 @@ defmodule EmisarWeb.RoleAccessMatrixTest do
       conn = log_in_member(build_conn(), role_members[role])
       authorized? = role != "billing_manager"
 
-      assert_detail_route(
+      assert_route(
         conn,
         ~p"/app/#{account}/runners/#{runner.id}",
         ~p"/app/#{account}/runners",
@@ -63,7 +63,7 @@ defmodule EmisarWeb.RoleAccessMatrixTest do
         authorized?
       )
 
-      assert_detail_route(
+      assert_route(
         conn,
         ~p"/app/#{account}/runs/#{run.id}",
         ~p"/app/#{account}/runs",
@@ -72,7 +72,7 @@ defmodule EmisarWeb.RoleAccessMatrixTest do
         authorized?
       )
 
-      assert_detail_route(
+      assert_route(
         conn,
         ~p"/app/#{account}/approvals/#{approval.id}",
         ~p"/app/#{account}/approvals",
@@ -97,10 +97,6 @@ defmodule EmisarWeb.RoleAccessMatrixTest do
       assert {:ok, _audit_lv, audit_html} = live(conn, ~p"/app/#{account}/audit")
       assert audit_html =~ "Audit log"
     end
-  end
-
-  defp assert_detail_route(conn, path, denied_path, denied_message, marker, authorized?) do
-    assert_route(conn, path, denied_path, denied_message, marker, authorized?)
   end
 
   defp assert_route(conn, path, denied_path, denied_message, marker, authorized?) do

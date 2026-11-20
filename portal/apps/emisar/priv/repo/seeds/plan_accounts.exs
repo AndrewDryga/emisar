@@ -9,10 +9,19 @@ defmodule Emisar.Seeds.PlanAccounts do
   """
 
   alias Emisar.ApiKeys
+  alias Emisar.Audit
   alias Emisar.Repo
   alias Emisar.Runners
   alias Emisar.Runs
+  alias Emisar.Runs.ActionRun
   alias Emisar.Seeds.{Fleet, Helpers}
+
+  @uptime_stdout " 09:14:02 up 12 days,  3:41,  0 users,  load average: 0.08, 0.05, 0.01\n"
+
+  @disk_stdout """
+  Filesystem      Size  Used Avail Use% Mounted on
+  /dev/sda1        40G   12G   26G  32% /
+  """
 
   def run(ctx) do
     # Free + Team accounts WITH data (a runner + two finished runs each) so a
@@ -41,11 +50,11 @@ defmodule Emisar.Seeds.PlanAccounts do
 
     Helpers.seed_subscription(acct, plan)
 
-    # Reconcile the Paddle link to the persona so a reseed can't leave an account
-    # wearing a prior run's customer id — a stale id lights up "Manage subscription"
-    # and the stub PaddleClient's fake invoices on a page that should show none (the
-    # Blank Workspace free account did exactly this). Only the team persona is
-    # self-serve in dev; every other tier is nil.
+    # Reconcile the Paddle customer link to the persona so a reseed can't leave an
+    # account wearing a prior run's customer id. Every paid tier here is a
+    # complimentary grant with no Paddle subscription, so no persona lists
+    # invoices; the team persona keeps a placeholder customer id, every other tier
+    # is nil.
     paddle_customer_id = if plan == "team", do: "ctm_dev_#{slug}", else: nil
 
     acct =
@@ -91,35 +100,69 @@ defmodule Emisar.Seeds.PlanAccounts do
       end
 
     if existing_account_runs == [] do
-      for {action, hrs, args, reason} <- [
-            {"linux.uptime", 2, %{}, "spot check after runner install"},
-            {"linux.disk_usage", 9, %{"paths" => ["/"]}, "daily capacity check"}
+      for {action, hrs, args, reason, stdout} <- [
+            {"linux.uptime", 2, %{}, "spot check after runner install", @uptime_stdout},
+            {"linux.disk_usage", 9, %{"paths" => ["/"]}, "daily capacity check", @disk_stdout}
           ] do
-        {:ok, run} =
-          Runs.create_run(%{
-            account_id: acct.id,
-            runner_id: runner.id,
-            action_id: action,
-            args: args,
-            reason: reason,
-            source: "operator",
-            initiating_membership_id: owner.id
-          })
+        started_at = Helpers.hours_ago(hrs)
 
-        run
-        |> Ecto.Changeset.change(
-          status: :success,
-          inserted_at: Helpers.hours_ago(hrs),
-          queued_at: Helpers.hours_ago(hrs),
-          finished_at: DateTime.add(Helpers.hours_ago(hrs), 1, :second),
-          exit_code: 0,
-          duration_ms: 1000
-        )
-        |> Repo.update!()
+        Helpers.seed_terminal_history(fn ->
+          {:ok, run} =
+            Runs.create_run(%{
+              account_id: acct.id,
+              runner_id: runner.id,
+              action_id: action,
+              args: args,
+              reason: reason,
+              source: "operator",
+              initiating_membership_id: owner.id
+            })
+
+          finish_run(run, started_at, stdout)
+        end)
       end
     end
 
     Helpers.say("✓ #{name} (slug=#{slug}, #{plan}) — with data")
+  end
+
+  # The receipts a live run leaves: its output and the terminal audit event,
+  # stamped when the run finished.
+  defp finish_run(run, started_at, stdout) do
+    {:ok, _event} =
+      Runs.append_event(run, %{
+        seq: 1,
+        kind: "progress",
+        stream: "stdout",
+        payload: %{"chunk" => stdout}
+      })
+
+    finished_at = DateTime.add(started_at, 1, :second)
+
+    changeset =
+      run
+      |> ActionRun.Changeset.transition(:success, %{
+        queued_at: started_at,
+        sent_at: started_at,
+        started_at: started_at,
+        finished_at: finished_at,
+        exit_code: 0,
+        duration_ms: 1000,
+        emitted_stdout_bytes: byte_size(stdout),
+        emitted_stderr_bytes: 0,
+        output_complete: true
+      })
+      |> Ecto.Changeset.change(inserted_at: started_at)
+
+    {:ok, %{run: run}} =
+      Ecto.Multi.new()
+      |> Ecto.Multi.update(:run, changeset)
+      |> Ecto.Multi.insert(:audit, fn %{run: run} ->
+        run |> Audit.run_event_changeset() |> Helpers.backdate_event(run.finished_at)
+      end)
+      |> Repo.commit_multi()
+
+    run
   end
 
   # A "both connected, no actions" account — one runner AND one agent, but the

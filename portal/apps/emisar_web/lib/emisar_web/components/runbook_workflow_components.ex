@@ -5,6 +5,9 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   alias Emisar.Runbooks
   alias EmisarWeb.RunbookEditorCatalog
 
+  @max_target_refs Runbooks.definition_limit!(:max_target_refs_per_step)
+  defp max_target_refs, do: @max_target_refs
+
   @doc "Returns the human runner name from a frozen runner reference."
   def runner_name(ref) when is_binary(ref) do
     ref
@@ -33,7 +36,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       )
 
     ~H"""
-    <%!-- "No runs yet." from a failed read tells an operator this runbook has
+    <%!-- "No executions yet." from a failed read tells an operator this runbook has
          never executed. --%>
     <.empty_state
       :if={@load_error?}
@@ -98,20 +101,9 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   attr :label, :string, required: true
   attr :checked, :boolean, required: true
   attr :disabled, :boolean, default: false
-  attr :class, :string, default: nil
 
   @doc "Renders a compact positive-state authoring checkbox."
   def qualifier_checkbox(assigns) do
-    class =
-      [
-        "relative flex min-h-8 w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm leading-5 text-zinc-300 ring-1 ring-inset ring-zinc-800 after:absolute after:inset-x-0 after:-inset-y-1 after:content-['']",
-        assigns.class
-      ]
-      |> Enum.reject(&is_nil/1)
-      |> Enum.join(" ")
-
-    assigns = assign(assigns, :class, class)
-
     ~H"""
     <.checkbox
       name={@name}
@@ -121,7 +113,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       label={@label}
       tone={:neutral}
       disabled={@disabled}
-      class={@class}
+      class="relative flex min-h-8 w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm leading-5 text-zinc-300 ring-1 ring-inset ring-zinc-800 after:absolute after:inset-x-0 after:-inset-y-1 after:content-['']"
     />
     """
   end
@@ -157,7 +149,6 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   attr :items, :list, required: true
   attr :item_count, :integer, default: nil
   attr :id, :string, default: nil
-  attr :class, :string, default: nil
 
   @doc "Renders one frozen runbook stage with the shared plan-row grammar."
   def plan_stage(assigns) do
@@ -167,18 +158,11 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       |> assign(:tip_prefix, assigns.id || "plan-stage-#{assigns.stage["id"]}")
 
     ~H"""
-    <section
-      id={@id}
-      class={["border-t border-zinc-800/70 pt-5", @class]}
-    >
+    <section id={@id} class="border-t border-zinc-800/70 pt-5">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 class="text-sm font-semibold text-zinc-100">{@stage["title"]}</h3>
-          <p class="mt-1 text-xs text-zinc-400">
-            {if @stage["mode"] == "parallel",
-              do: "parallel · up to #{@stage["max_parallel"]} at once",
-              else: "sequential"}
-          </p>
+          <p class="mt-1 text-xs text-zinc-400">{stage_mode_phrase(@stage)}</p>
         </div>
         <span class="text-xs tabular-nums text-zinc-400">
           {@visible_item_count} {if @visible_item_count == 1, do: "item", else: "items"}
@@ -784,7 +768,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
             and every name still lines up down the card. A `justify-between`
             fact row would fling `From run-time input config_path` to a far edge
             an operator has to track back from. --%>
-      <dl class="mt-3 grid grid-cols-[max-content,minmax(0,1fr)] gap-x-6 gap-y-1 text-xs">
+      <dl class="mt-3 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-6 gap-y-1 text-xs">
         <.summary_group :if={@arguments != [] or @arguments_note} label="Arguments">
           <p :if={@arguments == []} class="text-zinc-400">{@arguments_note}</p>
           <.summary_pairs rows={@arguments} />
@@ -824,7 +808,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   # not just with the group name.
   defp summary_pairs(assigns) do
     ~H"""
-    <div class="grid grid-cols-[max-content,minmax(0,1fr)] gap-x-2 gap-y-1">
+    <div class="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-2 gap-y-1">
       <%!-- `contents` keeps each pair's two spans as direct grid children, so
             the columns span every row. --%>
       <div :for={{name, segments} <- @rows} class="contents">
@@ -1193,14 +1177,14 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
                 option={group.heading}
                 stage_index={@stage_index}
                 step_index={@step_index}
-                at_limit?={length(@refs) >= 16}
+                at_limit?={length(@refs) >= max_target_refs()}
               />
               <.target_choice
                 :for={option <- group.options}
                 option={option}
                 stage_index={@stage_index}
                 step_index={@step_index}
-                at_limit?={length(@refs) >= 16}
+                at_limit?={length(@refs) >= max_target_refs()}
               />
             </section>
             <p

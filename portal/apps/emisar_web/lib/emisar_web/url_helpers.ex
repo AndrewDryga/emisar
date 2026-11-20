@@ -7,8 +7,6 @@ defmodule EmisarWeb.URLHelpers do
   """
   alias Emisar.InstallCommand
 
-  @hosted_url "https://emisar.dev"
-
   @doc """
   Returns the operator-facing base URL — `scheme://host[:port]` — for
   the LiveView socket or a `Plug.Conn` (API controllers building
@@ -36,7 +34,7 @@ defmodule EmisarWeb.URLHelpers do
       shell_base = if String.contains?(base, "["), do: "'#{base}'", else: base
 
       command =
-        if base == @hosted_url do
+        if base == InstallCommand.default_base_url() do
           "#{fetch} | sudo bash"
         else
           "#{fetch} | sudo EMISAR_URL=#{shell_base} bash"
@@ -52,7 +50,7 @@ defmodule EmisarWeb.URLHelpers do
       script_url = "#{base}/install-mcp.ps1"
 
       command =
-        if base == @hosted_url do
+        if base == InstallCommand.default_base_url() do
           "irm #{script_url} | iex"
         else
           "& ([scriptblock]::Create((irm '#{script_url}'))) -PortalOrigin '#{base}'"

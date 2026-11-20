@@ -50,7 +50,7 @@ including sample runners. Production delivery is documented in
 ## Gate
 
 ```sh
-../run gate portal
+./run gate portal
 ```
 
 The gate compiles, checks formatting and Credo, runs both test suites, and fails

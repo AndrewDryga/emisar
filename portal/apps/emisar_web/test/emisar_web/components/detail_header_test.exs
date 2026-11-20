@@ -25,7 +25,14 @@ defmodule EmisarWeb.Components.DetailHeaderTest do
       assert html =~ "Runners"
       assert html =~ "acme-db-01"
       # The breadcrumb separator the back_link owns is present.
-      assert html =~ "/"
+      separator =
+        html
+        |> LazyHTML.from_fragment()
+        |> LazyHTML.query(~s(span[aria-hidden="true"]))
+        |> LazyHTML.text()
+        |> String.trim()
+
+      assert separator == "/"
     end
 
     test "the heading slot keeps its own markup (mono id, version suffix, …)" do

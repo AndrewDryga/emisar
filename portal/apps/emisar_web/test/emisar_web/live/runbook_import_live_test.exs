@@ -266,7 +266,10 @@ defmodule EmisarWeb.RunbookImportLiveTest do
       ])
 
     assert {:error, _reason} = render_upload(oversized, "large.json")
-    assert render(lv) =~ "The JSON file must be 64 KB or smaller."
+    max_kb = div(Runbooks.definition_limit!(:max_definition_bytes), 1024)
+    html = render(lv)
+    assert html =~ "The JSON file must be #{max_kb} KB or smaller."
+    assert html =~ ".json · #{max_kb} KB maximum"
 
     html =
       render_submit(lv, "import_runbook", %{

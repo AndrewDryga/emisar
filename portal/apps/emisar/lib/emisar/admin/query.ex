@@ -1,7 +1,7 @@
 defmodule Emisar.Admin.Query do
   @moduledoc false
   use Emisar, :query
-  alias Emisar.{Accounts, ApiKeys, Approvals, Audit, Auth, Runners, Runs, SSO}
+  alias Emisar.{Accounts, ApiKeys, Approvals, Audit, Auth, Billing, Runners, Runs, SSO}
   alias Emisar.Repo.Like
 
   @non_success_outcome_statuses Runs.ActionRun.terminal_statuses() -- [:success]
@@ -18,7 +18,9 @@ defmodule Emisar.Admin.Query do
       [accounts: a, memberships: m],
       ilike(a.name, ^pattern) or ilike(a.slug, ^pattern) or ilike(m.email, ^pattern)
     )
-    |> distinct([accounts: a], a.id)
+    # Plain DISTINCT over the account row: `distinct(a.id)` would emit DISTINCT
+    # ON and prepend `a.id` to the ORDER BY, so the cap would cut by id.
+    |> distinct(true)
     |> order_by([accounts: a], asc: a.name, asc: a.id)
     |> limit(^limit)
   end
@@ -154,26 +156,18 @@ defmodule Emisar.Admin.Query do
   end
 
   def approval_statuses_since(since) do
-    from(request in Approvals.Request,
-      as: :approval_requests,
-      where: request.inserted_at >= ^since,
-      group_by: request.status,
-      select: %{status: request.status, count: count(request.id)},
-      order_by: [desc: count(request.id), asc: request.status]
-    )
+    Approvals.Request.Query.all()
+    |> where([requests: r], r.inserted_at >= ^since)
+    |> group_by([requests: r], r.status)
+    |> select([requests: r], %{status: r.status, count: count(r.id)})
+    |> order_by([requests: r], desc: count(r.id), asc: r.status)
   end
 
   def subscription_posture do
-    from(subscription in Emisar.Billing.Subscription,
-      as: :subscriptions,
-      group_by: [subscription.plan, subscription.status],
-      select: %{
-        plan: subscription.plan,
-        status: subscription.status,
-        accounts: count(subscription.id)
-      },
-      order_by: [asc: subscription.plan, asc: subscription.status]
-    )
+    Billing.Subscription.Query.all()
+    |> group_by([subscriptions: s], [s.plan, s.status])
+    |> select([subscriptions: s], %{plan: s.plan, status: s.status, accounts: count(s.id)})
+    |> order_by([subscriptions: s], asc: s.plan, asc: s.status)
   end
 
   def active_account_ids_since(since, limit \\ 50) do
@@ -252,10 +246,12 @@ defmodule Emisar.Admin.Query do
     |> limit(^limit)
   end
 
-  # Every session belongs to exactly one Member of one workspace.
+  # Every session belongs to exactly one Member of one workspace; an expired
+  # session no longer signs anyone in, so it is not counted as active.
   def member_session_count(%Accounts.Membership{} = membership) do
     Auth.UserToken.Query.by_membership(membership.account_id, membership.id)
     |> Auth.UserToken.Query.by_context("session")
+    |> Auth.UserToken.Query.not_expired("session")
     |> select([tokens: t], count(t.id))
   end
 
@@ -273,6 +269,7 @@ defmodule Emisar.Admin.Query do
     ApiKeys.ApiKey.Query.not_deleted()
     |> ApiKeys.ApiKey.Query.by_account_id(account_id)
     |> ApiKeys.ApiKey.Query.not_revoked()
+    |> ApiKeys.ApiKey.Query.not_expired(DateTime.utc_now())
   end
 
   def table_counts do

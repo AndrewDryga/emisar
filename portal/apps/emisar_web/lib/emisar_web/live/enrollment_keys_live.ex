@@ -2,11 +2,11 @@ defmodule EmisarWeb.EnrollmentKeysLive do
   use EmisarWeb, :live_view
   alias Emisar.Runners
   alias EmisarWeb.{LiveForm, LiveTable, Permissions, URLHelpers}
-  alias Phoenix.LiveView.JS
 
   def mount(_params, _session, socket) do
     # Manage-only page (enrollment keys have no view-only permission): anyone
-    # without manage lands on not-found at LOAD time, not on first submit.
+    # without manage is sent to the runners page with a flash at LOAD time, not
+    # on first submit.
     if Runners.subject_can_manage_enrollment_keys?(socket.assigns.current_subject) do
       # Subscribe to the per-account enrollment-keys topic so another operator's
       # create or revoke, an install key minted elsewhere, a runner registering
@@ -20,6 +20,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
        |> assign(:page_title, "Enrollment keys")
        |> assign(:new_secret, nil)
        |> assign(:install_command, nil)
+       |> assign(:reload_scheduled?, false)
        |> assign(:base_url, URLHelpers.derive_base_url(socket))
        # IL-18: only hit the billing read on the connected mount; the
        # cap-warning banner just stays hidden until it loads.
@@ -67,12 +68,24 @@ defmodule EmisarWeb.EnrollmentKeysLive do
     end
   end
 
-  # Only the list reflows; the issue form (:new) has no list to refresh.
+  # Only the list reflows; the issue form (:new) has no list to refresh. A burst
+  # of key events (a fleet registering with one key) coalesces into one reload.
   def handle_info(
         {:list_changed, :enrollment_key, _event_type, _id},
         %{assigns: %{live_action: :index}} = socket
       ),
-      do: {:noreply, load(socket, socket.assigns[:filter_params] || %{})}
+      do: {:noreply, LiveTable.schedule_reload(socket, :reload_enrollment_keys)}
+
+  def handle_info(:reload_enrollment_keys, %{assigns: %{live_action: :index}} = socket) do
+    {:noreply,
+     socket
+     |> LiveTable.reload_drained()
+     |> load(socket.assigns[:filter_params] || %{})}
+  end
+
+  # The operator moved to the issue form before the timer fired: nothing to reload.
+  def handle_info(:reload_enrollment_keys, socket),
+    do: {:noreply, LiveTable.reload_drained(socket)}
 
   def handle_info(
         {:list_changed, :team, "membership.runner_access_changed", membership_id},
@@ -765,7 +778,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
     if Emisar.Billing.headroom(billing, :runners) == :at_limit do
       "At runner limit: new installs will fail."
     else
-      "One runner slot left on the #{String.capitalize(billing.plan)} plan."
+      "One runner slot left on the #{billing.plan_name} plan."
     end
   end
 end

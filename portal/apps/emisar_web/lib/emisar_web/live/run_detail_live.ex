@@ -469,7 +469,8 @@ defmodule EmisarWeb.RunDetailLive do
         </.confirm_button>
         <p
           :if={
-            @run.status in [:sent, :running, :pending, :pending_approval] and
+            connected?(@socket) and
+              @run.status in [:sent, :running, :pending, :pending_approval] and
               Runs.subject_can_cancel_run?(@current_subject) and not @can_cancel?
           }
           class="text-sm text-zinc-400"
@@ -698,7 +699,7 @@ defmodule EmisarWeb.RunDetailLive do
                 "text-sm leading-relaxed text-zinc-200",
                 not lone_reason?(@run) && "mt-1"
               ]}>
-                {@run.reason}
+                <span class="whitespace-pre-wrap">{@run.reason}</span>
               </dd>
             </div>
             <%!-- The optional justification chain the agent gave alongside the
@@ -1073,16 +1074,19 @@ defmodule EmisarWeb.RunDetailLive do
   end
 
   # No point staring at a black terminal for a run that never made it to the
-  # runner. Cancelled / denied / awaiting-approval / refused runs never produce
-  # output; surfacing the panel just signals "broken".
+  # runner. Denied / awaiting-approval / refused runs, and a run cancelled while
+  # still queued, never produce output; surfacing the panel just signals "broken".
   #
-  # An errored run is the special case: it may have produced output before
-  # failing (show it) or none at all — "runner disconnected, result never
-  # arrived" — so gate it on whether any output was actually persisted.
-  # Everything else (sent / running while streaming, success, failed) gets the
-  # panel — an empty one is fine because chunks stream in via PubSub.
+  # An errored run, or one cancelled after dispatch, is the special case: it may
+  # have produced output before it stopped (show it) or none at all — "runner
+  # disconnected, result never arrived" — so gate it on whether any output was
+  # actually persisted. Everything else (sent / running while streaming, success,
+  # failed) gets the panel — an empty one is fine because chunks stream in via PubSub.
+  defp show_output?(%{status: :cancelled, sent_at: nil}, _output_present?, _output_state),
+    do: false
+
   defp show_output?(%{status: status}, _output_present?, _output_state)
-       when status in [:cancelled, :denied, :pending_approval, :pending, :refused],
+       when status in [:denied, :pending_approval, :pending, :refused],
        do: false
 
   # Until the window is read, "did this run capture anything?" has no answer —
@@ -1090,7 +1094,9 @@ defmodule EmisarWeb.RunDetailLive do
   # live instead of the whole section silently disappearing.
   defp show_output?(_run, _output_present?, output_state) when output_state != :loaded, do: true
 
-  defp show_output?(%{status: :error}, output_present?, :loaded), do: output_present?
+  defp show_output?(%{status: status}, output_present?, :loaded)
+       when status in [:error, :cancelled],
+       do: output_present?
 
   defp show_output?(_run, _output_present?, :loaded), do: true
 

@@ -1,6 +1,6 @@
 defmodule EmisarWeb.AuthFlowTest do
   @moduledoc """
-  The signed-out entry points (plan §3 "Sign-in", "Sign-up"): `/sign_in` asks
+  The signed-out entry points: `/sign_in` asks
   which workspace, the workspace's own page offers its ways in, `/sign_up`
   creates a workspace, and `/sign_in/magic` exists only for a code this browser
   asked for. All passwordless.

@@ -27,6 +27,27 @@ defmodule EmisarWeb.RunnerConnectControllerTest do
     refute conn.resp_body =~ raw
   end
 
+  test "a malformed-UTF-8 bearer is unauthorized, not a server error" do
+    malformed = "Bearer " <> :binary.copy(<<0xFF>>, 40)
+
+    register =
+      build_conn()
+      |> put_req_header("authorization", malformed)
+      |> post(~p"/runner/register", %{
+        "hostname" => "demo-1",
+        "group" => "demo",
+        "external_id" => "ext-#{System.unique_integer([:positive])}"
+      })
+
+    refresh =
+      build_conn()
+      |> put_req_header("authorization", malformed)
+      |> post(~p"/runner/token/refresh", %{})
+
+    assert register.status == 401
+    assert refresh.status == 401
+  end
+
   test "the token refresh and the socket upgrade share one per-IP cap" do
     Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
 

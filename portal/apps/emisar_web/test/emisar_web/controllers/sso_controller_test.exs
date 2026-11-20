@@ -113,6 +113,16 @@ defmodule EmisarWeb.SSOControllerTest do
     def verify_callback(_provider, _params, _stashed), do: {:error, :missing_id_token}
   end
 
+  defmodule RateLimitedCallbackOIDC do
+    @behaviour Emisar.SSO.OIDC
+
+    @impl Emisar.SSO.OIDC
+    def begin_authorization(_provider, _opts), do: {:error, :not_used}
+
+    @impl Emisar.SSO.OIDC
+    def verify_callback(_provider, _params, _stashed), do: {:error, :rate_limited}
+  end
+
   # Another Member took the callback's address between its contact match and
   # its insert. That takes two transactions, which `Emisar.SSOPolicyConcurrencyTest`
   # runs on real connections; this seam hands the controller the same refusal.
@@ -1806,6 +1816,25 @@ defmodule EmisarWeb.SSOControllerTest do
         end)
 
       assert log =~ "sso_callback_failed reason=token_response_invalid"
+    end
+
+    test "a throttled callback is logged as rate_limited, creating no session", %{conn: conn} do
+      Emisar.Config.put_override(:emisar, :sso_oidc_impl, RateLimitedCallbackOIDC)
+      provider = provider_fixture(enterprise_account())
+
+      log =
+        capture_log(fn ->
+          failed =
+            conn
+            |> stash_callback(provider)
+            |> get(~p"/sign_in/sso/callback", %{"code" => "AUTH_CODE_SENTINEL"})
+
+          assert redirected_to(failed) == ~p"/sign_in"
+          assert Phoenix.Flash.get(failed.assigns.flash, :error) =~ "Single sign-on failed"
+          refute get_session(failed, :sessions)
+        end)
+
+      assert log =~ "sso_callback_failed reason=rate_limited"
     end
 
     test "callback logs one bounded reason without tokens, claims, body, or TLS material", %{

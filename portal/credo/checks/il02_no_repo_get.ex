@@ -4,7 +4,8 @@ defmodule Emisar.Checks.IL02NoRepoGet do
     category: :design,
     explanations: [
       check: """
-      Iron Law IL-2: never `Repo.get/2`, `Repo.get!/2`, or `Repo.get_by/2`.
+      Iron Law IL-2: never `Repo.get/2`, `Repo.get!/2`, `Repo.get_by/2`, or
+      `Repo.get_by!/2`.
 
       They bypass the Query module and its row-scoping entirely. Build the
       lookup with `Schema.Query.by_id/2` (or another Query helper) and read
@@ -31,7 +32,7 @@ defmodule Emisar.Checks.IL02NoRepoGet do
   end
 
   defp walk({{:., _, [{:__aliases__, meta, parts}, fun]}, _, args} = ast, ctx)
-       when fun in [:get, :get!, :get_by] and is_list(args) and args != [] do
+       when fun in [:get, :get!, :get_by, :get_by!] and is_list(args) and args != [] do
     if List.last(parts) == :Repo do
       {ast, put_issue(ctx, issue_for(ctx, meta, "Repo.#{fun}"))}
     else

@@ -22,12 +22,12 @@ Two notes on what was done to them, so a later edit does not undo it by accident
 - Google Workspace has no icon-only mark (its lockup is pure typography),
   so the row uses the Google "G", which is the recognisable square mark.
 
-`okta.svg` carries no `fill`, so it renders black. That is how the CC0 asset
-ships and is a real monochrome presentation of the mark; it sits on the white
-chip in `docs.html.heex`, so it reads correctly. Set a fill only against an
-actual Okta brand reference, never a guess.
+`okta.svg` carries no `fill`, so it renders black on its own. That is how the
+CC0 asset ships and is a real monochrome presentation of the mark. Set a fill
+only against an actual Okta brand reference, never a guess.
 
-The white chip is needed because several of these marks are dark (JumpCloud is
-`#002B49`, Okta is black) and are illegible directly on the near-black docs page. Rendering them
-on a white tile keeps every vendor's true colours instead of recolouring
-someone's trademark to suit our theme.
+The docs index (`docs.html.heex`) does not draw these files in their own
+colours. Each one is a CSS mask (`.docs-provider-mark` in `assets/css/app.css`):
+only the silhouette is used, filled with the same emerald accent and hover
+treatment as the neighbouring emisar icons, so a dark mark such as JumpCloud's
+`#002B49` or Okta's black stays legible on the near-black page.

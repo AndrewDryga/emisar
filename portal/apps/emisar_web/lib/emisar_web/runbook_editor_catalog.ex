@@ -306,9 +306,7 @@ defmodule EmisarWeb.RunbookEditorCatalog do
         ),
       search: value,
       pack_id: elem(split_action_value(value), 0),
-      unavailable: targets_resolved?,
-      disabled: true,
-      selected: true
+      disabled: true
     }
   end
 
@@ -403,7 +401,6 @@ defmodule EmisarWeb.RunbookEditorCatalog do
 
   defp target_kind("group:" <> _group, "random_one"), do: :group_one
   defp target_kind("group:" <> _group, _selection), do: :group_all
-  defp target_kind("runner:" <> _ref, _selection), do: :runner
   defp target_kind(_ref, _selection), do: :runner
 
   defp unavailable_target_description("group:" <> _group),

@@ -1,4 +1,4 @@
-defmodule EmisarWeb.MCPRpcController do
+defmodule EmisarWeb.MCPRPCController do
   @moduledoc """
   MCP-over-HTTP — JSON-RPC 2.0 on a single POST endpoint at
   `/api/mcp/rpc`. The canonical MCP server implementation.
@@ -256,7 +256,6 @@ defmodule EmisarWeb.MCPRpcController do
 
   defp respond(conn, :notification, _id, _result), do: send_resp(conn, 202, "")
   defp respond(conn, :request, _id, :cancelled), do: send_resp(conn, 204, "")
-  defp respond(conn, :request, _id, :no_reply), do: send_resp(conn, 204, "")
 
   defp respond(conn, :request, id, {:ok, result}) do
     send_bounded_frame(conn, %{jsonrpc: "2.0", id: id, result: result}, result)

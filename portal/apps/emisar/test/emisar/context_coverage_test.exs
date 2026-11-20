@@ -86,7 +86,6 @@ defmodule Emisar.ContextCoverageTest do
   @intended_api_surface MapSet.new([
                           {:accounts, {"close_account", 3}},
                           {:accounts, {"list_memberships_for_account", 3}},
-                          {:approvals, {"revoke_all_grants", 1}},
                           {:catalog, {"check_pack_trusted", 1}},
                           {:catalog, {"list_pack_versions", 2}},
                           {:runners, {"peek_enrollment_key_by_secret", 1}},

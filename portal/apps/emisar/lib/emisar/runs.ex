@@ -1,9 +1,10 @@
 defmodule Emisar.Runs do
   @moduledoc """
-  Action run lifecycle. Cloud calls `dispatch_run/2` when an operator
-  (or MCP, or a runbook step) wants to invoke an action; this module
-  creates the run row, evaluates policy, hands the dispatch to the
-  Transport for sending, and tracks progress + final result.
+  Action run lifecycle. Runs enter through `dispatch_run/2` (an operator),
+  `dispatch_mcp_action/2` (an MCP client), or
+  `compose_runbook_attempts_in_multi/6` (a runbook step); this module creates
+  the run row, evaluates policy, delivers `run_action` through
+  `Emisar.Runners.deliver_to_runner/4`, and tracks progress + final result.
   """
   use Supervisor
   alias Ecto.Multi
@@ -32,15 +33,10 @@ defmodule Emisar.Runs do
   # bytes per grapheme, so a line well inside the character ceiling answered
   # past the whole 64 KiB page budget.
   @max_projected_command_bytes 2_000
-  # DispatchTimeout loads both sweeps into memory every 60 seconds, fleet-wide
-  # and unbounded. A wide runner outage parks tens of thousands of runs, the
-  # tick then takes longer than its own interval, and dispatch timeouts stop
-  # being enforced during exactly the incident they exist for. Bound the batch;
-  # a backlog drains over consecutive ticks instead of stalling the job.
-  @sweep_batch 2_000
-  # A removed member can leave many queued runs on one runner. One dispatch call
-  # refuses at most this many before it yields; the next result or sweep tick
-  # carries on, so a long backlog never ties up the runner socket.
+  # A removed member or a refused action can leave many queued runs on one
+  # runner. One dispatch call refuses at most this many before it yields; the
+  # next result or sweep tick carries on, so a long backlog never ties up the
+  # runner socket.
   @refusal_drain_limit 100
 
   def start_link(opts) do
@@ -884,8 +880,7 @@ defmodule Emisar.Runs do
   Internal — the dispatch pipeline (`dispatch_run/2`'s allow/deny/approval
   paths) and tests: create a run row in :pending state inside the
   already-authorized dispatch (no web subject). Caller is responsible for
-  triggering the transport to deliver `run_action` once the row is
-  persisted (see Emisar.Transport).
+  delivering `run_action` once the row is persisted.
 
   Returns `{:ok, run}` or `{:error, changeset}`. An `:attestation` is always
   refused here — signed state is minted only by the preflighted MCP fan-out.
@@ -1002,8 +997,8 @@ defmodule Emisar.Runs do
   Internal dispatch seam for an already-account-scoped caller.
 
   The public subject-aware path establishes attribution and membership scope
-  before entering here. Durable schedulers may also supply the initiating
-  membership explicitly, so every attempt rechecks current runner access.
+  before entering here. The initiating membership travels in the attrs, so
+  every attempt rechecks that Member's current runner access.
 
   This dispatch is unsigned by definition: it never preflighted a signed
   envelope, so caller attrs carrying an `:attestation` are refused.
@@ -2680,14 +2675,19 @@ defmodule Emisar.Runs do
       {:error, :not_dispatchable} ->
         :ok
 
-      # A refused run no longer holds the slot; the next queued run takes it.
-      {:error, :initiator_no_longer_authorized} ->
-        if refusals_left > 1 and match?(%ActionRun{status: :refused}, peek_run_by_id(run.id)),
-          do: dispatch_queued_for_runner(run.runner_id, refusals_left - 1),
-          else: :ok
-
       {:error, reason} ->
-        Logger.warning("queued run delivery failed run=#{run.id}: #{inspect(reason)}")
+        case peek_run_by_id(run.id) do
+          # A refused run (lost initiator, admission, missing executable, pack
+          # trust) no longer holds the slot; the next queued run takes it.
+          %ActionRun{status: :refused} when refusals_left > 1 ->
+            dispatch_queued_for_runner(run.runner_id, refusals_left - 1)
+
+          %ActionRun{status: :refused} ->
+            :ok
+
+          _unsettled ->
+            Logger.warning("queued run delivery failed run=#{run.id}: #{inspect(reason)}")
+        end
     end
   end
 
@@ -3340,7 +3340,7 @@ defmodule Emisar.Runs do
   end
 
   @doc "Internal — retry durable runbook cancellation intent, even for terminal parents."
-  def retry_runbook_cancellations(limit \\ @sweep_batch) do
+  def retry_runbook_cancellations(limit) do
     Emisar.Jobs.Sweep.each_row(
       limit,
       &list_cancelling_runbook_attempts/2,
@@ -4055,7 +4055,8 @@ defmodule Emisar.Runs do
   end
 
   @doc """
-  Internal — Approvals decide: the approval-gated run. Raises if missing —
+  Internal — the approval-gated run behind `recheck_run_pack_trust_for_approval/1`
+  and `fetch_run_action_for_approval/1`, which Approvals calls. Raises if missing —
   the request row holds a foreign key to it, so absence is a broken
   invariant, not a caller-handleable state.
   """
@@ -4585,9 +4586,6 @@ defmodule Emisar.Runs do
   defp account_runs_topic(account_id), do: "account:#{account_id}:runs"
   defp run_topic(account_id, run_id), do: "account:#{account_id}:run:#{run_id}"
 
-  # Exact subscribers need `runner.name` to render — make `runner` preloaded
-  # part of the payload contract so an update arriving after mount can cleanly
-  # replace a run without re-introducing `%NotLoaded{}`.
   @doc """
   Internal — broadcast a run cancelled via `cancel_run_in_multi/3`, from the
   caller's `commit_multi(after_commit:)`. No-op for the already-terminal /
@@ -4613,6 +4611,9 @@ defmodule Emisar.Runs do
 
   defp notify_runbook_settled(%ActionRun{}), do: :ok
 
+  # Exact subscribers need `runner.name` to render — make `runner` preloaded
+  # part of the payload contract so an update arriving after mount can cleanly
+  # replace a run without re-introducing `%NotLoaded{}`.
   defp broadcast_run(%ActionRun{} = run) do
     run =
       case run.runner do

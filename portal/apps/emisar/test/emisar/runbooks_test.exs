@@ -287,6 +287,25 @@ defmodule Emisar.RunbooksTest do
       assert Runbooks.risk_by_runbooks([partial], subject) == {:ok, %{partial.id => nil}}
     end
 
+    test "reads a step's action from `action` only, as the compiler does" do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.reboot", risk: "critical")
+
+      definition =
+        update_in(
+          risk_definition(["linux.uptime"]),
+          ["stages", Access.at(0), "steps", Access.at(0)],
+          &Map.put(&1, "action_id", "linux.reboot")
+        )
+
+      draft = create_runbook(subject, definition: definition)
+      assert draft.draft_definition == definition
+
+      assert Runbooks.risk_by_runbooks([draft], subject) == {:ok, %{draft.id => :low}}
+    end
+
     test "omits deleted and cross-account runbooks a caller still holds" do
       {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       deleted = create_runbook(subject) |> delete(subject)
@@ -638,14 +657,14 @@ defmodule Emisar.RunbooksTest do
     # so the provenance it needs (`kind`) and the denial path are pinned here.
     test "carries the execution kind and denies a principal without visibility" do
       fixture = mcp_execution_fixture()
-      runner_subject = Fixtures.Subjects.permissionless_subject(fixture.account)
+      permissionless_subject = Fixtures.Subjects.permissionless_subject(fixture.account)
 
       assert {:ok, execution} =
                Runbooks.fetch_execution_by_id(fixture.execution_id, fixture.subject)
 
       assert execution.kind == :published
 
-      assert Runbooks.fetch_execution_by_id(fixture.execution_id, runner_subject) ==
+      assert Runbooks.fetch_execution_by_id(fixture.execution_id, permissionless_subject) ==
                {:error, :unauthorized}
     end
   end
@@ -692,9 +711,9 @@ defmodule Emisar.RunbooksTest do
 
     test "denies and isolates the result before projecting attempts" do
       fixture = mcp_execution_fixture()
-      runner_subject = Fixtures.Subjects.permissionless_subject(fixture.account)
+      permissionless_subject = Fixtures.Subjects.permissionless_subject(fixture.account)
 
-      assert Runbooks.fetch_execution_result(fixture.execution_id, runner_subject) ==
+      assert Runbooks.fetch_execution_result(fixture.execution_id, permissionless_subject) ==
                {:error, :unauthorized}
 
       {_owner, _account, other_subject} = Fixtures.Subjects.owner_subject()
@@ -1177,6 +1196,20 @@ defmodule Emisar.RunbooksTest do
       refute invalid.valid?
       assert "can't be blank" in errors_on(invalid).title
       assert "has invalid format" in errors_on(invalid).slug
+    end
+
+    test "bounds the description as a save does, by characters and by bytes" do
+      form = &Runbooks.change_runbook(%{"title" => "Deploy check", "description" => &1})
+
+      assert form.(String.duplicate("a", 4_096)).valid?
+
+      assert errors_on(form.(String.duplicate("a", 4_097))) == %{
+               description: ["should be at most 4096 character(s)"]
+             }
+
+      assert errors_on(form.(String.duplicate("€", 4_096))) == %{
+               description: ["should be at most 8192 byte(s)"]
+             }
     end
   end
 
@@ -1964,6 +1997,15 @@ defmodule Emisar.RunbooksTest do
 
       assert {:ok, published} = Runbooks.publish_draft(runbook, subject)
       assert published.definition == definition
+
+      Runners.subscribe_runner_transport(runner)
+      assert {:ok, result} = Runbooks.dispatch_runbook(published, "inspect the fleet", subject)
+      assert result.total == 40
+
+      assert ExecutionItem.Query.by_execution_id(result.execution_id)
+             |> Repo.all()
+             |> Enum.map(& &1.step_position)
+             |> Enum.sort() == Enum.to_list(0..39)
     end
 
     test "counts publishes, not saves" do

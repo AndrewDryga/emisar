@@ -44,7 +44,7 @@ defmodule Emisar.Checks.WebNoAuditLog do
 
   defp walk(ast, ctx), do: {ast, ctx}
 
-  # The Audit context's write API — `log`, `log_for_user`, `record` — never from the web.
+  # The low-level Audit writes, any `Audit.log*` and `Audit.record`, never from the web.
   defp audit_write?(fun) do
     name = Atom.to_string(fun)
     String.starts_with?(name, "log") or name == "record"

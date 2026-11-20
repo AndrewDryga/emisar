@@ -165,7 +165,7 @@ defmodule EmisarWeb.AgentClientConfig do
     }
   end
 
-  def dev_container_dockerfile do
+  defp dev_container_dockerfile do
     ~S"""
     FROM node:22-bookworm
 
@@ -176,7 +176,7 @@ defmodule EmisarWeb.AgentClientConfig do
     """
   end
 
-  def dev_container_config do
+  defp dev_container_config do
     ~S"""
     {
       "name": "emisar agent",
@@ -398,13 +398,7 @@ defmodule EmisarWeb.AgentClientConfig do
     prefix <> Enum.join([command] ++ env ++ [options, shell_quote(path, os)], separator)
   end
 
-  defp body("codex", url, key, _os, path) do
-    """
-    [mcp_servers.emisar]
-    command = #{Jason.encode!(path)}
-    env = { EMISAR_URL = #{Jason.encode!(url)}, EMISAR_API_KEY = #{Jason.encode!(key)}, EMISAR_CLIENT = "codex" }\
-    """
-  end
+  defp body("codex", url, key, _os, path), do: codex_config(path, url, key, "codex")
 
   defp body("hermes", url, key, _os, path) do
     """

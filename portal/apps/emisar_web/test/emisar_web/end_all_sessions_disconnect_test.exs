@@ -6,7 +6,7 @@ defmodule EmisarWeb.EndAllSessionsDisconnectTest do
   The real web disconnect handler delivers the Phoenix broadcast.
   """
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.{Accounts, Auth, Crypto, Fixtures}
+  alias Emisar.{Accounts, Auth, Crypto}
 
   setup do
     account = Fixtures.Accounts.create_account()

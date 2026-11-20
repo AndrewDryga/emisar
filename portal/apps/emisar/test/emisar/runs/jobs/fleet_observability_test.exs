@@ -42,11 +42,9 @@ defmodule Emisar.Runs.Jobs.FleetObservabilityTest do
     :ok
   end
 
-  # connected_runners comes from Phoenix.Presence, which lives outside the DB
-  # sandbox: entries other tests register are still there when this module runs,
-  # and `async: false` does not undo them. So the connected count is asserted as
-  # a DELTA against a baseline read immediately before the arrangement.
-  # pending_dispatch_depth is a plain DB count and stays absolute.
+  # connected_runners is the fleet-wide DB tally from `Runners.connection_counts/0`,
+  # so the test asserts the fixtures' increment as a DELTA against a baseline read
+  # immediately before the arrangement. pending_dispatch_depth stays absolute.
 
   # The emitter logs UNCONDITIONALLY every tick, including the zero state — the
   # fleet-drop alert needs a "connected_runners = 0" data point, which is

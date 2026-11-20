@@ -16,34 +16,20 @@ defmodule Emisar.Repo.Changeset do
   def castable(attrs) when is_map(attrs), do: attrs
 
   @doc """
-  Put `field` to `value` only when it's nil or unset. `value` may be
-  a literal, a 0-arity function (lazy default), or a 1-arity function
-  taking the current changeset.
+  Put `field` to the literal `value` only when it's nil or unset. A `nil`
+  default is a no-op.
 
       put_default_value(changeset, :name, "untitled")
-      put_default_value(changeset, :slug, &generate_slug/0)
-      put_default_value(changeset, :legal_name, from: :name)
   """
   def put_default_value(%Ecto.Changeset{} = changeset, _field, nil), do: changeset
 
-  def put_default_value(%Ecto.Changeset{} = changeset, field, from: source_field) do
-    case fetch_field(changeset, source_field) do
-      {_data_or_changes, value} -> put_default_value(changeset, field, value)
-      :error -> changeset
-    end
-  end
-
   def put_default_value(%Ecto.Changeset{} = changeset, field, value) do
     case fetch_field(changeset, field) do
-      {:data, nil} -> put_change(changeset, field, maybe_apply(changeset, value))
-      :error -> put_change(changeset, field, maybe_apply(changeset, value))
+      {:data, nil} -> put_change(changeset, field, value)
+      :error -> put_change(changeset, field, value)
       _ -> changeset
     end
   end
-
-  defp maybe_apply(_changeset, fun) when is_function(fun, 0), do: fun.()
-  defp maybe_apply(changeset, fun) when is_function(fun, 1), do: fun.(changeset)
-  defp maybe_apply(_changeset, value), do: value
 
   @doc """
   True when the changeset failed on a `unique_constraint` — for mapping a

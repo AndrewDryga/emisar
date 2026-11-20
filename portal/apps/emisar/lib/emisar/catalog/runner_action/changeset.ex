@@ -78,7 +78,7 @@ defmodule Emisar.Catalog.RunnerAction.Changeset do
     |> validate_length(:summary, max: @max_summary_length, count: :codepoints)
     |> validate_length(:description, max: @max_description_length, count: :codepoints)
     |> validate_length(:missing_executable, max: 255, count: :codepoints)
-    |> validate_length(:search_terms, max: @max_search_terms, count: :codepoints)
+    |> validate_length(:search_terms, max: @max_search_terms)
     |> validate_search_terms()
     |> validate_json_sizes()
     |> validate_json_value(:output_schema,

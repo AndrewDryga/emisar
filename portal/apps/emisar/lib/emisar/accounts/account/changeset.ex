@@ -15,7 +15,7 @@ defmodule Emisar.Accounts.Account.Changeset do
   # update/2 may also change the embedded settings via a nested
   # `%{settings: %{…}}`; the context's field-aware permission check
   # (`Accounts.update_account/3`) decides who may touch them. Plan is NOT
-  # settable — it's derived from the subscription (`Billing.account_plan/1`).
+  # settable — it's derived from the subscription.
   def update(%Account{} = account, attrs) do
     account
     |> cast(attrs, @fields)
@@ -99,11 +99,11 @@ defmodule Emisar.Accounts.Account.Changeset do
       message: "must be lowercase letters/numbers/hyphens, start with a letter, 3-64 chars"
     )
     # The router serves literal /app/<segment> paths at these names (the
-    # slugless console shorthands + checkout/accounts), so an account carrying
-    # one could never reach its own pages.
+    # slugless console shorthands + checkout), so an account carrying one could
+    # never reach its own pages.
     |> validate_exclusion(
       :slug,
-      ~w[accounts agents approvals audit billing checkout packs policies runbooks runners runs service-accounts sso team],
+      ~w[agents approvals audit billing checkout packs policies runbooks runners runs service-accounts sso team],
       message: "is reserved"
     )
     |> unique_constraint(:slug)

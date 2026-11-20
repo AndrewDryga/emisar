@@ -234,7 +234,7 @@ defmodule EmisarWeb.RunbooksLiveTest do
              "Published runbooks will appear here when available."
            )
 
-    refute has_element?(lv, "#runbooks-primary", "ask your LLM to create one")
+    refute has_element?(lv, "#runbooks-primary", "ask your AI agent to create one")
     assert has_element?(lv, "a[href='/docs/runbooks']", "Runbook docs")
   end
 

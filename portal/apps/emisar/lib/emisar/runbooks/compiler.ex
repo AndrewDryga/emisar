@@ -432,7 +432,7 @@ defmodule Emisar.Runbooks.Compiler do
             {values, issues}
 
           {:error, message} ->
-            {values, [issue("invalid_input", "/input_values/#{id}", message) | issues]}
+            {values, [issue("invalid_input", input_path(id), message) | issues]}
         end
       end)
 
@@ -778,15 +778,7 @@ defmodule Emisar.Runbooks.Compiler do
       items =
         Enum.map(
           selected.candidates,
-          &compile_item(
-            selected,
-            indexed,
-            &1,
-            contract,
-            specs_by_name,
-            inputs,
-            output_declarations
-          )
+          &compile_item(selected, indexed, &1, contract, specs_by_name, inputs)
         )
 
       case Enum.flat_map(items, fn
@@ -870,15 +862,7 @@ defmodule Emisar.Runbooks.Compiler do
 
   defp output_binding_type_compatible?(_binding, _spec, _outputs), do: true
 
-  defp compile_item(
-         selected,
-         indexed,
-         candidate,
-         contract,
-         specs,
-         inputs,
-         _output_declarations
-       ) do
+  defp compile_item(selected, indexed, candidate, contract, specs, inputs) do
     {resolved, deferred_names} =
       Enum.reduce(indexed.step["args"], {%{}, MapSet.new()}, fn
         {name, binding}, {args, deferred_names} ->

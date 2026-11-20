@@ -1,4 +1,4 @@
-defmodule EmisarWeb.MCPRpcControllerTest do
+defmodule EmisarWeb.MCPRPCControllerTest do
   use EmisarWeb.ConnCase, async: false
   import EmisarWeb.MCPContractAssertions
   import ExUnit.CaptureLog

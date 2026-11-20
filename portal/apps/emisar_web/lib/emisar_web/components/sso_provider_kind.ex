@@ -48,7 +48,7 @@ defmodule EmisarWeb.SSOProviderKind do
         "in the Okta admin console → Applications → Create App Integration → OIDC, Web Application",
       directory_note: "Directory sync is a second Okta app. This one only signs people in.",
       scim_location:
-        "in a separate Okta app, because Okta's OIDC login app can't do SCIM. Add the \"SCIM 2.0 Test App (Header Auth)\" from the OIN catalog. Its Sign-On tab is unused, since SCIM lives entirely on the Provisioning tab: Configure API Integration → Enable, configure the Base URL and API token as described in step 2, then enable Create / Update / Deactivate. Okta sends the token as a raw header with no `Bearer` scheme, which emisar accepts",
+        "in a separate Okta app, because Okta's OIDC login app can't do SCIM. Add the \"SCIM 2.0 Test App (Header Auth)\" from the OIN catalog. Its Sign-On tab is unused, since SCIM lives entirely on the Provisioning tab: Configure API Integration → Enable, configure the Base URL and API token as described in step 2, then enable Create / Update / Deactivate. Okta sends the token as a raw header with no Bearer scheme, which emisar accepts",
       name_placeholder: "Acme Okta",
       dpop_relevant?: true
     },
@@ -57,20 +57,20 @@ defmodule EmisarWeb.SSOProviderKind do
       docs_path: "/docs/integrations/entra",
       issuer: "https://login.microsoftonline.com/YOUR-TENANT-ID/v2.0",
       issuer_where:
-        "Build it from your Directory (tenant) ID, on the app registration's Overview. The trailing `/v2.0` selects Entra's v2.0 endpoint. Without it, you get v1.0 tokens.",
+        "Build it from your Directory (tenant) ID, on the app registration's Overview. The trailing /v2.0 selects Entra's v2.0 endpoint. Without it, you get v1.0 tokens.",
       oidc_app:
         "in the Microsoft Entra admin center → App registrations → New registration, with a Web redirect URI",
       directory_note:
         "This is the app registration; directory sync is a separate enterprise application.",
       scim_location:
-        "on a separate enterprise application, not this app registration. Entra splits sign-in and provisioning across two objects. Create a non-gallery app, then Provisioning → Automatic, with the URL in step 2 as Tenant URL and the `ems-` token as Secret Token. Remap externalId to objectId, or the directory and this connection will disagree about who someone is",
+        "on a separate enterprise application, not this app registration. Entra splits sign-in and provisioning across two objects. Create a non-gallery app, then Provisioning → Automatic, with the URL in step 2 as Tenant URL and the ems- token as Secret Token. Remap externalId to objectId, or the directory and this connection will disagree about who someone is",
       name_placeholder: "Acme Entra",
       # Entra's `sub` differs per application, so `oid` is the only claim that
       # joins sign-in to the directory — which is why it is the only one
       # offered. The reasoning belongs in the Entra guide; here the operator
       # needs the fact.
       identifier_claim_hint:
-        "Entra gives every app a different `sub`, so emisar uses `oid`, the ID that directory sync sends."
+        "Entra gives every app a different sub, so emisar uses oid, the ID that directory sync sends."
     },
     "jumpcloud" => %{
       label: "JumpCloud",

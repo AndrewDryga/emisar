@@ -12,10 +12,11 @@ for matching something *other than* the argument itself (e.g. `conn.assigns[:x]`
 **✅ Good**
 
 ```elixir
-defp link_customer(%Account{paddle_customer_id: nil} = account, id),
-  do: Accounts.link_paddle_customer(account, id)
+defp link_paddle_customer_if_unlinked(%Account{paddle_customer_id: nil} = account, id),
+  do: Account.Changeset.link_paddle_customer(account, id)
 
-defp link_customer(%Account{} = account, _id), do: {:ok, account}
+defp link_paddle_customer_if_unlinked(%Account{} = account, _id),
+  do: Ecto.Changeset.change(account)
 ```
 
 **❌ Bad**
@@ -23,15 +24,18 @@ defp link_customer(%Account{} = account, _id), do: {:ok, account}
 ```elixir
 fn account, id ->
   if account.paddle_customer_id == nil do
-    Accounts.link_paddle_customer(account, id)
+    Account.Changeset.link_paddle_customer(account, id)
   else
-    {:ok, account}
+    Ecto.Changeset.change(account)
   end
 end
 ```
 
-**Enforced.** Judgment — review and `/elixir-iron-review`. Whether a condition is
-pattern-matchable (safe to convert) vs. genuinely computed is a call a regex
-can't make, so this is not a Credo check; it's caught in review and the
-per-function audit. The taste-pipeline endpoint for a judgment rule is the
-worked example here, not an automated check.
+**Enforced.** Partly. Credo (`Emisar.Checks.NoIfOnArgField`) flags only the
+narrowest decidable form: a single-clause, single-argument `fn` whose body is an
+`if` on the bare truthiness of that argument's field (`fn x -> if x.field …`).
+Everything else stays judgment for review, `/elixir-iron-review`, and the
+per-function audit — equality comparisons such as `== nil`, closures with more
+than one argument (the ❌ example above is one), named functions, and `case`
+on the argument. Whether such a condition is pattern-matchable (safe to convert)
+or genuinely computed is not a call the check makes.

@@ -290,10 +290,18 @@ defmodule Emisar.Runbooks.Authoring do
 
   defp integer(value), do: value
 
+  # An integer token stays an integer: rewriting `30` as `30.0` changes the
+  # definition's canonical digest for a field the operator never touched.
   defp number(value) when is_binary(value) do
-    case Float.parse(value) do
-      {number, ""} -> number
-      _other -> value
+    case Integer.parse(value) do
+      {integer, ""} ->
+        integer
+
+      _other ->
+        case Float.parse(value) do
+          {number, ""} -> number
+          _other -> value
+        end
     end
   end
 

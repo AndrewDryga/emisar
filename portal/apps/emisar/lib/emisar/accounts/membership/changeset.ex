@@ -4,9 +4,7 @@ defmodule Emisar.Accounts.Membership.Changeset do
 
   @create_fields ~w[account_id role display_name email directory_managed runner_access_mode runner_access_directory_managed
                     pack_access_mode pack_scope_pack_ids
-                    directory_provider_id directory_authorization_pending_version
-                    invited_by_membership_id invitation_token_digest
-                    invitation_accepted_at]a
+                    directory_provider_id invited_by_membership_id invitation_token_digest]a
   @update_fields ~w[role]a
   @profile_fields ~w[display_name]a
 

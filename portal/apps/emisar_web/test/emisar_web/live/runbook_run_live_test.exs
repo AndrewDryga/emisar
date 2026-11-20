@@ -444,7 +444,9 @@ defmodule EmisarWeb.RunbookRunLiveTest do
   end
 
   defp assert_before(html, first, second) do
-    assert :binary.match(html, first) < :binary.match(html, second)
+    assert {first_position, _length} = :binary.match(html, first)
+    assert {second_position, _length} = :binary.match(html, second)
+    assert first_position < second_position
   end
 
   describe "authorization and current preflight" do

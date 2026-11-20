@@ -6,7 +6,7 @@ defmodule EmisarWeb.GrantsLiveTest do
   so operators see pending + grants + decisions in one place.)
   """
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.{Accounts, ApiKeys, Approvals, Audit, Repo, Runners}
+  alias Emisar.{ApiKeys, Approvals, Audit, Repo}
   alias Emisar.Approvals.Grant
   alias Emisar.Runners.Runner
 
@@ -128,11 +128,10 @@ defmodule EmisarWeb.GrantsLiveTest do
     {conn, _user, account, api_key, _runner} = seed_account(conn)
     past = DateTime.add(DateTime.utc_now(), -60, :second)
 
-    _ =
-      insert_grant!(account, api_key,
-        action_id: "stale.grant",
-        expires_at: past
-      )
+    insert_grant!(account, api_key,
+      action_id: "stale.grant",
+      expires_at: past
+    )
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals")
     refute html =~ "stale.grant"
@@ -160,8 +159,4 @@ defmodule EmisarWeb.GrantsLiveTest do
              &(&1.event_type == "approval.grant_revoked" and &1.target_id == g.id)
            )
   end
-
-  # Suppress unused-alias warnings — these alias modules are referenced
-  # via behaviour/imports but the compiler can't always see it.
-  _ = {Accounts, Runners}
 end

@@ -92,6 +92,46 @@ defmodule EmisarWeb.MCPRunbookRejectionLogTest do
     refute log =~ sentinel
   end
 
+  test "a stale draft digest logs draft_changed rather than the generic reason", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    runner = Fixtures.Runners.create_runner(account_id: account.id, group: "fleet")
+    observe_catalog!(runner, [action()])
+    trust_all!(subject)
+
+    {:ok, _draft} =
+      Runbooks.create_runbook(
+        %{
+          "title" => "fleet health",
+          "slug" => "fleet-health",
+          "draft_definition" => definition(%{"selection" => "all", "refs" => ["group:fleet"]})
+        },
+        subject
+      )
+
+    sentinel = "sentinel_DO_NOT_LOG_draft_reason"
+
+    log =
+      capture_log([level: :info], fn ->
+        result =
+          call(conn, %{
+            "slug" => "fleet-health",
+            "allow_draft" => true,
+            "definition_sha256" => String.duplicate("0", 64),
+            "reason" => sentinel
+          })
+
+        assert result["error"]["code"] == "draft_changed"
+      end)
+
+    assert length(String.split(log, "mcp.dispatch_rejected")) == 2
+    assert log =~ "mcp_dispatch_reject_reason=draft_changed"
+    assert log =~ "mcp_runbook_ref=fleet-health"
+    refute log =~ sentinel
+  end
+
   # The published input schema bounds `reason` by length and non-blankness only,
   # so a bidi override reaches the domain — which copies the reason verbatim onto
   # the approval card an approver reads. The refusal has to name the argument:

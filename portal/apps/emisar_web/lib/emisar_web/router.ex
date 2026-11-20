@@ -542,9 +542,9 @@ defmodule EmisarWeb.Router do
   # protocol-version checks explicitly instead. GET/DELETE are answered 405: no
   # SSE stream to open, no durable session to terminate.
   scope "/api/mcp", EmisarWeb do
-    post "/rpc", MCPRpcController, :handle
-    get "/rpc", MCPRpcController, :reject_stream
-    delete "/rpc", MCPRpcController, :reject_termination
+    post "/rpc", MCPRPCController, :handle
+    get "/rpc", MCPRPCController, :reject_stream
+    delete "/rpc", MCPRPCController, :reject_termination
 
     # Device authorization for the MCP installer (RFC 8628 shape) — the
     # unauthenticated open + poll pair; the approval itself happens on the
@@ -659,8 +659,7 @@ defmodule EmisarWeb.Router do
 
   # Exposing `ecto_repos` turns on the built-in Ecto page (queries /
   # slowest queries / pool stats) on top of the Phoenix process /
-  # request / memory views. `ecto_psql_extras_options` is honored when
-  # the optional `ecto_psql_extras` dep is installed; ignored otherwise.
+  # request / memory views.
   if @dev_routes do
     scope "/dev" do
       pipe_through [:browser, :mailbox_preview]

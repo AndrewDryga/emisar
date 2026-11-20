@@ -166,6 +166,26 @@ defmodule Emisar.AuditTest do
     end
   end
 
+  describe "Event.Query.by_request_id/2" do
+    test "matches the exact request within the account it is composed with" do
+      account = Fixtures.Accounts.create_account()
+      other_account = Fixtures.Accounts.create_account()
+      request_id = Ecto.UUID.generate()
+
+      {:ok, event} = Audit.log(account.id, "audit.test", request_id: request_id)
+      {:ok, _other} = Audit.log(account.id, "audit.test", request_id: Ecto.UUID.generate())
+      {:ok, _foreign} = Audit.log(other_account.id, "audit.test", request_id: request_id)
+
+      assert [matched] =
+               Audit.Event.Query.all()
+               |> Audit.Event.Query.by_account_id(account.id)
+               |> Audit.Event.Query.by_request_id(request_id)
+               |> Repo.all()
+
+      assert matched.id == event.id
+    end
+  end
+
   describe "Event.Query.retention_expired/2" do
     test "includes an event exactly at its stamped retention horizon" do
       account = Fixtures.Accounts.create_account()
@@ -828,7 +848,7 @@ defmodule Emisar.AuditTest do
         Audit.Event.Query.known_event_type_values() |> Enum.map(&elem(&1, 0)) |> MapSet.new()
 
       grouped =
-        Audit.Event.Query.grouped_event_type_values()
+        Audit.Event.Query.event_type_filter_options()
         |> Enum.flat_map(fn {_group, items} -> Enum.map(items, &elem(&1, 0)) end)
         |> MapSet.new()
 
@@ -842,7 +862,7 @@ defmodule Emisar.AuditTest do
 
       for type <- sso do
         assert type in flat, "#{type} missing from known_event_type_values/0"
-        assert type in grouped, "#{type} missing from grouped_event_type_values/0"
+        assert type in grouped, "#{type} missing from event_type_filter_options/0"
       end
     end
 
@@ -987,7 +1007,8 @@ defmodule Emisar.AuditTest do
       # return every one; a new group with no category mapping would drop its
       # events here (that's the total-coverage guard the query module cites).
       reps =
-        for {_group, [{type, _label} | _]} <- Audit.Event.Query.grouped_event_type_values() do
+        for {_group, [_all_events, {type, _label, _description} | _]} <-
+              Audit.Event.Query.event_type_filter_options() do
           {:ok, _} = Audit.log(account.id, type, actor_kind: "system")
           type
         end
@@ -1354,9 +1375,9 @@ defmodule Emisar.AuditTest do
 
     test "denies a subject without audit-view permission", %{request: request} do
       account = Fixtures.Accounts.create_account()
-      runner_subject = Fixtures.Subjects.permissionless_subject(account)
+      permissionless_subject = Fixtures.Subjects.permissionless_subject(account)
 
-      assert Audit.approval_event_refs([request.id], runner_subject) ==
+      assert Audit.approval_event_refs([request.id], permissionless_subject) ==
                {:error, :unauthorized}
     end
   end
@@ -1641,8 +1662,8 @@ defmodule Emisar.AuditTest do
     end
 
     # the actor picker enforces view_audit before any DB
-    # touch; a runner (websocket) subject — no view_audit — is denied.
-    test "a runner subject is denied" do
+    # touch; a subject without view_audit is denied.
+    test "a subject without view_audit is denied" do
       account = Fixtures.Accounts.create_account()
       subject = Fixtures.Subjects.permissionless_subject(account)
 
@@ -1806,17 +1827,16 @@ defmodule Emisar.AuditTest do
       account: account,
       subject: subject
     } do
-      [_first, second, third] = seed_export_events(account, 3)
+      [_first, second, _third] = seed_export_events(account, 3)
 
       assert {:ok, [only]} =
                Audit.list_for_export(subject, since: second.occurred_at, limit: 1)
 
       assert only.id == second.id
-      _ = third
     end
 
     test ":event_types narrows the sweep", %{account: account, subject: subject} do
-      _ = seed_export_events(account, 2)
+      seed_export_events(account, 2)
       {:ok, denied} = Audit.log(account.id, "approval.denied", actor_kind: "user")
 
       assert {:ok, [only]} = Audit.list_for_export(subject, event_types: ["approval.denied"])
@@ -1827,7 +1847,7 @@ defmodule Emisar.AuditTest do
       account: account,
       subject: subject
     } do
-      _ = seed_export_events(account, 2)
+      seed_export_events(account, 2)
 
       assert {:ok, [_, _]} =
                Audit.list_for_export(subject, limit: "junk", event_types: ["user.signed_in"])
@@ -1839,7 +1859,7 @@ defmodule Emisar.AuditTest do
     test "an owner of account B never exports account A's events (cross-account)", %{
       account: account_a
     } do
-      _ = seed_export_events(account_a, 2)
+      seed_export_events(account_a, 2)
 
       account_b = Fixtures.Accounts.create_account()
       Fixtures.Accounts.create_subscription(account_b, "team")
@@ -1860,7 +1880,7 @@ defmodule Emisar.AuditTest do
           Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
         )
 
-      _ = seed_export_events(account, 1)
+      seed_export_events(account, 1)
 
       assert Audit.list_for_export(subject) == {:error, :audit_export_not_available}
     end
@@ -1897,16 +1917,16 @@ defmodule Emisar.AuditTest do
 
     # a subject whose role carries no `view_audit` is
     # rejected from INSIDE list_for_export with {:error, :unauthorized} (the
-    # controller turns that into a 403), never a 500 or a leaked export. The
-    # runner (websocket) role is the no-`view_audit` role; an API-key role DOES
-    # carry it and is gated by per-key scope at the controller instead.
+    # controller turns that into a 403), never a 500 or a leaked export. An
+    # API-key role DOES carry it and is gated by per-key scope at the controller
+    # instead.
     test "a no-view_audit role is denied, not a 500" do
       account = Fixtures.Accounts.create_account()
-      _ = seed_export_events(account, 2)
+      seed_export_events(account, 2)
 
-      runner_subject = Fixtures.Subjects.permissionless_subject(account)
+      permissionless_subject = Fixtures.Subjects.permissionless_subject(account)
 
-      assert Audit.list_for_export(runner_subject) == {:error, :unauthorized}
+      assert Audit.list_for_export(permissionless_subject) == {:error, :unauthorized}
     end
   end
 
@@ -2664,13 +2684,15 @@ defmodule Emisar.AuditTest do
     end
   end
 
-  describe "event_outcome/1 (one source for the dots + the Outcome filter)" do
+  describe "event_outcome/1 (one source for the dots + the CSV severity)" do
     test "failures, errors, and denials are :danger" do
       for t <- ~w[user.sign_in_failed user.mfa_failed
                   action_run.failed action_run.error runner.error action_run.timed_out
                   approval.denied action_run.denied action_run.refused
                   pack_trust_rejected runner.version_rejected
-                  oauth.refresh_token_reused dispatch_blocked_target_unavailable] do
+                  oauth.refresh_token_reused dispatch_blocked_target_unavailable
+                  dispatch_blocked_pack_untrusted dispatch_blocked_pack_retired
+                  dispatch_blocked_requires_attestation api_key.device_grant_denied] do
         assert Audit.event_outcome(t) == :danger, "expected #{t} to be :danger"
       end
     end
@@ -2688,7 +2710,8 @@ defmodule Emisar.AuditTest do
 
     test "pass verdicts — the gate saying yes — are :pass" do
       for t <- ~w[action_run.success approval.approved approval.grant_used
-                  sso.link_request_approved oauth.consent_granted] do
+                  sso.link_request_approved oauth.consent_granted
+                  runbook.execution_succeeded runbook.stage_succeeded runbook.item_succeeded] do
         assert Audit.event_outcome(t) == :pass, "expected #{t} to be :pass"
       end
     end
@@ -2741,8 +2764,8 @@ defmodule Emisar.AuditTest do
     # needs no assertion — the comprehension builds a literal, so the compiler
     # types it as a non-empty list and rejects a comparison against `[]`.)
     test "matches the Billing group in the type dropdown" do
-      {"Billing", options} =
-        List.keyfind(Audit.Event.Query.grouped_event_type_values(), "Billing", 0)
+      {"Billing", [{"group:Billing", _label, _description} | options]} =
+        List.keyfind(Audit.Event.Query.event_type_filter_options(), "Billing", 0)
 
       assert Audit.Event.Query.billing_event_types() == Enum.map(options, &elem(&1, 0))
     end
@@ -2980,7 +3003,7 @@ defmodule Emisar.AuditTest do
       known = Audit.Event.Query.known_event_type_values() |> Enum.map(&elem(&1, 0))
 
       grouped =
-        Audit.Event.Query.grouped_event_type_values()
+        Audit.Event.Query.event_type_filter_options()
         |> Enum.flat_map(fn {_group, items} -> Enum.map(items, &elem(&1, 0)) end)
 
       assert "runbook.dispatched" in known
@@ -3013,7 +3036,7 @@ defmodule Emisar.AuditTest do
     # next builder cannot ship a type the audit page cannot narrow to.
     #
     # One relation covers the category too: `known_event_type_values/0` and
-    # `grouped_event_type_values/0` are both comprehensions over the single
+    # `event_type_filter_options/0` are both comprehensions over the single
     # `@event_types` table, so a selectable type carries a group by construction,
     # and every group carries a category ("every event-type group maps to a
     # category, so no event is orphaned from the lens" pins that half).
@@ -3234,8 +3257,8 @@ defmodule Emisar.AuditTest do
     test "pending → sent → running produces no audit_event rows" do
       {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
-      _ = Fixtures.Catalog.create_action(runner: runner)
-      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner)
+      Fixtures.Policies.create_policy(account_id: account.id)
 
       before = Repo.aggregate(Audit.Event, :count, :id)
 

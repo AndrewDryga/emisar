@@ -88,7 +88,7 @@ defmodule Emisar.Mailers.MonthlyReport do
     """
   end
 
-  # Nothing was gated this month — three zeros would read as a broken report.
+  # Nothing was gated this month — five zeros would read as a broken report.
   defp text_approvals(%{requested: 0}), do: nil
 
   defp text_approvals(approvals) do
@@ -177,7 +177,7 @@ defmodule Emisar.Mailers.MonthlyReport do
     card("Runs", number(runs.total), runs_caption(runs), stats)
   end
 
-  # Nothing was gated this month — three zeros would read as a broken report.
+  # Nothing was gated this month — five zeros would read as a broken report.
   defp approvals_card(%{requested: 0}), do: ""
 
   defp approvals_card(approvals) do

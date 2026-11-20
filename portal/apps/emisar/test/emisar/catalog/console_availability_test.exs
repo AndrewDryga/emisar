@@ -3,7 +3,6 @@ defmodule Emisar.Catalog.ConsoleAvailabilityTest do
   alias Emisar.{Accounts, Catalog, Fixtures, Repo, Runners}
   alias Emisar.Catalog.{PackVersion, RunnerAction}
 
-  @hash "sha256:7d808108fe995fbb94f0c44396a2df00f6bae257b1cccef204193063660d59c6"
   @denied ~w(tfc.apply_run tfc.discard_run tfc.cancel_run tfc.retry_run tfc.force_unlock_workspace)
 
   setup do
@@ -12,8 +11,12 @@ defmodule Emisar.Catalog.ConsoleAvailabilityTest do
     %{account: account, subject: subject, runner: runner}
   end
 
+  # Derived from the installed trust window rather than pinned: a literal
+  # version breaks the moment it rolls out of the bundled catalog.
   defp advertise(runner, opts \\ []) do
-    manifest = Catalog.PackBaseline.manifest("hcp-terraform", "0.8.9", @hash)
+    version = Catalog.PackBaseline.current_version("hcp-terraform")
+    hash = Catalog.PackBaseline.lookup("hcp-terraform", version)
+    manifest = Catalog.PackBaseline.manifest("hcp-terraform", version, hash)
     denied = Keyword.get(opts, :denied, @denied)
 
     actions =
@@ -32,10 +35,14 @@ defmodule Emisar.Catalog.ConsoleAvailabilityTest do
         "group" => runner.group,
         "version" => "0.9.0",
         "labels" => %{},
-        "packs" => %{"hcp-terraform" => %{"version" => "0.8.9", "hash" => @hash}},
+        "packs" => %{"hcp-terraform" => %{"version" => version, "hash" => hash}},
         "actions" => actions
       })
+
+    manifest
   end
+
+  defp manifest_action_ids(manifest), do: manifest["actions"] |> Map.keys() |> Enum.sort()
 
   defp contents(subject) do
     {:ok, [version], _} = Catalog.list_pack_versions(subject)
@@ -44,13 +51,13 @@ defmodule Emisar.Catalog.ConsoleAvailabilityTest do
   end
 
   describe "list_console_pack_actions/2" do
-    test "all fifteen trusted HCP actions remain visible with independent local admission", %{
+    test "all trusted HCP actions remain visible with independent local admission", %{
       runner: runner,
       subject: subject
     } do
-      advertise(runner)
+      manifest = advertise(runner)
       {version, actions} = contents(subject)
-      assert map_size(actions) == 15
+      assert actions |> Map.keys() |> Enum.sort() == manifest_action_ids(manifest)
 
       for id <- @denied do
         assert actions[id].availability.status == :unavailable
@@ -72,7 +79,7 @@ defmodule Emisar.Catalog.ConsoleAvailabilityTest do
       runner: runner,
       subject: subject
     } do
-      advertise(runner)
+      manifest = advertise(runner)
 
       Repo.delete_all(
         from a in RunnerAction,
@@ -80,7 +87,7 @@ defmodule Emisar.Catalog.ConsoleAvailabilityTest do
       )
 
       {version, actions} = contents(subject)
-      assert map_size(actions) == 15
+      assert actions |> Map.keys() |> Enum.sort() == manifest_action_ids(manifest)
       assert actions["tfc.apply_run"].availability.reason =~ "complete trusted manifest"
       assert actions["tfc.plan_summary"].availability.status == :unavailable
       assert {:ok, filtered} = Catalog.list_console_packs(%{name: "tfc.apply_run"}, subject)
@@ -197,7 +204,7 @@ defmodule Emisar.Catalog.ConsoleAvailabilityTest do
           account_id: foreign.id,
           pack_id: "secret",
           version: "1.0",
-          hash: @hash,
+          hash: version.hash,
           first_seen_at: DateTime.utc_now(),
           last_seen_at: DateTime.utc_now()
         })

@@ -601,8 +601,6 @@ defmodule EmisarWeb.BillingLive do
   # limits"; rose would cry lockout (and the pct clamps at 100, so a true
   # over-limit never renders anyway).
   defp usage_class(pct) when is_integer(pct) and pct >= 80, do: "bg-amber-400"
-  defp usage_class(pct) when is_integer(pct), do: "bg-brand-400"
-
   defp usage_class(_), do: "bg-brand-400"
 
   defp checkout_error(:checkout_pending) do

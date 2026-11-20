@@ -89,7 +89,7 @@ end
 
 #### 1.4 Internal sweepers + job-only helpers (IL-10)
 
-A small set of context functions never take a `%Subject{}`: the runner socket process's state advertisers (`Runners.connect_runner/3`, `Runners.disconnect_runner/5`, `Runners.enforce_runner_version/2`, `Runners.record_heartbeat/5`), the catalog observer (`Catalog.observe_state/2`), recurrent job sweepers (`Approvals.expire_overdue_requests/1`), `Runs.create_run/1` / `Runs.dispatch_to_runner/1` / `Runs.mark_*` transition helpers, and the **inbound SCIM lifecycle** (`SSO.authenticate_scim_token/1` + the `SSO.scim_*` family — `scim_provision_user`, `scim_update_user`, `scim_fetch_user`, `scim_list_users`, `scim_upsert_group`, `scim_patch_group_members` — and `SSO.recompute_role_for_identity/2`). They run inside processes that have already authenticated (the runner socket authenticates the runner token before any of them run; recurrent jobs operate on explicit account ids through named internal helpers; the SCIM web boundary resolves the per-provider `ems-` bearer first, so the returned `%IdentityProvider{}`'s provider-scope IS the authz, and every read scopes by `provider.id`/`provider.account_id`). Mark these `@doc "Internal …"` and never expose them to LiveView/controllers/MCP.
+A small set of context functions never take a `%Subject{}`: the runner socket process's state advertisers (`Runners.connect_runner/3`, `Runners.disconnect_runner/5`, `Runners.enforce_runner_version/2`, `Runners.record_heartbeat/5`), the catalog observer (`Catalog.observe_state_from_connection/4`), recurrent job sweepers (`Approvals.expire_overdue_requests/1`), `Runs.create_run/1` / `Runs.dispatch_to_runner/1` / `Runs.mark_*` transition helpers, and the **inbound SCIM lifecycle** (`SSO.authenticate_scim_token/1` + the `SSO.scim_*` family — `scim_provision_user`, `scim_update_user`, `scim_fetch_user`, `scim_list_users`, `scim_upsert_group`, `scim_patch_group`), plus `SSO.recompute_role_for_identity/2`, which the directory-authorization reconciliation path calls internally. They run inside processes that have already authenticated (the runner socket authenticates the runner token before any of them run; recurrent jobs operate on explicit account ids through named internal helpers; the SCIM web boundary resolves the per-provider `ems-` bearer first, so the returned `%IdentityProvider{}`'s provider-scope IS the authz, and every read scopes by `provider.id`/`provider.account_id`). Mark these `@doc "Internal …"` and never expose them to LiveView/controllers/MCP.
 
 `:preload` opts route through the per-Query `preloads/0` callback first; never call `Repo.preload/2` in a Subject-gated context read. An internal, no-Subject, already-authorized path holding a struct may preload its parent association directly: post-commit email helpers and the runner-register billing check are examples. This exception does not authorize bypassing a public context boundary.
 
@@ -253,7 +253,7 @@ end
 ```
 
 - Permissions are built with **`build(Schema, :verb)`** and exposed via per-permission accessor functions (`view_widgets_permission/0`) so callers never construct a permission inline.
-- Roles in this codebase: `:owner`, `:admin`, `:operator`, `:viewer`, `:api_client`, `:runner` — each authorizer clauses the ones it grants, with a `_ -> []` catch-all for the rest.
+- Roles in this codebase: `:owner`, `:admin`, `:billing_manager`, `:operator`, `:viewer`, `:api_client`, `:runner` — each authorizer clauses the ones it grants, with a `_ -> []` catch-all for the rest.
 - The five **membership** roles (`:owner`/`:admin`/`:billing_manager`/`:operator`/`:viewer`) are defined once in `Emisar.Auth.Role` — the single source for the `Membership` `Ecto.Enum` and the team UI's role list. Roles are capability sets, not a hierarchy; permission checks decide what a member can do. Never re-list roles in a schema, changeset, or LiveView.
 - **Authorize by permission, not role name.** A context must never branch on `subject.role` to gate an action (`subject.role != :owner` is a smell) — add a permission (e.g. `manage_owners_permission`, held by owners only) and check `Auth.Authorizer.has_permission?/2`. Comparing a *data* role value (`target.role == :owner`) is fine; gating the *actor's* capability by role name is not.
 - `for_subject/2` is the **row-scoping** authorizer — it composes onto whatever query the context built. Use the Query module helpers; do not write raw `where` here. Keep the account-scoped clause (plus any actor-specific clause, e.g. the runner-only scoping in `Runs.Authorizer`), and the `_` fallback **fails closed**: it returns the schema's `Query.none(queryable)` (a binding-free `where(queryable, false)` helper), never the unscoped queryable. The fallback is unreachable for authenticated callers — every `Subject` constructor requires an account — so this is pure defense-in-depth: a future path that skips the permission gate leaks nothing. **Credo-enforced** (`Emisar.Checks.AuthorizerFallbackFailClosed`).
@@ -359,17 +359,12 @@ Two layers — mechanical rules run by machines, judgment rules by review:
 
    A documented exception gets `# credo:disable-for-next-line
    Emisar.Checks.<Name>` (or `-for-lines:<n>`) directly under its
-   why-comment — never a bare disable. Current sanctioned disables: the
-   runner socket's directed `deliver_to_runner` publish, the MCP
-   long-poll/recheck-timer tests' writer-side delay injections, and the
-   `NoProcessDictionary` disables on `Emisar.Config` + `EmisarWeb.Sandbox`
-   (the test-only per-process config-override seam — `Process.put` there
-   is a config override that dies with the test process, never ambient
-   request/audit state), plus the `ContextPublicFnSubject` disable on
-   `Emisar.Admin.search_accounts/2` (the staff console reads ACROSS
-   tenants, so there is no `%Subject{}` to gate with and no query for
-   `for_subject/2` to narrow — its `ensure_staff/1` gate is the boundary,
-   and it is public API, not an `@doc "Internal"` helper).
+   why-comment — never a bare disable. The why-comment is the record: list
+   the current disables with `git grep -n 'credo:disable' -- portal/apps`
+   rather than keeping a copy here. The search also returns check-test
+   fixtures (synthetic directive text, not suppressions) and HEEx
+   `<%!-- credo:disable-for-next-line … --%>` directives, which carry their
+   reason inline.
 
 2. **`/elixir-iron-review`** carries the judgment laws a static check can't
    decide (their safety depends on where a value came from): IL-3/4/5

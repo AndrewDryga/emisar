@@ -201,8 +201,9 @@ defmodule Emisar.Seeds.ActionRuns do
   # stays causally ordered (awaiting -> decided -> terminal).
   defp backdate_dispatch_audit(run, occurred_at) do
     Audit.Event.Query.all()
+    |> Audit.Event.Query.by_account_id(run.account_id)
+    |> Audit.Event.Query.by_request_id(run.request_id)
     |> Repo.all()
-    |> Enum.filter(&(&1.request_id == run.request_id))
     |> Enum.each(fn event ->
       event |> Ecto.Changeset.change(occurred_at: occurred_at) |> Repo.update!()
     end)
@@ -664,19 +665,20 @@ defmodule Emisar.Seeds.ActionRuns do
   #
   # Most of the above already wrote audit rows (approval.*, runner.*,
   # run.*); add a couple of operator-action events so the audit page
-  # shows variety.
-  defp seed_sign_in_events(%{account: account, jordan: jordan, priya: priya}) do
-    Audit.log(account.id, "user.signed_in",
-      actor_kind: "membership",
-      actor_id: jordan.id,
-      payload: %{ip: "203.0.113.42"}
-    )
+  # shows variety. Each is the receipt a live magic-link sign-in writes,
+  # stamped before the recent approval story.
+  defp seed_sign_in_events(%{jordan: jordan, priya: priya}) do
+    insert_sign_in(jordan, "203.0.113.42", Helpers.mins_ago(40))
+    insert_sign_in(priya, "198.51.100.17", Helpers.mins_ago(55))
+  end
 
-    Audit.log(account.id, "user.signed_in",
-      actor_kind: "membership",
-      actor_id: priya.id,
-      payload: %{ip: "198.51.100.17"}
-    )
+  defp insert_sign_in(member, ip_address, signed_in_at) do
+    context = Emisar.RequestContext.new(%{ip_address: ip_address})
+
+    member
+    |> Audit.Events.member_security_event("user.signed_in", context, %{method: "magic_link"})
+    |> Helpers.backdate_event(signed_in_at)
+    |> Repo.insert!()
   end
 
   # -- Typed JSON run ---------------------------------------------------

@@ -1,10 +1,10 @@
 defmodule Emisar.CapabilitiesTest do
   @moduledoc """
-  The full capability matrix: every context's `subject_can_<verb>?/1`
-  predicate asserted against every membership role. Widening or narrowing a
-  role's permissions fails CI here immediately — the same guarantee the old
-  EmisarWeb.Permissions matrix gave, now in the domain where the predicates
-  live.
+  The capability matrix: selected `subject_can_<verb>?/1` predicates asserted
+  against every membership role, in the domain where the predicates live.
+  `Emisar.Auth.RoleGrantsTest` pins each role's complete permission set, and
+  predicates that also read plan, scope, or account state are tested in their
+  owning contexts.
   """
   use ExUnit.Case, async: true
   alias Emisar.{Accounts, ApiKeys, Approvals, Audit, Billing, Catalog}

@@ -1,9 +1,7 @@
 defmodule EmisarWeb.TeamLiveTest do
   @moduledoc """
-  Regression test for #112: TeamLive showed "Only owners and admins can
-  invite" to a user whose role WAS owner because `can_manage?(assigns)`
-  was being called with the bare assigns map instead of a socket-shaped
-  struct and the pattern match failed.
+  The Team page: the roster, invitations, service accounts, member access
+  management, and the workspace security settings.
   """
 
   use EmisarWeb.ConnCase, async: true
@@ -1891,7 +1889,7 @@ defmodule EmisarWeb.TeamLiveTest do
       assert own_metadata =~ "last active"
     end
 
-    test "the permission note opens the page, with the docs link still the intro's tail", %{
+    test "a non-manager sees the Read-only badge without a redundant page introduction", %{
       account: account
     } do
       member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
@@ -1900,7 +1898,7 @@ defmodule EmisarWeb.TeamLiveTest do
         build_conn() |> log_in_member(member) |> live(~p"/app/#{account}/settings/team")
 
       # The roster badge owns the read-only state; no redundant page introduction.
-      refute html =~ "See who's on your team, their access"
+      refute html =~ "See who&#39;s on your team, their access"
       refute html =~ "Invite your team, choose what they can access"
       assert has_element?(lv, "#team-read-only", "Read-only")
       refute html =~ "Only owners and admins can invite or manage members."
@@ -3961,12 +3959,11 @@ defmodule EmisarWeb.TeamLiveTest do
       # seeded precisely so "no roster on the dead render" is meaningful.
       {conn, _owner, account} = register_and_log_in(conn, %{account: %{name: "DeadRenderOrg"}})
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          role: "operator",
-          display_name: "Deadrender Teammate"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        role: "operator",
+        display_name: "Deadrender Teammate"
+      )
 
       dead = conn |> get(~p"/app/#{account}/settings/team") |> html_response(200)
 
@@ -3983,12 +3980,11 @@ defmodule EmisarWeb.TeamLiveTest do
       # 500-ing or landing on the load-error empty state.
       {conn, _owner, account} = register_and_log_in(conn, %{account: %{name: "RecoverOrg"}})
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          role: "operator",
-          display_name: "Recover Teammate"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        role: "operator",
+        display_name: "Recover Teammate"
+      )
 
       {:ok, _lv, html} =
         live(conn, ~p"/app/#{account}/settings/team?after=not-a-real-cursor%21%21")
@@ -3996,7 +3992,7 @@ defmodule EmisarWeb.TeamLiveTest do
       # Recovered: the roster rendered (the retry's clean read), and it's NOT the
       # load-error state.
       assert html =~ "Recover Teammate"
-      refute html =~ "Couldn't load your team"
+      refute html =~ "Couldn&#39;t load your team"
     end
   end
 
@@ -4079,6 +4075,37 @@ defmodule EmisarWeb.TeamLiveTest do
       assert render_click(lv, "remove", %{"membership_id" => ghost_id}) =~ "Send invite"
       assert render_click(lv, "toggle_require_mfa", %{}) =~ "Send invite"
       assert render_click(lv, "dismiss_request", %{"id" => ghost_id}) =~ "Send invite"
+    end
+
+    test "a filter event pushed off the roster keeps the page and its typed form", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team/invite")
+
+      lv
+      |> form("#invite_form", %{"invite" => %{"email" => "typed@example.com"}})
+      |> render_change()
+
+      render_click(lv, "filter", %{"search" => "anyone"})
+
+      assert has_element?(
+               lv,
+               "#invite_form input[name='invite[email]'][value='typed@example.com']"
+             )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/service-accounts/new")
+
+      lv
+      |> form("#service_account_form", %{"service_account" => %{"display_name" => "Ryker"}})
+      |> render_change()
+
+      render_click(lv, "filter", %{"search" => "anyone"})
+
+      assert has_element?(
+               lv,
+               "#service_account_form input[name='service_account[display_name]'][value='Ryker']"
+             )
     end
   end
 

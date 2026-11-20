@@ -247,7 +247,6 @@ function init(root) {
     glow: 0,
     terse: 0,
     dimW: [],
-    qk: new Set(),
     text: {
       ag1: "",
       ag2: "",
@@ -274,7 +273,6 @@ function init(root) {
     m.lit.clear()
     m.live.clear()
     m.dimW = []
-    m.qk.clear()
     TRANSIENT.forEach((k) => m.vis.delete(k))
     m.vis.add("ask-b")
     for (const id in m.wires) m.wires[id].lit = ""
@@ -311,17 +309,10 @@ function init(root) {
     text: (k, html) => () => {
       model.text[k] = html
     },
-    wire: (id, tone) => () => {
-      model.wires[id] = {base: tone || "on", lit: ""}
-    },
     unwire:
       (...ids) =>
       () =>
         ids.forEach((id) => delete model.wires[id]),
-    quiet:
-      (...keys) =>
-      () =>
-        keys.forEach((k) => model.qk.add(k)),
     // One request, end to end. The runner's checks hold 1.2 s and a pending approval 2.5 s; the
     // returned result then holds for the caption's reading time.
     // prettier-ignore
@@ -404,7 +395,6 @@ function init(root) {
           el.classList.toggle("is-lit", !!tone && tone !== "jolt")
           el.classList.toggle("is-jolt", tone === "jolt")
         }
-        if (el.classList.contains("hiw-card")) el.classList.toggle("hiw-q", m.qk.has(key))
         if (el.classList.contains("hiw-row")) {
           el.classList.toggle("r-warn", tone === "warn")
           el.classList.toggle("r-deny", tone === "deny")
@@ -439,7 +429,6 @@ function init(root) {
       const s = m.wires[w.id] || {base: "", lit: ""}
       full(w.base)
       w.base.classList.toggle("is-on", !!s.base)
-      w.base.classList.toggle("t-old", s.base === "old")
       if (s.lit) {
         full(w.lit)
         w.lit.classList.remove("t-brand", "t-plain", "t-rose")
@@ -455,10 +444,7 @@ function init(root) {
     const name = p.dataset.port
     if (!used.has(name)) return false
     const ids = Object.keys(WIRES).filter((id) => WIRES[id].includes(name))
-    if (
-      !ids.some((id) => model.wires[id] && model.wires[id].base && model.wires[id].base !== "old")
-    )
-      return false
+    if (!ids.some((id) => model.wires[id] && model.wires[id].base)) return false
     const host = p.parentElement
     return !host.classList.contains("is-off")
   }

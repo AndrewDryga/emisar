@@ -15,12 +15,11 @@ defmodule Emisar.Audit.Event.Query do
   # filter dropdown so operators pick from a list instead of typing an
   # exact machine code from memory.
   # Every audit event type the trail can hold, grouped by the leading domain so
-  # a 152-item dropdown becomes small groups an operator can scan; the Filter
-  # UI renders the groups as <optgroup>s. Each row is {value, label inside its
-  # group, label on its own}: "Created" under "Account" reads as "Account
-  # created" where no group is shown. The two label sets are real and were
-  # once two hand-kept lists of the same 152 values; one table makes "in one
-  # list but not the other" unrepresentable.
+  # a long dropdown becomes small groups an operator can scan. Each row is
+  # {value, label inside its group, label on its own}: "Created" under
+  # "Account" reads as "Account created" where no group is shown. The two label
+  # sets are real and were once two hand-kept lists of the same 152 values; one
+  # table makes "in one list but not the other" unrepresentable.
   @event_types [
     {"Account",
      [
@@ -297,16 +296,20 @@ defmodule Emisar.Audit.Event.Query do
   # surfaces. `:warn` keeps what it always meant minus the denials: something
   # existing was taken away or throttled (revoked, deleted, suspended, expired,
   # rate-limited) — a caution to look at, not the gate saying no.
-  @danger_suffixes ~w[_failed .failed .error .timed_out _halted .denied .refused _refused .rejected
-                      _rejected .unknown_action]
+  @danger_suffixes ~w[_failed .failed .error .timed_out _halted .denied _denied .refused _refused
+                      .rejected _rejected .unknown_action]
   @warn_suffixes ~w[.revoked _revoked _rate_limited .disabled .deleted _deleted .removed .suspended
                     .expired .cancelled .closed .erased]
-  @pass_suffixes ~w[.success .succeeded .approved _approved .grant_used .consent_granted]
+  @pass_suffixes ~w[.success _succeeded .approved _approved .grant_used .consent_granted]
+
+  @dispatch_blocked_types ~w[dispatch_blocked_pack_untrusted dispatch_blocked_pack_retired
+                             dispatch_blocked_requires_attestation
+                             dispatch_blocked_target_unavailable]
 
   def outcome(event_type) when is_binary(event_type) do
     cond do
       event_type == "oauth.refresh_token_reused" -> :danger
-      event_type == "dispatch_blocked_target_unavailable" -> :danger
+      event_type in @dispatch_blocked_types -> :danger
       event_type == "approval.overridden" -> :warn
       String.ends_with?(event_type, @danger_suffixes) -> :danger
       String.ends_with?(event_type, @warn_suffixes) -> :warn
@@ -317,11 +320,10 @@ defmodule Emisar.Audit.Event.Query do
 
   def outcome(_), do: :neutral
 
-  # The grouped {value, label-inside-group} shape the filter renders.
+  # The grouped {value, label-inside-group} shape `event_type_filter_options/0`
+  # builds the rendered Type options from.
   @grouped_event_types for {group, options} <- @event_types,
                            do: {group, for({value, short, _long} <- options, do: {value, short})}
-
-  def grouped_event_type_values, do: @grouped_event_types
 
   # The finance seat's slice of the trail. Derived from the "Billing" GROUP
   # above rather than a second hand-kept list, so a new billing event type is
@@ -378,7 +380,7 @@ defmodule Emisar.Audit.Event.Query do
   # new event type inherits its category from the group it already joins; only a
   # brand-new GROUP needs a line here (the query test asserts total coverage).
   # "Fleet" is the runner connect/disconnect churn the decisions/access/activity
-  # lenses let a reviewer step around (UI-017) — de-emphasized as a VIEW, never
+  # lenses let a reviewer step around — de-emphasized as a VIEW, never
   # dropped from the append-only record.
   @category_of_group %{
     "Approval" => "decisions",
@@ -503,6 +505,9 @@ defmodule Emisar.Audit.Event.Query do
   def by_target_id(queryable, id),
     do: where(queryable, [events: e], e.target_id == ^id)
 
+  def by_request_id(queryable, request_id) when is_binary(request_id),
+    do: where(queryable, [events: e], e.request_id == ^request_id)
+
   def by_target_ids(queryable, ids) when is_list(ids),
     do: where(queryable, [events: e], e.target_id in ^ids)
 
@@ -535,7 +540,7 @@ defmodule Emisar.Audit.Event.Query do
   end
 
   @doc """
-  The `%Filter{}` for the dynamic subject picker, mirroring `actor_filter/1` —
+  The `%Filter{}` for the dynamic target picker, mirroring `actor_filter/1` —
   given its loaded `{id, label}` options. Fun lives here to keep the query in
   the query module (IL-1).
   """
@@ -544,7 +549,7 @@ defmodule Emisar.Audit.Event.Query do
       name: :target_id,
       title: "Target",
       type: {:list, :string},
-      # Half-width — pairs beside the Subject-kind picker that reveals it.
+      # Half-width — pairs beside the Target-type picker that reveals it.
       span: :half,
       values: options,
       fun: fn queryable, ids -> {queryable, dynamic([events: e], e.target_id in ^ids)} end
@@ -663,7 +668,7 @@ defmodule Emisar.Audit.Event.Query do
     do: [
       # `span` lays the filters out as a stacked panel (LiveTable's two-column
       # grid): Category/Type, From/To, then Request ID,
-      # Sign-in method, Actor type, and Subject each on their own line. Request
+      # Sign-in method, Actor type, and Target each on their own line. Request
       # ID + Sign-in method are CONDITIONAL — the audit LiveView drops them for
       # event types that never carry a request context / a sign-in (see
       # applicable_filters/2), so they show only when they can actually match.
@@ -752,7 +757,7 @@ defmodule Emisar.Audit.Event.Query do
         name: :target_kind,
         title: "Target type",
         type: {:list, :string},
-        # :row_start — mirrors Actor type; the revealed Subject value picker pairs
+        # :row_start — mirrors Actor type; the revealed Target value picker pairs
         # in the cell beside it.
         span: :row_start,
         values: @target_kind_values,
@@ -763,14 +768,6 @@ defmodule Emisar.Audit.Event.Query do
       }
     ]
 
-  # The conditional filters (%Filter{} names) that a Type selection supports.
-  # Request ID applies unless every selected group is a system/engine origin
-  # with no request context; Sign-in method applies only to user-session
-  # groups. No Type selected → neither (they'd never match across all types),
-  # so the audit LiveView hides them until a relevant Type narrows the log.
-  # Request ID rides any request-scoped event; Sign-in method is stamped on any
-  # event a USER SESSION produces (not just sign-ins — a policy edit or team
-  # change made in a session carries it too), so both apply broadly and are
   # Per-type metadata:
   # {carries request_id?, carries auth_method?, targets other than actor?, description}.
   # request_id/auth_method are PROVENANCE columns riding the %Subject{} — a

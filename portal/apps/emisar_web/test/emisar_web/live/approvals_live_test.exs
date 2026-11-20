@@ -213,7 +213,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
 
   test "lists the pending request with its reason", %{conn: conn} do
     {conn, owner, account} = register_and_log_in(conn)
-    _ = pending_request!(account, owner, "reboot for kernel patch")
+    pending_request!(account, owner, "reboot for kernel patch")
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals")
 
@@ -293,7 +293,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
       )
 
     _other = Fixtures.Memberships.sync_display_name(other_membership, "Other Employee")
-    _ = pending_request!(account, owner, "account-local requester")
+    pending_request!(account, owner, "account-local requester")
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals")
 
@@ -849,6 +849,24 @@ defmodule EmisarWeb.ApprovalsLiveTest do
 
       assert Emisar.Repo.reload!(account).settings.max_grant_lifetime_seconds == 7_776_000
       assert has_element?(lv, ~s(#approvals-grant-cap option[value="7776000"][selected]))
+    end
+
+    test "a stored cap outside the presets stays selected until a preset replaces it", %{
+      conn: conn,
+      account: account
+    } do
+      Fixtures.Accounts.set_max_grant_lifetime_seconds(account, 7200)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals")
+
+      assert has_element?(lv, ~s(#approvals-grant-cap option[value="7200"][selected]), "7200 s")
+      refute has_element?(lv, ~s(#approvals-grant-cap option[value="7776000"][selected]))
+
+      assert render_change(lv, "set_max_grant_lifetime", %{"seconds" => "86400"}) =~
+               "Maximum grant lifetime updated."
+
+      assert Emisar.Repo.reload!(account).settings.max_grant_lifetime_seconds == 86_400
+      assert has_element?(lv, ~s(#approvals-grant-cap option[value="86400"][selected]))
+      refute has_element?(lv, ~s(#approvals-grant-cap option[value="7200"]))
     end
 
     test "a malformed cap is refused by the domain, not parsed here", %{

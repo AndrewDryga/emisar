@@ -17,7 +17,7 @@
           Troubleshooting guide
         </.marketing_button>
         <.marketing_button
-          href={Application.get_env(:emisar_web, :status_page_url, "https://status.emisar.dev")}
+          href={Application.fetch_env!(:emisar_web, :status_page_url)}
           variant={:secondary}
           icon="state.online"
         >

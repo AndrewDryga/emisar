@@ -1004,8 +1004,9 @@ defmodule Emisar.PoliciesTest do
       assert listed.scope_value == "not-enrolled-yet"
     end
 
-    # Writing a ruleset for a host you cannot see is a policy change on somebody
-    # else's fleet — and an existence answer alone would enumerate group names.
+    # Writing a ruleset for a host outside your fleet is a policy change on somebody
+    # else's fleet. A known target of the account is a permission denial; only an
+    # unknown one is not found.
     test "a restricted admin can't write a ruleset outside their fleet" do
       {_owner, account, owner} = Fixtures.Subjects.owner_subject()
       Fixtures.Runners.create_runner(account_id: account.id, group: "db", connected?: false)
@@ -1021,8 +1022,7 @@ defmodule Emisar.PoliciesTest do
       assert Policies.save_scoped_rules(deny_all_rules(), :group, "edge", admin) ==
                {:error, :unauthorized}
 
-      # A group nobody has enrolled answers exactly as an out-of-reach one does,
-      # so the save can never be used to enumerate group names.
+      # A group the account does not know at all is not found.
       assert Policies.save_scoped_rules(deny_all_rules(), :group, "no-such-group", admin) ==
                {:error, :group_not_found}
 

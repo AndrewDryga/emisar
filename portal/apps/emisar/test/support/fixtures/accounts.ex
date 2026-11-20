@@ -121,13 +121,13 @@ defmodule Emisar.Fixtures.Accounts do
   end
 
   @doc """
-  Internal — `Subjects`/`create_account`. Plan lives on the subscription now;
-  fixture callers still pass `plan:` for convenience. Pop it and mint a
-  subscription only for a real paid tier.
+  Splits the convenience `plan:` attr off fixture attrs, returning
+  `{plan, rest}` with `"free"` when absent. The plan itself lives on the
+  subscription (see `maybe_seed_plan/2`).
   """
   def pop_plan(attrs), do: attrs |> Map.new() |> Map.pop(:plan, "free")
 
-  @doc "Internal — `Subjects`/`create_account`. Mints a subscription for a non-free plan."
+  @doc "Creates a subscription for a non-free binary `plan`; otherwise returns `:ok`."
   def maybe_seed_plan(%Account{} = account, plan) when is_binary(plan) and plan != "free",
     do: create_subscription(account, plan)
 

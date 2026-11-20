@@ -35,7 +35,6 @@ defmodule EmisarWeb.LiveTable do
       </.live_table>
   """
   use Phoenix.Component
-  use EmisarWeb, :verified_routes
   alias Emisar.Repo.Filter
   alias EmisarWeb.CoreComponents
   alias Phoenix.LiveView.JS
@@ -102,8 +101,6 @@ defmodule EmisarWeb.LiveTable do
     doc:
       "`:cards` only. `fn row -> group_label end`. When set, rows are scanned in order and a group-header `<li>` is inserted before the first row of each new label. The `:group_header` slot renders the divider; falls back to a plain text header"
 
-  attr :class, :string, default: nil
-
   slot :col, doc: "`:table` layout column. Required when `layout == :table`." do
     attr :label, :string
     attr :class, :string
@@ -126,10 +123,6 @@ defmodule EmisarWeb.LiveTable do
       "`:cards` only — rendered ONCE as the list's first `<li>`: column headers for `:item` rows that lay out as a grid (the audit stream's xl+ forensic columns)"
 
   slot :empty
-
-  slot :action,
-    doc:
-      "right-side actions for each row (`:table` only — for `:cards`, render them inside `:item`)"
 
   def live_table(%{layout: :cards} = assigns) do
     assigns =
@@ -169,7 +162,7 @@ defmodule EmisarWeb.LiveTable do
           {render_slot(@empty) || "Nothing to show."}
         </.empty_result>
       <% else %>
-        <ul id={@id} class={["emisar-icon-mono", @resolved_wrapper_class, @class]}>
+        <ul id={@id} class={["emisar-icon-mono", @resolved_wrapper_class]}>
           {render_slot(@list_header)}
           <%= for {group_label, rows} <- @grouped_rows do %>
             <%= if group_label != nil do %>
@@ -254,7 +247,7 @@ defmodule EmisarWeb.LiveTable do
             @responsive && "hidden sm:block"
           ]}
         >
-          <table id={@id} class={["emisar-icon-mono w-full text-sm text-left", @class]}>
+          <table id={@id} class="emisar-icon-mono w-full text-sm text-left">
             <thead class="text-xs uppercase tracking-wider text-zinc-400">
               <tr class="border-b border-zinc-700/80">
                 <th
@@ -262,9 +255,6 @@ defmodule EmisarWeb.LiveTable do
                   class={["px-3 py-2.5 font-medium first:pl-0 last:pr-0", col[:class]]}
                 >
                   {col.label}
-                </th>
-                <th :if={@action != []} class="px-3 py-2.5 text-right font-medium last:pr-0">
-                  <span class="sr-only">Actions</span>
                 </th>
               </tr>
             </thead>
@@ -275,9 +265,6 @@ defmodule EmisarWeb.LiveTable do
                   class={["px-3 py-2 align-middle first:pl-0 last:pr-0", col[:class]]}
                 >
                   {render_slot(col, row)}
-                </td>
-                <td :if={@action != []} class="px-3 py-2 align-middle text-right last:pr-0">
-                  {render_slot(@action, row)}
                 </td>
               </tr>
             </tbody>
@@ -300,9 +287,6 @@ defmodule EmisarWeb.LiveTable do
             class={["border-l-2 py-3 pl-3", card_spine_class(@card_accent && @card_accent.(row))]}
           >
             {render_slot(@card, row)}
-            <div :if={@action != []} class="flex justify-end gap-2 pt-2">
-              {render_slot(@action, row)}
-            </div>
           </li>
         </ul>
 
@@ -532,7 +516,7 @@ defmodule EmisarWeb.LiveTable do
             </CoreComponents.menu_item>
           <% end %>
         </div>
-        <p :if={@picker.error} role="status" class="text-xs text-red-400">{@picker.error}</p>
+        <p :if={@picker.error} role="status" class="text-xs text-rose-400">{@picker.error}</p>
         <p :if={is_nil(@picker.error) and @picker.empty?} role="status" class="text-xs text-zinc-400">
           <%= cond do %>
             <% @stale_choices? -> %>
@@ -588,7 +572,7 @@ defmodule EmisarWeb.LiveTable do
     """
   end
 
-  # Searchable combobox for a large {:list, _} filter (`%Filter{search: true}` —
+  # Searchable combobox for a large filter (`%Filter{search: true}` —
   # the audit Type picker's ~90 grouped options). Server renders the full option
   # list once; the Combobox hook does client-side open/close + type-to-filter +
   # selection (writing the hidden input and firing the form's phx-change).
@@ -644,30 +628,6 @@ defmodule EmisarWeb.LiveTable do
         prompt_selected={@selected in [[], [""]]}
         options={filter_select_options(@groups, @selected)}
       />
-    </label>
-    """
-  end
-
-  defp filter_input(%{filter: %Filter{type: :boolean}} = assigns) do
-    assigns = assign(assigns, :active?, filter_active?(assigns.filter, assigns.value))
-
-    ~H"""
-    <label class="flex w-full flex-col text-xs font-medium text-zinc-400">
-      <span class="mb-1 invisible">{@filter.title}</span>
-      <span class={[
-        "flex h-[34px] w-full items-center gap-2 rounded-lg border bg-zinc-950 px-3 text-xs",
-        filter_control_class(@active?),
-        if(@active?, do: "text-brand-300", else: "text-zinc-300")
-      ]}>
-        <input
-          type="checkbox"
-          name={"#{@prefix}#{@filter.name}"}
-          value="true"
-          checked={@value == "true"}
-          class="h-4 w-4 rounded-sm border-zinc-700 bg-zinc-950 text-brand-500 focus:ring-brand-500 disabled:cursor-not-allowed"
-        />
-        {@filter.title}
-      </span>
     </label>
     """
   end
@@ -817,16 +777,13 @@ defmodule EmisarWeb.LiveTable do
     }
   end
 
-  # A filter is "active" when its value differs from the default (blank / "All"
-  # / unchecked). Drives the brand highlight below so an operator sees at a
-  # glance which filters are narrowing the list.
+  # A filter is "active" when its value differs from the default (blank / "All").
+  # Drives the brand highlight below so an operator sees at a glance which filters
+  # are narrowing the list.
   # A filter reads as "active" only when the operator moved it AWAY from its
   # default — a value that equals the filter's `default` (e.g. status="live" on
   # the agents list) is the baseline view, not an applied filter, so it stays
   # un-highlighted and doesn't raise the "clear filters" ×.
-  defp filter_active?(%Filter{type: :boolean, default: default}, value),
-    do: value == "true" and value != default
-
   # Active = the value DIFFERS from the filter's default. Blanks (nil / "" / [])
   # all read as "no value", so a filter with no default is inactive when blank —
   # but a filter whose default is non-blank (status="live") is ACTIVE when moved
@@ -877,10 +834,11 @@ defmodule EmisarWeb.LiveTable do
   defp filter_control_class(false), do: "border-zinc-700"
 
   @doc """
-  True if any of `filters` has a non-blank value in `params`. A page uses this
-  to tell "no rows because the account is empty" (show a create-CTA empty state)
-  from "no rows because a filter excluded them all" (keep the filter bar so the
-  operator can clear it, rather than trapping them on a dead empty state).
+  True if any of `filters` has a value in `params` that differs from its default.
+  A page uses this to tell "no rows because the account is empty" (show a
+  create-CTA empty state) from "no rows because a filter excluded them all" (keep
+  the filter bar so the operator can clear it, rather than trapping them on a dead
+  empty state).
   """
   def has_active_filters?(params, filters) do
     filters
@@ -908,7 +866,7 @@ defmodule EmisarWeb.LiveTable do
   `:collapsible` page's CLOSED toggle narrates what's narrowing the list
   ("Type: Runner — all events · Actor type: User") instead of a
   bare count. List values resolve through the filter's option labels
-  (grouped or flat); datetimes prettify the `T`; a boolean reads as its title.
+  (grouped or flat); datetimes prettify the `T`.
   """
   def active_filter_labels(params, filters) do
     for f <- filters,
@@ -917,8 +875,6 @@ defmodule EmisarWeb.LiveTable do
       active_filter_label(f, value)
     end
   end
-
-  defp active_filter_label(%Filter{type: :boolean} = filter, _value), do: filter.title
 
   defp active_filter_label(%Filter{type: :datetime} = filter, value),
     do: "#{filter.title}: #{String.replace(to_string(value), "T", " ")}"
@@ -1034,7 +990,7 @@ defmodule EmisarWeb.LiveTable do
                 :if={@metadata.count_kind == :estimated}
                 id={"#{@id}-count-estimate"}
                 align={:left}
-                text="Approximate, because counting every event on each load gets slower as the list grows. Filter the list for an exact total."
+                text="Approximate, because counting every row on each load gets slower as the list grows."
               >~</CoreComponents.tooltip>{@metadata.count}
             </span>
             total
@@ -1108,12 +1064,11 @@ defmodule EmisarWeb.LiveTable do
         Map.new(page_params, fn {k, v} -> {"#{prefix}#{k}", v} end)
       )
 
-    # Plug.Conn.Query.encode, not URI.encode_query — a list-valued filter (a
-    # multi-select, or a `group:<label>` event-type sentinel) is `["a", "b"]` in
-    # the params, which URI.encode_query REJECTS ("values cannot be lists"),
-    # 500-ing every paginated filtered list. This mirrors apply_filter/4, which
-    # builds the filter URL the same way.
-    if query == %{}, do: path, else: path <> "?" <> Plug.Conn.Query.encode(query)
+    # The same URL builder as the filter links: it drops the route params
+    # (`account_id_or_slug`, `id`) handle_params merges in, and encodes with
+    # Plug.Conn.Query, since a list-valued filter (a multi-select, or a
+    # `group:<label>` event-type sentinel) is a list URI.encode_query rejects.
+    filter_path(path, query)
   end
 
   # -- params → list/3 opts ------------------------------------------
@@ -1139,9 +1094,7 @@ defmodule EmisarWeb.LiveTable do
         {f.name, cast_filter_value(f, v)}
       end
       # Drop casts that came back nil (an unparseable datetime) so they don't
-      # reach Repo.Filter as `{name, nil}` and error the list. A `false`
-      # boolean cast is kept — the cast runs in the block, not as a generator,
-      # so its falsy value never filters the row out.
+      # reach Repo.Filter as `{name, nil}` and error the list.
       |> Enum.reject(fn {_name, value} -> is_nil(value) end)
 
     after_cursor = params["#{prefix}after"]
@@ -1174,11 +1127,11 @@ defmodule EmisarWeb.LiveTable do
   Five list pages wrote this out, each with its own copy of the guard and of
   the 500 ms. The message stays the caller's, because what it reloads does.
   """
-  def schedule_reload(socket, message, debounce_ms \\ @reload_debounce_ms) do
+  def schedule_reload(socket, message) do
     if socket.assigns[:reload_scheduled?] do
       socket
     else
-      Process.send_after(self(), message, debounce_ms)
+      Process.send_after(self(), message, @reload_debounce_ms)
       assign(socket, :reload_scheduled?, true)
     end
   end
@@ -1275,9 +1228,6 @@ defmodule EmisarWeb.LiveTable do
     do: [value]
 
   defp cast_filter_value(%Filter{type: {:list, _}}, values) when is_list(values), do: values
-
-  defp cast_filter_value(%Filter{type: :boolean}, "true"), do: true
-  defp cast_filter_value(%Filter{type: :boolean}, _), do: false
 
   defp cast_filter_value(%Filter{type: :datetime}, value) when is_binary(value),
     do: parse_datetime_local(value)

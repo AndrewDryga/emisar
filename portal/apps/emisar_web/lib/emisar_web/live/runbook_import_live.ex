@@ -282,10 +282,13 @@ defmodule EmisarWeb.RunbookImportLive do
   defp binary_param(value) when is_binary(value), do: value
   defp binary_param(_value), do: ""
 
-  defp upload_error(:too_large), do: "The JSON file must be 64 KB or smaller."
+  defp upload_error(:too_large), do: "The JSON file must be #{max_definition_kb()} KB or smaller."
   defp upload_error(:not_accepted), do: "Choose a .json file."
   defp upload_error(:too_many_files), do: "Choose one JSON file."
   defp upload_error(_reason), do: "The JSON file could not be uploaded."
+
+  # The schema owns the definition byte limit; the copy states it in KB.
+  defp max_definition_kb, do: div(Runbooks.definition_limit!(:max_definition_bytes), 1024)
 
   def render(assigns) do
     ~H"""
@@ -341,7 +344,7 @@ defmodule EmisarWeb.RunbookImportLive do
               <span class="mt-3 text-sm font-medium text-zinc-200">
                 Drop a JSON file here or choose one
               </span>
-              <span class="mt-1 text-xs text-zinc-400">.json · 64 KB maximum</span>
+              <span class="mt-1 text-xs text-zinc-400">.json · {max_definition_kb()} KB maximum</span>
               <.live_file_input
                 upload={@uploads.runbook_json}
                 class="sr-only"

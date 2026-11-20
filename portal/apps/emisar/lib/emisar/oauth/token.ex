@@ -21,6 +21,6 @@ defmodule Emisar.OAuth.Token do
     belongs_to :membership, Emisar.Accounts.Membership, where: [deleted_at: nil]
     belongs_to :api_key, Emisar.ApiKeys.ApiKey, where: [deleted_at: nil]
 
-    timestamps(type: :utc_datetime_usec)
+    timestamps()
   end
 end

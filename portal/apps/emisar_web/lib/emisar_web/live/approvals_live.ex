@@ -8,15 +8,14 @@ defmodule EmisarWeb.ApprovalsLive do
 
   Order is engagement-driven:
 
-    1. **Pending** — the loud amber cards at top; what needs you now.
+    1. **Pending** — the requests at top; what needs you now.
     2. **Standing grants** — what's still letting calls through; the
        only place to revoke them.
-    3. **Recent decisions** — last 25 approve/deny calls for history.
+    3. **Recent decisions** — approve/deny history, paged 10 rows at a time.
   """
   use EmisarWeb, :live_view
   alias Emisar.{Approvals, Audit, Policies, Runners}
   alias EmisarWeb.{ConfirmDialog, LiveTable, Permissions}
-  alias Phoenix.LiveView.JS
 
   def mount(_params, _session, socket) do
     {:ok,
@@ -470,7 +469,8 @@ defmodule EmisarWeb.ApprovalsLive do
 
   # A strict→loose scale up to the longest supported duration. "Disabled" is not
   # a choice here — it revokes every grant, so it lives behind a confirm button;
-  # the option only appears while it is the current state.
+  # the option only appears while it is the current state. A stored cap outside
+  # the presets (the domain accepts any non-negative value) shows the same way.
   defp grant_lifetime_options(current) do
     disabled =
       if current == 0,
@@ -484,7 +484,21 @@ defmodule EmisarWeb.ApprovalsLive do
         ],
         else: []
 
+    custom =
+      if is_integer(current) and current > 0 and
+           current not in [3_600, 86_400, 2_592_000, 7_776_000],
+         do: [
+           %{
+             value: Integer.to_string(current),
+             label: grant_lifetime_label(current),
+             selected: true,
+             disabled: false
+           }
+         ],
+         else: []
+
     disabled ++
+      custom ++
       [
         %{value: "3600", label: "1 hour", selected: current == 3_600, disabled: false},
         %{value: "86400", label: "1 day", selected: current == 86_400, disabled: false},
@@ -868,7 +882,6 @@ defmodule EmisarWeb.ApprovalsLive do
                    always exempt. Server-enforced in Approvals.create_grant. What
                    "Disabled" costs an operator is stated where they meet it — the
                    select's own option, and the grants-list empty state. --%>
-              <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — self-contained control card, the team-security rail grammar --%>
               <div id="approvals-grant-cap" class="mt-3 rounded-xl border border-zinc-800/80 p-4">
                 <h4 class="text-sm font-medium text-zinc-100">Maximum grant lifetime</h4>
                 <p class="mt-1 text-xs leading-relaxed text-zinc-400">

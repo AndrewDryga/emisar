@@ -68,7 +68,7 @@ defmodule Emisar.Fixtures.Runners do
 
     {:ok, runner} =
       runner
-      |> Runner.Changeset.connected(Ecto.UUID.generate(), lease_expires_at)
+      |> Runner.Changeset.connected(Ecto.UUID.generate(), lease_expires_at, nil)
       |> Repo.update()
 
     meta = %{

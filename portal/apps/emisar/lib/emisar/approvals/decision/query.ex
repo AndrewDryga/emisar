@@ -89,11 +89,4 @@ defmodule Emisar.Approvals.Decision.Query do
     |> with_joined_decider_membership()
     |> preload([decider_membership: decider], decider_membership: decider)
   end
-
-  @impl Emisar.Repo.Query
-  def preloads,
-    do: [
-      decider_membership:
-        {Emisar.Accounts.Membership.Query.all(), Emisar.Accounts.Membership.Query.preloads()}
-    ]
 end

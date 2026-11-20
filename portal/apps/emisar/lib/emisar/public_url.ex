@@ -1,8 +1,8 @@
 defmodule Emisar.PublicUrl do
   @moduledoc """
   The app's public base URL — the single source of truth for absolute
-  links built outside a request (mailer bodies and Paddle success/cancel
-  URLs).
+  links built outside a request (mailer bodies, the OAuth resource
+  indicator, and SCIM and SSO setup URLs).
 
   Reads the domain-owned `:emisar, :public_url` config — a
   `[scheme:, host:, port:]` keyword every config file binds once and

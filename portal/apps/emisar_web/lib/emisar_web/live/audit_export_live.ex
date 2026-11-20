@@ -8,7 +8,6 @@ defmodule EmisarWeb.AuditExportLive do
   use EmisarWeb, :live_view
   alias Emisar.{Accounts, ApiKeys, Billing}
   alias EmisarWeb.{LiveTable, Permissions, URLHelpers}
-  alias Phoenix.LiveView.JS
 
   def mount(_params, _session, socket) do
     if ApiKeys.subject_can_manage_api_keys?(socket.assigns.current_subject) do
@@ -102,8 +101,9 @@ defmodule EmisarWeb.AuditExportLive do
           {:ok, raw, _key} ->
             {:noreply, s |> assign(:export_secret, raw) |> assign_export_keys()}
 
-          # The mount check already bounced an ineligible plan; this covers an
-          # entitlement withdrawn while the page was open.
+          # An ineligible plan renders the unavailable callout with no mint control
+          # (mount keeps the page so existing tokens stay revocable); this covers a
+          # crafted event and an entitlement withdrawn while the page was open.
           {:error, :audit_export_not_available} ->
             {:noreply,
              s

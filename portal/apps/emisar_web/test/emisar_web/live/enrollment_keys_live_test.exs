@@ -516,8 +516,55 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
 
     {:ok, _raw, key} = Runners.create_enrollment_key(%{description: "minted-elsewhere"}, subject)
     send(lv.pid, {:list_changed, :enrollment_key, "enrollment_key.created", key.id})
+    # The broadcast only schedules the reload; fire the message its timer delivers.
+    send(lv.pid, :reload_enrollment_keys)
 
     assert render(lv) =~ "minted-elsewhere"
+  end
+
+  test "a burst of key broadcasts reloads the list once, after the debounce", %{conn: conn} do
+    {conn, owner, account} = register_and_log_in(conn)
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys")
+
+    # A direct insert broadcasts nothing, so only the burst below schedules a reload.
+    key =
+      Fixtures.Runners.create_enrollment_key_with_secret(
+        "emkey-burst-" <> Ecto.UUID.generate(),
+        account.id,
+        owner.id,
+        %{description: "burst-key"}
+      )
+
+    :erlang.trace(lv.pid, true, [:receive, tracer: self()])
+
+    for _ <- 1..3,
+        do: send(lv.pid, {:list_changed, :enrollment_key, "enrollment_key.used", key.id})
+
+    refute render(lv) =~ "burst-key"
+    assert :sys.get_state(lv.pid).socket.assigns.reload_scheduled?
+
+    # The scheduled timer, not the test, delivers :reload_enrollment_keys — once.
+    pid = lv.pid
+    assert_receive {:trace, ^pid, :receive, :reload_enrollment_keys}
+    refute_receive {:trace, ^pid, :receive, :reload_enrollment_keys}, 700
+    assert render(lv) =~ "burst-key"
+    refute :sys.get_state(lv.pid).socket.assigns.reload_scheduled?
+  end
+
+  test "a reload that fires after moving to the issue form only clears the debounce", %{
+    conn: conn
+  } do
+    {conn, _owner, account} = register_and_log_in(conn)
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys")
+
+    send(lv.pid, {:list_changed, :enrollment_key, "enrollment_key.created", Ecto.UUID.generate()})
+    assert :sys.get_state(lv.pid).socket.assigns.reload_scheduled?
+
+    render_patch(lv, ~p"/app/#{account}/runners/keys/new")
+    send(lv.pid, :reload_enrollment_keys)
+
+    assert render(lv) =~ "Create an enrollment key"
+    refute :sys.get_state(lv.pid).socket.assigns.reload_scheduled?
   end
 
   test "a host registering with a single-use key takes it off the active list", %{conn: conn} do
@@ -529,6 +576,8 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/keys")
     assert html =~ "one-host"
 
+    :erlang.trace(lv.pid, true, [:receive, tracer: self()])
+
     assert {:ok, _runner, _token, _raw_token} =
              Runners.register_via_enrollment_key(raw, %{
                external_id: "ext-web-7",
@@ -536,6 +585,8 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
              })
 
     # The registration's own broadcast reflows the list; nothing is sent by hand.
+    pid = lv.pid
+    assert_receive {:trace, ^pid, :receive, :reload_enrollment_keys}
     refute render(lv) =~ "one-host"
   end
 

@@ -40,7 +40,25 @@ defmodule EmisarWeb.Components.ConfirmZoneTest do
     assert html =~ "It cannot reconnect until you enable it again."
     # The trigger OPENS the dialog (a JS show targeting the dialog id), and the
     # real "disable" event lives on the dialog's Confirm.
-    assert html =~ "disable-runner"
+    document = LazyHTML.from_fragment(html)
+
+    [trigger | _] = document |> LazyHTML.query("button[phx-click]") |> Enum.to_list()
+    assert trigger |> LazyHTML.text() |> String.trim() == "Disable runner"
+
+    assert Enum.any?(js_ops(trigger), fn [kind, args] ->
+             kind == "show" and args["to"] == "#disable-runner"
+           end)
+
+    confirm = LazyHTML.query(document, "#disable-runner-confirm")
+
+    assert Enum.any?(js_ops(confirm), fn [kind, args] ->
+             kind == "push" and args["event"] == "disable"
+           end)
+  end
+
+  defp js_ops(node) do
+    [click] = LazyHTML.attribute(node, "phx-click")
+    Jason.decode!(click)
   end
 
   test "success tone is the emerald twin with no confirm dialog (safe restore)" do

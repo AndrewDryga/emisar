@@ -14,6 +14,20 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
   alias Emisar.SSO
   alias Emisar.SSO.IdentityProvider
 
+  # Discovery whose document names a private or non-HTTPS endpoint.
+  defmodule BlockedDiscoveryOIDC do
+    @behaviour Emisar.SSO.OIDC
+
+    @impl Emisar.SSO.OIDC
+    def begin_authorization(_provider, _opts), do: {:error, :blocked_discovery_endpoint}
+
+    @impl Emisar.SSO.OIDC
+    def verify_callback(_provider, _params, _stashed), do: {:error, :blocked_discovery_endpoint}
+
+    @impl Emisar.SSO.OIDC
+    def discover(_provider), do: {:error, :blocked_discovery_endpoint}
+  end
+
   defp make_viewer(member), do: Fixtures.Memberships.force_role(member, "viewer")
 
   defp insert_provider(account, attrs) do
@@ -217,6 +231,20 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       refresh_directory(lv)
       refute :sys.get_state(lv.pid).socket.assigns.can_configure?
       refute :sys.get_state(lv.pid).socket.assigns.can_configure_directory_sync?
+    end
+
+    test "the pre-connect render of a connection uses the shared loading state", %{
+      conn: conn,
+      account: account,
+      provider: provider
+    } do
+      for path <- [
+            ~p"/app/#{account}/settings/sso/#{provider.id}",
+            ~p"/app/#{account}/settings/sso/#{provider.id}/edit"
+          ] do
+        dead = html_response(get(conn, path), 200)
+        assert dead =~ ~s(data-icon="state.loading")
+      end
     end
 
     test "stale ticks cannot refresh another connection or an edit form", %{
@@ -900,18 +928,17 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
     } do
       # The viewer never sees the form (locked upsell), but the create handler is
       # gated server-side — a forged event is a no-op.
-      _ = make_viewer(user)
+      make_viewer(user)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/new")
 
-      _ =
-        render_submit(lv, "create", %{
-          "provider" => %{
-            "kind" => "okta",
-            "name" => "Forged Okta",
-            "issuer" => "https://forged.okta.com",
-            "client_id" => "cid"
-          }
-        })
+      render_submit(lv, "create", %{
+        "provider" => %{
+          "kind" => "okta",
+          "name" => "Forged Okta",
+          "issuer" => "https://forged.okta.com",
+          "client_id" => "cid"
+        }
+      })
 
       refute IdentityProvider.Query.not_deleted()
              |> Repo.all()
@@ -924,19 +951,18 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       user: user
     } do
       provider = insert_provider(account, %{name: "Untouchable"})
-      _ = make_viewer(user)
+      make_viewer(user)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}/edit")
 
-      _ =
-        render_submit(lv, "update", %{
-          "provider_id" => provider.id,
-          "provider" => %{
-            "kind" => "okta",
-            "name" => "Renamed By Viewer",
-            "issuer" => "https://idp.test",
-            "client_id" => "cid"
-          }
-        })
+      render_submit(lv, "update", %{
+        "provider_id" => provider.id,
+        "provider" => %{
+          "kind" => "okta",
+          "name" => "Renamed By Viewer",
+          "issuer" => "https://idp.test",
+          "client_id" => "cid"
+        }
+      })
 
       assert Repo.reload!(provider).name == "Untouchable"
     end
@@ -1430,6 +1456,25 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert Repo.reload!(verified).enabled
     end
 
+    test "enabling a second connection of an enabled kind explains the conflict", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      _enabled = insert_provider(account, %{name: "Live Okta"})
+
+      second =
+        insert_provider(account, %{name: "Second Okta", enabled: false})
+        |> mark_sign_in_verified(user)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{second.id}")
+
+      refused = render_click(lv, "enable_verified_provider", %{"provider_id" => second.id})
+
+      assert refused =~ "Another connection of this provider type is already enabled."
+      refute Repo.reload!(second).enabled
+    end
+
     test "a connection from another account reads as not found — back to the overview", %{
       conn: conn,
       account: account
@@ -1459,7 +1504,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       user: user
     } do
       provider = insert_provider(account, %{name: "Acme Okta"})
-      _ = make_viewer(user)
+      make_viewer(user)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
@@ -1473,7 +1518,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       user: user
     } do
       provider = insert_provider(account, %{name: "Acme Okta"})
-      _ = make_viewer(user)
+      make_viewer(user)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
       html =
@@ -1515,13 +1560,20 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       conn: conn,
       account: account
     } do
-      # The :edit route loads :edit_form, not the :new/:show :form that
-      # test_connection reads — and the event is reachable over the socket from any
-      # route. It used to KeyError; the mount default + nil-guard make it a no-op.
+      # :show and :edit never build the :new create form that test_connection
+      # reads — and the event is reachable over the socket from any route. It used
+      # to KeyError; the mount default + nil-guard make it a no-op.
       provider = insert_provider(account, %{})
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}/edit")
 
-      assert render_hook(lv, "test_connection", %{})
+      for path <- [
+            ~p"/app/#{account}/settings/sso/#{provider.id}",
+            ~p"/app/#{account}/settings/sso/#{provider.id}/edit"
+          ] do
+        {:ok, lv, _html} = live(conn, path)
+
+        assert render_hook(lv, "test_connection", %{})
+        assert :sys.get_state(lv.pid).socket.assigns.form == nil
+      end
     end
 
     test "a non-https issuer prompts for a valid URL instead of fetching", %{
@@ -1539,6 +1591,25 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       html = render_click(lv, "test_connection", %{})
 
       assert html =~ "HTTPS URL first"
+    end
+
+    test "a discovery document with a blocked endpoint says so, not that the IdP is down", %{
+      conn: conn,
+      account: account
+    } do
+      Emisar.Config.put_override(:emisar, :sso_oidc_impl, BlockedDiscoveryOIDC)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/new")
+
+      lv
+      |> form("#provider_form", %{
+        "provider" => %{"kind" => "okta", "issuer" => "https://idp.test"}
+      })
+      |> render_change()
+
+      html = render_click(lv, "test_connection", %{})
+
+      assert html =~ "points one of its endpoints at a private or non-HTTPS address"
+      refute html =~ "reachable from the internet"
     end
 
     test "a capped account gets fixed retry copy without another discovery", %{
@@ -1569,7 +1640,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       account: account,
       user: user
     } do
-      _ = make_viewer(user)
+      make_viewer(user)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/new")
 
       # The viewer never sees the form; a pushed test event is gated server-side —
@@ -1608,6 +1679,45 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert has_element?(lv, "#connection-provisioning > #synced-members-#{provider.id}")
       refute html =~ "No synced groups yet"
       refute html =~ "No access mappings yet"
+    end
+
+    test "a synced member's last-seen time leads with a separator only after an email", %{
+      conn: conn,
+      account: account
+    } do
+      provider =
+        account
+        |> insert_provider(%{name: "Synced Okta"})
+        |> Fixtures.SSO.enable_scim()
+
+      seen_at = DateTime.add(DateTime.utc_now(), -3_600, :second)
+
+      %{identity: email_named} =
+        Fixtures.SSO.create_directory_member(provider, %{
+          email: "plain@example.test",
+          display_name: nil
+        })
+
+      %{identity: display_named} =
+        Fixtures.SSO.create_directory_member(provider, %{
+          email: "ada@example.test",
+          display_name: "Ada Lovelace"
+        })
+
+      for identity <- [email_named, display_named] do
+        identity |> Ecto.Changeset.change(last_seen_at: seen_at) |> Repo.update!()
+      end
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      email_meta = "#synced-member-meta-#{email_named.id}"
+      assert has_element?(lv, email_meta, "last seen")
+      refute has_element?(lv, email_meta, "·")
+
+      display_meta = "#synced-member-meta-#{display_named.id}"
+      assert has_element?(lv, display_meta, "ada@example.test")
+      assert has_element?(lv, display_meta, "·")
+      assert has_element?(lv, display_meta, "last seen")
     end
   end
 
@@ -1940,6 +2050,11 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       refute html =~ "Turn off directory sync"
       assert has_element?(lv, "#disable-scim-#{provider.id}")
 
+      # Deleting a dormant connection has the same consequences as an active one.
+      assert has_element?(lv, "#delete-provider-#{provider.id}", "ends the sessions")
+      assert has_element?(lv, "#delete-provider-#{provider.id}", "lose their API keys")
+      assert html =~ "Email sign-in sessions stay."
+
       assert has_element?(
                lv,
                "#disable-scim-#{provider.id}-confirm[phx-disable-with='Disabling…']"
@@ -2100,12 +2215,12 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       user: user,
       provider: provider
     } do
-      _ = make_viewer(user)
+      make_viewer(user)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
       # The viewer sees the upsell, not the panel; the gated event is a no-op
       # server-side even if pushed directly.
-      _ = render_click(lv, "enable_scim", %{"id" => provider.id})
+      render_click(lv, "enable_scim", %{"id" => provider.id})
       refute Repo.reload!(provider).scim_enabled
     end
 
@@ -2122,11 +2237,11 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       {:ok, enabled, _raw} = SSO.enable_scim(provider, owner)
       prefix = enabled.scim_token_prefix
 
-      _ = make_viewer(user)
+      make_viewer(user)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
-      _ = render_click(lv, "rotate_scim", %{"id" => provider.id})
-      _ = render_click(lv, "disable_scim", %{"id" => provider.id})
+      render_click(lv, "rotate_scim", %{"id" => provider.id})
+      render_click(lv, "disable_scim", %{"id" => provider.id})
 
       # Still enabled, and the prefix is the admin-minted one (no rotation landed).
       reloaded = Repo.reload!(provider)
@@ -2466,10 +2581,10 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       membership: membership,
       user: user
     } do
-      _ = make_viewer(user)
+      make_viewer(user)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
-      _ = render_click(lv, "suspend_member", %{"membership_id" => membership.id})
+      render_click(lv, "suspend_member", %{"membership_id" => membership.id})
 
       refute Emisar.Accounts.Membership.disabled?(Repo.reload!(membership))
     end
@@ -3570,6 +3685,36 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert has_element?(lv, "#edit-group-access-#{third.id}")
     end
 
+    test "a filter or page patch keeps open drafts, and says so when the edited group leaves",
+         %{conn: conn, account: account, provider: provider} do
+      group = sync_group(provider, "patch-kept", "Patch kept")
+      path = ~p"/app/#{account}/settings/sso/#{provider.id}"
+      {:ok, lv, _html} = live(conn, path)
+
+      render_click(lv, "add_mapping_form", %{})
+      render_click(lv, "edit_group_access", %{"group_id" => group.id})
+
+      lv
+      |> form("#edit-group-access-#{group.id}", %{
+        "runner_access_mapping" => %{"runner_access_mode" => "all"}
+      })
+      |> render_change()
+
+      render_patch(lv, path <> "?synced_members_search=nobody")
+
+      assert :sys.get_state(lv.pid).socket.assigns.adding_mapping
+
+      assert has_element?(
+               lv,
+               "#edit-group-access-#{group.id} input[name='runner_access_mapping[runner_access_mode]'][value='all'][checked]"
+             )
+
+      render_patch(lv, path <> "?group_access_search=no-such-group")
+
+      refute has_element?(lv, "#edit-group-access-#{group.id}")
+      assert render(lv) =~ "unsaved access changes were discarded"
+    end
+
     test "all defaults lock both dimensions and saving exactly defaults removes redundant additions",
          %{
            conn: conn,
@@ -3955,7 +4100,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       owner: owner
     } do
       group = sync_group(provider, "viewer-forged", "Viewer forged group")
-      _ = make_viewer(user)
+      make_viewer(user)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
       render_click(lv, "set_group_role", %{"group_id" => group.id, "role" => "admin"})
       refute has_element?(lv, "#create-mapping-#{provider.id}")
@@ -3963,11 +4108,10 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       # The viewer sees the upsell, not the panel; the gated event is a no-op
       # server-side even if pushed directly.
-      _ =
-        render_click(lv, "create_mapping", %{
-          "provider_id" => provider.id,
-          "mapping" => %{"external_group_id" => "grp", "role" => "admin"}
-        })
+      render_click(lv, "create_mapping", %{
+        "provider_id" => provider.id,
+        "mapping" => %{"external_group_id" => "grp", "role" => "admin"}
+      })
 
       # The old owner snapshot also loses authority; inspect persisted fixture
       # state without treating that stale Subject as an administrator.
@@ -3997,13 +4141,12 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
           owner
         )
 
-      _ = make_viewer(user)
+      make_viewer(user)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
-      _ =
-        render_click(lv, "set_group_role", %{"group_id" => group.id, "role" => "admin"})
+      render_click(lv, "set_group_role", %{"group_id" => group.id, "role" => "admin"})
 
-      _ = render_click(lv, "delete_mapping", %{"id" => mapping.id})
+      render_click(lv, "delete_mapping", %{"id" => mapping.id})
 
       assert SSO.list_group_access(provider, owner) == {:error, :unauthorized}
       unchanged = Repo.reload!(mapping)
@@ -4055,7 +4198,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
   describe "as a non-admin member" do
     test "an enterprise viewer is denied the Add page and sees the role gate", %{conn: conn} do
       {conn, owner, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
-      _ = make_viewer(owner)
+      make_viewer(owner)
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/new")
 

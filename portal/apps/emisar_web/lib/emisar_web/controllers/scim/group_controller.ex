@@ -1,7 +1,7 @@
 defmodule EmisarWeb.SCIM.GroupController do
   @moduledoc """
-  Inbound SCIM 2.0 `/Groups` — the directory-group sync an IdP (Okta, Entra,
-  Google) pushes so a member's emisar role tracks their IdP group membership.
+  Inbound SCIM 2.0 `/Groups` — the directory-group sync an IdP (Okta, Entra)
+  pushes so a member's emisar role tracks their IdP group membership.
   Every action reads the provider resolved by `SCIM.Auth` from
   `conn.assigns.scim_provider` and drives the account-scoped `Emisar.SSO.scim_*`
   group functions with it — the token's provider-scope IS the authorization
@@ -203,10 +203,10 @@ defmodule EmisarWeb.SCIM.GroupController do
   defp render_error(conn, _reason),
     do: bad_request(conn, "invalidValue", "The SCIM Group request could not be processed.")
 
-  defp not_found(conn, external_id) do
+  defp not_found(conn, id) do
     detail =
-      if external_id,
-        do: "No SCIM Group with id `#{external_id}` in this directory.",
+      if id,
+        do: "No SCIM Group with id `#{id}` in this directory.",
         else: "No matching SCIM Group in this directory."
 
     conn

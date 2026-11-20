@@ -113,9 +113,9 @@ config :emisar, Emisar.Mailer, adapter: Emisar.MailerTestAdapter
 # A fixed secret so the Postmark webhook controller test can authenticate.
 config :emisar, postmark_webhook_secret: "pm_webhook_test"
 
-# Run `Approvals.notify_approvers/3` synchronously in tests so its DB
+# Run Approvals' approver notification synchronously in tests so its DB
 # reads happen inside the test's sandbox checkout. With the async path
-# (Task.start) the spawned process can outlive the test and trigger
+# (Task.Supervisor.start_child) the spawned process can outlive the test and trigger
 # `owner #PID<...> exited` warnings during teardown.
 config :emisar, notify_approvers_async?: false
 
@@ -127,7 +127,7 @@ config :emisar, email_codes_async?: false
 # ExUnit's 100ms `assert_receive_timeout` is a "the message is already on its way"
 # budget, but `render_async/1`, `assert_redirect/2` and friends inherit it as the
 # budget for real work: an `assign_async` task or a LiveView `handle_info` that has
-# to reach the database first. Under this suite's `--max-cases 24`, that work queues
+# to reach the database first. Under the suite's CPU-derived `--max-cases`, that work queues
 # behind the same write-path contention the pool settings above already allow for,
 # so the default fails a passing test on latency alone. Measured 2026-09-15 over 21
 # full `emisar_web` runs at `--max-cases 24`, timing the assertions inside the tests
@@ -162,6 +162,6 @@ config :emisar_web, enable_telemetry_poller: false
 # directly instead (see rate_limiter_test.exs).
 config :emisar, rate_limit_enabled: false
 
-# Dev/test metadata documents are served from loopback, which the CIMD SSRF
+# Test metadata documents are served from loopback, which the CIMD SSRF
 # boundary refuses by default. Never set in production.
 config :emisar, Emisar.OAuth.ClientMetadataDocument, allow_private_hosts: true

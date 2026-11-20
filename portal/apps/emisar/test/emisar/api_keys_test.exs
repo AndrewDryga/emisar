@@ -71,7 +71,7 @@ defmodule Emisar.ApiKeysTest do
       assert preloaded.created_by_membership.email == owner.email
     end
 
-    test "a runner subject (no view_api_keys permission) is refused with :unauthorized" do
+    test "a subject without view_api_keys is refused with :unauthorized" do
       # Every membership role holds view_api_keys, so the refusal branch
       # needs a subject stripped of the permission entirely.
       account = Fixtures.Accounts.create_account()
@@ -459,7 +459,7 @@ defmodule Emisar.ApiKeysTest do
       assert export_visible.id == export_key.id
     end
 
-    test "a runner subject (no view_api_keys permission) is refused with :unauthorized" do
+    test "a subject without view_api_keys is refused with :unauthorized" do
       account = Fixtures.Accounts.create_account()
       subject = Fixtures.Subjects.permissionless_subject(account)
 
@@ -2491,6 +2491,10 @@ defmodule Emisar.ApiKeysTest do
   end
 
   describe "peek_api_key_by_secret/1" do
+    test "returns nil for a malformed-UTF-8 secret without querying it" do
+      assert ApiKeys.peek_api_key_by_secret("emk-" <> :binary.copy(<<0xFF>>, 40)) == nil
+    end
+
     test "returns the key for a valid raw secret + bumps last_used_at" do
       {raw, key} = Fixtures.ApiKeys.create_api_key()
       refute key.last_used_at
@@ -2822,7 +2826,7 @@ defmodule Emisar.ApiKeysTest do
   end
 
   describe "create_backing_key/4" do
-    test "inserts a non-expiring MCP key scoped read+execute, owned by the membership" do
+    test "inserts a non-expiring MCP key owned by the membership" do
       {owner, account, _subject} = owner_subject_pair()
       membership = Repo.reload!(owner)
 
@@ -2956,7 +2960,7 @@ defmodule Emisar.ApiKeysTest do
   end
 
   describe "record_backing_key_usage/1" do
-    test "bumps last_used_at and broadcasts first use, then re-bumps without re-broadcasting" do
+    test "stamps and broadcasts first use, keeps a fresh stamp, re-stamps a stale one" do
       {owner, account, _subject} = owner_subject_pair()
       membership = Repo.reload!(owner)
 
@@ -2973,9 +2977,16 @@ defmodule Emisar.ApiKeysTest do
       assert_receive {:list_changed, :api_key, "api_key.first_used", key_id}
       assert key_id == key.id
 
-      # A later call re-bumps last_used_at but no longer announces a first use.
-      assert %ApiKey{last_used_at: %DateTime{}} =
-               ApiKeys.record_backing_key_usage(Repo.reload!(key))
+      # A call inside the rewrite window leaves the fresh stamp alone.
+      stamped = Repo.reload!(key)
+      assert ApiKeys.record_backing_key_usage(stamped) == stamped
+      assert Repo.reload!(key).last_used_at == stamped.last_used_at
+
+      # A stale stamp is rewritten, without announcing a first use again.
+      stale = Fixtures.ApiKeys.backdate_api_key_usage(stamped)
+      assert %ApiKey{last_used_at: %DateTime{}} = ApiKeys.record_backing_key_usage(stale)
+      restamped = Repo.reload!(key).last_used_at
+      assert DateTime.compare(restamped, stale.last_used_at) == :gt
 
       refute_receive {:list_changed, :api_key, "api_key.first_used", _}
     end

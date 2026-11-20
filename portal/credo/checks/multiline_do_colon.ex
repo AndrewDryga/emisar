@@ -26,8 +26,6 @@ defmodule Emisar.Checks.MultilineDoColon do
     ]
 
   alias Credo.Code
-  alias Credo.IssueMeta
-  alias Credo.SourceFile
 
   @impl true
   def run(%SourceFile{} = source_file, params) do
