@@ -1,7 +1,9 @@
 package infraops
 
 import (
+	"bufio"
 	"bytes"
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -293,6 +295,40 @@ func TestPortalHelpDoesNotRequireGcloud(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "usage: ./run ops portal") {
 		t.Fatalf("unexpected help: %s", out.String())
+	}
+}
+
+func TestStreamPortalCommandPrefixesReportsAndReapsTheChild(t *testing.T) {
+	var out bytes.Buffer
+	app := New(t.TempDir(), strings.NewReader(""), &out, &out)
+
+	if err := app.streamPortalCommand("portal-a", app.command(t.Context(), t.TempDir(), nil, "sh", "-c", "printf 'one\\ntwo\\n'")); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != "[portal-a] one\n[portal-a] two\n" {
+		t.Fatalf("output = %q", out.String())
+	}
+	if err := app.streamPortalCommand("portal-a", app.command(t.Context(), t.TempDir(), nil, "sh", "-c", "exit 3")); err == nil {
+		t.Fatal("nonzero exit was not reported")
+	}
+
+	// A line past the scanner limit, then output that never stops: the read
+	// error must surface and the child must be stopped and reaped, not left
+	// blocked writing into a pipe nobody reads.
+	out.Reset()
+	command := app.command(t.Context(), t.TempDir(), nil, "sh", "-c", "head -c 70000 /dev/zero | tr '\\0' a; echo; while :; do echo more; done")
+	done := make(chan error, 1)
+	go func() { done <- app.streamPortalCommand("portal-b", command) }()
+	select {
+	case err := <-done:
+		if !errors.Is(err, bufio.ErrTooLong) {
+			t.Fatalf("oversized line error = %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("an oversized line left the stream waiting on its child")
+	}
+	if command.ProcessState == nil {
+		t.Fatal("the child was not reaped")
 	}
 }
 

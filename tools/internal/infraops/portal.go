@@ -3,8 +3,10 @@ package infraops
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -352,24 +354,8 @@ func (a *App) portal(ctx context.Context, args []string) error {
 				"CLOUDSDK_COMPUTE_ZONE": "", "CLOUDSDK_COMPUTE_REGION": "",
 			}, "gcloud", "compute", "ssh", item.name, "--project="+options.project,
 				"--zone="+item.zone, "--tunnel-through-iap", "--command="+remote)
-			command.Stdout = nil
-			stdout, err := command.StdoutPipe()
-			if err != nil {
-				fmt.Fprintln(a.Err, err)
-				failed.Store(true)
-				return
-			}
-			command.Stderr = command.Stdout
-			if err := command.Start(); err != nil {
-				fmt.Fprintln(a.Err, err)
-				failed.Store(true)
-				return
-			}
-			scanner := bufio.NewScanner(stdout)
-			for scanner.Scan() {
-				fmt.Fprintf(a.Out, "[%s] %s\n", item.name, scanner.Text())
-			}
-			if scanner.Err() != nil || command.Wait() != nil {
+			if err := a.streamPortalCommand(item.name, command); err != nil {
+				fmt.Fprintf(a.Err, "[%s] %v\n", item.name, err)
 				failed.Store(true)
 			}
 		}()
@@ -379,4 +365,30 @@ func (a *App) portal(ctx context.Context, args []string) error {
 		return fmt.Errorf("one or more Portal commands failed")
 	}
 	return nil
+}
+
+// streamPortalCommand runs one host's command, prefixing each output line with
+// the host name. A read failure (a line past the scanner's limit) leaves
+// nothing draining the pipe, so the child is stopped rather than left blocked
+// on a write; it is reaped either way.
+func (a *App) streamPortalCommand(name string, command *exec.Cmd) error {
+	command.Stdout = nil
+	stdout, err := command.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	command.Stderr = command.Stdout
+	if err := command.Start(); err != nil {
+		return err
+	}
+	scanner := bufio.NewScanner(stdout)
+	for scanner.Scan() {
+		fmt.Fprintf(a.Out, "[%s] %s\n", name, scanner.Text())
+	}
+	scanErr := scanner.Err()
+	if scanErr != nil {
+		_ = stdout.Close()
+		_ = command.Process.Kill()
+	}
+	return errors.Join(scanErr, command.Wait())
 }

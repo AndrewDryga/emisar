@@ -125,15 +125,6 @@ const findLogAction = `(()=>{if(new URL(location.href).searchParams.get('action'
 // does nothing) is retried instead of trusted.
 const collapseAuditFilters = `(()=>{const b=document.querySelector('button[phx-click="toggle_filters"]');if(!b)return false;if(b.getAttribute('aria-expanded')==='false')return true;b.click();return false})()`
 
-// clickSSOConnection opens an SSO connection's detail page from the team page.
-// selectEntraProvider selects the Entra preset, which uses oid for the identifier.
-// Provider selection is LiveView-backed, so dispatch a change event.
-// selectGoogleProvider picks the Google Workspace preset, whose issuer emisar
-// fills in and LOCKS — the detail /docs/sso#google-workspace exists to show.
-const selectGoogleProvider = `(()=>{const el=document.querySelector('select[name="provider[kind]"]');if(!el)return false;el.value='google_workspace';el.dispatchEvent(new Event('change',{bubbles:true}));return true})()`
-
-const selectEntraProvider = `(()=>{const set=(sel,val)=>{const el=document.querySelector(sel);if(!el)return false;el.value=val;el.dispatchEvent(new Event('change',{bubbles:true}));return true};return set('select[name="provider[kind]"]','entra')})()`
-
 const selectJumpCloudRegion = `(()=>{const el=document.querySelector('select[name="provider[issuer]"]');if(!el)return false;el.value='https://oauth.id.jumpcloud.com/';el.dispatchEvent(new Event('change',{bubbles:true}));return true})()`
 
 const openSCIMSetup = `(()=>{const el=document.querySelector('details[id^="scim-setup-"]');if(!el)return false;el.open=true;return true})()`
@@ -141,6 +132,7 @@ const openSCIMSetup = `(()=>{const el=document.querySelector('details[id^="scim-
 // selectProviderKind picks a provider in the Add-provider form. Each guide's
 // first step tells the reader to choose THEIR provider, so each guide's shot
 // shows that provider chosen rather than a shared picture of someone else's.
+// Provider selection is LiveView-backed, so it dispatches a change event.
 func selectProviderKind(kind string) string {
 	return fmt.Sprintf(`(()=>{const el=document.querySelector('select[name="provider[kind]"]');if(!el)return false;el.value=%q;el.dispatchEvent(new Event('change',{bubbles:true}));return true})()`, kind)
 }
@@ -151,6 +143,7 @@ func selectProviderKind(kind string) string {
 // flagged it before. Only the host is substituted; no value is invented.
 const showProductionHost = `(()=>{const from=location.origin,to='https://emisar.dev';const walk=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);const hits=[];while(walk.nextNode())if(walk.currentNode.nodeValue.includes(from))hits.push(walk.currentNode);hits.forEach(n=>n.nodeValue=n.nodeValue.split(from).join(to));document.querySelectorAll('[data-copy-text]').forEach(el=>el.setAttribute('data-copy-text',el.getAttribute('data-copy-text').split(from).join(to)));return true})()`
 
+// clickSSOConnection opens an SSO connection's detail page from the team page.
 const clickSSOConnection = `(()=>{if(document.querySelector('#connection-settings'))return true;const a=[...document.querySelectorAll('a[href*="/settings/sso/"]')].find(x=>/\/settings\/sso\/[0-9a-f-]{8,}/.test(x.getAttribute('href')));if(!a)return false;location.assign(a.href);return false})()`
 
 // docsShots — one entry per docs screenshot, each cropped to the one feature
@@ -223,12 +216,9 @@ var docsShots = []shot{
 	{Name: "sso-connection-fields", Path: "/app/demo/settings/sso/new", Clicks: []string{showProductionHost}, Anchor: Anchor{Heading: "OIDC connection", Climb: "section"}, Width: docsWidth, Output: "docs/sso/sso-connection-fields.webp"},
 	{Name: "sso-provisioning-fields", Path: "/app/demo/settings/sso/new", Anchor: Anchor{Heading: "Member access", Climb: "section"}, Width: docsWidth, CropPadding: 4, Output: "docs/sso/sso-provisioning-fields.webp"},
 	{Name: "sso-activation-fields", Path: "/app/demo/settings/sso/new", Anchor: Anchor{Heading: "Sign-in security", Climb: "section"}, Width: docsWidth, Output: "docs/sso/sso-activation-fields.webp"},
-	// The two halves of group→role sync: the mappings an admin authors, and the
-	// synced roster they land on. Both are seeded directory state (seeds/sso.exs maps
-	// two of three IdP groups, deliberately leaving one unmapped).
 	// The step names the issuer and the two credential fields, so the shot is that
 	// block — not the whole 3,788px form it used to be.
-	{Name: "google-emisar-connection", Path: "/app/demo/settings/sso/new", Clicks: []string{selectGoogleProvider, showProductionHost}, Anchor: Anchor{Heading: "OIDC connection", Climb: "section"}, Highlight: []string{"Client ID", "Client secret"}, Width: docsWidth, Output: "docs/sso/google-emisar-connection.webp"},
+	{Name: "google-emisar-connection", Path: "/app/demo/settings/sso/new", Clicks: []string{selectProviderKind("google_workspace"), showProductionHost}, Anchor: Anchor{Heading: "OIDC connection", Climb: "section"}, Highlight: []string{"Client ID", "Client secret"}, Width: docsWidth, Output: "docs/sso/google-emisar-connection.webp"},
 	// Every guide's step 1 is "open Add provider and choose <provider>". One shot
 	// each, showing that provider picked — the form is provider-aware, so a shared
 	// picture of someone else's choice would be the wrong screen.
@@ -241,13 +231,13 @@ var docsShots = []shot{
 	// "Paste the values back into emisar" — the fields the step names, outlined.
 	// The guide told the reader which values to carry and then showed them nothing.
 	{Name: "keycloak-emisar-credentials", Path: "/app/demo/settings/sso/new", Clicks: []string{selectProviderKind("keycloak"), showProductionHost}, Anchor: Anchor{Heading: "OIDC connection", Climb: "section"}, Highlight: []string{"Issuer URL", "Client ID", "Client secret"}, Width: docsWidth, Output: "docs/sso/keycloak-emisar-credentials.webp"},
-	{Name: "entra-emisar-credentials", Path: "/app/demo/settings/sso/new", Clicks: []string{selectEntraProvider, showProductionHost}, Anchor: Anchor{Heading: "OIDC connection", Climb: "section"}, Highlight: []string{"Issuer URL", "Client ID", "Client secret"}, Width: docsWidth, Output: "docs/sso/entra-emisar-credentials.webp"},
+	{Name: "entra-emisar-credentials", Path: "/app/demo/settings/sso/new", Clicks: []string{selectProviderKind("entra"), showProductionHost}, Anchor: Anchor{Heading: "OIDC connection", Climb: "section"}, Highlight: []string{"Issuer URL", "Client ID", "Client secret"}, Width: docsWidth, Output: "docs/sso/entra-emisar-credentials.webp"},
 	{Name: "jumpcloud-emisar-credentials", Path: "/app/demo/settings/sso/new", Clicks: []string{selectProviderKind("jumpcloud"), selectJumpCloudRegion, showProductionHost}, Anchor: Anchor{Heading: "OIDC connection", Climb: "section"}, Highlight: []string{"JumpCloud region", "Client ID", "Client secret"}, Width: docsWidth, Output: "docs/sso/jumpcloud-emisar-credentials.webp"},
 	{Name: "okta-emisar-credentials", Path: "/app/demo/settings/sso/new", Clicks: []string{selectProviderKind("okta"), showProductionHost}, Anchor: Anchor{Heading: "OIDC connection", Climb: "section"}, Highlight: []string{"Issuer URL", "Client ID", "Client secret"}, Width: docsWidth, Output: "docs/sso/okta-emisar-credentials.webp"},
 
-	// The step names ONE control — Identifier claim — so the shot is that field and
-	// its explanation, outlined. It used to be the entire 3,290px form, which shows
-	// the reader everything and points at nothing.
+	// The two halves of group→role sync: the mappings an admin authors, and the
+	// synced roster they land on. Both are seeded directory state (seeds/sso.exs maps
+	// two of three IdP groups, deliberately leaving one unmapped).
 	{Name: "scim-group-role-mapping", Path: "/app/demo/settings/team", Clicks: []string{clickSSOConnection}, Anchor: Anchor{Heading: "Groups & access", Climb: "section"}, Width: docsWidth, Output: "docs/sso/scim-group-role-mapping.webp"},
 	{Name: "scim-synced-users", Path: "/app/demo/settings/team", Clicks: []string{clickSSOConnection}, Anchor: Anchor{Selector: `[id^="synced-members-"]`}, Width: docsWidth, Output: "docs/sso/scim-synced-users.webp"},
 }
@@ -524,10 +514,11 @@ func (s shot) width() int {
 	return s.Width
 }
 
-// selectShots resolves the --only names; an unknown name is an error (a typo
-// silently capturing nothing would read as success). Any loop-* frame name
-// selects the WHOLE approval-loop take — its frames come from one continuous
-// interaction, so a single frame can't regenerate alone.
+// selectShots resolves the shot names given to `./run capture docs`; an
+// unknown name is an error (a typo silently capturing nothing would read as
+// success). Any loop-* frame name selects the WHOLE approval-loop take — its
+// frames come from one continuous interaction, so a single frame can't
+// regenerate alone.
 func selectShots(only []string) ([]shot, bool, error) {
 	if len(only) == 0 {
 		all := append(append([]shot{}, docsShots...), keycloakShots...)
@@ -603,10 +594,10 @@ func rgbHex(value string) string {
 // console a step is in. A label that matches nothing FAILS the capture — a shot
 // that silently loses its outline is a broken instruction, which is exactly how
 // the Okta lifecycle screenshot shipped bare.
-// highlightControls outlines the control each label names. Two prefixes change
-// what gets outlined: "row:" takes the whole table row the text sits in — a list
-// where the reader is being pointed at two entries among a dozen, not at a field
-// — and "css:" names the control outright, for a widget whose label belongs to
+//
+// Two prefixes change what gets outlined: "row:" takes the whole table row the
+// text sits in — a list where the reader is being pointed at two entries among
+// a dozen, not at a field — and "css:" names the control outright, for a widget whose label belongs to
 // no single input (a repeating multi-value field).
 func highlightControls(session *Session, labels []string) error {
 	for _, label := range labels {

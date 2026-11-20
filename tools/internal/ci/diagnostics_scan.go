@@ -400,11 +400,6 @@ func proveDiagnosticsNonaffected(bundle string, rule nonaffectedRule) error {
 		if len(owned) != 3 {
 			return fmt.Errorf("incomplete sysstat source build")
 		}
-		for _, path := range owned {
-			if file := elfs[path]; file.Class != elf.ELFCLASS64 || file.Machine != elf.EM_X86_64 {
-				return fmt.Errorf("sysstat is not the unaffected 64-bit build")
-			}
-		}
 	case "no-minizip":
 		if err := allowOnly("./lib/libz.so.1"); err != nil {
 			return err

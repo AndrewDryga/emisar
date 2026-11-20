@@ -113,6 +113,9 @@ func extractDiagnostics(ctx context.Context, root, image, revision string) (stri
 // ImageContract binds the exact tested image config, export and SBOM bytes.
 // Both CD publication and planning verify the same contract; neither rebuilds.
 func ImageContract(ctx context.Context, root, mode, purpose, revision, image, archive, sbom, path string) error {
+	if mode != "create" && mode != "verify" {
+		return fmt.Errorf("image-contract mode must be create or verify")
+	}
 	identity, err := inspectImage(ctx, image)
 	if err != nil {
 		return err
@@ -165,10 +168,8 @@ func ImageContract(ctx context.Context, root, mode, purpose, revision, image, ar
 		if expected != actual {
 			return fmt.Errorf("tested image/export/SBOM contract mismatch for %s", purpose)
 		}
-		return nil
-	default:
-		return fmt.Errorf("image-contract mode must be create or verify")
 	}
+	return nil
 }
 
 type sbomProperty struct {

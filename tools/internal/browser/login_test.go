@@ -598,6 +598,19 @@ func TestRedactMagicLinkErrorKeepsContextIdentityWithoutTheLink(t *testing.T) {
 	}
 }
 
+// An anchor that is missing after the sign-in detour names the page that was
+// captured, not the sign-in page Shot first landed on.
+func TestShotAnchorFailureNamesThePageAfterSignIn(t *testing.T) {
+	fixture := newSignInFixture(t)
+	browser := signInBrowser(t, fixture.server.URL)
+	fixture.set(func(f *signInFixture) { f.refuse = ""; f.mailNever = false })
+	session, _ := freshTab(t, browser)
+	_, err := session.Shot(ShotOptions{Path: "/app/demo/runs", Label: "missing-anchor", Out: t.TempDir(), Anchor: &Anchor{Selector: "#missing"}})
+	if err == nil || !strings.HasSuffix(err.Error(), "/app/demo/runs") || strings.Contains(err.Error(), "sign_in") {
+		t.Fatalf("anchor failure = %v, want it to name /app/demo/runs", err)
+	}
+}
+
 // One session, several captures, one sign-in: the shape a same-user capture batch relies on.
 func TestShotsOnOneSessionSignInOnce(t *testing.T) {
 	fixture := newSignInFixture(t)

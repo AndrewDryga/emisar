@@ -97,15 +97,7 @@ func TestValidatePackDBReadBounds(t *testing.T) {
 }
 
 func TestDBReadBoundsCoverTheShippedCatalog(t *testing.T) {
-	manifests, err := filepath.Glob(filepath.Join("..", "..", "..", "packs", "*", "pack.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(manifests) == 0 {
-		t.Fatal("no pack manifests found")
-	}
-	for _, manifest := range manifests {
-		packDir := filepath.Dir(manifest)
+	for _, packDir := range shippedPackDirs(t) {
 		if err := validatePackDBReadBounds(mustLoadPackActionLintInput(t, packDir)); err != nil {
 			t.Error(err)
 		}

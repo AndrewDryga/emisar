@@ -52,8 +52,8 @@ type packScriptAction struct {
 	} `yaml:"execution"`
 }
 
-// packScriptRef is one thing to parse. The catalog's 320 script actions reuse
-// 49 files, so the pair is what gets parsed once rather than the action.
+// packScriptRef is one thing to parse. Many script actions share a file, so
+// each distinct interpreter and path pair is parsed once rather than each action.
 type packScriptRef struct {
 	interpreter string
 	path        string

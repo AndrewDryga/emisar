@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/andrewdryga/emisar/tools/internal/repo"
+	"github.com/andrewdryga/emisar/tools/internal/toolutil"
 )
 
 var markdownLink = regexp.MustCompile(`!?\[[^\]]*\]\(([^)\n]+)\)`)
@@ -35,12 +36,9 @@ func versionedCandidates(root string) ([]string, error) {
 		return nil, fmt.Errorf("listing version-controlled files: %w", err)
 	}
 
-	parts := bytes.Split(out, []byte{0})
-	files := make([]string, 0, len(parts))
-	for _, part := range parts {
-		if len(part) > 0 {
-			files = append(files, filepath.ToSlash(string(part)))
-		}
+	files := toolutil.NULFields(out)
+	for i, file := range files {
+		files[i] = filepath.ToSlash(file)
 	}
 	sort.Strings(files)
 	return files, nil

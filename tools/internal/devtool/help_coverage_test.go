@@ -108,6 +108,7 @@ func TestTopicHelpListsEveryDispatchedTarget(t *testing.T) {
 		{"gate", gateUsage, "gates.go", "gate", "target"},
 		{"pack", packUsage, "pack.go", "pack", "action"},
 	} {
+		leaveTheBox(t)
 		var out bytes.Buffer
 		app := New(t.TempDir(), strings.NewReader(""), &out, &bytes.Buffer{})
 		if err := app.Run(t.Context(), []string{"help", topic.name}); err != nil {

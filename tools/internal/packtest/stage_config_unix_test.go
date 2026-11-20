@@ -19,7 +19,7 @@ import (
 // Pin what the staged copy must satisfy so the harness cannot drift back.
 func TestStageConfigProducesAConfigTheRunnerAccepts(t *testing.T) {
 	source := filepath.Join(t.TempDir(), "test-config.yaml")
-	contents := []byte("env_allowlist:\n  - CADDY_URL\n")
+	contents := []byte("execution:\n  inherit_env:\n    - CADDY_URL\n")
 	if err := os.WriteFile(source, contents, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestStageConfigProducesAConfigTheRunnerAccepts(t *testing.T) {
 // A stale copy from an earlier run must not leave a permissive mode behind.
 func TestStageConfigIsNotReusedAcrossRuns(t *testing.T) {
 	source := filepath.Join(t.TempDir(), "test-config.yaml")
-	if err := os.WriteFile(source, []byte("env_allowlist: []\n"), 0o644); err != nil {
+	if err := os.WriteFile(source, []byte("execution:\n  inherit_env: []\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

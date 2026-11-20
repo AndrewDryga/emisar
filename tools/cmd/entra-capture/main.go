@@ -353,7 +353,9 @@ func captureNewAppOverview(ctx context.Context, env map[string]string, outDir, c
 		}
 		fmt.Printf("  wrote client id to %s\n", credentialsOut)
 	}
-	_ = capture.Highlight(ctx, "Application (client) ID", highlightSettle)
+	if err := capture.Highlight(ctx, "Application (client) ID", highlightSettle); err != nil {
+		return err
+	}
 	return capture.Screenshot(ctx, outDir, "en-05-app-overview")
 }
 
@@ -472,7 +474,7 @@ func highlightRegistrationGroup(ctx context.Context) error {
 	if !marked {
 		return errors.New("could not outline the complete Entra redirect URI group")
 	}
-	return chromedp.Do(ctx, chromedp.Sleep(700*time.Millisecond))
+	return chromedp.Do(ctx, chromedp.Sleep(highlightSettle))
 }
 
 // openRegisteredApp captures the saved app's overview.
@@ -501,7 +503,9 @@ func openRegisteredApp(ctx context.Context, env map[string]string, outDir string
 		_ = capture.Screenshot(ctx, outDir, "en-05-overview-failed")
 		return fmt.Errorf("app overview never rendered: %w", err)
 	}
-	_ = capture.Highlight(ctx, "Application (client) ID", highlightSettle)
+	if err := capture.Highlight(ctx, "Application (client) ID", highlightSettle); err != nil {
+		return err
+	}
 	return capture.Screenshot(ctx, outDir, "en-05-app-overview")
 }
 

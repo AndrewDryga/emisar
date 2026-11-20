@@ -47,7 +47,7 @@ func TestValidatePackInterpreterBinaries_FlagsUndeclaredBash(t *testing.T) {
 	if err == nil {
 		t.Fatal("an action running /bin/bash with bash undeclared must fail")
 	}
-	if !strings.Contains(err.Error(), "bash") || !strings.Contains(err.Error(), "a.yaml") {
+	if !strings.Contains(err.Error(), "binary not declared in requires.binaries: bash (used by a.yaml)") {
 		t.Fatalf("error should name the binary and the action file, got %v", err)
 	}
 }
@@ -104,8 +104,38 @@ func TestValidatePackInterpreterBinaries_FlagsUndeclaredExecBinary(t *testing.T)
 		map[string]string{"c.yaml": execAction})
 
 	err := validatePackInterpreterBinaries(fixturePackActionLintInput(t, dir, "curl"))
-	if err == nil || !strings.Contains(err.Error(), "smartctl") || !strings.Contains(err.Error(), "c.yaml") {
+	if err == nil || !strings.Contains(err.Error(), "binary not declared in requires.binaries: smartctl (used by c.yaml)") {
 		t.Fatalf("error should name the binary and the action file, got %v", err)
+	}
+}
+
+const execBashAction = `id: p.f
+execution:
+  command:
+    binary: bash
+    argv: ["-c", "echo hi"]
+`
+
+// bash is not on every host, whether a script names it as the interpreter or
+// an exec action names it as the binary.
+func TestValidatePackInterpreterBinaries_FlagsUndeclaredExecBash(t *testing.T) {
+	dir := writePackInterpreterFixture(t,
+		"requires:\n  binaries:\n    - curl\n",
+		map[string]string{"f.yaml": execBashAction})
+
+	err := validatePackInterpreterBinaries(fixturePackActionLintInput(t, dir, "curl"))
+	if err == nil || !strings.Contains(err.Error(), "binary not declared in requires.binaries: bash (used by f.yaml)") {
+		t.Fatalf("an exec action running bare bash with bash undeclared must fail, got %v", err)
+	}
+}
+
+func TestValidatePackInterpreterBinaries_AcceptsDeclaredExecBash(t *testing.T) {
+	dir := writePackInterpreterFixture(t,
+		"requires:\n  binaries:\n    - bash\n",
+		map[string]string{"f.yaml": execBashAction})
+
+	if err := validatePackInterpreterBinaries(fixturePackActionLintInput(t, dir, "bash")); err != nil {
+		t.Fatalf("declared bash should pass, got %v", err)
 	}
 }
 

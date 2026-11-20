@@ -84,7 +84,7 @@ const (
   packs <name> --case <id>   run one isolated behavior case
   packs <name> --shard <i>/<n>
                              run one declared shard of a slow pack's cases
-  packs [name] --hostile    add one-CPU, memory, and PID limits per SUT
+  packs [name] --hostile     add one-CPU, memory, and PID limits per SUT
   packs --names a,b          run an exact set of pack behavior plans
   pack-access [names...]     prove exact host-access recipes on systemd hosts
   install <runner|mcp>       exercise a public installer in an isolated harness
@@ -92,8 +92,9 @@ const (
 	gateUsage = `usage: ./run gate <target> [--coverage FILE]
 
   portal [--changed]         check affected apps locally, or run the complete gate
-  runner                     format, boundaries, vet, staticcheck, tidy, attest
-                             parity, race tests, cross-build, and the installer
+  runner                     format, module verification, vet, staticcheck, tidy,
+                             attest parity, race tests, cross-build, and the
+                             installer
   mcp                        the runner phases, plus the stdlib-only assertion
   packs                      validate packs, hashes, and the catalog, rehearse its
                              publication, and run the focused Portal tests

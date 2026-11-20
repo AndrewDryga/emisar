@@ -2,7 +2,7 @@
 // ./run e2e sso) against the isolated scenario's published localhost ports,
 // which is the exact path a host browser takes. The driver supplies the
 // dynamically assigned Portal and Keycloak URLs.
-// Reads PORTAL_URL / KEYCLOAK_ISSUER / KEYCLOAK_CA / PROVIDER_ID /
+// Reads PORTAL_URL / PORTAL_RPC / KEYCLOAK_ISSUER / KEYCLOAK_CA / PROVIDER_ID /
 // SCIM_TOKEN / KC_USER / KC_PASS / ALICE_KC_ID from the environment.
 //
 // Tests both halves against the seeded Keycloak IdentityProvider, and
@@ -196,8 +196,8 @@ func (d *driver) testSCIM() {
 	}
 
 	status, resp = d.scim(http.MethodGet, "/scim/v2/Users/"+uid, nil)
-	if status == 200 && resp["active"] != false {
-		fail("SCIM user still active after deprovision: %v", resp)
+	if status != 200 || resp["active"] != false {
+		fail("SCIM read after deprovision: %d %v", status, resp)
 	}
 	logf("SCIM: deprovision confirmed ✓")
 	logf("SCIM e2e PASSED")

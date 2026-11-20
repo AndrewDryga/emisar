@@ -13,9 +13,20 @@ import (
 	"time"
 )
 
-func testApp(t *testing.T) *App {
+// leaveTheBox makes a test that calls App.Run behave as on the host even when it
+// runs inside a Coop box. Run keys a per-checkout Mix build root in the box's
+// shared cache and exports it with os.Setenv; a temporary root would leave an
+// orphan directory there and the export would outlive the test.
+func leaveTheBox(t *testing.T) {
 	t.Helper()
 	t.Setenv("COOP_BOX", "")
+	t.Setenv("MIX_BUILD_ROOT", "")
+	t.Setenv(sharedBuildRootEnv, "")
+}
+
+func testApp(t *testing.T) *App {
+	t.Helper()
+	leaveTheBox(t)
 	t.Setenv("COOP_SERVE_URL_4000", "")
 	root := t.TempDir()
 	app := New(root, bytes.NewBuffer(nil), &bytes.Buffer{}, &bytes.Buffer{})

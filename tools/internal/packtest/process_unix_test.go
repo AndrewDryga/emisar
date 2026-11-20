@@ -67,7 +67,7 @@ func TestExecuteKillsTimedOutCommandDescendants(t *testing.T) {
 	}
 }
 
-// TestExecuteBoundsWaitOnDescendantsHoldingOutput covers what the process group
+// TestExecuteBoundsWaitWhenLeaderExitsHoldingOutput covers what the process group
 // does not: a command that itself finishes inside the deadline but leaves
 // something holding the output pipes. os/exec stops watching the context the
 // moment the leader is reaped, so cancellation never fires — only the finite

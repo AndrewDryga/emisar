@@ -159,6 +159,33 @@ func TestServeReportsAnAlreadyRunningServerWithoutEveryDependency(t *testing.T) 
 	}
 }
 
+// In a published box Phoenix listens on 4000 behind a proxy from the public
+// port, and serve names its lock after the listener. --status and --stop used
+// to look the lock up under the public port, so they never found the owner.
+func TestServeStatusFindsTheBoxOwnerBehindAPublishedPort(t *testing.T) {
+	port := freePort(t)
+	if port == 4000 {
+		t.Skip("the free port is the box listener itself")
+	}
+	portal := fmt.Sprintf("http://127.0.0.1:%d", port)
+	app := serveWorkspace(t, map[workspaceDependency]string{needPortal: portal})
+	listen(t, port)
+	dir, err := app.serveRuntimeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "serve-4000.lock"), []byte("pid 4321"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := app.Run(t.Context(), []string{"serve", "--status"}); err != nil {
+		t.Fatalf("serve --status = %v", err)
+	}
+	if out := app.Out.(*bytes.Buffer).String(); !strings.Contains(out, "serving at "+portal+" (pid 4321,") {
+		t.Fatalf("output = %q", out)
+	}
+}
+
 // The dev Keycloak listens on loopback, which the portal's IdP address guard
 // refuses unless it is listed, so serve must name it or no SSO ceremony starts.
 func TestDevSSOAllowedIDPHostsNamesTheWorkspaceKeycloak(t *testing.T) {

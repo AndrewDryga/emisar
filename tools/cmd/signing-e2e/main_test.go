@@ -150,9 +150,9 @@ func TestDecodeAndValidateSuccessfulExecution(t *testing.T) {
 			}
 		}`),
 	}
-	started, err := decodeStartedExecution(executeResult)
+	started, err := decodeExecution("execute_runbook", executeResult)
 	if err != nil {
-		t.Fatalf("decodeStartedExecution() error = %v", err)
+		t.Fatalf("decodeExecution(execute_runbook) error = %v", err)
 	}
 	if started.ID != "execution-1" || started.Status != "active" {
 		t.Fatalf("started execution = %#v", started)
@@ -172,12 +172,28 @@ func TestDecodeAndValidateSuccessfulExecution(t *testing.T) {
 			}
 		}`),
 	}
-	finished, err := decodeWaitedExecution(waitResult)
+	finished, err := decodeExecution("wait_for_run", waitResult)
 	if err != nil {
-		t.Fatalf("decodeWaitedExecution() error = %v", err)
+		t.Fatalf("decodeExecution(wait_for_run) error = %v", err)
 	}
 	if err := validateSuccessfulExecution(finished, "morning-edge-readiness@1", 3); err != nil {
 		t.Fatalf("validateSuccessfulExecution() error = %v", err)
+	}
+}
+
+func TestDecodeExecutionRejectsMalformedOrMissingExecution(t *testing.T) {
+	t.Parallel()
+
+	for _, tool := range []string{"execute_runbook", "wait_for_run"} {
+		for structured, want := range map[string]string{
+			`{"execution":`:    "decode " + tool + " structuredContent: ",
+			`{"execution":{}}`: tool + " response has no execution id",
+		} {
+			_, err := decodeExecution(tool, bridgeResult{structured: json.RawMessage(structured)})
+			if err == nil || !strings.HasPrefix(err.Error(), want) {
+				t.Errorf("decodeExecution(%s, %s) error = %v, want prefix %q", tool, structured, err, want)
+			}
+		}
 	}
 }
 

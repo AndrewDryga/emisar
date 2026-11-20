@@ -92,6 +92,18 @@ func TestImageContractRejectsChangedArchiveSBOMAndImage(t *testing.T) {
 	}
 }
 
+// A mistyped mode fails before any docker call or artifact read, so an earlier
+// failure cannot mask it.
+func TestImageContractRejectsUnknownModeFirst(t *testing.T) {
+	temp := t.TempDir()
+	t.Setenv("PATH", t.TempDir())
+	missing := filepath.Join(temp, "missing")
+	err := ImageContract(context.Background(), temp, "check", "portal", strings.Repeat("b", 40), "portal:test", missing, missing, missing)
+	if err == nil || err.Error() != "image-contract mode must be create or verify" {
+		t.Fatalf("unknown mode error = %v", err)
+	}
+}
+
 func TestDiagnosticsSelectionAndWorkflowContract(t *testing.T) {
 	for _, path := range []string{"infra/runtime/admin-runner/diagnostics/run-tool", "infra/runtime/admin-runner/start.sh", "tools/internal/infraops/admin_diagnostics.go", "portal/docker/debian.sources", "portal/docker/debian-snapshot.pref", ".dockerignore"} {
 		var selection Selection

@@ -27,8 +27,8 @@ import (
 // real daemon would need thousands of created containers to print half a
 // megabyte of inventory, nothing makes `head` or the drain fail, and byte-exact
 // boundary and multibyte inventories are not something a Compose file can
-// dictate. The stub producer is the seam for the sizes, the stub readers for
-// the rest.
+// dictate. The stub producer is the seam for the sizes, the stub readers
+// compose_config's test already defines for the rest.
 const composeImagesStubDocker = `#!/bin/bash
 set -uo pipefail
 if [ "$#" -eq 2 ] && [ "$1" = compose ] && [ "$2" = version ]; then exit 0; fi
@@ -43,29 +43,6 @@ fi
 if [ -n "${STUB_INVENTORY_FILE:-}" ]; then exec cat "$STUB_INVENTORY_FILE"; fi
 printf '%s\n' '[{"ID":"sha256:aa","ContainerName":"stack-web-1","Repository":"busybox","Tag":"1.36","Size":1}]'
 `
-
-// The reader stubs, installed only for the row that injects into them so no
-// other row pays an extra process per capture. Each fails NARROWLY: `cat` is
-// both the drain and how the producer above prints an inventory from a file, so
-// the drain is the argument-less `cat` and everything else execs the real
-// binary. A stub that failed every call would prove the script notices a broken
-// PATH rather than that it carries a reader's status out of the capture.
-const (
-	composeImagesStubHead = `#!/bin/bash
-if [ -n "${STUB_HEAD_RC:-}" ]; then
-  printf 'stub: head failed\n' >&2
-  exit "$STUB_HEAD_RC"
-fi
-exec %s "$@"
-`
-	composeImagesStubCat = `#!/bin/bash
-if [ -n "${STUB_CAT_RC:-}" ] && [ "$#" -eq 0 ]; then
-  printf 'stub: drain failed\n' >&2
-  exit "$STUB_CAT_RC"
-fi
-exec %s "$@"
-`
-)
 
 // The bound the script enforces, and the message it owes the operator.
 const (
@@ -271,8 +248,8 @@ func runComposeImages(t *testing.T, env []string, capKiB int) composeConfigRun {
 		t.Fatalf("packaged script: %v", err)
 	}
 	return runPackagedComposeScript(t, script, composeImagesStubDocker, []readerStub{
-		{"STUB_HEAD_RC=", "head", composeImagesStubHead},
-		{"STUB_CAT_RC=", "cat", composeImagesStubCat},
+		{"STUB_HEAD_RC=", "head", composeConfigStubHead},
+		{"STUB_CAT_RC=", "cat", composeConfigStubCat},
 	}, env, capKiB)
 }
 

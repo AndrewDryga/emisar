@@ -44,7 +44,7 @@ Local development:
   reset [--seed] [--yes]      Recreate the development database
   urls                        Print Portal, PostgreSQL, and Keycloak URLs
   doctor                      Diagnose tools, services, TLS, and OIDC
-  certs <action>              Manage certificates and trust: status, trust, untrust, rotate
+  certs [action]              Generate certificates, or manage trust: status, trust, untrust, rotate
 
 Test and verify:
   test <target> [args...]     Run focused Portal, Go, pack, or installer tests

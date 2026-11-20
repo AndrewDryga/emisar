@@ -375,10 +375,10 @@ func openApplicationList(ctx context.Context, consoleURL string) error {
 // tenant. Each full run creates one, and chasing a form through several attempts
 // leaves several.
 //
-// The filter is deliberately narrow: a row is only touched when its label is
-// exactly "emisar" AND it advertises neither provisioning nor a certificate —
-// which is what an abandoned half-configured run looks like. The certified app
-// carries both and is never selected.
+// The filter is deliberately narrow: a row is only touched when its visible text
+// contains the word "emisar" (case-sensitive) AND it shows no certificate expiry
+// ("Expires"). The certificate marks the keeper, so the certified app is never
+// selected; showing provisioning alone does not spare a row.
 func cleanupCaptureApplications(ctx context.Context, consoleURL, outDir string) error {
 	if err := openApplicationList(ctx, consoleURL); err != nil {
 		return err
@@ -1488,12 +1488,11 @@ func openProvisioningTab(ctx context.Context) (string, error) {
 
 // provisioningTabFlow opens the app's provisioning tab and reports its fields.
 func provisioningTabFlow(ctx context.Context, env map[string]string, outDir string) error {
-	// Their own docs use both names for this tab; try each. clickDeep first,
-	// because the tab is not an anchor or a button — clickText missed it and the
-	// run then matched "Identity Management" in the LEFT NAV, which is a different
-	// product area entirely, and reported success for opening the wrong page.
-	// The tab is opened by reopenSavedApp, which is also what the retry below
-	// calls — opening it a second time here toggled back off.
+	// Their own docs use both names for this tab; openProvisioningTab tries each,
+	// only inside the app's tab strip — a looser match once hit "Identity
+	// Management" in the LEFT NAV, a different product area, and reported success
+	// for opening the wrong page. It returns early when the tab is already open,
+	// because clicking it a second time toggles it back off.
 	opened, err := openProvisioningTab(ctx)
 	if err != nil {
 		return err
@@ -1594,16 +1593,13 @@ func provisioningTabFlow(ctx context.Context, env map[string]string, outDir stri
 	// Base URL field, Activate persists whatever the field holds, and JumpCloud
 	// then tested https://emisar.dev — the live product host — with a development
 	// token. It refused to activate, correctly.
-	// No separate Test Connection press here. Activate on the freshly filled form
-	// runs the check AND activates — that is the one sequence observed to reach an
-	// active state. Testing first left the form saved-but-inactive, with the footer
-	// offering only Test Connection and no way back to Activate.
 
 	// Test, then activate — and JumpCloud asks for that order again on the SAVED
 	// form. Pressing Activate on the freshly filled form persists the
 	// configuration and leaves the footer offering Test Connection, so a single
-	// press was never going to reach an active state. Drive whichever button the
-	// footer is currently offering until the badge flips.
+	// press was never going to reach an active state. activateProvisioning
+	// presses Activate when the footer offers it; otherwise it presses Test
+	// Connection and waits for Activate to appear, until the badge flips.
 	// Look at the footer before driving it. Guessing which control is there cost
 	// many runs; one screenshot and a list of every clickable answers it.
 	_ = capturekit.Screenshot(ctx, outDir, "jc-10-before-activate")

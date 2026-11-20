@@ -273,12 +273,12 @@ func publishedAt(eco, pkg, version string) (time.Time, error) {
 type allowKey struct{ eco, pkg, version string }
 
 // loadAllowlist parses .dep-age-allow. A line must carry a non-empty reason
-// after the version or it is rejected — the whole point is an auditable
+// after the expiry date or it is rejected — the whole point is an auditable
 // justification, so a bare exemption is a hard error.
-// loadAllowlist reads the exemptions and DROPS the expired ones, so an entry
-// left behind stops exempting anything. The file always promised an entry would
-// be removed once its version aged out, but nothing read the date it was
-// removed by: its one live entry named a removal date that had already passed,
+//
+// It also DROPS the expired exemptions, so an entry left behind stops
+// exempting anything. The file always promised an entry would be removed once
+// its version aged out, but nothing read the date it was removed by: its one live entry named a removal date that had already passed,
 // and an exemption granted for an urgent age bump also silenced the downgrade
 // rejection forever, which is a different decision entirely.
 func loadAllowlist(root string, now time.Time) (map[allowKey]bool, []string, error) {
@@ -519,7 +519,7 @@ func runCheck(baseRef string) int {
 		fmt.Println("::error::dep-age-gate: added/changed non-registry dependency source(s) — cannot age-verify, needs review:")
 		fmt.Println(strings.Join(nonreg, "\n"))
 		fmt.Println("\nA :git/:path (Hex) or replace (Go) dependency bypasses release-age enforcement. " +
-			"Vet it (/security-deps-audit), then add `<eco> <name> nonregistry <reason>` to " + allowlistPath + ".")
+			"Vet it (/security-deps-audit), then add `<eco> <name> nonregistry <YYYY-MM-DD> <reason>` to " + allowlistPath + ".")
 		return 1
 	}
 

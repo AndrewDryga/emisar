@@ -19,8 +19,8 @@ func TestPackLintsUseTheCanonicalSchemaKeys(t *testing.T) {
 		source string
 		keys   []string
 	}{
-		{"runner/pkg/packspec/pack.go", []string{"actions", "requires", "binaries"}},
-		{"runner/pkg/actionspec/action.go", []string{"id", "execution", "script", "path", "interpreter"}},
+		{"runner/pkg/packspec/pack.go", []string{"actions", "requires", "binaries", "version", "retired_below"}},
+		{"runner/pkg/actionspec/action.go", []string{"id", "execution", "script", "path", "interpreter", "command", "binary", "argv", "env"}},
 	} {
 		data, err := os.ReadFile(filepath.Join("..", "..", "..", tc.source))
 		if err != nil {
@@ -28,7 +28,7 @@ func TestPackLintsUseTheCanonicalSchemaKeys(t *testing.T) {
 		}
 		for _, key := range tc.keys {
 			if !regexp.MustCompile("`yaml:\"" + key + "[\",]").Match(data) {
-				t.Errorf("%s no longer declares a field tagged yaml:%q; packActionLintManifest / packScriptAction in this package read that key", tc.source, key)
+				t.Errorf("%s no longer declares a field tagged yaml:%q; the partial lint structs in this package read that key", tc.source, key)
 			}
 		}
 	}

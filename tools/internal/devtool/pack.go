@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -37,31 +36,20 @@ func (a *App) buildPackTools(ctx context.Context) error {
 }
 
 func (a *App) packSync(ctx context.Context, name string) error {
-	response, err := http.Get("https://registry.emisar.dev/v1/catalog.json")
+	work, err := os.MkdirTemp("", "emisar-pack-sync-*")
 	if err != nil {
 		return err
 	}
-	defer response.Body.Close()
-	if response.StatusCode/100 != 2 {
-		return fmt.Errorf("registry catalog: HTTP %s", response.Status)
-	}
-	previous, err := os.CreateTemp("", "emisar-catalog-*.json")
+	defer os.RemoveAll(work)
+	previous, err := a.packSyncPrevious(ctx, packRegistryCatalogURL, work)
 	if err != nil {
-		return err
-	}
-	defer os.Remove(previous.Name())
-	if _, err := io.Copy(previous, response.Body); err != nil {
-		previous.Close()
-		return err
-	}
-	if err := previous.Close(); err != nil {
 		return err
 	}
 	output := filepath.Join(a.Root, "dist", "packs")
 	if err := os.RemoveAll(output); err != nil {
 		return err
 	}
-	if err := a.run(ctx, a.Root, nil, filepath.Join(a.Root, "bin", "packctl"), "catalog", "build", "--packs", filepath.Join(a.Root, "packs"), "--out", output, "--repo-url", packSourceRepoURL, "--previous", previous.Name()); err != nil {
+	if err := a.run(ctx, a.Root, nil, filepath.Join(a.Root, "bin", "packctl"), "catalog", "build", "--packs", filepath.Join(a.Root, "packs"), "--out", output, "--repo-url", packSourceRepoURL, "--previous", previous); err != nil {
 		return err
 	}
 	catalog, err := os.ReadFile(filepath.Join(output, "v1", "catalog.json"))
@@ -88,6 +76,31 @@ func (a *App) packSync(ctx context.Context, name string) error {
 		return err
 	}
 	return a.run(ctx, filepath.Join(a.Portal, "apps", "emisar_web"), env, "mix", "test", "test/emisar_web/packs_test.exs")
+}
+
+// packSyncPrevious picks the catalog `pack sync` builds against, reading the
+// registry the way checkPackRegistryPublish does so the two agree. A registry
+// that publishes no catalog, or one packctl rejects, falls back to the committed
+// catalog; a registry that cannot be read at all stops the sync.
+func (a *App) packSyncPrevious(ctx context.Context, catalogURL, work string) (string, error) {
+	committed := filepath.Join(a.Portal, "apps", "emisar", "priv", "packs", "catalog.json")
+	published, found, err := publishedPackCatalog(ctx, catalogURL)
+	if err != nil {
+		return "", fmt.Errorf("pack sync reads the live pack registry and could not: %w", err)
+	}
+	if !found {
+		fmt.Fprintln(a.Out, "the registry publishes no catalog; building against the committed one")
+		return committed, nil
+	}
+	live := filepath.Join(work, "published-catalog.json")
+	if err := os.WriteFile(live, published, 0o600); err != nil {
+		return "", err
+	}
+	if err := a.run(ctx, a.Root, nil, filepath.Join(a.Root, "bin", "packctl"), "catalog", "validate", live); err != nil {
+		fmt.Fprintln(a.Out, "the published catalog is malformed; building against the committed one")
+		return committed, nil
+	}
+	return live, nil
 }
 
 func (a *App) packTest(ctx context.Context, pattern string, names []string, caseID, shard string, hostile bool) error {
@@ -719,11 +732,10 @@ type packTestComposeBuild struct {
 }
 
 // packTestNeedsSharedTools reports whether any selected plan reaches the shared
-// client image. Building it pulls eight server images to extract one binary from
-// each, and a pack whose compose replaces runner-tools with a SUT-derived build
-// never runs a byte of it. haproxy is the exception that keeps this a question
-// rather than a rule: its Dockerfile starts FROM the shared image, named through
-// a PACKTEST_RUNNER_IMAGE build arg.
+// client image: the Debian-packaged clients plus a jq built without regex
+// support. A plan reaches it by using runner-tools as declared, or by building
+// runner-tools FROM it through a PACKTEST_RUNNER_IMAGE build arg. Only a pack
+// whose runner-tools build ships an unrelated client skips it.
 func packTestNeedsSharedTools(plans []packtest.PlanRef) (bool, error) {
 	for _, plan := range plans {
 		data, err := os.ReadFile(filepath.Join(filepath.Dir(plan.Path), "compose.yaml"))
@@ -958,9 +970,9 @@ func prunePackTestReports(root string, keep int) error {
 
 // packTestRunnerImage names the shared client image after the bytes that
 // produce it. The Dockerfile COPYs nothing from its build context, so those
-// bytes are the entire input: a run that already has the tag can reuse a ~2GB
-// image instead of pulling eight servers to extract one binary from each, and
-// changed content lands on a different tag rather than staling this one.
+// bytes are the entire input: a run that already has the tag can reuse the
+// image instead of rebuilding it, and changed content lands on a different tag
+// rather than staling this one.
 func packTestRunnerImage(root string) (string, error) {
 	dockerfile, err := os.ReadFile(filepath.Join(root, "dev", "test-packs", "Dockerfile"))
 	if err != nil {
@@ -1021,8 +1033,8 @@ func (a *App) pack(ctx context.Context, args []string) error {
 		if len(args) == 2 {
 			// Named, the question is whether this pack reaches the image at
 			// all: a pack that ships its own client wants no part of it, and
-			// printing nothing is what lets CI skip restoring 2GB it will not
-			// run.
+			// printing nothing is what lets CI skip restoring an image it will
+			// not run.
 			plans, err := packtest.Discover(filepath.Join(a.Root, "packs"), "", args[1])
 			if err != nil {
 				return err

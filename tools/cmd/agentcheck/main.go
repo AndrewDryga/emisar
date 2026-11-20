@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/andrewdryga/emisar/tools/internal/repo"
+	"github.com/andrewdryga/emisar/tools/internal/toolutil"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -465,22 +466,13 @@ func (c *checker) checkTaskDirs() {
 	})
 }
 
-func hasPrefix(value string, prefixes []string) bool {
-	for _, prefix := range prefixes {
-		if strings.HasPrefix(value, prefix) {
-			return true
-		}
-	}
-	return false
-}
-
 func (c *checker) checkRuleNames() {
 	prefixes := []string{"design-", "content-", "elixir-", "runner-", "mcp-", "packs-", "infra-", "shared-"}
 	c.walkRepository(func(relative string, entry fs.DirEntry) {
 		if entry.IsDir() || entry.Name() == "README.md" || !strings.HasSuffix(relative, ".md") || !isKnowledgeRule(relative) {
 			return
 		}
-		if !hasPrefix(entry.Name(), prefixes) {
+		if !toolutil.HasAnyPrefix(entry.Name(), prefixes...) {
 			c.fail("%s must use a recognized rule domain prefix", relative)
 		}
 	})
@@ -925,19 +917,22 @@ func (c *checker) checkDistributionLayout() {
 		"portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html",
 		"runner/cmd/packctl",
 	} {
-		_ = filepath.WalkDir(c.path(root), func(path string, d fs.DirEntry, err error) error {
+		err := filepath.WalkDir(c.path(root), func(path string, d fs.DirEntry, err error) error {
 			if err != nil || d.IsDir() {
-				return nil
+				return err
 			}
 			data, err := os.ReadFile(path)
 			if err != nil {
-				return nil
+				return err
 			}
 			if bytes.Contains(data, []byte("packctl@latest")) {
 				c.fail("%s recommends packctl@latest; customer-facing guidance must use the signed release tag", path)
 			}
 			return nil
 		})
+		if err != nil {
+			c.fail("scanning %s for packctl@latest: %v", root, err)
+		}
 	}
 }
 
@@ -1114,7 +1109,7 @@ func (c *checker) checkSkills() {
 	namePrefixes := []string{"content-", "debug-", "design-", "elixir-", "go-", "ops-", "product-", "review-", "security-", "tooling-", "workflow-"}
 	files := c.skillFiles(".claude/skills")
 	// Its public sibling guards this and this one did not: a casing change or one
-	// more level of nesting drops all 27 contributor skills out of the walk, and
+	// more level of nesting drops all contributor skills out of the walk, and
 	// the check still prints `ok:`.
 	if len(files) == 0 {
 		c.fail(".claude/skills contains no contributor SKILL.md files")
@@ -1149,7 +1144,7 @@ func (c *checker) checkSkills() {
 		if name != directory {
 			c.fail("%s name is %q, expected %q", path, name, directory)
 		}
-		if !hasPrefix(name, namePrefixes) {
+		if !toolutil.HasAnyPrefix(name, namePrefixes...) {
 			c.fail("%s name %q must use a recognized domain prefix", path, name)
 		}
 	}

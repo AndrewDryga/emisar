@@ -305,6 +305,25 @@ func TestPolicyDeniedResponseHandsInspectionRecoveryBackToTheClient(t *testing.T
 	}
 }
 
+// Positive scenarios may run actions, so the generic denial must not call the
+// scenario read-only.
+func TestPolicyDeniedResponseNamesTheScenarioPolicy(t *testing.T) {
+	body := policyDeniedResponse(requestMetadata{rpcID: 1, blockCode: "action_not_allowed"})
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatal(err)
+	}
+	result := payload["result"].(map[string]any)
+	content := result["content"].([]any)[0].(map[string]any)["text"].(string)
+	if content != "The evaluator blocked a call outside this scenario's policy." {
+		t.Fatalf("generic denial = %q", content)
+	}
+	denial := result["structuredContent"].(map[string]any)["error"].(map[string]any)
+	if denial["code"] != "evaluator_policy_denied" || denial["kind"] != "action_not_allowed" || denial["next"] != nil {
+		t.Fatalf("generic denial error = %#v", denial)
+	}
+}
+
 func TestRecorderKeepsTheCompleteBoundedSearchResponse(t *testing.T) {
 	r := newRecorder(scenario{AllowedTools: []string{"find_actions"}})
 	request := r.request([]byte(`{"id":1,"method":"tools/call","params":{"name":"find_actions","arguments":{"query":"disk"}}}`))

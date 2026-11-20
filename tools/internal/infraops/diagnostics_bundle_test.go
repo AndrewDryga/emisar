@@ -660,7 +660,7 @@ func TestInstalledManifestPreflightFailsClosed(t *testing.T) {
 		t.Fatal("installed-manifest preflight missing")
 	}
 	end := strings.Index(string(source)[start:], "docker compose version") + start
-	if start < 0 || end < start {
+	if end < start {
 		t.Fatal("installed-manifest preflight missing")
 	}
 	block := string(source)[start:end]

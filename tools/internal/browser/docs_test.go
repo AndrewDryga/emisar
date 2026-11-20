@@ -52,6 +52,8 @@ func TestDocsRecipesWaitForResolvedContent(t *testing.T) {
 		{"hidden panel is not open", `<button onclick="document.querySelector('#controls').hidden=false">Expand</button><div id="controls" hidden>Options</div>`, openPanel("button", "#controls"), false},
 		{"visible panel is open", `<button>Collapse</button><div id="controls">Options</div>`, openPanel("button", "#controls"), true},
 		{"open SCIM guide", `<details id="scim-setup-demo"><summary>Setup instructions</summary><p>Base URL</p></details>`, openSCIMSetup + ` && document.querySelector('details').open`, true},
+		{"missing provider picker", "", selectProviderKind("entra"), false},
+		{"provider notifies form", `<form onchange="this.dataset.kind=event.target.value"><select name="provider[kind]"><option value="">Choose</option><option value="entra">Microsoft Entra ID</option><option value="google_workspace">Google Workspace</option></select></form>`, selectProviderKind("google_workspace") + ` && document.querySelector('form').dataset.kind === 'google_workspace'`, true},
 		{"missing region", "", selectJumpCloudRegion, false},
 		{"region notifies form", `<form onchange="this.dataset.region=event.target.value"><select name="provider[issuer]"><option value="">Select a region</option><option value="https://oauth.id.jumpcloud.com/">United States</option></select></form>`, selectJumpCloudRegion + ` && document.querySelector('form').dataset.region === 'https://oauth.id.jumpcloud.com/'`, true},
 	} {

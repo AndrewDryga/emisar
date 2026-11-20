@@ -21,7 +21,6 @@ func TestLinkDestination(t *testing.T) {
 		"mailto:security@emisar.dev":       "",
 	}
 	for raw, want := range cases {
-		raw, want := raw, want
 		t.Run(raw, func(t *testing.T) {
 			t.Parallel()
 			if got := linkDestination(raw); got != want {
@@ -87,7 +86,6 @@ func TestForbiddenVersionedPath(t *testing.T) {
 		"portal/apps/emisar_web/priv/observability/README.md": false,
 	}
 	for file, want := range cases {
-		file, want := file, want
 		t.Run(file, func(t *testing.T) {
 			t.Parallel()
 			if got := forbiddenVersionedPath(file); got != want {

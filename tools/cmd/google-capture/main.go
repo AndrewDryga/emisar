@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -89,8 +90,8 @@ func fail(err error) {
 	os.Exit(1)
 }
 
-// readEnv loads this rig's credentials, letting the process environment win
-// for its per-run keys. The parser is shared so the four rigs cannot drift.
+// readEnv loads this rig's credentials. The parser is shared so the four rigs
+// cannot drift.
 func readEnv(path string) (map[string]string, error) {
 	return capturekit.ReadEnv(path)
 }
@@ -468,11 +469,7 @@ func authPlatformFlow(ctx context.Context, env map[string]string, outDir string)
 	if err := acceptTerms(ctx); err != nil {
 		return err
 	}
-	// Two shapes of the same console. A project with nothing configured opens the
-	// Get started wizard; one that is already set up opens straight onto the
-	// left-nav pages the wizard writes into. Photograph whichever we are given —
-	// the wizard is a one-time skin over Branding and Audience.
-	// Three shapes, not two. A project with the platform configured opens on the
+	// Three shapes. A project with the platform configured opens on the
 	// settings pages; an unconfigured one opens either on a Get started button or
 	// straight onto the numbered stepper, depending on how the console routed in.
 	// Capitalization is Google's: the step is "App Information".
@@ -630,8 +627,6 @@ func certifyLoginFlow(ctx context.Context, env map[string]string, outDir, beginU
 	// is fully painted — and hinting the account is both simpler and closer to what
 	// a returning operator actually sees.
 	//
-	// Only the hint and the language are added; the state, nonce and PKCE challenge
-	// are emisar's own, so what Google validates is what emisar issued.
 	// Start the sign-in with a client that does NOT follow the redirect, so the
 	// authorization URL can be read before Google turns it into an account-chooser
 	// URL — hinting the chooser does nothing, which is what left this looping.
@@ -688,8 +683,8 @@ func certifyLoginFlow(ctx context.Context, env map[string]string, outDir, beginU
 		}
 		fmt.Printf("  at Google: %s\n", firstLine(redactGoogleText(body, env)))
 
-		// The account first, then whatever advances the screen. Match by position
-		// rather than by label: the buttons are localized.
+		// Try Continue, Allow and Next, then the account itself. When no label
+		// matches, fall back to the last enabled button on the page.
 		advanced := false
 
 		for _, label := range []string{"Continue", "Allow", "Next", env["GOOGLE_TEST_USER"]} {
@@ -709,7 +704,9 @@ func certifyLoginFlow(ctx context.Context, env map[string]string, outDir, beginU
 		}
 
 		if !advanced {
-			_ = clickPrimaryButton(ctx)
+			if err := clickPrimaryButton(ctx); err != nil {
+				fmt.Println("  ", err)
+			}
 		}
 		if err := chromedp.Do(ctx, chromedp.Sleep(10*time.Second)); err != nil {
 			return err
@@ -728,10 +725,30 @@ func certifyLoginFlow(ctx context.Context, env map[string]string, outDir, beginU
 	fmt.Printf("  landed on %s\n", routeOnly(location))
 	fmt.Printf("  page says: %s\n", firstLine(redactGoogleText(body, env)))
 
-	if strings.Contains(location, "/sign_in") {
-		return fmt.Errorf("sign-in did not complete — still on %s", routeOnly(location))
+	return checkLanding(begin, location)
+}
+
+// checkLanding fails unless the browser ended on emisar's own origin, off its
+// sign-in routes. A run that never left Google, or left for anywhere else, did
+// not complete the round trip. Passing this is necessary, not sufficient: it
+// does not by itself prove an authenticated session.
+func checkLanding(begin *url.URL, location string) error {
+	landed, err := url.Parse(location)
+	if err != nil || landed.Scheme != begin.Scheme || landed.Host != begin.Host {
+		return fmt.Errorf("sign-in did not return to emisar — ended on %s", originOnly(location))
+	}
+	if strings.Contains(landed.Path, "/sign_in") {
+		return fmt.Errorf("sign-in did not complete — still on %s", landed.Path)
 	}
 	return nil
+}
+
+func originOnly(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "<invalid route>"
+	}
+	return parsed.Scheme + "://" + parsed.Host
 }
 
 func routeOnly(raw string) string {
@@ -1218,9 +1235,6 @@ func addURIUnder(ctx context.Context, section, value string) error {
 	return chromedp.Do(ctx, chromedp.Sleep(1500*time.Millisecond))
 }
 
-// dismissOverlays clears the console's own promotional tooltips. One of them
-// ("Is this a production environment?") sat over the left nav and the page
-// heading in the first captured shot.
 // expandNav opens the Google Auth Platform's left navigation when the console
 // has it collapsed. The console decides that from the window width and its own
 // stored preference, and when it collapses, the nav's column stays in the layout
@@ -1258,6 +1272,9 @@ func expandNav(ctx context.Context) error {
 	return nil
 }
 
+// dismissOverlays clears the console's own promotional tooltips. One of them
+// ("Is this a production environment?") sat over the left nav and the page
+// heading in the first captured shot.
 func dismissOverlays(ctx context.Context) error {
 	const script = `(() => {
   const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
@@ -1606,21 +1623,40 @@ func markGoogleCredentialDialog(ctx context.Context) error {
 	return nil
 }
 
-func deidentify(ctx context.Context, env map[string]string) error {
+// deidentifyReplacements returns the value swaps deidentify applies, in the
+// order it applies them. The Branding page shows the tenant's real support
+// address, which is a different value from the sign-in user and was shipping in
+// the shot, so any address on the primary domain is redacted, then the bare
+// domain itself. Longest first, so an address substitution — the test user's
+// included — is not pre-empted by the domain one; ties break lexically so the
+// order never depends on map iteration.
+func deidentifyReplacements(env map[string]string) [][2]string {
 	replacements := map[string]string{
 		env["GOOGLE_TEST_USER"]:     redactedUser,
 		env["GOOGLE_CLIENT_ID"]:     redactedClientID,
 		env["GOOGLE_CLIENT_SECRET"]: redactedClientSecret,
 	}
-	// The Branding page shows the tenant's real support address, which is a
-	// different value from the sign-in user and was shipping in the shot. Redact
-	// any address on the primary domain, then the bare domain itself — longest
-	// first, so the address substitution is not pre-empted by the domain one.
 	if domain := env["GOOGLE_PRIMARY_DOMAIN"]; domain != "" {
 		replacements["help@"+domain] = "help@example.com"
 		replacements["support@"+domain] = "support@example.com"
 		replacements[domain] = "example.com"
 	}
+	pairs := make([][2]string, 0, len(replacements))
+	for from, to := range replacements {
+		if from != "" {
+			pairs = append(pairs, [2]string{from, to})
+		}
+	}
+	sort.Slice(pairs, func(i, j int) bool {
+		if len(pairs[i][0]) != len(pairs[j][0]) {
+			return len(pairs[i][0]) > len(pairs[j][0])
+		}
+		return pairs[i][0] < pairs[j][0]
+	})
+	return pairs
+}
+
+func deidentify(ctx context.Context, env map[string]string) error {
 	script := `(() => {
   const replacements = REPLACEMENTS;
   // By PATTERN as well as by value. A capture run creates its OWN OAuth client,
@@ -1649,9 +1685,9 @@ func deidentify(ctx context.Context, env map[string]string) error {
   }
   return true;
 })()`
-	pairs := make([]string, 0, len(replacements))
-	for from, to := range replacements {
-		pairs = append(pairs, fmt.Sprintf("[%q,%q]", from, to))
+	var pairs []string
+	for _, pair := range deidentifyReplacements(env) {
+		pairs = append(pairs, fmt.Sprintf("[%q,%q]", pair[0], pair[1]))
 	}
 	script = strings.Replace(script, "ID_SHAPE", fmt.Sprintf("%q", googleClientIDPattern.String()), 1)
 	script = strings.Replace(script, "SECRET_SHAPE", fmt.Sprintf("%q", googleClientSecretPattern.String()), 1)

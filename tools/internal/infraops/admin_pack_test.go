@@ -29,7 +29,7 @@ func readActions(t *testing.T, pack string) []adminAction {
 	return actions
 }
 
-// The real pack has two actions sitting exactly on the ceiling, so the check
+// The real pack has actions sitting exactly on the ceiling, so the check
 // must accept five entries and refuse six.
 func TestAdminActionArgvCeiling(t *testing.T) {
 	pack := t.TempDir()

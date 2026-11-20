@@ -272,8 +272,8 @@ func waitForPortState(ctx context.Context, port int, want bool, limit time.Durat
 	return fmt.Errorf("port %d did not become listening=%t within %s", port, want, limit)
 }
 
-// Stops whatever holds the port, detached or not: the pid in the lock file owns
-// a whole process group, so the group signal reaches Phoenix itself.
+// Stops whatever holds the port, detached or not, by sending SIGTERM to the
+// `./run serve` owner recorded in the lock file; that owner tears Phoenix down.
 func (a *App) serveStop(ctx context.Context) error {
 	workspace, _, err := a.up(ctx, needPortal)
 	if err != nil {
@@ -287,7 +287,7 @@ func (a *App) serveStop(ctx context.Context) error {
 		fmt.Fprintf(a.Out, "nothing serving at %s\n", workspace.PortalURL)
 		return nil
 	}
-	pid, err := a.servePID(port)
+	pid, err := a.servePID(a.serveListenPort(port))
 	if err != nil {
 		return err
 	}
@@ -323,12 +323,22 @@ func (a *App) serveStatus(ctx context.Context) error {
 		fmt.Fprintf(a.Out, "not serving — start it with ./run serve --detach (log: %s)\n", logPath)
 		return nil
 	}
-	if pid, err := a.servePID(port); err == nil {
+	if pid, err := a.servePID(a.serveListenPort(port)); err == nil {
 		fmt.Fprintf(a.Out, "serving at %s (pid %d, log: %s)\n", workspace.PortalURL, pid, logPath)
 		return nil
 	}
 	fmt.Fprintf(a.Out, "serving at %s (log: %s)\n", workspace.PortalURL, logPath)
 	return nil
+}
+
+// serveListenPort is the port Phoenix listens on, which also names the serve
+// lock: 4000 in a box, whose published port proxies to it, and the public port
+// on the host.
+func (a *App) serveListenPort(publicPort int) int {
+	if a.inBox() {
+		return 4000
+	}
+	return publicPort
 }
 
 // The owner writes `pid <n>` into the lock file it holds; an untracked process
@@ -373,7 +383,6 @@ func (a *App) serve(ctx context.Context, interactive bool) error {
 	if err != nil {
 		return err
 	}
-	listenPort, metricsPort, listenIP := 0, 0, "127.0.0.1"
 	portalPublicPort, err := portFromURL(workspace.PortalURL)
 	if err != nil {
 		return err
@@ -382,10 +391,10 @@ func (a *App) serve(ctx context.Context, interactive bool) error {
 	if err != nil {
 		return err
 	}
+	listenPort := a.serveListenPort(portalPublicPort)
+	metricsPort, listenIP := metricsPublicPort, "127.0.0.1"
 	if a.inBox() {
-		listenPort, metricsPort, listenIP = 4000, 9091, "0.0.0.0"
-	} else {
-		listenPort, metricsPort = portalPublicPort, metricsPublicPort
+		metricsPort, listenIP = 9091, "0.0.0.0"
 	}
 
 	lock, err := a.serveLock(listenPort, workspace.PortalURL)

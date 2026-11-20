@@ -10,7 +10,7 @@ import (
 )
 
 // The offline policy evidence the Python gate ran as `self-test` on every CI
-// run lives here as regular tests instead: the runner CI test job proves the
+// run lives here as regular tests instead: the Go - Tools CI job proves the
 // logic whenever this code changes, and the deps job just runs `check`.
 
 func TestParseHex_SkipsGitAndPathEntries(t *testing.T) {

@@ -299,7 +299,7 @@ func (r *recorder) policyDenied(metadata requestMetadata, body []byte) {
 }
 
 func policyDeniedResponse(metadata requestMetadata) []byte {
-	message := "The evaluator blocked a call outside the read-only scenario."
+	message := "The evaluator blocked a call outside this scenario's policy."
 	error := map[string]any{"code": "evaluator_policy_denied", "kind": metadata.blockCode}
 	if metadata.blockCode == "inspection_required" {
 		message = "Inspect this exact action with the returned get_action call, then retry run_action."

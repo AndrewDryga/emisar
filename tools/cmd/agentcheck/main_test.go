@@ -449,12 +449,25 @@ func TestCheckDistributionLayoutUsesGitIgnorePolicy(t *testing.T) {
 		writeTestFile(t, check.root, "dist/cursor-plugin/skills/"+skill+"/SKILL.md", "# "+skill+"\n")
 	}
 	writeSubmissionFixtures(t, check.root, false)
+	writeTestFile(t, check.root, "portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/home.html.heex", "<p>Home</p>\n")
+	writeTestFile(t, check.root, "runner/cmd/packctl/main.go", "package main\n")
 
 	check.checkDistributionLayout()
 
 	if len(check.failures) != 0 {
 		t.Fatalf("failures = %#v", check.failures)
 	}
+
+	// A packctl@latest root that moved away must not pass having scanned nothing.
+	if err := os.RemoveAll(filepath.Join(check.root, "runner", "cmd", "packctl")); err != nil {
+		t.Fatal(err)
+	}
+	check = &checker{root: check.root, out: io.Discard, errOut: io.Discard}
+	check.checkDistributionLayout()
+	if !hasFailure(check, "scanning runner/cmd/packctl for packctl@latest") {
+		t.Fatalf("missing packctl root not reported: %#v", check.failures)
+	}
+	writeTestFile(t, check.root, "runner/cmd/packctl/main.go", "package main\n")
 
 	// A drifted mirror is the exact bug this check exists for.
 	writeTestFile(t, check.root, "dist/cursor-plugin/skills/author-pack/SKILL.md", "# stale\n")

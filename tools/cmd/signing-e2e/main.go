@@ -328,28 +328,16 @@ type stagedExecution struct {
 	} `json:"stages"`
 }
 
-func decodeStartedExecution(result bridgeResult) (stagedExecution, error) {
+// decodeExecution reads the execution a tool returned; tool names it in errors.
+func decodeExecution(tool string, result bridgeResult) (stagedExecution, error) {
 	var body struct {
 		Execution stagedExecution `json:"execution"`
 	}
 	if err := json.Unmarshal(result.structured, &body); err != nil {
-		return stagedExecution{}, fmt.Errorf("decode execute_runbook structuredContent: %w", err)
+		return stagedExecution{}, fmt.Errorf("decode %s structuredContent: %w", tool, err)
 	}
 	if body.Execution.ID == "" {
-		return stagedExecution{}, errors.New("execute_runbook response has no execution id")
-	}
-	return body.Execution, nil
-}
-
-func decodeWaitedExecution(result bridgeResult) (stagedExecution, error) {
-	var body struct {
-		Execution stagedExecution `json:"execution"`
-	}
-	if err := json.Unmarshal(result.structured, &body); err != nil {
-		return stagedExecution{}, fmt.Errorf("decode wait_for_run structuredContent: %w", err)
-	}
-	if body.Execution.ID == "" {
-		return stagedExecution{}, errors.New("wait_for_run response has no execution id")
+		return stagedExecution{}, fmt.Errorf("%s response has no execution id", tool)
 	}
 	return body.Execution, nil
 }
@@ -402,7 +390,7 @@ func runPublishedRunbook(runbookRef, group string, deadline time.Time) {
 	if started.isError {
 		fail("execute_runbook returned a tool error:\n%s", head(started.text, 600))
 	}
-	execution, err := decodeStartedExecution(started)
+	execution, err := decodeExecution("execute_runbook", started)
 	if err != nil {
 		fail("execute_runbook returned an invalid result: %v", err)
 	}
@@ -423,7 +411,7 @@ func runPublishedRunbook(runbookRef, group string, deadline time.Time) {
 		if waited.isError {
 			fail("wait_for_run returned a tool error:\n%s", head(waited.text, 600))
 		}
-		execution, err = decodeWaitedExecution(waited)
+		execution, err = decodeExecution("wait_for_run", waited)
 		if err != nil {
 			fail("wait_for_run returned an invalid result: %v", err)
 		}

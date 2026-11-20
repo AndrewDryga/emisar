@@ -28,6 +28,8 @@ var (
 	pathElement    = regexp.MustCompile(`<path\b[^>]*\bd="([^"]+)"[^>]*>`)
 	circleElement  = regexp.MustCompile(`<circle\b[^>]*>`)
 	rectElement    = regexp.MustCompile(`<rect\b[^>]*>`)
+	ellipseElement = regexp.MustCompile(`<ellipse\b[^>]*>`)
+	lineElement    = regexp.MustCompile(`<line\b[^>]*>`)
 	unstroked      = regexp.MustCompile(`stroke="none"|accent-fill|warn-fill|danger-fill|\bselection\b`)
 )
 
@@ -220,8 +222,9 @@ func sample(segments []segment) []point {
 	return points
 }
 
-// bodyPoints samples every path, circle, and rect in an svg body, and reports
-// how much of the drawing is curved — the round/square archetype signal.
+// bodyPoints samples every path, circle, ellipse, rect, and line in an svg
+// body, and reports how much of the drawing is curved — the round/square
+// archetype signal.
 func bodyPoints(body string) (points []point, arcRatio float64, err error) {
 	arcish, total := 0, 0
 	for _, m := range pathElement.FindAllStringSubmatch(body, -1) {
@@ -248,10 +251,29 @@ func bodyPoints(body string) (points []point, arcRatio float64, err error) {
 			points = append(points, point{cx + float64(r*math.Cos(a)), cy + float64(r*math.Sin(a))})
 		}
 	}
+	// An ellipse counts as curved like a circle, but only one round in both
+	// directions earns a large circle's weight. Its four extremes are added
+	// because the angle steps do not land on them.
+	for _, m := range ellipseElement.FindAllString(body, -1) {
+		cx, cy, rx, ry := attribute(m, "cx"), attribute(m, "cy"), attribute(m, "rx"), attribute(m, "ry")
+		total++
+		arcish++
+		if math.Min(rx, ry) >= 4 {
+			arcish += 3
+		}
+		points = append(points, point{cx - rx, cy}, point{cx + rx, cy}, point{cx, cy - ry}, point{cx, cy + ry})
+		for a := 0.0; a < 6.3; a += 0.2 {
+			points = append(points, point{cx + float64(rx*math.Cos(a)), cy + float64(ry*math.Sin(a))})
+		}
+	}
 	for _, m := range rectElement.FindAllString(body, -1) {
 		x, y, w, h := attribute(m, "x"), attribute(m, "y"), attribute(m, "width"), attribute(m, "height")
 		total++
 		points = append(points, point{x, y}, point{x + w, y}, point{x, y + h}, point{x + w, y + h})
+	}
+	for _, m := range lineElement.FindAllString(body, -1) {
+		total++
+		points = append(points, point{attribute(m, "x1"), attribute(m, "y1")}, point{attribute(m, "x2"), attribute(m, "y2")})
 	}
 	if total > 0 {
 		arcRatio = float64(arcish) / float64(total)
@@ -298,8 +320,9 @@ func bounds(points []point) box {
 
 // axisRuns collects, from an absolute (pass-1) body, the x of every stroked
 // vertical run and the y of every stroked horizontal run: path segments
-// (H, V, Z, and axis-parallel L) and the straight sides of rects, rounded
-// corners excluded. Filled shapes have no stroke to centre.
+// (H, V, Z, and axis-parallel L), axis-parallel lines, and the straight sides
+// of rects, rounded corners excluded. Filled shapes have no stroke to centre;
+// circles and ellipses have no straight run.
 func axisRuns(body string) (xs, ys []float64, err error) {
 	for _, m := range element.FindAllString(body, -1) {
 		if unstroked.MatchString(m) {
@@ -319,6 +342,15 @@ func axisRuns(body string) (xs, ys []float64, err error) {
 				} else if s.x0 == s.x && s.y0 != s.y {
 					xs = append(xs, s.x)
 				}
+			}
+			continue
+		}
+		if lineElement.MatchString(m) {
+			x1, y1, x2, y2 := attribute(m, "x1"), attribute(m, "y1"), attribute(m, "x2"), attribute(m, "y2")
+			if y1 == y2 && x1 != x2 {
+				ys = append(ys, y1)
+			} else if x1 == x2 && y1 != y2 {
+				xs = append(xs, x1)
 			}
 			continue
 		}

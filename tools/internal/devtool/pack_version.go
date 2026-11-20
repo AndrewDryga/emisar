@@ -69,7 +69,9 @@ func validatePackVersions(packDir string) error {
 // publishableVersion mirrors catalog.parseVersion, the check that runs at
 // publish time. Kept as a plain reimplementation rather than an import because
 // that one lives in the runner module's internal/ tree, which another module
-// cannot reach — so the test below pins the two against the same cases.
+// cannot reach. Nothing checks the two stay in step automatically: the test
+// below covers publishableVersion's own acceptance cases, and a change to the
+// runner's parser needs the same change here by hand.
 func publishableVersion(v string) error {
 	if v == "" {
 		return fmt.Errorf("is required")

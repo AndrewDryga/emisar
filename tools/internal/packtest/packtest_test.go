@@ -52,7 +52,7 @@ cases:
 	writeExecutable(t, filepath.Join(root, "cleanup"), "#!/bin/sh\nprintf cleaned > \""+filepath.Join(root, "state")+"\"\n")
 
 	harnessConfig := filepath.Join(root, "test-config.yaml")
-	write(t, harnessConfig, "env_allowlist: []\nevents:\n  jsonl_path: "+filepath.Join(root, "events.jsonl")+"\n")
+	write(t, harnessConfig, "execution:\n  inherit_env: []\nevents:\n  jsonl_path: "+filepath.Join(root, "events.jsonl")+"\n")
 
 	var output bytes.Buffer
 	totals, err := Run(Config{
@@ -355,9 +355,32 @@ func TestRunStepRetriesAtTheConfiguredDeadline(t *testing.T) {
 		// while leaving enough room to test the boundary rather than host load.
 		RetryFor:   "2s",
 		RetryEvery: "2s",
-	}, os.Environ(), true)
+	}, os.Environ())
 	if err != nil {
 		t.Fatalf("runStep did not retry at deadline: %v", err)
+	}
+}
+
+// An arrange or cleanup step has no required assertion, but one its author
+// wrote must still hold.
+func TestRunStepHonorsAnExplicitStdoutNotEmpty(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture executable is POSIX shell")
+	}
+	root := t.TempDir()
+	silent := filepath.Join(root, "silent")
+	writeExecutable(t, silent, "#!/bin/sh\nexit 0\n")
+	talkative := filepath.Join(root, "talkative")
+	writeExecutable(t, talkative, "#!/bin/sh\nprintf ready\n")
+
+	if err := runStep(Step{Argv: []string{silent}, Expect: Expectation{StdoutNotEmpty: true}}, os.Environ()); err == nil {
+		t.Fatal("empty stdout passed an explicit stdout_not_empty")
+	}
+	if err := runStep(Step{Argv: []string{talkative}, Expect: Expectation{StdoutNotEmpty: true}}, os.Environ()); err != nil {
+		t.Fatalf("non-empty stdout failed stdout_not_empty: %v", err)
+	}
+	if err := runStep(Step{Argv: []string{silent}}, os.Environ()); err != nil {
+		t.Fatalf("a step without stdout_not_empty rejected empty stdout: %v", err)
 	}
 }
 
@@ -991,7 +1014,7 @@ func TestRunReportsMalformedPlan(t *testing.T) {
 	emisar := filepath.Join(root, "emisar")
 	writeExecutable(t, emisar, "#!/bin/sh\nexit 0\n")
 	harnessConfig := filepath.Join(root, "test-config.yaml")
-	write(t, harnessConfig, "env_allowlist: []\nevents:\n  jsonl_path: "+filepath.Join(root, "events.jsonl")+"\n")
+	write(t, harnessConfig, "execution:\n  inherit_env: []\nevents:\n  jsonl_path: "+filepath.Join(root, "events.jsonl")+"\n")
 	var output bytes.Buffer
 	_, err := Run(Config{
 		Emisar: emisar, PacksDir: filepath.Join(root, "packs"), Config: harnessConfig,
@@ -1072,7 +1095,7 @@ func TestEventsPathComesFromTheHarnessConfig(t *testing.T) {
 		t.Errorf("eventsPathFrom = %q", path)
 	}
 
-	write(t, config, "env_allowlist: []\n")
+	write(t, config, "execution:\n  inherit_env: []\n")
 	if _, err := eventsPathFrom(config); err == nil ||
 		!strings.Contains(err.Error(), "no events.jsonl_path") {
 		t.Errorf("a config with no journal path must fail, got %v", err)

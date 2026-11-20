@@ -220,12 +220,27 @@ func TestURLsReportsAnUnpublishedBoxWithoutRequiringSidecars(t *testing.T) {
 
 func TestLoadWorkspaceNamesTheMissingServiceOnTheHost(t *testing.T) {
 	app := testApp(t)
-	if _, err := app.loadWorkspace(context.Background(), needDatabase); err == nil ||
-		!strings.Contains(err.Error(), "coop") {
-		// testApp has no coop binary on its temporary root, so discovery — not
-		// validation — is what fails here. The point is that a host miss still
-		// reports coop, never a fabricated URL.
-		t.Fatalf("host loadWorkspace error = %v", err)
+	workspaceJSON, err := json.Marshal(map[string]any{"workspaces": []any{map[string]any{
+		"path":     app.Root,
+		"serve":    map[string]string{"4000": "http://localhost:43659"},
+		"services": map[string]string{"keycloak:8443": "https://localhost:1"},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	script := fmt.Sprintf("#!/bin/sh\n[ \"$*\" = 'fork ls --json' ] || exit 99\nprintf '%%s\\n' '%s'\n", workspaceJSON)
+	if err := os.WriteFile(filepath.Join(bin, "coop"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	// Coop answers for this workspace but publishes no database, so the miss
+	// is named rather than papered over with a fabricated URL.
+	want := "this command needs Postgres, and coop reports no Postgres URL for workspace " +
+		app.Root + "; start the workspace services with ./run up"
+	if _, err := app.loadWorkspace(context.Background(), needDatabase); err == nil || err.Error() != want {
+		t.Fatalf("host loadWorkspace error = %v, want %q", err, want)
 	}
 }
 

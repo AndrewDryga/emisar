@@ -16,7 +16,7 @@ func main() {
 		fatal(err)
 	}
 	if len(os.Args) < 2 {
-		fatal(fmt.Errorf("usage: go run ./tools/cmd/ci <select|install-mcp-publisher|normalize-mcp-private-key>"))
+		fatal(fmt.Errorf("usage: go run ./tools/cmd/ci <select|install-mcp-publisher|normalize-mcp-private-key|verify-debian-sbom-decoder|image-contract|diagnostics-sbom|diagnostics-scan>"))
 	}
 
 	ctx := context.Background()

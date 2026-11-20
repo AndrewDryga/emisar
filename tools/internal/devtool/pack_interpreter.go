@@ -41,7 +41,7 @@ var packDeclaredInterpreters = map[string]string{
 var packUbiquitousBinaries = map[string]bool{}
 
 func init() {
-	for _, binary := range strings.Fields(`sh bash cat ls cp mv rm mkdir rmdir ln touch chmod chown
+	for _, binary := range strings.Fields(`sh cat ls cp mv rm mkdir rmdir ln touch chmod chown
 chgrp du df stat head tail sort uniq wc cut tr sed awk grep egrep fgrep find xargs printf echo date
 sleep true false env test id whoami hostname uname ps kill sync tee basename dirname readlink
 realpath timeout base64 od tar gzip gunzip zcat nl comm join paste split expr seq getent locale ip`) {
@@ -345,6 +345,6 @@ func validatePackInterpreterBinaries(input packActionLintInput) error {
 			"%s (used by %s)", binary, strings.Join(missing[binary], ", ")))
 	}
 	return fmt.Errorf(
-		"%s: script interpreter not declared in requires.binaries: %s",
+		"%s: binary not declared in requires.binaries: %s",
 		filepath.Base(input.packDir), strings.Join(reports, "; "))
 }

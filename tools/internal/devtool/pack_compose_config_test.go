@@ -12,9 +12,10 @@ import (
 	"testing"
 )
 
-// docker.compose_config is the catalog's one action whose safety lives in shell
-// control flow rather than in its argv, so it gets a test that actually runs
-// the script. Two regressions have already shipped in these fifteen lines:
+// docker.compose_config is an action whose safety lives in shell control flow
+// rather than in its argv (compose_images is another), so it gets a test that
+// actually runs the script. Three regressions have already shipped in this
+// script:
 //
 //   - every section was captured in a helper reached through `$( )`, where bash
 //     does not inherit `errexit`, so a failed `docker compose config` in any

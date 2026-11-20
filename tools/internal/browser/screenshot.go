@@ -233,6 +233,12 @@ func (s *Session) Shot(options ShotOptions) ([]string, error) {
 	if options.Settle > 0 {
 		time.Sleep(options.Settle)
 	}
+	// Signing in and navigating steps both move the page, so name the page the
+	// capture actually shows in an anchor failure.
+	current, err = s.CurrentURL()
+	if err != nil {
+		return nil, err
+	}
 	full := filepath.Join(options.Out, options.Label+"-full.png")
 	if err := s.FullScreenshot(full); err != nil {
 		return nil, err

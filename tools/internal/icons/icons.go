@@ -47,7 +47,7 @@ var keepGlyphSize = set(
 	"action/add", "action/approve", "action/close",
 	"action/disclose", "action/download", "action/execute", "action/menu",
 	"action/move_down", "action/move_up", "action/next", "action/publish",
-	"action/refresh", "action/remove", "action/search", "action/select",
+	"action/refresh", "action/search", "action/select",
 	"action/sign_out", "action/sync", "action/undo", "action/upload",
 	"breadcrumb/separator", "diagram/flow_down", "diagram/flow_right",
 	"state/cancelled", "state/included", "state/not_included",
@@ -56,7 +56,7 @@ var keepGlyphSize = set(
 // Masked, pixel-tuned, transformed, or official artwork: no native cut —
 // these render through the zoomed 24-grid projection.
 var noCut = set(
-	"action/retry", "communication/prompt_suppressed", "security/redacted",
+	"action/retry", "security/redacted",
 	"state/magic_link_sent", "state/offline", "state/revoked", "state/selected",
 	"trust/untrusted", "action/replay",
 	"infrastructure/kubernetes", "infrastructure/nomad",

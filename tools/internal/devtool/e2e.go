@@ -317,7 +317,7 @@ func patchPaddleDestination(ctx context.Context, values map[string]string, tunne
 	defer response.Body.Close()
 	if response.StatusCode/100 != 2 {
 		body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
-		return fmt.Errorf("reading the Paddle notification destination: HTTP %s: %s", response.Status, body)
+		return fmt.Errorf("updating the Paddle notification destination: HTTP %s: %s", response.Status, body)
 	}
 	return nil
 }

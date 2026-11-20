@@ -113,7 +113,7 @@ func TestValidatePackScriptSyntax(t *testing.T) {
 }
 
 // A script parsed once for several actions still has to say which actions it
-// breaks — 320 catalog actions share 49 files.
+// breaks, since many catalog actions share a file.
 func TestPackScriptSyntaxNamesASharedScript(t *testing.T) {
 	packDir := t.TempDir()
 	actionDir := filepath.Join(packDir, "actions")

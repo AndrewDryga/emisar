@@ -272,6 +272,54 @@ func TestSnapAndCutRegenerateAMaster(t *testing.T) {
 	}
 }
 
+// Ellipses and lines are drawing too: the database cut's top is an ellipse, and
+// measuring its path alone put the icon 1.25px low.
+func TestAnalyzeMeasuresEllipsesAndLines(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "infrastructure"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{
+		"database": `<ellipse cx="8" cy="4" rx="5.5" ry="2.5"/><path d="M2.5 4V8C2.5 9.5 5 10.5 8 10.5S13.5 9.5 13.5 8V4M2.5 8V12C2.5 13.5 5 14.5 8 14.5S13.5 13.5 13.5 12V8"/>`,
+		"plus":     `<line x1="3" y1="8" x2="13" y2="8"/><line x1="8" y1="2" x2="8" y2="14"/>`,
+	} {
+		svg := `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor">` + "\n  " + body + "\n</svg>\n"
+		if err := os.WriteFile(filepath.Join(root, "infrastructure", name+".16.svg"), []byte(svg), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	rows, err := Analyze(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("audited %+v", rows)
+	}
+	for _, row := range rows {
+		want := map[string][2]float64{"infrastructure.database": {12, 14}, "infrastructure.plus": {11, 13}}[row.Token]
+		if row.DX != 0 || row.DY != 0 || row.W != want[0] || row.H != want[1] {
+			t.Errorf("%s measured %+v, want centred at %vx%v", row.Token, row, want[0], want[1])
+		}
+	}
+}
+
+func TestAxisRunsTakesStrokedAxisParallelLines(t *testing.T) {
+	t.Parallel()
+	xs, ys, err := axisRuns(`<line x1="3" y1="8" x2="13" y2="8"/>` +
+		`<line x1="5.5" y1="2" x2="5.5" y2="14"/>` +
+		`<line x1="2" y1="2" x2="14" y2="14"/>` +
+		`<line x1="3" y1="12" x2="13" y2="12" stroke="none"/>` +
+		`<line x1="4" y1="4" x2="4" y2="4"/>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(xs) != 1 || xs[0] != 5.5 || len(ys) != 1 || ys[0] != 8 {
+		t.Fatalf("runs xs=%v ys=%v, want xs=[5.5] ys=[8]", xs, ys)
+	}
+}
+
 // A 1px run is crisp at every integer display scale only when its centre line
 // sits on a pixel centre (n+0.5); an integer centre splits it across two pixel
 // rows at 1x and 3x.

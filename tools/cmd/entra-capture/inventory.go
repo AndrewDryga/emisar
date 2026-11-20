@@ -289,14 +289,24 @@ func auditTenant(ctx context.Context, env map[string]string, remove bool) error 
 			if err != nil {
 				return err
 			}
-			if status != http.StatusNoContent {
+			line, ok := deleteResult(row.DisplayName, section.resource, status)
+			if !ok {
 				failed++
 			}
-			fmt.Printf("  removed %s (%s): %d\n", row.DisplayName, section.resource, status)
+			fmt.Println(line)
 		}
 	}
 	if failed > 0 {
 		return fmt.Errorf("%d delete(s) did not return 204 — THIS TENANT CANNOT BE CALLED CLEAN", failed)
 	}
 	return nil
+}
+
+// deleteResult reports one Graph DELETE. Only 204 means the row is gone; a 403
+// or 404 printed as "removed" made a dirty tenant read clean row by row.
+func deleteResult(name, resource string, status int) (string, bool) {
+	if status == http.StatusNoContent {
+		return fmt.Sprintf("  removed %s (%s): %d", name, resource, status), true
+	}
+	return fmt.Sprintf("  FAILED to remove %s (%s): %d", name, resource, status), false
 }

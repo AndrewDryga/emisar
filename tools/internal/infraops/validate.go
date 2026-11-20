@@ -202,18 +202,16 @@ func parseCloudInit(path string) (cloudInitDocument, error) {
 	return document, nil
 }
 
-func (a *App) cloudInitValidator(ctx context.Context) (bool, error) {
-	if _, err := a.LookPath("cloud-init"); err == nil {
-		return false, nil
-	}
+// cloudInitValidator builds the containerized validator for a host without cloud-init.
+func (a *App) cloudInitValidator(ctx context.Context) error {
 	if _, err := a.output(ctx, a.Root, nil, "docker", "build",
 		"--quiet",
 		"--tag=emisar/cloud-init-validator:dev",
 		"--file="+filepath.Join(a.Root, "dev", "cloud-init", "Dockerfile"),
 		filepath.Join(a.Root, "dev", "cloud-init")); err != nil {
-		return false, fmt.Errorf("building the cloud-init validator: %w", err)
+		return fmt.Errorf("building the cloud-init validator: %w", err)
 	}
-	return true, nil
+	return nil
 }
 
 func (a *App) validateCloudInit(ctx context.Context, path string, containerized bool) error {
@@ -248,11 +246,10 @@ func (a *App) validateTemplates(ctx context.Context) error {
 	validateCloudInitSchema := cloudInitErr == nil
 	containerizedCloudInit := false
 	if !validateCloudInitSchema && dockerAvailable {
-		var err error
-		containerizedCloudInit, err = a.cloudInitValidator(ctx)
-		if err != nil {
+		if err := a.cloudInitValidator(ctx); err != nil {
 			return err
 		}
+		containerizedCloudInit = true
 		validateCloudInitSchema = true
 	}
 	if !dockerAvailable {
@@ -466,11 +463,12 @@ func (a *App) validateTemplates(ctx context.Context) error {
 	// registry download without one puts bytes that were not authenticated by the
 	// reviewed pin onto a runner admitted at max_risk: critical, so the pinned
 	// form is not merely preferred here — the unpinned one must not exist.
-	unpinnedPack := regexp.MustCompile(`pack install "\$(pack_url|bundle_pack)"(?:[^\n]*\\\n)*[^\n]*`)
+	// Only registry installs are matched: the bundle path is the offline copy
+	// shipped inside the verified release tarball, so it carries the runner's
+	// own integrity, not the registry's.
+	unpinnedPack := regexp.MustCompile(`pack install "\$pack_url"(?:[^\n]*\\\n)*[^\n]*`)
 	for _, install := range unpinnedPack.FindAllString(string(renderedData), -1) {
-		// The bundle path is the offline copy shipped inside the verified release
-		// tarball, so it carries the runner's own integrity, not the registry's.
-		if !strings.Contains(install, "--hash") && !strings.Contains(install, "bundle_pack") {
+		if !strings.Contains(install, "--hash") {
 			return fmt.Errorf("the admin runner must install packs with --hash, got: %s", install)
 		}
 	}

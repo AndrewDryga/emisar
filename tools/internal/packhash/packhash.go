@@ -163,7 +163,7 @@ func Check(root, configuredBinary string, write bool, out io.Writer) error {
 			refreshed = append(refreshed, pack+"="+current[pack])
 		}
 		fmt.Fprintf(out, "refreshed %s (%s)\n", goldenPath, strings.Join(refreshed, " "))
-		fmt.Fprintln(out, "run: (cd portal/apps/emisar && mix test test/emisar/catalog/published_registry_test.exs)")
+		fmt.Fprintln(out, "run: ./run test portal apps/emisar/test/emisar/catalog/published_registry_test.exs")
 		return nil
 	}
 

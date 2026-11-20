@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"debug/elf"
+	"encoding/binary"
 	"encoding/json"
 	"io"
 	"os"
@@ -128,6 +129,10 @@ func TestDiagnosticsScanAssessesTheNTSClientParserFinding(t *testing.T) {
 }
 
 func TestDiagnosticsScanRejectsNTPDaemonOrCopiedParser(t *testing.T) {
+	// Cases named here must fail on that exact check, not on an earlier one.
+	wantRejection := map[string]string{
+		"different helper architecture": "NTPsec helper is not inspectable native amd64 libntpc",
+	}
 	for _, tc := range []struct {
 		name string
 		edit func(string)
@@ -144,7 +149,16 @@ func TestDiagnosticsScanRejectsNTPDaemonOrCopiedParser(t *testing.T) {
 		}},
 		{"uninspectable native helper", func(b string) { writeFixture(t, b, "python/lib/python3/dist-packages/ntp/libntpc.so", "not ELF") }},
 		{"different helper architecture", func(b string) {
-			scanELFFixture(t, filepath.Join(b, "python/lib/python3/dist-packages/ntp/libntpc.so"), "ntpc_lfptofloat", elf.ELFCLASS32)
+			path := filepath.Join(b, "python/lib/python3/dist-packages/ntp/libntpc.so")
+			scanELFFixture(t, path, "ntpc_lfptofloat", elf.ELFCLASS64)
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			binary.LittleEndian.PutUint16(data[18:20], uint16(elf.EM_AARCH64))
+			if err := os.WriteFile(path, data, 0o644); err != nil {
+				t.Fatal(err)
+			}
 		}},
 		{"modified query client", func(b string) {
 			file := filepath.Join(b, "libexec/ntpq")
@@ -177,8 +191,12 @@ func TestDiagnosticsScanRejectsNTPDaemonOrCopiedParser(t *testing.T) {
 			bundle, sbom, report := ntpsecScanFixture(t)
 			tc.edit(bundle)
 			raw, _ := json.Marshal(report)
-			if _, _, _, err := classifyDiagnosticsScan(bundle, sbom, raw, time.Date(2026, 10, 29, 0, 0, 0, 0, time.UTC)); err == nil {
+			_, _, _, err := classifyDiagnosticsScan(bundle, sbom, raw, time.Date(2026, 10, 29, 0, 0, 0, 0, time.UTC))
+			if err == nil {
 				t.Fatal("payload without client-only proof accepted")
+			}
+			if want := wantRejection[tc.name]; !strings.Contains(err.Error(), want) {
+				t.Fatalf("rejection = %v, want %q", err, want)
 			}
 		})
 	}

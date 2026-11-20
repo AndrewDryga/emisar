@@ -56,7 +56,7 @@ var installerDivergentFunctions = map[string]string{
 	"usage":                      "each installer documents its own flags",
 	"do_uninstall":               "the runner removes a service, packs, and state; the bridge removes a binary and client config",
 	"fetch_release_files":        "the bridge downloads its own archive name from an env-selected platform",
-	"resolve_latest_from_github": "the runner dies on API failure; the bridge returns so its caller can fall back",
+	"resolve_latest_from_github": "the runner emits an API-specific diagnostic before returning failure; the bridge propagates failure to its caller",
 }
 
 var installerNounRewrites = []struct {

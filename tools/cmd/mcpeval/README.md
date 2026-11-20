@@ -70,7 +70,7 @@ corpus without starting a client:
 
 ```sh
 (cd tools && go run ./cmd/mcpeval \
-  -scenarios ../held-out.json \
+  -scenarios /tmp/held-out.json \
   -validate-corpus \
   -require-held-out)
 ```

@@ -150,7 +150,7 @@ func (a *App) pitrDrill(ctx context.Context, args []string) (runErr error) {
 	fmt.Fprintf(a.Out, "scratch clone: %s at %s\n", clone, restoreTime)
 	fmt.Fprintf(a.Out, "scratch probe: %s in %s\n", vm, zone)
 	if !apply {
-		fmt.Fprintln(a.Out, "dry run only; production remains read-only and --apply trap-cleans every scratch resource")
+		fmt.Fprintln(a.Out, "dry run only; production remains read-only and --apply attempts scratch-resource cleanup when the drill returns")
 		fmt.Fprintln(a.Out, "the applied manifest records elapsed restore time through the first emisar_owner query")
 		return nil
 	}

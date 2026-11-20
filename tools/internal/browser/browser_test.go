@@ -316,6 +316,33 @@ func TestShotRunsClicksAndFillsInOrderAndNotifiesTheForm(t *testing.T) {
 	}
 }
 
+// A step that moves the page leaves the first URL stale; an anchor failure must
+// name the page the capture shows.
+func TestShotAnchorFailureNamesThePageAfterSteps(t *testing.T) {
+	if _, err := ResolveChrome(); err != nil {
+		t.Skip(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(`<!doctype html><html><body><button onclick="history.pushState(null,'','/next')">Next</button></body></html>`))
+	}))
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	session, err := New(Config{InBox: testInBox()}).isolatedSessionWithOptions(ctx, server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	_, err = session.Shot(ShotOptions{
+		Path: "/", Label: "moved", Out: t.TempDir(),
+		Steps: []Step{{Click: "button"}}, Anchor: &Anchor{Selector: "#missing"},
+	})
+	if err == nil || !strings.HasSuffix(err.Error(), "/next") {
+		t.Fatalf("anchor failure = %v, want it to name /next", err)
+	}
+}
+
 func TestFindHrefMatchesConsoleListLinksWithoutTableMarkup(t *testing.T) {
 	if _, err := ResolveChrome(); err != nil {
 		t.Skip(err)

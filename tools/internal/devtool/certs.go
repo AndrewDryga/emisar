@@ -203,7 +203,7 @@ func (a *App) generateCertificates(rotate bool) error {
 	// even though the leaf and its key are world-readable. Keycloak does not fail on
 	// that — it starts HTTP-only, so the OIDC leg of `./run e2e sso` connects to a
 	// port with no TLS listener and reports a TLS-trust failure that is really a
-	// permission one. The private keys keep their own 0600.
+	// permission one. The CA key keeps its own 0600.
 	if err := os.MkdirAll(a.Certs, 0o755); err != nil {
 		return err
 	}

@@ -32,7 +32,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 	flags := flag.NewFlagSet("mcpeval", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	provider := flags.String("provider", "claude", "agent to evaluate: claude or codex")
-	scenarioPath := flags.String("scenarios", "tools/mcpeval/scenarios.json", "scenario corpus")
+	scenarioPath := flags.String("scenarios", "tools/mcpeval/scenarios.json", "scenario corpus: an absolute path, or one relative to the repository root")
 	scenarioID := flags.String("scenario", "read-only-host-health", "scenario ID")
 	portalURL := flags.String("portal", "http://localhost:4010", "local Emisar portal URL")
 	model := flags.String("model", "", "model to pin (empty uses the provider default except Claude)")
@@ -97,7 +97,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return errors.New("EMISAR_API_KEY is required (the relay holds it; the agent never sees it)")
 	}
 	cfg := runConfig{
-		Provider: *provider, RepoRoot: repoRoot,
+		Provider:     *provider,
 		ScenarioPath: rootedScenarioPath, ScenarioID: *scenarioID,
 		PortalURL: *portalURL, APIKey: apiKey,
 		Model: *model, Binary: *binary, BudgetUSD: *budget,

@@ -1217,7 +1217,7 @@ func runCase(config Config, plan Plan, test Case, action actionDefinition, env [
 	var failures []string
 	var actionEvidence *actionResult
 	for i, step := range test.Arrange {
-		if err := runStep(step, env, false); err != nil {
+		if err := runStep(step, env); err != nil {
 			failures = append(failures, fmt.Sprintf("arrange[%d]: %v", i, err))
 			break
 		}
@@ -1283,14 +1283,14 @@ func runCase(config Config, plan Plan, test Case, action actionDefinition, env [
 	}
 	if len(failures) == 0 {
 		for i, probe := range test.Probes {
-			if err := runStep(probe, env, true); err != nil {
+			if err := runStep(probe, env); err != nil {
 				failures = append(failures, fmt.Sprintf("probe[%d]: %v", i, err))
 				break
 			}
 		}
 	}
 	for i, cleanup := range test.Cleanup {
-		if err := runStep(cleanup, env, false); err != nil {
+		if err := runStep(cleanup, env); err != nil {
 			failures = append(failures, fmt.Sprintf("cleanup[%d]: %v", i, err))
 		}
 	}
@@ -1387,15 +1387,12 @@ func executeAction(argv, env []string) (actionResult, error) {
 	return action, nil
 }
 
-func runStep(step Step, baseEnv []string, requireSemantic bool) error {
+func runStep(step Step, baseEnv []string) error {
 	retryFor, retryEvery, err := retryDurations(step)
 	if err != nil {
 		return err
 	}
 	expect := mergeStepExpectation(step.Expect)
-	if !requireSemantic && !step.Expect.semantic() {
-		expect.StdoutNotEmpty = false
-	}
 	env := environment(baseEnv, step.Env)
 	deadline := time.Now().Add(retryFor)
 	for {

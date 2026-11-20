@@ -158,7 +158,6 @@ func endpointAlive(endpoint string) bool {
 		return false
 	}
 	endpoint = strings.TrimPrefix(endpoint, "ws://")
-	endpoint = strings.TrimPrefix(endpoint, "wss://")
 	host := strings.SplitN(endpoint, "/", 2)[0]
 	client := &http.Client{Timeout: time.Second}
 	response, err := client.Get("http://" + host + "/json/version")

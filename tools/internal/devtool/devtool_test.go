@@ -745,6 +745,7 @@ func TestCheckPortalFixRunsTheWritingFormatArgv(t *testing.T) {
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("MIX_LOG", log)
+	leaveTheBox(t)
 
 	app := New(root, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
 	if err := app.Run(t.Context(), []string{"check", "portal", "--fix"}); err != nil {
@@ -1745,6 +1746,7 @@ func TestCaptureConsoleRequiresTaskBeforeStartingBrowser(t *testing.T) {
 }
 
 func TestNoArgumentsPrintsGroupedHumanHelpAndSucceeds(t *testing.T) {
+	leaveTheBox(t)
 	var out bytes.Buffer
 	app := New(t.TempDir(), strings.NewReader(""), &out, &bytes.Buffer{})
 
@@ -1792,7 +1794,7 @@ func TestDownStopsTheWorkspaceAndWithAllTheSmokeStack(t *testing.T) {
 			log := filepath.Join(root, "commands.log")
 			t.Setenv("COMMAND_LOG", log)
 			t.Setenv("PATH", bin)
-			t.Setenv("COOP_BOX", "")
+			leaveTheBox(t)
 			for _, name := range []string{"coop", "docker"} {
 				script := "#!/bin/sh\nprintf '%s|%s|%s\\n' \"$PWD\" '" + name + "' \"$*\" >> \"$COMMAND_LOG\"\n"
 				if err := os.WriteFile(filepath.Join(bin, name), []byte(script), 0o755); err != nil {
@@ -1989,6 +1991,7 @@ func TestRunnerGateUsesModuleDirectoryAndCoverage(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	leaveTheBox(t)
 	app := New(root, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
 
 	if err := app.Run(t.Context(), []string{"gate", "runner", "--coverage", "coverage.out"}); err != nil {
@@ -2067,6 +2070,7 @@ func TestMCPGateRejectsDependencyChecksumFile(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	leaveTheBox(t)
 	app := New(root, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
 
 	err := app.Run(t.Context(), []string{"gate", "mcp"})

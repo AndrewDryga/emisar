@@ -6,7 +6,9 @@
 //
 // Auth: /api/v1/authn returns a sessionToken for username+password, which
 // /login/sessionCookieRedirect exchanges for the console session cookie. That
-// keeps the whole run headless — no MFA prompt on this path.
+// skips the sign-in prompt, so the run stays headless. The admin console can
+// still ask for an MFA step-up; when it does, clearMFA answers it with a code
+// from OKTA_TOTP_SECRET.
 //
 // Reads OKTA_* from portal/.agent/secrets/okta-integrator.env (gitignored).
 // DEV ONLY, and it lives in the never-shipped tools module.
@@ -84,11 +86,11 @@ func main() {
 	flag.StringVar(&flow, "flow", "", `which walkthrough to capture ("oidc"; default: provisioning)`)
 	flag.StringVar(&pushGroup, "push-group", "", "push this assigned Okta group through the configured SCIM app")
 	flag.BoolVar(&headless, "headless", true, "run Chrome headless")
-	// This rig creates app integrations AND users in the founder's tenant. Until
-	// now it had no way to say what it had left behind, so nobody could tell what
-	// was ours — see .agent/kb/rules/shared-capture-rigs-own-what-they-create.md.
-	flag.BoolVar(&inventory, "inventory", false, "list the apps and users this rig creates, then exit")
-	flag.BoolVar(&cleanup, "cleanup", false, "delete the apps and users this rig created, then exit")
+	// This rig creates app integrations in the founder's tenant. Until now it had
+	// no way to say what it had left behind, so nobody could tell what was ours —
+	// see .agent/kb/rules/shared-capture-rigs-own-what-they-create.md.
+	flag.BoolVar(&inventory, "inventory", false, "list the tenant's apps, users and API tokens with what -cleanup would do, then exit")
+	flag.BoolVar(&cleanup, "cleanup", false, "delete the apps and users the cleanup filters select, then exit")
 	flag.BoolVar(&configureSCIM, "configure-scim", false, "replace and verify the saved SCIM endpoint credential")
 	flag.Parse()
 
@@ -169,14 +171,6 @@ func sessionToken(env map[string]string) (string, error) {
 	return parsed.SessionToken, nil
 }
 
-// auditTenant lists — and optionally removes — the app integrations and users
-// this rig creates. It goes through Okta's own API from inside the authenticated
-// console session, so it never depends on the console's DOM: the org API is
-// same-origin with the admin app and the session cookie is already set.
-//
-// Every object is printed with a verdict beside it. A filter that can silently
-// under-match must show what it looked at, which is how six leftovers hid in a
-// neighbouring tenant while a cleanup reported success.
 // The three verdicts an application can get. Padded so the audit's columns line
 // up whichever one is printed.
 const (
@@ -211,6 +205,14 @@ func appVerdict(id, label, settingsLabel string, env map[string]string) string {
 // oursName is the name this rig gives everything it creates.
 var oursName = regexp.MustCompile(`(?i)emisar`)
 
+// auditTenant lists the tenant's applications, users and API tokens, and with
+// remove deletes the applications and users its filters select (never the
+// tokens). It calls Okta's org API from Go with the SSWS token, so it never
+// depends on the console's DOM.
+//
+// Every object is printed with a verdict beside it. A filter that can silently
+// under-match must show what it looked at, which is how six leftovers hid in a
+// neighbouring tenant while a cleanup reported success.
 func auditTenant(ctx context.Context, env map[string]string, remove bool) error {
 	// SSWS. Okta's API does not accept the console session cookie — it answers 403
 	// — so a token is what makes a DOM-free inventory possible.
@@ -365,16 +367,17 @@ type oktaAPIToken struct {
 }
 
 // oursUser decides what a cleanup run does with one listed account. This rig
-// creates APPLICATIONS, not users, so match only an address it demonstrably
-// generates, and never the signed-in account: matching /emisar/ against an email
+// creates APPLICATIONS, not users, so match only the narrow probe addresses
+// below, and never the signed-in account: matching /emisar/ against an email
 // once found the tenant's own admin.
 func oursUser(user oktaUser, meID string) bool {
 	return user.ID != meID && oursUserEmail.MatchString(user.Profile.Email)
 }
 
-// oursUserEmail matches the addresses this rig demonstrably generates, so a
-// cleanup deletes only accounts it created — never the signed-in admin or the
-// tenant's own users, whatever they are called.
+// oursUserEmail matches probe-style addresses only. Nothing in this repository
+// generates them today, so a match is selected by name, not proven to be this
+// rig's; the pattern stays narrow so the tenant's own users, whatever they are
+// called, are never selected.
 var oursUserEmail = regexp.MustCompile(`(?i)scim-probe|okta-capture-probe`)
 
 // oktaAPIGet performs an org-API GET with the SSWS token supplied from Go, so
@@ -557,9 +560,11 @@ func waitForText(ctx context.Context, needle string, attempts int) (bool, error)
 	return capture.WaitForText(ctx, needle, time.Duration(attempts)*2*time.Second)
 }
 
-// typeInto sets a field found by placeholder, name, id, or preceding label.
-func typeInto(ctx context.Context, hint, value string) (bool, error) {
-	script := fmt.Sprintf(`(() => {
+// findFieldScript is the JS that binds match to the first visible field found
+// by placeholder, name, id, aria-label, or label; typeInto and fieldValue share
+// it so a read-back looks at the field that was typed into.
+func findFieldScript(hint string) string {
+	return fmt.Sprintf(`
   const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
   const hint = %q.toLowerCase();
   const fields = [...document.querySelectorAll('input,textarea')].filter(visible);
@@ -568,7 +573,12 @@ func typeInto(ctx context.Context, hint, value string) (bool, error) {
     (el.id || '').toLowerCase().includes(hint) ||
     (el.placeholder || '').toLowerCase().includes(hint) ||
     (el.getAttribute('aria-label') || '').toLowerCase().includes(hint) ||
-    (el.labels && [...el.labels].some(l => l.textContent.toLowerCase().includes(hint))));
+    (el.labels && [...el.labels].some(l => l.textContent.toLowerCase().includes(hint))));`, hint)
+}
+
+// typeInto sets a field found by placeholder, name, id, or preceding label.
+func typeInto(ctx context.Context, hint, value string) (bool, error) {
+	script := fmt.Sprintf(`(() => {%s
   if (!match) return false;
   const setter = Object.getOwnPropertyDescriptor(
     match.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype, 'value').set;
@@ -577,9 +587,55 @@ func typeInto(ctx context.Context, hint, value string) (bool, error) {
   match.dispatchEvent(new Event('input', {bubbles: true}));
   match.dispatchEvent(new Event('change', {bubbles: true}));
   return true;
-})()`, hint, value)
+})()`, findFieldScript(hint), value)
 	return chromedp.Run(ctx, chromedp.Evaluate[bool](script))
 }
+
+// fieldValue reads back the field typeInto would pick for hint; found is false
+// when no field matches.
+func fieldValue(ctx context.Context, hint string) (value string, found bool, err error) {
+	script := fmt.Sprintf(`(() => {%s
+  return match ? [true, match.value] : [false, ''];
+})()`, findFieldScript(hint))
+	result, err := chromedp.Run(ctx, chromedp.Evaluate[[]any](script))
+	if err != nil {
+		return "", false, err
+	}
+	if len(result) != 2 {
+		return "", false, errors.New("field read-back returned an unexpected shape")
+	}
+	found, _ = result[0].(bool)
+	value, _ = result[1].(string)
+	return value, found, nil
+}
+
+// labelSCIMApp names the new SCIM app and confirms the name LANDED. A miss
+// would create the app under Okta's default name, which -cleanup cannot
+// recognise as this rig's, so the leftover would hide in the tenant
+// (.agent/kb/rules/shared-capture-rigs-own-what-they-create.md).
+func labelSCIMApp(ctx context.Context, settle func(int) error) error {
+	typed, err := typeInto(ctx, "label", scimAppLabel)
+	if err != nil {
+		return err
+	}
+	if !typed {
+		return errors.New("the app label field was not found — the integration would be created under a name -cleanup cannot recognise")
+	}
+	if err := settle(1); err != nil {
+		return err
+	}
+	value, found, err := fieldValue(ctx, "label")
+	if err != nil {
+		return err
+	}
+	if !found || value != scimAppLabel {
+		return fmt.Errorf("the app label did not take (field reads %q) — the integration would be created under a name -cleanup cannot recognise", value)
+	}
+	return nil
+}
+
+// scimAppLabel is the name the provisioning flow gives the SCIM app it creates.
+const scimAppLabel = "emisar directory sync"
 
 // captureFlow walks the SCIM setup path an emisar customer follows, pausing at
 // each screen the docs page teaches. Okta's console is a SPA, so every step
@@ -732,7 +788,7 @@ func captureFlow(ctx context.Context, env map[string]string, outDir, only string
 	if err := shoot("04-general-settings"); err != nil {
 		return err
 	}
-	if _, err := typeInto(ctx, "label", "emisar directory sync"); err != nil {
+	if err := labelSCIMApp(ctx, settle); err != nil {
 		return err
 	}
 	if err := step("Next"); err != nil {
@@ -1033,9 +1089,12 @@ func markDocsPanel(
 }
 
 // captureConfiguredCredentials opens the saved SCIM connection for editing and
-// shoots it. Nothing is saved and Test API Credentials is NOT pressed — the point
-// is to show the operator which three controls matter, and pressing it against an
-// endpoint this run cannot reach would photograph an error instead.
+// shoots it. Without configure, nothing is saved and Test API Credentials is NOT
+// pressed — the point is to show the operator which three controls matter, and
+// pressing it against an endpoint this run cannot reach would photograph an
+// error instead; the edit is cancelled. With configure (-configure-scim), it
+// types the current EMISAR_PUBLIC_URL and EMISAR_SCIM_TOKEN, requires Okta to
+// verify them, shoots the verified form, and saves.
 func captureConfiguredCredentials(
 	ctx context.Context,
 	env map[string]string,
@@ -1224,7 +1283,7 @@ func provisioningFlow(
 			return err
 		}
 
-		return lifecycleFlow(ctx, instance, shoot, step, settle, env["OKTA_PUSH_GROUP"])
+		return lifecycleFlow(ctx, instance, shoot, step, settle)
 	}
 	if err := settle(5); err != nil {
 		return err
@@ -1286,12 +1345,13 @@ func provisioningFlow(
 		return err
 	}
 	// Capture the public, de-identified credential form only after the real
-	// configuration is durable; the helper cancels without changing it.
-	if err := captureConfiguredCredentials(ctx, env, shoot, step, settle, configureSCIM); err != nil {
+	// configuration is durable; the helper cancels without changing it. The
+	// credential was just verified and saved above, so it is not replaced again.
+	if err := captureConfiguredCredentials(ctx, env, shoot, step, settle, false); err != nil {
 		return err
 	}
 
-	return lifecycleFlow(ctx, instance, shoot, step, settle, env["OKTA_PUSH_GROUP"])
+	return lifecycleFlow(ctx, instance, shoot, step, settle)
 }
 
 // lifecycleFlow captures Provisioning → To App, Assignments and Push Groups —
@@ -1302,7 +1362,6 @@ func lifecycleFlow(
 	shoot func(string) error,
 	step func(string) error,
 	settle func(int) error,
-	pushGroup string,
 ) error {
 	// The two callers arrive with the Integration pane in different states — a
 	// fresh save has just re-rendered it, a re-run never left it — so the
@@ -1410,11 +1469,6 @@ func lifecycleFlow(
 	}
 	if err := settle(3); err != nil {
 		return err
-	}
-	if pushGroup != "" {
-		if err := pushGroupByName(ctx, pushGroup, settle); err != nil {
-			return err
-		}
 	}
 	if err := highlightLowest(ctx, "Push Groups"); err != nil {
 		return err

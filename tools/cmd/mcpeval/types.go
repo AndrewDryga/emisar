@@ -141,7 +141,7 @@ type report struct {
 	Scenario      string       `json:"scenario"`
 	StartedAt     string       `json:"started_at"`
 	DurationMS    int64        `json:"duration_ms"`
-	Usage         tokenUsage   `json:"usage,omitempty"`
+	Usage         tokenUsage   `json:"usage"`
 	Agent         agentResult  `json:"agent"`
 	ToolCalls     []callRecord `json:"tool_calls"`
 	Score         score        `json:"score"`
@@ -149,7 +149,6 @@ type report struct {
 
 type runConfig struct {
 	Provider          string
-	RepoRoot          string
 	ScenarioPath      string
 	ScenarioID        string
 	PortalURL         string
