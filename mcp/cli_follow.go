@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -201,15 +202,18 @@ func (b *bridge) followOneCLIRun(
 	operationID string,
 	initial cliRunResult,
 ) (cliRunResult, error) {
-	// Bound this loop the way followOneCLIRunbookResult bounds its sibling: a
-	// portal that keeps re-issuing a wait continuation (or a run streaming tens of
-	// MB) must not spin forever, repeat itself, or hold unbounded output in memory.
+	// A live wait has no page budget: the portal answers each continuation on new
+	// progress or after its quiet timeout, so a healthy multi-hour action or a
+	// day-long pending approval legitimately takes thousands of pages, exactly as
+	// the runbook execution wait below. Ctrl-C ends observation; output stays
+	// within the display budget; and a recent window of continuation digests stops
+	// a portal that re-issues a continuation without growing per page.
 	current := initial
 	var output []cliRunOutput
 	remaining := maxCLIResultOutputRunes
-	seen := make(map[string]struct{})
+	seen := newCLIContinuationWindow(maxCLIRunbookResultPages)
 	clippedOutput := false
-	for pageNumber := 0; pageNumber < maxCLIRunbookResultPages; pageNumber++ {
+	for {
 		if !cliToolContinuationPresent(current.Next) {
 			if !cliRunTerminal(current.Status) {
 				return current, errors.New("wait_for_run stopped before the run reached a terminal status")
@@ -221,11 +225,9 @@ func (b *bridge) followOneCLIRun(
 		if !validCLIRunContinuation(current.Next, initial.RunID) {
 			return current, errors.New("the server changed or malformed the run wait continuation")
 		}
-		continuationKey := current.Next.Tool + "\x00" + string(current.Next.Arguments)
-		if _, duplicate := seen[continuationKey]; duplicate {
+		if !seen.add(current.Next) {
 			return current, errors.New("wait_for_run repeated a run wait continuation")
 		}
-		seen[continuationKey] = struct{}{}
 		raw, err := b.callCLIContinuation(ctx, current.Next)
 		if err != nil {
 			return current, err
@@ -246,7 +248,38 @@ func (b *bridge) followOneCLIRun(
 		clippedOutput = clippedOutput || clipped
 		current = envelope.Run
 	}
-	return current, errors.New("run wait exceeded the safe pagination limit")
+}
+
+// cliContinuationWindow remembers the digests of the most recent continuations
+// in a fixed-size ring, so an unbounded follow keeps a constant footprint.
+type cliContinuationWindow struct {
+	seen  map[[sha256.Size]byte]struct{}
+	order [][sha256.Size]byte
+	next  int
+}
+
+func newCLIContinuationWindow(size int) *cliContinuationWindow {
+	return &cliContinuationWindow{
+		seen:  make(map[[sha256.Size]byte]struct{}, size),
+		order: make([][sha256.Size]byte, 0, size),
+	}
+}
+
+// add records next and reports false when it is already in the window.
+func (w *cliContinuationWindow) add(next cliToolResultNext) bool {
+	digest := sha256.Sum256([]byte(next.Tool + "\x00" + string(next.Arguments)))
+	if _, duplicate := w.seen[digest]; duplicate {
+		return false
+	}
+	if len(w.order) < cap(w.order) {
+		w.order = append(w.order, digest)
+	} else {
+		delete(w.seen, w.order[w.next])
+		w.order[w.next] = digest
+		w.next = (w.next + 1) % len(w.order)
+	}
+	w.seen[digest] = struct{}{}
+	return true
 }
 
 func sameCLIRunIdentity(initial, next cliRunResult) bool {

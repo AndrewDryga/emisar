@@ -137,6 +137,73 @@ func TestCLIHumanRunActionRejectsRepeatedWaitContinuation(t *testing.T) {
 	}
 }
 
+// A quiet multi-hour action or a pending approval answers one wait page per
+// portal timeout, so a healthy follow outlives any page budget sized for
+// result pagination. It must reach the terminal page with output still bounded.
+func TestCLIHumanRunActionFollowsLongLiveWaitToTerminal(t *testing.T) {
+	const livePages = maxCLIRunbookResultPages + 44
+	var calls atomic.Int32
+	var operationID string
+	chunk := strings.Repeat("y", 100)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		call := int(calls.Add(1))
+		switch {
+		case call == 1:
+			operationID = r.Header.Get(operationIDHeader)
+			writeCLIResult(t, w, r, fmt.Sprintf(`{"structuredContent":{"ok":true,"operation_id":%q,"action_id":"postgres.reindex","pack_ref":"postgres@1/sha256:abc","runs":[{"run_id":"run-1","operation_id":%q,"action_id":"postgres.reindex","pack_ref":"postgres@1/sha256:abc","runner_ref":"db-1~abc","status":"pending_approval","next":{"tool":"wait_for_run","arguments":{"run_id":"run-1","cursor":"cursor-1","timeout":"45s"}}}]},"content":[],"isError":false}`, operationID, operationID))
+		case call <= livePages:
+			writeCLIResult(t, w, r, fmt.Sprintf(`{"structuredContent":{"ok":true,"run":{"run_id":"run-1","operation_id":%q,"action_id":"postgres.reindex","pack_ref":"postgres@1/sha256:abc","runner_ref":"db-1~abc","status":"running","output":[{"stream":"stdout","text":%q}],"next":{"tool":"wait_for_run","arguments":{"run_id":"run-1","cursor":"cursor-%d","timeout":"45s"}}}},"content":[],"isError":false}`, operationID, chunk, call))
+		case call == livePages+1:
+			writeCLIResult(t, w, r, fmt.Sprintf(`{"structuredContent":{"ok":true,"run":{"run_id":"run-1","operation_id":%q,"action_id":"postgres.reindex","pack_ref":"postgres@1/sha256:abc","runner_ref":"db-1~abc","status":"success","exit_code":0,"output":[{"stream":"stdout","text":"done"}]}},"content":[],"isError":false}`, operationID))
+		default:
+			t.Errorf("unexpected request %d", call)
+		}
+	}))
+	defer srv.Close()
+
+	stdout, stderr, code := runCLITest(newTestBridge(srv), []string{runActionToolName, `{}`}, "")
+	if code != 0 || stderr != "" || int(calls.Load()) != livePages+1 {
+		t.Fatalf("exit=%d calls=%d stderr=%q", code, calls.Load(), stderr)
+	}
+	if !strings.Contains(stdout, "db-1~abc — success") ||
+		!strings.Contains(stdout, "output exceeds the 16,384-character terminal display limit") {
+		t.Fatalf("long wait did not end in a bounded terminal result:\n%s", stdout)
+	}
+	if len([]rune(stdout)) > maxCLIResultOutputRunes+5_000 {
+		t.Fatalf("bounded run output amplified to %d characters", len([]rune(stdout)))
+	}
+}
+
+// Without a page budget the repeat guard is the only loop stop, so it must
+// still catch a continuation that returns after another one in between.
+func TestCLIHumanRunActionRejectsCycledWaitContinuation(t *testing.T) {
+	var calls atomic.Int32
+	var operationID string
+	page := func(cursor string) string {
+		return fmt.Sprintf(`{"structuredContent":{"ok":true,"run":{"run_id":"run-1","operation_id":%q,"action_id":"postgres.status","pack_ref":"postgres@1/sha256:abc","runner_ref":"db-1~abc","status":"running","next":{"tool":"wait_for_run","arguments":{"run_id":"run-1","cursor":%q,"timeout":"45s"}}}},"content":[],"isError":false}`, operationID, cursor)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch call := calls.Add(1); call {
+		case 1:
+			operationID = r.Header.Get(operationIDHeader)
+			writeCLIResult(t, w, r, fmt.Sprintf(`{"structuredContent":{"ok":true,"operation_id":%q,"action_id":"postgres.status","pack_ref":"postgres@1/sha256:abc","runs":[{"run_id":"run-1","operation_id":%q,"action_id":"postgres.status","pack_ref":"postgres@1/sha256:abc","runner_ref":"db-1~abc","status":"running","next":{"tool":"wait_for_run","arguments":{"run_id":"run-1","cursor":"a","timeout":"45s"}}}]},"content":[],"isError":false}`, operationID, operationID))
+		case 2:
+			writeCLIResult(t, w, r, page("b"))
+		case 3:
+			writeCLIResult(t, w, r, page("a"))
+		default:
+			t.Errorf("unexpected request %d", call)
+		}
+	}))
+	defer srv.Close()
+
+	_, stderr, code := runCLITest(newTestBridge(srv), []string{runActionToolName, `{}`}, "")
+	if code != 1 || calls.Load() != 3 || !strings.Contains(stderr, "repeated a run wait continuation") ||
+		!strings.Contains(stderr, operationID) {
+		t.Fatalf("exit=%d calls=%d stderr=%q", code, calls.Load(), stderr)
+	}
+}
+
 func TestCLIProcessRunsActionThroughTerminalOutput(t *testing.T) {
 	var calls atomic.Int32
 	var mutationOperationID string
