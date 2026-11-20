@@ -21,7 +21,7 @@ var errTerminalShutdown = errors.New("cloud: terminal shutdown")
 
 // errProtocolVersionUnsupported marks a wire-protocol mismatch. Unlike a
 // dropped socket it is local, deterministic, and unchanged by retrying, so the
-// session that hit it must NOT count as connected (see runSession).
+// session that hit it must NOT count as healthy (see runSession).
 var errProtocolVersionUnsupported = errors.New("cloud: unsupported protocol version")
 
 const (
@@ -299,7 +299,7 @@ func (c *Client) Run(ctx context.Context) error {
 		c.updateRuntimeStatus(func(status *RuntimeStatus, _ time.Time) {
 			status.ConnectionAttempts++
 		})
-		connected, err := c.runSession(ctx)
+		healthy, err := c.runSession(ctx)
 		// Only a cancelled PARENT context means "shut the client down". A
 		// session that ended on its own — sender or heartbeat hit a write
 		// error and tripped sessionCancel, which surfaces as the receiver's
@@ -325,11 +325,13 @@ func (c *Client) Run(ctx context.Context) error {
 		c.updateRuntimeStatus(func(status *RuntimeStatus, _ time.Time) {
 			status.State = RuntimeStateReconnecting
 		})
-		// A session that actually connected clears the backoff: the drop
-		// that ended it is a fresh failure, not a continuation of the
-		// reconnect storm. Without this the backoff ratchets up across
-		// unrelated disconnects and never recovers on success.
-		if connected {
+		// A healthy session clears the backoff: the drop that ended it is a
+		// fresh failure, not a continuation of the reconnect storm. Without
+		// this the backoff ratchets up across unrelated disconnects and never
+		// recovers on success. A session the portal closes right after the
+		// upgrade (1013 for a cloned identity, 1011 when it cannot claim
+		// ownership) is not healthy, so the backoff keeps doubling.
+		if healthy {
 			backoff = c.opts.ReconnectMin
 		}
 		wait := jitterBackoff(backoff)
@@ -362,8 +364,10 @@ func jitterBackoff(d time.Duration) time.Duration {
 
 // runSession dials, advertises state, runs the sender + heartbeat +
 // receiver until any of them errors, then returns. The bool reports
-// whether the dial+register handshake succeeded (i.e. we actually
-// connected), so the caller can reset its reconnect backoff on success.
+// whether the session was healthy, so the caller can reset its reconnect
+// backoff: it advertised its state and then stayed up for at least one
+// heartbeat interval. Getting past the upgrade is not enough, because the
+// portal sends its refusals as close frames on an upgraded socket.
 func (c *Client) runSession(parent context.Context) (bool, error) {
 	conn, err := c.dialer.Dial(parent)
 	if err != nil {
@@ -381,15 +385,17 @@ func (c *Client) runSession(parent context.Context) (bool, error) {
 	state := c.buildState()
 	if err := validateRunnerStateSize(state); err != nil {
 		// Local, deterministic, and unchanged by retrying: the state we built is
-		// too large to advertise. Report it as NOT connected so the caller keeps
+		// too large to advertise. Report it as NOT healthy so the caller keeps
 		// backing off — reporting a successful dial here reset the backoff on
 		// every pass and turned a permanent condition (enough installed packs to
 		// exceed the cap) into a 1 Hz reconnect storm against the portal.
 		return false, err
 	}
 	if err := conn.Send(sessionCtx, state); err != nil {
-		return true, fmt.Errorf("send state: %w", err)
+		return false, fmt.Errorf("send state: %w", err)
 	}
+	connectedAt := time.Now()
+	healthy := func() bool { return time.Since(connectedAt) >= c.opts.HeartbeatEvery }
 	c.updateRuntimeStatus(func(status *RuntimeStatus, now time.Time) {
 		status.State = RuntimeStateConnected
 		status.ConnectedAt = &now
@@ -428,7 +434,7 @@ func (c *Client) runSession(parent context.Context) (bool, error) {
 		raw, err := conn.Recv(sessionCtx)
 		if err != nil {
 			sessionCancel()
-			return true, fmt.Errorf("recv: %w", err)
+			return healthy(), fmt.Errorf("recv: %w", err)
 		}
 		if err := c.dispatch(parent, raw); err != nil {
 			sessionCancel()
@@ -442,7 +448,7 @@ func (c *Client) runSession(parent context.Context) (bool, error) {
 				// exists to avoid.
 				return false, fmt.Errorf("dispatch: %w", err)
 			}
-			return true, fmt.Errorf("dispatch: %w", err)
+			return healthy(), fmt.Errorf("dispatch: %w", err)
 		}
 	}
 }

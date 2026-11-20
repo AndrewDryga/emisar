@@ -845,16 +845,13 @@ func TestClient_Run_UnwritableDispatchLogNamesTheFileAndTheCause(t *testing.T) {
 	}
 }
 
-// A connected session that then fails its runner_state send returns
-// connected=true, which RESETS the reconnect backoff to the floor — the dial
-// succeeded, so any prior backoff escalation (from earlier failed dials) was a
-// stale storm, not a continuation. Without the reset a runner that finally
-// connects but trips on the very first send would inherit an inflated backoff
-// and reconnect slowly. Distinguishes the connected=true (send-state) path from
-// the connected=false (dial-fail) path.
-func TestClient_Run_SendStateFailureResetsBackoff(t *testing.T) {
+// A session whose runner_state send fails never became healthy, so it must
+// NOT reset the reconnect backoff: the escalation from the earlier failed dials
+// continues. Resetting here let a portal that refuses the session right after
+// the upgrade hold the runner at the floor delay forever.
+func TestClient_Run_SendStateFailureKeepsBackoff(t *testing.T) {
 	// Two dials fail (backoff escalates), then a conn that fails its FIRST send
-	// (the runner_state) — connected=true, so backoff must drop to the floor.
+	// (the runner_state), so the backoff must keep doubling.
 	stateFailing := &sendStateFailingConn{fakeConn: newFakeConn()}
 	d := &failThenConnDialer{fails: 2, conn: stateFailing}
 	cli := buildClient(t, d)
@@ -868,22 +865,20 @@ func TestClient_Run_SendStateFailureResetsBackoff(t *testing.T) {
 	go func() { done <- cli.Run(ctx) }()
 	t.Cleanup(func() { cancel(); <-done })
 
-	// got[0],got[1] = the two escalating dial failures (connected=false);
-	// got[2] = session_ended after the connected session whose state send failed.
+	// got[0],got[1] = the two escalating dial failures;
+	// got[2] = session_ended after the session whose state send failed.
 	waitUntil(t, 3*time.Second, func() bool { return len(rec.backoffs()) >= 3 })
 	cancel()
 
 	got := rec.backoffs()
-	if !(got[1] > got[0]) {
-		t.Fatalf("expected backoff to escalate across the two failed dials, got %v", got)
-	}
-	// The logged value is the jittered sleep, so the floor is a band.
-	if got[2] < cli.opts.ReconnectMin/2 || got[2] >= cli.opts.ReconnectMin {
-		t.Fatalf("a connected session whose state-send failed must reset backoff to the floor: got[2]=%v want [%v,%v) (full %v)",
-			got[2], cli.opts.ReconnectMin/2, cli.opts.ReconnectMin, got)
-	}
 	if !stateFailing.stateFailed.Load() {
 		t.Fatal("the state-failing conn never actually rejected a send")
+	}
+	// The logged value is the jittered sleep over [d/2, d); the third rung is
+	// d = 4*ReconnectMin, so its band starts at 2*ReconnectMin.
+	if got[2] < 2*cli.opts.ReconnectMin {
+		t.Fatalf("a session whose state send failed reset the backoff: got[2]=%v want >= %v (full %v)",
+			got[2], 2*cli.opts.ReconnectMin, got)
 	}
 }
 

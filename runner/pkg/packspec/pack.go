@@ -135,7 +135,8 @@ type Setup struct {
 	HostAccess []HostAccess `yaml:"host_access,omitempty" json:"host_access,omitempty"`
 	// Verify is the id of a low-risk read action an operator can run to
 	// confirm the pack can reach and authenticate to its target. Checked
-	// at load time to be one of the pack's own actions.
+	// at load time to be one of the pack's own actions; the automatic probe
+	// skips it unless its risk is low.
 	Verify string `yaml:"verify,omitempty" json:"verify,omitempty"`
 }
 

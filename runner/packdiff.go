@@ -73,9 +73,12 @@ func packDiffCmd() *cobra.Command {
 		Short: "Show the changed lines between an installed pack and the registry's",
 		Long: `Print what a pack upgrade would change, before it changes anything.
 
-The candidate is fetched and hash-verified exactly the way 'pack update'
-fetches it, then compared line by line against the installed copy. Nothing
-is written: the packs dir is untouched and the daemon is not reloaded.
+The registry's current version is fetched and hash-verified against the
+registry index exactly the way 'pack update' fetches it, then compared line
+by line against the installed copy. --to fetches that published version
+from the registry instead; the index lists only current versions, so a --to
+candidate is not hash-verified. Nothing is written: the packs dir is
+untouched and the daemon is not reloaded.
 
 The diff covers exactly the files that form the pack's content hash —
 pack.yaml, its referenced action YAMLs, and its referenced scripts. A
@@ -110,13 +113,14 @@ allowlist, symlinks enabled, or a newly required setup variable.
 				return err
 			}
 
-			// The version-pinned URL carries no index entry to check against, so
-			// only the bare-name path can verify the candidate. Fetch accordingly.
-			var src string
-			var cleanup func()
-			var indexHash string
+			// Both candidates are registry URLs, fetched directly rather than
+			// through the local-install resolver, so a directory in the working
+			// directory can never stand in for the registry's bytes. The index
+			// lists only each pack's current version, so a --to candidate has
+			// no index hash and is deliberately compared unverified.
+			var url, indexHash string
 			if to != "" {
-				src, cleanup, err = resolvePackSource(cmd.Context(), id+"="+to, registry)
+				url = versionedPackURL(registry, id, to)
 			} else {
 				index, indexErr := fetchPackIndex(cmd.Context(), registry)
 				if indexErr != nil {
@@ -126,12 +130,14 @@ allowlist, symlinks enabled, or a newly required setup variable.
 				if !ok {
 					return fmt.Errorf("pack %q is not in the registry at %s — nothing to compare against", id, registry)
 				}
+				if rp.Hash == "" {
+					return fmt.Errorf("registry index has no hash for pack %q — refusing to diff bytes it does not vouch for", id)
+				}
 				indexHash = rp.Hash
-				// Index URLs are remote inputs, never local paths. Fetch directly
-				// rather than passing them through the local-install resolver.
-				src, cleanup, err = packs.Fetch(cmd.Context(), rp.tarballURL(registry), nil)
+				url = rp.tarballURL(registry)
 			}
 
+			src, cleanup, err := packs.Fetch(cmd.Context(), url, nil)
 			if err != nil {
 				return err
 			}
@@ -151,7 +157,7 @@ allowlist, symlinks enabled, or a newly required setup variable.
 			// The whole point of the command is to review the bytes `pack update`
 			// would install, so bytes the registry does not vouch for are refused
 			// rather than diffed with a warning.
-			if indexHash != "" && !hashEqual(candidateHash, indexHash) {
+			if to == "" && !hashEqual(candidateHash, indexHash) {
 				return fmt.Errorf("hash mismatch: index advertised %s, tarball is %s", "sha256:"+normalizeHash(indexHash), candidateHash)
 			}
 

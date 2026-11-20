@@ -39,7 +39,7 @@ RUN apt-get update -y \
     && apt-get upgrade -y --no-install-recommends \
     && apt-get install -y --no-install-recommends \
         bind9-dnsutils ca-certificates curl file iproute2 iputils-ping \
-        mtr-tiny netcat-openbsd openssl procps sysstat tini \
+        jq mtr-tiny netcat-openbsd openssl procps sysstat tini whois \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
     # uid/gid are pinned so volume ownership is documentable (the

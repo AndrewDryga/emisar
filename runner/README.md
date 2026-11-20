@@ -191,13 +191,18 @@ admission:
     - "linux.*"
     - "postgres.uptime"
   deny:
-    - "*.repair"
+    - "cassandra.nodetool_repair"
     - "linux.systemctl_restart"
   max_risk: medium
 ```
 
 An action must match `allow` when that list is present, must not match `deny`,
-and must not exceed `max_risk`. Empty admission settings accept every action in
+and must not exceed `max_risk`. Patterns are globs over whole action IDs, and a
+pattern that matches no installed action denies nothing. The
+`cassandra.nodetool_repair` entry blocks Cassandra's mutating repair even in a
+policy whose `allow` admits the rest of the pack; the read-only
+`cassandra.nodetool_repair_admin_list` and `cassandra.cqlsh_repair_history`
+stay admitted. Empty admission settings accept every action in
 the locally installed catalog.
 
 ## Operations

@@ -92,7 +92,8 @@ journal all apply. Nothing is dispatched from the control plane.
 A pack whose verify action needs an argument this host cannot infer (a
 project id, a hostname, a pid) is SKIPPED, not failed — probe it directly
 with --arg. Admission-blocked packs are skipped too: refusing an action is
-the operator's own decision, not a broken pack. Exit status is non-zero only
+the operator's own decision, not a broken pack. A verify action that is not
+low risk is skipped and never run. Exit status is non-zero only
 if a probe actually failed.
 
 A failure means the pack could not complete a read against its target. That is
@@ -188,6 +189,16 @@ func verifyPack(ctx context.Context, rt *runtime, p *packspec.Pack, args map[str
 	// The loader rejects a setup.verify that is not one of the pack's own
 	// actions, so a loaded pack always carries it.
 	action, _ := rt.registry().Action(p.Setup.Verify)
+	// Install, verify, and doctor --probe run this action automatically,
+	// with no approval, on the promise that it is a low-risk read. A pack
+	// that names anything riskier is not probed: a mutating action never runs
+	// as a side effect of installing or checking a pack. iperf3 is the shipped
+	// case: its verify action iperf3.version is a read tiered medium.
+	if action.Risk != actionspec.RiskLow {
+		res.Status = verifySkipped
+		res.Detail = fmt.Sprintf("verify action is %s risk; only a low-risk action runs as a probe", action.Risk)
+		return res
+	}
 	if missing := missingRequiredArgs(action, args); len(missing) > 0 {
 		res.Status = verifySkipped
 		res.Detail = fmt.Sprintf("needs %s — probe it with: emisar pack verify %s %s",

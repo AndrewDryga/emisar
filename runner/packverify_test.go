@@ -22,6 +22,7 @@ type probePack struct {
 	argv    []string
 	reqArg  string
 	noVerif bool
+	risk    string // defaults to low
 }
 
 // writeProbePacks stages each pack under a fresh packs dir and returns it.
@@ -49,7 +50,11 @@ func writeProbePacks(t *testing.T, root string, packs ...probePack) string {
 		for _, a := range p.argv {
 			argv = append(argv, fmt.Sprintf("%q", a))
 		}
-		action := "schema_version: 1\nid: " + p.id + ".probe\ntitle: Probe\nkind: exec\nrisk: low\n" +
+		risk := p.risk
+		if risk == "" {
+			risk = "low"
+		}
+		action := "schema_version: 1\nid: " + p.id + ".probe\ntitle: Probe\nkind: exec\nrisk: " + risk + "\n" +
 			"description: d\nside_effects: [none]\n" + args +
 			"execution:\n  command:\n    binary: " + p.binary + "\n    argv: [" + strings.Join(argv, ", ") + "]\n" +
 			"  timeout: 10s\n  timeout_min: 1s\n  timeout_max: 30s\n" +

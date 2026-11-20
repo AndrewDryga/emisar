@@ -1541,15 +1541,56 @@ func waitUntil(t *testing.T, timeout time.Duration, cond func() bool) {
 	}
 }
 
+// A session the portal closes right after the upgrade (a 1013 for a cloned
+// data directory, a 1011 when it cannot claim connection ownership) never
+// became healthy. It must not reset the backoff, or every refused runner
+// redials at the floor delay forever and a portal incident turns into a
+// fleet-wide 1 Hz reconnect storm against the struggling node.
+func TestClient_ImmediateCloseAfterUpgradeKeepsBackoff(t *testing.T) {
+	conn := newFakeConn()
+	d := &dropAfterConnectDialer{fails: 2, conn: conn}
+	cli := buildClient(t, d)
+	cli.opts.HeartbeatEvery = time.Hour
+	cli.opts.ReconnectMin = 10 * time.Millisecond
+	cli.opts.ReconnectMax = 10 * time.Second
+	rec := &backoffCapture{}
+	cli.opts.Logger = slog.New(rec)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- cli.Run(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+
+	waitUntil(t, 3*time.Second, func() bool {
+		return len(conn.sentByType(MsgRunnerState)) > 0
+	})
+	conn.Close()
+
+	waitUntil(t, 3*time.Second, func() bool { return len(rec.backoffs()) >= 3 })
+	cancel()
+
+	got := rec.backoffs()
+	// The third rung is d = 4*ReconnectMin, jittered over [d/2, d).
+	if got[2] < 2*cli.opts.ReconnectMin {
+		t.Fatalf("a session closed right after the upgrade reset the backoff: got[2]=%v want >= %v (full %v)",
+			got[2], 2*cli.opts.ReconnectMin, got)
+	}
+}
+
 // TestClient_BackoffResetsAfterSuccessfulSession guards the reconnect
 // loop: a backoff that escalated across failed dials must drop back to
-// the floor once a session actually connects, so a healthy runner that
-// briefly disconnects reconnects fast instead of inheriting an old,
-// inflated backoff. Regression for "backoff is not reset on success".
+// the floor once a session has been healthy (up for one heartbeat
+// interval), so a healthy runner that briefly disconnects reconnects fast
+// instead of inheriting an old, inflated backoff. Regression for "backoff
+// is not reset on success".
 func TestClient_BackoffResetsAfterSuccessfulSession(t *testing.T) {
 	conn := newFakeConn()
 	d := &dropAfterConnectDialer{fails: 2, conn: conn}
 	cli := buildClient(t, d)
+	cli.opts.HeartbeatEvery = 20 * time.Millisecond
 	cli.opts.ReconnectMin = 10 * time.Millisecond
 	cli.opts.ReconnectMax = 10 * time.Second // headroom so escalation shows
 	rec := &backoffCapture{}
@@ -1564,9 +1605,9 @@ func TestClient_BackoffResetsAfterSuccessfulSession(t *testing.T) {
 	})
 
 	// Let two dials fail (backoff escalates), then the third connects —
-	// drop it so the session ends right after a successful connect.
+	// drop it once it has sent a heartbeat, so it was up for one interval.
 	waitUntil(t, 3*time.Second, func() bool {
-		return len(conn.sentByType(MsgRunnerState)) > 0
+		return len(conn.sentByType(MsgHeartbeat)) > 0
 	})
 	conn.Close()
 

@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -401,21 +402,65 @@ func TestPackUpdate_DryRunOmitsThePointerWhenUpToDate(t *testing.T) {
 	}
 }
 
-// A requested id that isn't installed anywhere is surfaced as "not installed"
-// rather than a silent no-op (packupdate.go:122-127), so an operator's typo is
-// visible instead of looking like "nothing to do".
-func TestPackUpdate_TypoReportedNotInstalled(t *testing.T) {
-	dest := t.TempDir()
-	hash := installPackInto(t, dest, "redis")
-	registry := fakeRegistry(t, []registryPack{{ID: "redis", Version: "0.0.1", Hash: hash}}, nil)
-
-	// Ask to update an id that isn't installed.
-	out, err := runUpdate(t, dest, registry, "notreal")
-	if err != nil {
-		t.Fatalf("update: %v", err)
+// A requested id that isn't installed anywhere is reported "not installed" and
+// fails the run, so `emisar pack update redsi && restart-things` stops on the
+// typo instead of continuing as if nothing needed doing. That holds for a dry
+// run, for --json (where it counts as failed), and for an empty install.
+func TestPackUpdate_TypoReportedNotInstalledAndFails(t *testing.T) {
+	cases := []struct {
+		name    string
+		install bool
+		json    bool
+		extra   []string
+	}{
+		{name: "installed packs", install: true},
+		{name: "dry run", install: true, extra: []string{"--dry-run"}},
+		{name: "json", install: true, json: true},
+		{name: "empty install", install: false},
+		{name: "empty install json", install: false, json: true},
 	}
-	if !strings.Contains(out, "notreal") || !strings.Contains(out, "not installed") {
-		t.Errorf("a typo'd id should be reported not installed; output:\n%s", out)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dest := t.TempDir()
+			var index []registryPack
+			if tc.install {
+				hash := installPackInto(t, dest, "redis")
+				index = []registryPack{{ID: "redis", Version: "0.0.1", Hash: hash}}
+			}
+			registry := fakeRegistry(t, index, nil)
+
+			var out string
+			var err error
+			args := append([]string{"notreal"}, tc.extra...)
+			if tc.json {
+				withFlags(t)
+				withJSONOut(t, true)
+				flagPacksDir = []string{dest}
+				cmd := packUpdateCmd()
+				cmd.SilenceUsage, cmd.SilenceErrors = true, true
+				cmd.SetArgs(append([]string{"--registry", registry}, args...))
+				out = captureStdout(t, func() { err = cmd.Execute() })
+			} else {
+				out, err = runUpdate(t, dest, registry, args...)
+			}
+			if err == nil {
+				t.Fatalf("a named pack that is not installed must fail the run; output:\n%s", out)
+			}
+			if tc.json {
+				var rep packUpdateReport
+				if jerr := json.Unmarshal([]byte(out), &rep); jerr != nil {
+					t.Fatalf("decode JSON report: %v\n%s", jerr, out)
+				}
+				want := []packUpdateResult{{ID: "notreal", Status: "not_installed"}}
+				if rep.Failed != 1 || !reflect.DeepEqual(rep.Packs, want) {
+					t.Fatalf("report = %+v, want failed=1 and packs %+v", rep, want)
+				}
+				return
+			}
+			if !strings.Contains(out, "notreal") || !strings.Contains(out, "not installed") {
+				t.Errorf("a typo'd id should be reported not installed; output:\n%s", out)
+			}
+		})
 	}
 }
 

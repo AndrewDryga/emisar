@@ -58,7 +58,7 @@ execution: {}
 #     - "linux.*"            # everything from the linux-core pack
 #     - "postgres.uptime"    # one specific high-trust action
 #   deny:
-#     - "*.repair"           # no matter the pack, never repair
+#     - "cassandra.nodetool_repair"  # never run Cassandra's mutating repair
 #     - "linux.systemctl_restart"
 #   max_risk: medium         # refuse high + critical
 

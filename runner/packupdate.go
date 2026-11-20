@@ -92,7 +92,8 @@ pack updates only when the registry actually has different content, and a
 half-downloaded pack never replaces a working one.
 
 With no arguments every installed pack is checked; pass ids to update just
-those. Packs not in the registry (locally authored) are left untouched.
+those. A named id that is not installed is reported and fails the run.
+Packs not in the registry (locally authored) are left untouched.
 --dry-run reports what would change without touching anything.
 
 After updating, a running daemon is reloaded automatically (SIGHUP) so it
@@ -223,21 +224,27 @@ sudo launchctl kill SIGHUP system/com.emisar.runner on macOS.
 				}
 			}
 
-			// Requested ids that aren't installed anywhere — surface so a typo
-			// doesn't look like a silent no-op.
-			for id := range only {
+			// Requested ids that aren't installed anywhere count as failures, so
+			// a typo fails the run (with or without --dry-run) instead of exiting
+			// 0 as a silent no-op. Walk args, not the set, for a stable order.
+			installedAny := len(seen) > 0
+			for _, id := range args {
 				if !seen[id] {
+					seen[id] = true
 					report(&results, packUpdateResult{ID: id, Status: "not_installed"},
 						"  %-22s not installed\n", id)
+					failed++
 				}
 			}
 
-			if len(seen) == 0 {
-				if flagJSONOut {
-					return emit()
+			if !installedAny {
+				if !flagJSONOut {
+					fmt.Printf("No packs installed in %s.\n", strings.Join(dirs, ", "))
 				}
-				fmt.Printf("No packs installed in %s.\n", strings.Join(dirs, ", "))
-				return nil
+				if failed > 0 {
+					return fail(fmt.Errorf("%d pack(s) failed to update", failed))
+				}
+				return emit()
 			}
 
 			if !flagJSONOut {

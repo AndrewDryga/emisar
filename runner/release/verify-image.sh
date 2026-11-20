@@ -56,6 +56,17 @@ doctor=$(run -e EMISAR_ENROLLMENT_KEY=emkey-smoke-canary "$image" emisar doctor)
 printf '%s\n' "$doctor"
 grep -q "All checks passed" <<<"$doctor" || fail "emisar doctor reported warnings"
 
+# doctor resolves only each action's primary executable (for a script action,
+# the interpreter), never the tools the script itself calls. Every binary a
+# baked pack declares in requires.binaries must resolve inside the image, or an
+# advertised action fails on its first run.
+required=$(run "$image" emisar pack list --json | jq -r '[.[].requires.binaries[]?] | unique | .[]')
+test -n "$required" || fail "the baked packs declare no required binaries"
+# shellcheck disable=SC2016 # the inner sh expands $b, not this shell
+missing=$(printf '%s\n' "$required" | run -i "$image" sh -c \
+  'while IFS= read -r b; do command -v "$b" >/dev/null 2>&1 || printf "%s " "$b"; done')
+test -z "$missing" || fail "binaries the baked packs require are missing: ${missing}"
+
 # Runner state persists under /var/lib/emisar and the runtime user owns it.
 run "$image" sh -c 'touch /var/lib/emisar/.smoke' || fail "/var/lib/emisar is not writable"
 

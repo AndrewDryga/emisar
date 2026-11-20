@@ -452,6 +452,72 @@ func TestPackDiff_RefusesCandidateWhoseHashMissesTheIndex(t *testing.T) {
 	}
 }
 
+// --to names a registry version, so a directory that happens to be called
+// <id>=<version> in the working directory must not be diffed in its place.
+func TestPackDiff_ToVersionIgnoresALocalDirectoryOfTheSameName(t *testing.T) {
+	dest := t.TempDir()
+	installed := writePackTree(t, map[string]string{
+		"pack.yaml":      diffPackYAML("0.3.0", "actions/a.yaml"),
+		"actions/a.yaml": diffActionYAML("redis.a", "low", ""),
+	})
+	if err := copyTree(installed, filepath.Join(dest, "redis")); err != nil {
+		t.Fatal(err)
+	}
+	pinned := writePackTree(t, map[string]string{
+		"pack.yaml":      diffPackYAML("0.5.0", "actions/a.yaml"),
+		"actions/a.yaml": diffActionYAML("redis.a", "critical", ""),
+	})
+	registry := diffRegistry(t, nil,
+		map[string][]byte{"/packs/redis/versions/0.5.0/pack.tar.gz": tarDir(t, pinned)})
+
+	cwd := t.TempDir()
+	decoy := writePackTree(t, map[string]string{
+		"pack.yaml":      diffPackYAML("0.5.0", "actions/a.yaml"),
+		"actions/a.yaml": diffActionYAML("redis.a", "low", ""),
+	})
+	if err := copyTree(decoy, filepath.Join(cwd, "redis=0.5.0")); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(cwd)
+
+	out, err := runDiff(t, dest, registry, "--to", "0.5.0")
+	if err != nil {
+		t.Fatalf("pack diff --to: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "+risk: critical") {
+		t.Fatalf("want the registry's pinned version, not the local directory:\n%s", out)
+	}
+}
+
+// An index entry with no hash vouches for nothing, so the current-version
+// comparison refuses it the way `pack update` does instead of diffing
+// unverified bytes.
+func TestPackDiff_RefusesAnIndexEntryWithoutAHash(t *testing.T) {
+	dest := t.TempDir()
+	installed := writePackTree(t, map[string]string{
+		"pack.yaml":      diffPackYAML("0.3.0", "actions/a.yaml"),
+		"actions/a.yaml": diffActionYAML("redis.a", "low", ""),
+	})
+	if err := copyTree(installed, filepath.Join(dest, "redis")); err != nil {
+		t.Fatal(err)
+	}
+	candidate := writePackTree(t, map[string]string{
+		"pack.yaml":      diffPackYAML("0.4.0", "actions/a.yaml"),
+		"actions/a.yaml": diffActionYAML("redis.a", "critical", ""),
+	})
+	registry := diffRegistry(t,
+		[]registryPack{{ID: "redis", Version: "0.4.0"}},
+		map[string][]byte{"/packs/redis/pack.tar.gz": tarDir(t, candidate)})
+
+	out, err := runDiff(t, dest, registry)
+	if err == nil {
+		t.Fatalf("want a refusal for an unhashed index entry, got success:\n%s", out)
+	}
+	if !strings.Contains(err.Error(), "no hash") {
+		t.Fatalf("want a missing-hash error, got: %v", err)
+	}
+}
+
 // The command is a report: it must leave the packs dir byte-identical.
 func TestPackDiff_TouchesNothing(t *testing.T) {
 	dest, registry := diffSetup(t,

@@ -288,9 +288,10 @@ without one, reload the service manually: systemctl reload emisar on
 Linux, launchctl kill SIGHUP system/com.emisar.runner on macOS.
 
 After a successful install the pack's declared verify action runs once
-(--no-verify skips it), so a wrong credential shows up here instead of at
-the first dispatch. A failed probe does not fail the install — the pack is
-on disk either way; fix the host's environment and re-run 'pack verify'.
+when it is low risk (--no-verify skips it), so a wrong credential shows up
+here instead of at the first dispatch. A failed probe does not fail the
+install — the pack is on disk either way; fix the host's environment and
+re-run 'pack verify'.
 
   emisar pack install redis
   emisar pack install redis=0.2.3 --hash sha256:...
@@ -384,9 +385,8 @@ func resolvePackSource(ctx context.Context, arg, registry string) (dir string, c
 			if !packspec.ValidPackID(name) || !packspec.ValidVersion(version) {
 				return "", nil, usageError{fmt.Errorf("invalid pack spec %q: expected <name>=<version> with a valid pack id and version", arg)}
 			}
-			url := fmt.Sprintf("%s/packs/%s/versions/%s/pack.tar.gz", base, name, version)
 			banner("fetching pack %q version %s from %s", name, version, base)
-			return packs.Fetch(ctx, url, nil)
+			return packs.Fetch(ctx, versionedPackURL(registry, name, version), nil)
 		}
 		// Bare name → current-version registry URL. Check the name before
 		// spending a fetch on it: the common miss is `redis@0.2.3`, which
@@ -399,6 +399,11 @@ func resolvePackSource(ctx context.Context, arg, registry string) (dir string, c
 		banner("fetching pack %q from %s", arg, base)
 		return packs.Fetch(ctx, url, nil)
 	}
+}
+
+// versionedPackURL is the registry tarball of one published pack version.
+func versionedPackURL(registry, id, version string) string {
+	return fmt.Sprintf("%s/packs/%s/versions/%s/pack.tar.gz", strings.TrimRight(registry, "/"), id, version)
 }
 
 // looksLikeLocalPath reports whether arg should be treated as a path on
