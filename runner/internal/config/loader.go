@@ -45,8 +45,9 @@ func Load(path string) (*Config, error) {
 	cfg.Cloud.TokenPath = relocate(cfg.Cloud.TokenPath, base)
 	cfg.Events.JSONLPath = relocate(cfg.Events.JSONLPath, base)
 
-	// Env overrides. install.sh sets EMISAR_URL so the same baked-in
-	// config can target dev / prod control planes without re-templating.
+	// Env overrides. EMISAR_URL lets one baked-in config (a container
+	// image, a dev setup) target a different control plane without
+	// re-templating; install.sh writes cloud.url into config.yaml instead.
 	// EMISAR_GROUP / EMISAR_RUNNER_ID relabel container fleets without
 	// mounting a config file: the group is a dispatch-targeting input, so
 	// unrelated fleets must not share the image's baked default, and a

@@ -241,7 +241,7 @@ func TestCatalogActionCarriesCompleteReviewedContract(t *testing.T) {
 	if got := action.Args[0].Validation.MinDuration; got == nil || *got != "5s" {
 		t.Errorf("min_duration = %v, want 5s", got)
 	}
-	if !reflect.DeepEqual(action.Examples, []Example{{
+	if !reflect.DeepEqual(action.Examples, []actionspec.ModelExample{{
 		Title: "Short window",
 		Args:  map[string]any{"window": "30s"},
 	}}) {

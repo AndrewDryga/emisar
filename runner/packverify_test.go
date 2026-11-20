@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -470,4 +471,26 @@ func named(results []checkResult, name string) *checkResult {
 		}
 	}
 	return nil
+}
+
+// With color on, every row's columns must start where they do without it:
+// the status cell is colored after alignment, so escapes of different
+// lengths (green/red vs dim) never skew the table.
+func TestRenderVerifyReport_ColorKeepsColumnsAligned(t *testing.T) {
+	report := newPackVerifyReport([]verifyResult{
+		{PackID: "alpha", ActionID: "alpha.ping", Status: verifyOK, DurationMS: 12},
+		{PackID: "beta", ActionID: "beta.ping", Status: verifyFailed, Detail: "connection refused"},
+		{PackID: "gamma", Status: verifySkipped, Detail: "no verify action"},
+	})
+	var plain, colored strings.Builder
+	renderVerifyReport(&plain, styler{}, report)
+	renderVerifyReport(&colored, styler{enabled: true}, report)
+
+	if !strings.Contains(colored.String(), "\x1b[") {
+		t.Fatalf("colored render carries no escapes:\n%q", colored.String())
+	}
+	stripped := regexp.MustCompile("\x1b\\[[0-9;]*m").ReplaceAllString(colored.String(), "")
+	if stripped != plain.String() {
+		t.Fatalf("colored table misaligned once escapes are stripped:\ngot:\n%s\nwant:\n%s", stripped, plain.String())
+	}
 }

@@ -17,17 +17,17 @@ import (
 	"github.com/andrewdryga/emisar/runner/internal/engine"
 )
 
-// The runner's main() builds the full cobra tree and calls os.Exit(1) on any
-// command error (main.go:55-58). The root dispatch, --version/-h short-circuits,
-// the unknown-command/flag rejections, the boot/config fatals, and `audit
-// verify`'s os.Exit(1) chain-break path therefore can't be exercised
-// in-process. We re-exec the test binary with a sentinel env var so the child
-// runs main() with controlled args/env; the parent asserts on its stdout /
-// stderr / exit code. This is the stdlib pattern (see os/exec's own
-// TestHelperProcess, and mcp/main_startup_test.go) and the only way to automate
-// the CLI-surface rows the test plan deferred as "needs a subprocess harness".
+// The runner's main() builds the full cobra tree, prints a command error once
+// to stderr, and exits through exitCode: 1 for a failure, 2 for a usage
+// mistake, 130 for an interrupt. The root dispatch, --version/-h
+// short-circuits, the unknown-command/flag rejections, the boot/config fatals,
+// and those exit codes are a process contract, so we re-exec the test binary
+// with a sentinel env var so the child runs main() with controlled args/env;
+// the parent asserts on its stdout / stderr / exit code. This is the stdlib
+// pattern (see os/exec's own TestHelperProcess, and
+// mcp/main_startup_test.go).
 //
-// The VERSION VCS lines (RUN-030 T02/T03) are special: a `go test` binary
+// The VERSION VCS lines are special: a `go test` binary
 // carries no buildvcs settings, so the sentinel can't observe them. Those two
 // rows use a real `go build` with controlled -buildvcs flags (buildRunner).
 
@@ -118,11 +118,10 @@ func writeRunnableConfig(t *testing.T, dir string, denyPing bool) string {
 	return cfgPath
 }
 
-// --- RUN-001 — root dispatch, version/help, unknown command/flag -----------
+// --- root dispatch, version/help, unknown command/flag ----------------------
 
-// `emisar --version` / `-v` print the version line and exit 0. Cobra's default
-// version template renders `emisar version <Version>` (Use + "version" + the
-// Version field). The flag short-circuits before any command runs, so stderr
+// `emisar --version` / `-v` print the version line and exit 0. newRootCmd sets
+// the version template to `emisar version <Version>`. The flag short-circuits before any command runs, so stderr
 // stays clean.
 func TestCLI_VersionFlagPrintsVersionExitsZero(t *testing.T) {
 	for _, flag := range []string{"--version", "-v"} {
@@ -169,8 +168,7 @@ func TestCLI_NoArgsAndHelpPrintRootHelpExitZero(t *testing.T) {
 
 // An unknown subcommand is rejected: cobra writes `error: unknown command ...`
 // to stderr exactly once (SilenceUsage + SilenceErrors keep main's single print
-// from being doubled, main.go:37-58) and the process exits 1. closes
-// ,.
+// from being doubled) and the process exits 2.
 func TestCLI_UnknownCommandExitsUsageSingleError(t *testing.T) {
 	stdout, stderr, code := runCLI(t, []string{"frobnicate"}, nil)
 	// 2, not 1: a typo is a usage failure, matching the bridge's frozen
@@ -212,7 +210,7 @@ func TestCLI_UnknownGlobalFlagRejected(t *testing.T) {
 	}
 }
 
-// --- RUN-001 — each subcommand dispatches to the right RunE -----------------
+// --- each subcommand dispatches to the right RunE ---------------------------
 
 // Every read-only subcommand routes through main()'s cobra tree to its own
 // RunE and exits 0 on success. This drives the real binary (not an isolated
@@ -227,15 +225,14 @@ func TestCLI_EachSubcommandDispatches(t *testing.T) {
 	}
 
 	cases := []struct {
-		name     string
-		args     []string
-		wantOut  string // a substring proving the right RunE ran
-		onStderr bool   // some commands print their result to stderr
+		name    string
+		args    []string
+		wantOut string // a substring proving the right RunE ran
 	}{
-		// action describe prints the actionspec.Action struct as the documented
-		// snake_case document ("id", never the Go field name "ID").
 		{name: "version", args: []string{"version"}, wantOut: "emisar " + Version},
 		{name: "action list", args: []string{"--config", cfg, "action", "list"}, wantOut: "linux.ping"},
+		// action describe prints the actionspec.Action struct as the documented
+		// snake_case document ("id", never the Go field name "ID").
 		{name: "action describe", args: []string{"--config", cfg, "action", "describe", "linux.ping"}, wantOut: `"id": "linux.ping"`},
 		{name: "pack list", args: []string{"--config", cfg, "pack", "list"}, wantOut: "linux"},
 		{name: "state", args: []string{"--config", cfg, "state"}, wantOut: `"runner_state"`},
@@ -249,16 +246,10 @@ func TestCLI_EachSubcommandDispatches(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			stdout, stderr, code := runCLI(t, c.args, nil)
-			// doctor exits non-zero when it can't reach a cloud; this config has
-			// no cloud.url, so its checks pass and it exits 0.
 			if code != 0 {
 				t.Fatalf("%v: exit = %d, want 0; stderr=%q", c.args, code, stderr)
 			}
-			out := stdout
-			if c.onStderr {
-				out = stderr
-			}
-			if !strings.Contains(out, c.wantOut) {
+			if !strings.Contains(stdout, c.wantOut) {
 				t.Fatalf("%v routed to the wrong command or produced no output; want %q in:\nstdout=%q\nstderr=%q",
 					c.args, c.wantOut, stdout, stderr)
 			}
@@ -552,7 +543,7 @@ func TestCLI_RequiredArgErrorsNameTheirPlaceholder(t *testing.T) {
 	}
 }
 
-// --- RUN-013/014 — boot/config failure exits 1 ------------------------------
+// --- boot/config failure exits 1 --------------------------------------------
 
 // A read-only command (`action list`, `action describe`) over an unresolvable
 // config is a hard error: boot() fails, main prints `error: …` to stderr and
@@ -582,7 +573,7 @@ func TestCLI_ReadCommandBootFailureExitsOne(t *testing.T) {
 	}
 }
 
-// --- RUN-003 — connect config-validation fatals (no live socket) -----------
+// --- connect config-validation fatals (no live socket) ---------------------
 
 // `connect` fails fast on a misconfiguration, before any dial: no cloud.url, a
 // first connect with no enrollment key + no cached token, and a malformed signing key
@@ -656,7 +647,7 @@ func TestCLI_ConnectConfigFatals(t *testing.T) {
 	})
 }
 
-// --- RUN-015 — `action run` local-dispatch posture -------------------------
+// --- `action run` local-dispatch posture -----------------------------------
 
 // `action run <id> --arg k=v --reason …` builds an engine.Request, runs the
 // full local pipeline, and prints the Result JSON (exit 0). A second run with
@@ -781,13 +772,12 @@ func TestCLI_ActionRunResultStatusesAndArgError(t *testing.T) {
 	})
 }
 
-// /T08 — the local-run trust boundary. With ENFORCING signing
-// configured, a cloud dispatch would require a valid attestation (RUN-034); but
+// The local-run trust boundary. With ENFORCING signing
+// configured, a cloud dispatch would require a valid attestation; but
 // `action run` is the documented local bypass — the host OS user is the trust
 // boundary — so it runs WITHOUT any signature or pack-hash pin and still
 // produces a success result, while a real event is journaled to the JSONL log
-// (admission/validation/redaction/journal all still apply, RUN-012). closes
-// ,.
+// (admission/validation/redaction/journal all still apply).
 func TestCLI_ActionRunLocalBypassSkipsSignatureButJournals(t *testing.T) {
 	dir := t.TempDir()
 	cfg := writeRunnableConfig(t, dir, false)
@@ -843,11 +833,11 @@ func TestCLI_ActionRunLocalBypassSkipsSignatureButJournals(t *testing.T) {
 	}
 }
 
-// --- RUN-027 — `audit verify` chain-break exit-1 path ----------------------
+// --- `audit verify` chain-break exit-1 path --------------------------------
 
 // `audit verify` on a tampered/deleted chain exits 1 and names the break (file +
-// line + event id) on stderr — the os.Exit(1) path (audit.go:78) that can't be
-// observed in-process. An intact chain exits 0 with the chain-intact line on
+// line + event id) on stderr — the process-level stderr/exit contract a script
+// branches on. An intact chain exits 0 with the chain-intact line on
 // stdout, as a control.
 func TestCLI_AuditVerifyChainBreakExitsOne(t *testing.T) {
 	dir := t.TempDir()
@@ -916,7 +906,7 @@ func TestCLI_AuditVerifyChainBreakExitsOne(t *testing.T) {
 	})
 }
 
-// --- RUN-030 — version VCS lines (need a built binary, not the test binary) -
+// --- version VCS lines (need a built binary, not the test binary) ----------
 
 // A binary built with -buildvcs=false carries no VCS settings, so `version`
 // prints only the `emisar <Version>` and `go: …` lines — no commit/built/dirty.
@@ -1123,7 +1113,6 @@ func TestCLI_UsageMistakesExitWithUsageCode(t *testing.T) {
 		"negative --lines":      {[]string{"--config", cfg, "events", "tail", "--lines=-1"}, "--lines must be non-negative"},
 		"verify --arg no pack":  {[]string{"--config", cfg, "pack", "verify", "--arg", "k=v"}, "--arg needs exactly one pack id"},
 		"uninstall bad name":    {[]string{"--config", cfg, "pack", "uninstall", "bad/name"}, "must be a single path segment"},
-		"names-only and json":   {[]string{"--config", cfg, "pack", "suggest", "--names-only", "--json"}, "different output modes"},
 		"pack diff bad id":      {[]string{"--config", cfg, "pack", "diff", "Bad Name"}, "invalid pack name"},
 		"pack diff bad --to":    {[]string{"--config", cfg, "pack", "diff", "redis", "--to", "bad version"}, "invalid version"},
 		"missing argument":      {[]string{"--config", cfg, "pack", "uninstall"}, "requires <name>"},

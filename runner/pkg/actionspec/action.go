@@ -58,7 +58,7 @@ type Execution struct {
 	Script  *Script  `yaml:"script,omitempty" json:"script,omitempty"`
 	Argv    []string `yaml:"argv,omitempty" json:"argv,omitempty"`
 	Timeout Duration `yaml:"timeout" json:"timeout"`
-	// TimeoutMin and TimeoutMax bound any cloud-supplied opts.timeout
+	// TimeoutMin and TimeoutMax bound any cloud-supplied opts.timeout_ms
 	// override. If unset, defaults to Timeout (no override allowed).
 	TimeoutMin Duration `yaml:"timeout_min,omitempty" json:"timeout_min,omitempty"`
 	TimeoutMax Duration `yaml:"timeout_max,omitempty" json:"timeout_max,omitempty"`
@@ -156,10 +156,7 @@ func (a *Action) Validate() error {
 		return fmt.Errorf("action: missing id")
 	}
 	if !validActionID(a.ID) {
-		return fmt.Errorf("action: invalid id %q (must match [a-z][a-z0-9._-]*\\.[a-z][a-z0-9_-]*)", a.ID)
-	}
-	if len(a.ID) > 128 {
-		return fmt.Errorf("action %s: id exceeds 128 bytes", a.ID)
+		return fmt.Errorf("action: invalid id %q (must be two or more dot-separated segments of [a-z][a-z0-9_-]*, at most 128 bytes)", a.ID)
 	}
 	if a.Title == "" {
 		return fmt.Errorf("action %s: missing title", a.ID)
@@ -262,10 +259,17 @@ func (a *Action) Validate() error {
 		}
 		seen[a.Args[i].Name] = struct{}{}
 	}
+	// The engine compiles an action's rules as one batch and keeps only the
+	// first rule per name, so a reused name would silently disable a rule.
+	redactNames := make(map[string]struct{}, len(a.Output.Redact))
 	for _, rr := range a.Output.Redact {
 		if err := rr.Validate(); err != nil {
 			return fmt.Errorf("action %s: %w", a.ID, err)
 		}
+		if _, dup := redactNames[rr.Name]; dup {
+			return fmt.Errorf("action %s: duplicate redaction rule %q", a.ID, rr.Name)
+		}
+		redactNames[rr.Name] = struct{}{}
 	}
 	if err := validateExecutionEnv(a); err != nil {
 		return err

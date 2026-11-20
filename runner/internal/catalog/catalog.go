@@ -109,12 +109,6 @@ type Action struct {
 	Command *Command `json:"command,omitempty"`
 }
 
-// Keep the catalog package's descriptor type names as aliases for callers that
-// construct registry fixtures. The canonical definitions live in actionspec.
-type Arg = actionspec.ModelArg
-type Validation = actionspec.ModelValidation
-type Example = actionspec.ModelExample
-
 // Command is an exec action's binary + argv template (placeholders intact),
 // nil for a script-kind action (no single-line invocation to preview).
 type Command struct {
@@ -493,8 +487,8 @@ func deriveDetect(binaries, processes []string, ports []int) Detect {
 	}
 }
 
-// normalizeDescription trims and collapses internal whitespace, matching the
-// portal's `String.trim |> String.replace(~r/\s+/, " ")`.
+// normalizeDescription trims surrounding whitespace and collapses internal
+// runs of whitespace to single spaces.
 func normalizeDescription(s string) string { return strings.Join(strings.Fields(s), " ") }
 
 // normalizeSetup carries the pack's setup block into the catalog with its

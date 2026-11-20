@@ -77,6 +77,11 @@ func TestOpenJSONL_RefusesATornLineLongerThanMaxLineBytes(t *testing.T) {
 // Every journal shape Open can meet, resolved from the tail: the chain head and
 // the on-disk bytes must be exactly what a whole-file reader would produce.
 func TestOpenJSONL_HealAndSeedShapes(t *testing.T) {
+	// A legal line near the cap followed by a torn tail that, together with it,
+	// overruns the read window: healing must re-read from the new end rather
+	// than judge the line by a window that started inside it.
+	bigLine := strings.Repeat("x", 900_000)
+	bigTorn := strings.Repeat("y", 200_000)
 	tests := map[string]struct {
 		body     string
 		wantBody string
@@ -91,6 +96,11 @@ func TestOpenJSONL_HealAndSeedShapes(t *testing.T) {
 		"trailing blank lines":    {body: "a\nb\n\n\n", wantBody: "a\nb\n\n\n", wantLast: "b"},
 		"blank lines then a torn": {body: "a\n\n\npartial", wantBody: "a\n\n\n", wantLast: "a"},
 		"only blank lines":        {body: "\n\n", wantBody: "\n\n", wantLast: ""},
+		"large line then a large torn tail": {
+			body:     "a\n" + bigLine + "\n" + bigTorn,
+			wantBody: "a\n" + bigLine + "\n",
+			wantLast: bigLine,
+		},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {

@@ -86,9 +86,8 @@ func TestAuditVerifyCmd_ExplicitPath(t *testing.T) {
 	}
 }
 
-// `audit verify <missing>` is a hard error (the open failure is NOT a
-// *VerifyError, so it propagates as a returned error rather than the exit-1
-// chain-break path).
+// `audit verify <missing>` is a hard error: an explicitly named file that
+// cannot be opened is a plain command error, not a chain verdict.
 func TestAuditVerifyCmd_MissingFileErrors(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "does-not-exist.jsonl")
 
@@ -99,7 +98,7 @@ func TestAuditVerifyCmd_MissingFileErrors(t *testing.T) {
 	if err == nil {
 		t.Fatal("audit verify of a missing file must return an error")
 	}
-	// It must be the open error, not a chain-break (which would os.Exit(1)).
+	// It must be the open error, not a chain-break verdict.
 	if strings.Contains(err.Error(), "chain break") {
 		t.Fatalf("missing file should be an open error, not a chain break: %v", err)
 	}

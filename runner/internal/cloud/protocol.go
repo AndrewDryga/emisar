@@ -170,7 +170,7 @@ func (m *RunActionMsg) UnmarshalJSON(data []byte) error {
 	*m = RunActionMsg{
 		Envelope: wire.Envelope, ActionID: wire.ActionID,
 		ExpectedPackHash: wire.ExpectedPackHash, PackRef: wire.PackRef,
-		Args: args, ArgsRaw: append(json.RawMessage(nil), normalizedArgsRaw(wire.Args)...),
+		Args: args, ArgsRaw: append(json.RawMessage(nil), wire.Args...),
 		Opts: opts, Reason: wire.Reason, OperationID: wire.OperationID,
 		Attestation: wire.Attestation,
 	}
@@ -304,15 +304,7 @@ func rejectKnownAliases(object map[string]json.RawMessage, label string, canonic
 	return nil
 }
 
-func normalizedArgsRaw(raw json.RawMessage) json.RawMessage {
-	if len(raw) == 0 {
-		return json.RawMessage(`{}`)
-	}
-	return raw
-}
-
 func decodeActionArgs(raw json.RawMessage) (map[string]any, error) {
-	raw = normalizedArgsRaw(raw)
 	if len(raw) > maxActionArgsBytes {
 		return nil, fmt.Errorf("cloud: run_action args exceed %d bytes", maxActionArgsBytes)
 	}

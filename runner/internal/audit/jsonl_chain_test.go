@@ -10,8 +10,18 @@ import (
 	"testing"
 )
 
-// writeN writes n events through a fresh sink at path, returning the
-// sink so callers can close + reopen it.
+// VerifyChain verifies the journal file at path with VerifyReader, the
+// verifier the `audit verify` command runs over each file it opens.
+func VerifyChain(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return VerifyReader(f)
+}
+
+// writeN writes n events through a fresh sink at path and closes it.
 func writeN(t *testing.T, path string, n int) {
 	t.Helper()
 	s, err := OpenJSONL(path, JSONLOptions{})

@@ -96,7 +96,9 @@ those. Packs not in the registry (locally authored) are left untouched.
 --dry-run reports what would change without touching anything.
 
 After updating, a running daemon is reloaded automatically (SIGHUP) so it
-re-reads the catalog; without one: sudo systemctl reload emisar
+re-reads the catalog; without one, reload the service manually:
+sudo systemctl reload emisar on Linux,
+sudo launchctl kill SIGHUP system/com.emisar.runner on macOS.
 
   emisar pack update                  # check + update every installed pack
   emisar pack update redis postgres   # just these
@@ -112,7 +114,7 @@ re-reads the catalog; without one: sudo systemctl reload emisar
 					if flagJSONOut {
 						out = os.Stderr
 					}
-					announceReload(out, nil, "Reload the runner to load the new versions: sudo systemctl reload emisar")
+					announceReload(out, "Reload the runner to load the new versions")
 				}
 			}()
 			// Non-nil so an empty sweep serializes as [] rather than null, which
@@ -364,7 +366,7 @@ func updateOnePack(ctx context.Context, id, target, registry string, rp registry
 	}
 	got, _ := reg.PackHash(fetched.ID)
 	if !hashEqual(got, rp.Hash) {
-		return fmt.Errorf("hash mismatch: index advertised %s, tarball is %s", normalizeHash(rp.Hash), got)
+		return fmt.Errorf("hash mismatch: index advertised %s, tarball is %s", "sha256:"+normalizeHash(rp.Hash), got)
 	}
 
 	return replacePackTree(src, target, true)
@@ -395,7 +397,7 @@ func fetchPackIndex(ctx context.Context, registry string) (map[string]registryPa
 	var doc struct {
 		Packs []registryPack `json:"packs"`
 	}
-	// 8 MiB bounds the full index (~58 packs is tens of KB) against a runaway body.
+	// 8 MiB bounds the full index, far above its real size, against a runaway body.
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(&doc); err != nil {
 		return nil, fmt.Errorf("parse pack index %s: %w", url, err)
 	}
@@ -410,7 +412,10 @@ func fetchPackIndex(ctx context.Context, registry string) (map[string]registryPa
 	return out, nil
 }
 
+// packRegistryHTTPClient carries no client-wide Timeout: each caller bounds its
+// request with a context deadline sized for its document (the catalog needs
+// longer than the index), and a client Timeout would cap both at the shorter.
 func packRegistryHTTPClient() *http.Client {
-	base := httpsecurity.ClientWithTLS12(&http.Client{Timeout: 15 * time.Second})
+	base := httpsecurity.ClientWithTLS12(&http.Client{})
 	return httpsecurity.RefuseDowngradeRedirects(base)
 }

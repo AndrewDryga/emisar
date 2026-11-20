@@ -155,8 +155,6 @@ func (d *dedupRing) load() {
 		// current format exactly once; read state we cannot re-persist is
 		// fail-closed (proceeding could double-run a dispatch).
 		if err := d.writeStore(); err != nil {
-			d.keys = nil
-			d.records = map[string]dedupEntry{}
 			d.failedWrite(fmt.Errorf("migrate legacy dispatch log: %w", err))
 			d.logger.Error("cloud.dedup_migration_failed", "error", d.loadErr, "path", d.storePath)
 			return
@@ -190,8 +188,6 @@ func (d *dedupRing) adoptLegacyStore() {
 	}
 	d.evictToMax()
 	if err := d.writeStore(); err != nil {
-		d.keys = nil
-		d.records = map[string]dedupEntry{}
 		d.failedWrite(fmt.Errorf("migrate legacy dispatch log: %w", err))
 		d.logger.Error("cloud.dedup_migration_failed", "error", d.loadErr, "path", d.storePath)
 		return

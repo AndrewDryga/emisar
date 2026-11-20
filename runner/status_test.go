@@ -121,9 +121,7 @@ func TestReportStatusIsCompactAndPlainOffTerminal(t *testing.T) {
 		{"credential", checkOK, "token present"},
 	}
 	var out bytes.Buffer
-	if fails := reportStatus(&out, checks, 4); fails != 0 {
-		t.Fatalf("fails = %d", fails)
-	}
+	reportStatus(&out, checks, 4)
 	text := out.String()
 	if !strings.HasPrefix(text, "  ✓  connection") {
 		t.Errorf("output must start with the first health row:\n%s", text)

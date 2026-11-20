@@ -27,12 +27,11 @@ const (
 // constructs this from a validated action call; the executor never
 // re-renders templates.
 type Plan struct {
-	Binary       string
-	Argv         []string
-	CWD          string
-	Env          map[string]string
-	Limits       Limits
-	ScriptSHA256 string
+	Binary string
+	Argv   []string
+	CWD    string
+	Env    map[string]string
+	Limits Limits
 
 	// User is the local OS username to drop to before exec. Empty =
 	// inherit the runner's uid/gid. Resolved at start time on Linux
@@ -138,11 +137,10 @@ func (e *Executor) Execute(ctx context.Context, p Plan) (*Result, error) {
 	cmd.Stderr = stderrRelay
 
 	res := &Result{
-		Binary:       p.Binary,
-		Argv:         append([]string(nil), p.Argv...),
-		CWD:          p.CWD,
-		EnvKeys:      envKeys(cmd.Env),
-		ScriptSHA256: p.ScriptSHA256,
+		Binary:  p.Binary,
+		Argv:    append([]string(nil), p.Argv...),
+		CWD:     p.CWD,
+		EnvKeys: envKeys(cmd.Env),
 	}
 
 	start := time.Now()

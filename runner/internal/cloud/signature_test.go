@@ -317,11 +317,15 @@ func TestClient_SetVerifier_RevokesCALive(t *testing.T) {
 	}
 	cli.SetVerifier(v2)
 
-	// The same validly-ca1-certified dispatch shape is now refused — ca1 is
+	// The same validly-ca1-certified dispatch shape, with a fresh nonce so a
+	// replay refusal cannot stand in for the revocation, is now refused — ca1 is
 	// unknown to the swapped-in verifier.
-	sendRunActionWithAttestation(t, conn, cli, "req_after", "t.echo", args, attestationFor(t, cli, priv, "t.echo", args))
-	if res := waitForResult(t, conn, "req_after", 3*time.Second); res["status"] != "signature_invalid" {
-		t.Fatalf("post-revoke status=%v, want signature_invalid", res["status"])
+	caPriv, _ := keyFromSeed(t, sigTestCASeed)
+	after := attestationCertifiedBy(t, cli, priv, caPriv, sigTestCAID, "nonce-after-revoke", "t.echo", args)
+	sendRunActionWithAttestation(t, conn, cli, "req_after", "t.echo", args, after)
+	res := waitForResult(t, conn, "req_after", 3*time.Second)
+	if res["status"] != "signature_invalid" || res["reason"] != attest.CodeCertUntrusted {
+		t.Fatalf("post-revoke status=%v reason=%v, want signature_invalid/%s", res["status"], res["reason"], attest.CodeCertUntrusted)
 	}
 }
 

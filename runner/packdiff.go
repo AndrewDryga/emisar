@@ -18,10 +18,10 @@ import (
 	"github.com/andrewdryga/emisar/runner/pkg/packspec"
 )
 
-// maxDiffFileBytes is the per-file ceiling for rendering changed lines. The
-// largest script in the pack catalog is around 30 KB, so this is ample; past it
-// a file reports as changed without printing, because packs.Fetch admits files
-// up to 8 MiB and one of those would bury the diff an operator came to read.
+// maxDiffFileBytes is the per-file ceiling for rendering changed lines, well
+// above any hand-written pack script. Past it a file reports as changed without
+// printing, because packs.Fetch admits files up to 8 MiB and one of those would
+// bury the diff an operator came to read.
 const maxDiffFileBytes = 256 << 10
 
 // packDiffSide identifies one end of the comparison.
@@ -152,7 +152,7 @@ allowlist, symlinks enabled, or a newly required setup variable.
 			// would install, so bytes the registry does not vouch for are refused
 			// rather than diffed with a warning.
 			if indexHash != "" && !hashEqual(candidateHash, indexHash) {
-				return fmt.Errorf("hash mismatch: index advertised %s, tarball is %s", normalizeHash(indexHash), candidateHash)
+				return fmt.Errorf("hash mismatch: index advertised %s, tarball is %s", "sha256:"+normalizeHash(indexHash), candidateHash)
 			}
 
 			report, err := buildPackDiff(installed, candidateReg, candidate, candidateHash)
@@ -309,13 +309,6 @@ func buildPackDiff(installed installedSide, candidateReg *packs.Registry, candid
 	return report, nil
 }
 
-var riskRank = map[actionspec.Risk]int{
-	actionspec.RiskLow:      0,
-	actionspec.RiskMedium:   1,
-	actionspec.RiskHigh:     2,
-	actionspec.RiskCritical: 3,
-}
-
 // packDiffNotes reports the changes that alter what this host may do. They are
 // all visible in the diff itself; they are lifted out because each is a single
 // line that an operator scrolling a few hundred lines of YAML will miss.
@@ -339,7 +332,7 @@ func packDiffNotes(oldReg, newReg *packs.Registry, oldPack, newPack *packspec.Pa
 		}
 		n := newActions[id]
 
-		if riskRank[n.Risk] > riskRank[o.Risk] {
+		if n.Risk.Rank() > o.Risk.Rank() {
 			notes = append(notes, packDiffNote{"risk_escalated", id, fmt.Sprintf("%s → %s", o.Risk, n.Risk)})
 		}
 		if o.Execution.User != n.Execution.User {

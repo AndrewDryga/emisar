@@ -111,7 +111,7 @@ func exitCode(ctx context.Context, err error) int {
 	// Ctrl-C during the work, not a failure of it. Checked after usage so an
 	// interrupt arriving while a usage error surfaces still reports the usage
 	// mistake, which is the actionable one.
-	if ctx.Err() != nil && errors.Is(ctx.Err(), context.Canceled) {
+	if errors.Is(ctx.Err(), context.Canceled) {
 		return exitSignal
 	}
 	return exitFailure

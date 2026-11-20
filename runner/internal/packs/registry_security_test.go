@@ -103,8 +103,9 @@ func TestComputePackHash_DelimiterPreventsBoundaryInjection(t *testing.T) {
 // a file ADDED to the pack dir after load (outside the recorded
 // relpath set) does NOT change the re-hash. This is the documented pin
 // boundary: the pin covers exactly the load-time relpath set, matching the
-// cloud's trust boundary. (Paired with T10 below, which proves mutation of a
-// recorded file IS caught.)
+// cloud's trust boundary. (Paired with
+// TestRecomputePackHash_MutatingRecordedFileCaught below, which proves
+// mutation of a recorded file IS caught.)
 func TestRecomputePackHash_AddedFileDoesNotChangeHash(t *testing.T) {
 	root := writePack(t, t.TempDir(), "p", map[string]string{
 		"pack.yaml":      packYAML("addpack"),
@@ -129,8 +130,9 @@ func TestRecomputePackHash_AddedFileDoesNotChangeHash(t *testing.T) {
 	}
 }
 
-// mutating any RECORDED file IS caught. Pairs with T09 to bound
-// exactly what the pin covers. Uses pack.yaml (a recorded entry distinct from
+// mutating any RECORDED file IS caught. Pairs with
+// TestRecomputePackHash_AddedFileDoesNotChangeHash to bound exactly what the
+// pin covers. Uses pack.yaml (a recorded entry distinct from
 // the action file the existing tampering test mutates).
 func TestRecomputePackHash_MutatingRecordedFileCaught(t *testing.T) {
 	root := writePack(t, t.TempDir(), "p", map[string]string{

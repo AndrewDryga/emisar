@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/andrewdryga/emisar/runner/internal/admission"
+	"github.com/andrewdryga/emisar/runner/internal/audit"
 	"github.com/andrewdryga/emisar/runner/internal/executor"
 	"github.com/andrewdryga/emisar/runner/internal/expressions"
 	"github.com/andrewdryga/emisar/runner/internal/packs"
@@ -844,5 +845,138 @@ func TestVerifyScriptSHA_RefusesAMissingRecordedHash(t *testing.T) {
 	sum := sha256.Sum256(body)
 	if err := verifyScriptSHA(packs.ScriptInfo{Path: script, SHA256: hex.EncodeToString(sum[:])}); err != nil {
 		t.Fatalf("the trusted bytes must still pass: %v", err)
+	}
+}
+
+// A validation message can echo the rejected value of an arg the author did
+// not flag sensitive ("invalid duration %q"). That copy reached the journal and
+// Result.Error (the permanent cloud run record) without the global rules every
+// other copy of an argument gets.
+func TestEngine_UnflaggedValidationFailureDetailGetsGlobalRedaction(t *testing.T) {
+	const durationAction = `
+schema_version: 1
+id: t.plain_duration
+title: Plain duration
+kind: exec
+risk: low
+description: d
+side_effects: [none]
+args:
+  - name: window
+    type: duration
+    required: true
+execution:
+  command:
+    binary: true
+    argv: []
+  timeout: 5s
+output:
+  parser: text
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 1024
+`
+	e, journal, root := setupEngineExtra(t, map[string]string{"plain_duration.yaml": durationAction})
+	defer journal.Close()
+	defaults, err := redact.CompileAll(redact.DefaultRules())
+	if err != nil {
+		t.Fatalf("CompileAll: %v", err)
+	}
+	e.SetRedactor(redact.New(defaults))
+
+	const token = "abcdefghijklmnopqrstuvwxyz0123"
+	tests := []struct {
+		name  string
+		value string
+		want  string // substring the detail must keep
+		leak  string // substring it must not carry
+	}{
+		{name: "bearer token", value: "Bearer " + token, want: "[REDACTED]", leak: token},
+		{name: "ordinary value", value: "soon", want: `"soon"`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := e.Run(context.Background(), Request{
+				ActionID: "t.plain_duration",
+				Args:     map[string]any{"window": test.value},
+				Reason:   "test",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Status != StatusValidationFailed || result.Reason != "argument_invalid" {
+				t.Fatalf("status=%s reason=%q, want validation_failed/argument_invalid", result.Status, result.Reason)
+			}
+			if !strings.Contains(result.Error, test.want) {
+				t.Fatalf("error=%q, want it to contain %q", result.Error, test.want)
+			}
+			if test.leak != "" && strings.Contains(result.Error, test.leak) {
+				t.Fatalf("validation error leaked an unflagged credential: %q", result.Error)
+			}
+		})
+	}
+
+	events, err := os.ReadFile(filepath.Join(root, "events.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(events), token) {
+		t.Fatalf("audit journal leaked an unflagged credential from a validation failure:\n%s", events)
+	}
+}
+
+// A process that cannot start is journaled as execution_failed. The cause
+// lived only in the result and the wire, so the local journal said a run
+// failed but never why; it now carries the start error through the action's
+// redactor.
+func TestEngine_StartFailureCauseJournaledRedacted(t *testing.T) {
+	const missingBinary = "emisar-missing-secret-tool"
+	const startFailAction = `
+schema_version: 1
+id: t.start_fail
+title: Start fail
+kind: exec
+risk: low
+description: d
+side_effects: [none]
+args: []
+execution:
+  command:
+    binary: ` + missingBinary + `
+    argv: []
+  timeout: 5s
+output:
+  parser: text
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 1024
+  redact:
+    - name: tool-name
+      type: literal
+      literal: secret-tool
+`
+	e, journal, root := setupEngineExtra(t, map[string]string{"start_fail.yaml": startFailAction})
+	defer journal.Close()
+
+	result, err := e.Run(context.Background(), Request{ActionID: "t.start_fail", Reason: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ExitCode != -1 {
+		t.Fatalf("exit code=%d, want -1 for a process that never started", result.ExitCode)
+	}
+
+	var failed *audit.Event
+	for _, ev := range readJournalEvents(t, root) {
+		if ev.Type == audit.EventExecutionFailed && ev.ActionID == "t.start_fail" {
+			failed = &ev
+		}
+	}
+	if failed == nil {
+		t.Fatal("no execution_failed event journaled for the start failure")
+	}
+	if failed.Error == "" {
+		t.Fatal("execution_failed event carries no cause")
+	}
+	if !strings.Contains(failed.Error, "[REDACTED]") || strings.Contains(failed.Error, "secret-tool") {
+		t.Fatalf("journaled cause must pass through the action's redactor, got %q", failed.Error)
 	}
 }

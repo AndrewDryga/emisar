@@ -848,39 +848,37 @@ func TestCheckSameNonceReusableOnlyAfterIssuedAtAgesOut(t *testing.T) {
 	}
 }
 
-// the replay cache is process-local (an
-// in-memory map, no external store), so a runner restart clears it. A fresh
-// verifier with the same keys will re-allow a nonce it never saw — but only if
-// that nonce's issued_at is still inside the freshness window. Once it ages out,
-// the freshness gate is the sole post-restart protection and refuses it. This
-// documents the accepted replay-across-restart limitation and its bound.
-func TestCheckReplayAcrossRestartBoundedByFreshness(t *testing.T) {
+// Freshness is independent of replay state. Each verifier here has its own
+// memory nonce store, so the second has never seen the nonce: inside the
+// freshness window it accepts the attestation, and once the attestation ages
+// out the freshness gate refuses it regardless. Runtime restarts use the
+// durable store instead; TestNonceCachePersistsAcrossRestart covers that.
+func TestCheckFreshnessWithIndependentMemoryNonceStores(t *testing.T) {
 	args := map[string]any{"x": float64(1)}
 
-	// First "process": consume nonce N at fixedNow.
+	// First verifier: consume nonce N at fixedNow.
 	v1, priv := newTestVerifier(t)
 	att := sign(t, priv, "a.b", args, "survivor", fixedNow)
 	if d := v1.Check(testDispatch(t, "a.b", args), att); !d.Allowed {
-		t.Fatalf("first process must accept: %+v", d)
+		t.Fatalf("first verifier must accept: %+v", d)
 	}
 	if d := v1.Check(testDispatch(t, "a.b", args), att); d.Allowed {
-		t.Fatal("same process must refuse the replay")
+		t.Fatal("the same verifier must refuse the replay")
 	}
 
-	// "Restart": a brand-new verifier with the same key and an empty cache.
-	// Within the freshness window, the nonce is accepted once more (the
-	// limitation).
+	// A second verifier with the same key and its own empty memory store has
+	// never seen the nonce, so inside the freshness window it accepts it.
 	v2, _ := newTestVerifier(t)
 	if d := v2.Check(testDispatch(t, "a.b", args), att); !d.Allowed {
-		t.Fatalf("a fresh verifier (restart) re-allows an in-window nonce: %+v", d)
+		t.Fatalf("an independent memory store accepts an unseen in-window nonce: %+v", d)
 	}
 
-	// Restart again, but now the same attestation is outside the window: the
-	// freshness gate refuses it, bounding the cross-restart replay to ±maxAge.
+	// A third independent verifier, with the attestation now outside the
+	// window: the freshness gate refuses it whatever the replay state.
 	v3, _ := newTestVerifier(t)
 	v3.now = func() time.Time { return mustParse(t, fixedNow).Add(2 * time.Hour) }
 	if d := v3.Check(testDispatch(t, "a.b", args), att); d.Allowed || d.Code != "stale" {
-		t.Fatalf("post-restart, an aged-out nonce must be refused 'stale', got %+v", d)
+		t.Fatalf("an aged-out attestation must be refused 'stale', got %+v", d)
 	}
 }
 
@@ -911,33 +909,6 @@ func TestNonceCacheBoundedByWindow(t *testing.T) {
 		if size > 62 {
 			t.Fatalf("after %d dispatches the cache holds %d entries; pruning is not bounding it", i+1, size)
 		}
-	}
-}
-
-// the cache key is the raw nonce string — no normalization.
-// Two nonces differing only by case or surrounding whitespace are distinct
-// entries, so neither replays the other.
-func TestNonceCacheKeyIsRawString(t *testing.T) {
-	args := map[string]any{"x": float64(1)}
-
-	variants := []struct{ a, b string }{
-		{"abc", "ABC"},  // case
-		{"abc", " abc"}, // leading whitespace
-		{"abc", "abc "}, // trailing whitespace
-		{"a\tb", "a b"}, // tab vs space
-	}
-	for _, vv := range variants {
-		t.Run(vv.a+" vs "+vv.b, func(t *testing.T) {
-			v, priv := newTestVerifier(t)
-			a := sign(t, priv, "a.b", args, vv.a, fixedNow)
-			b := sign(t, priv, "a.b", args, vv.b, fixedNow)
-			if d := v.Check(testDispatch(t, "a.b", args), a); !d.Allowed {
-				t.Fatalf("first nonce must pass: %+v", d)
-			}
-			if d := v.Check(testDispatch(t, "a.b", args), b); !d.Allowed {
-				t.Fatalf("a nonce differing only by case/whitespace must be distinct, got %+v", d)
-			}
-		})
 	}
 }
 

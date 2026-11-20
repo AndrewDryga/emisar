@@ -338,6 +338,54 @@ actions:
 	}
 }
 
+// A script action that fails after its output schema compiled (the script is
+// missing) must not leave its output validator behind: removePack only finds
+// validators through registered actions.
+func TestLoadAll_SkipBrokenPacksRemovesPartialOutputSchema(t *testing.T) {
+	tmp := t.TempDir()
+	scriptAction := `
+schema_version: 1
+id: partial.run
+title: t
+kind: script
+risk: low
+description: d
+side_effects: [none]
+args: []
+execution:
+  script:
+    path: scripts/missing.sh
+    interpreter: /bin/sh
+  argv: []
+  timeout: 5s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    type: object
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 1024
+`
+	writePack(t, tmp, "partial", map[string]string{
+		"pack.yaml":      packYAML("partial"),
+		"actions/a.yaml": scriptAction,
+	})
+
+	reg, err := LoadAll([]string{tmp}, LoadOptions{SkipBrokenPacks: true})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if len(reg.Degraded()) != 1 || !strings.Contains(reg.Degraded()[0].Reason, "script") {
+		t.Fatalf("degraded=%v, want the partial pack failing on its script", reg.Degraded())
+	}
+	if _, ok := reg.Action("partial.run"); ok {
+		t.Fatal("half-loaded pack left an action registered")
+	}
+	if _, ok := reg.OutputSchema("partial.run"); ok {
+		t.Fatal("half-loaded pack left an output validator registered")
+	}
+}
+
 func TestLoad_MultiLevelNamespaceAllowed(t *testing.T) {
 	tmp := t.TempDir()
 	root := writePack(t, tmp, "p", map[string]string{
@@ -357,11 +405,11 @@ func TestLoad_SingleSegmentIdRejected(t *testing.T) {
 	tmp := t.TempDir()
 	root := writePack(t, tmp, "p", map[string]string{
 		"pack.yaml":      packYAML("p"),
-		"actions/a.yaml": actionYAML("noNamespace"),
+		"actions/a.yaml": actionYAML("nonamespace"),
 	})
 	_, err := LoadOne(root, LoadOptions{})
-	if err == nil {
-		t.Fatal("expected invalid id error (must contain a dot)")
+	if err == nil || !strings.Contains(err.Error(), "invalid id") {
+		t.Fatalf("expected invalid id error (must contain a dot), got %v", err)
 	}
 }
 

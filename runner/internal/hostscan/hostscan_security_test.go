@@ -80,9 +80,9 @@ func TestSystemdPresent_MatchesStat(t *testing.T) {
 	}
 }
 
-// TestScanBinaries_NamesNormalizedAndDeduped — probed names are
-// lowercased, trimmed, and de-duplicated: ["GO"," go ","go"] probes a single
-// "go", and the result is keyed by the normalized lowercase name.
+// TestScanBinaries_NamesNormalizedAndDeduped — names are trimmed and
+// de-duplicated by their lowercase form: ["GO"," go ","go"] yields a single
+// result, keyed by the normalized lowercase name.
 func TestScanBinaries_NamesNormalizedAndDeduped(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("unix execute-bit semantics do not apply on windows")
@@ -106,5 +106,26 @@ func TestScanBinaries_NamesNormalizedAndDeduped(t *testing.T) {
 		if _, ok := got[k]; ok {
 			t.Fatalf("un-normalized key %q must not be present, got %v", k, got)
 		}
+	}
+}
+
+// A mixed-case detect binary (zookeeper's zkServer.sh) is probed with its
+// authored spelling, so a case-sensitive filesystem finds it; the result is
+// still keyed by the lowercase name.
+func TestScanBinaries_ProbesAuthoredCase(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix execute-bit semantics do not apply on windows")
+	}
+	dir := t.TempDir()
+	want := filepath.Join(dir, "zkServer.sh")
+	if err := os.WriteFile(want, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("PATH", "")
+	got := scanBinaries([]string{"zkServer.sh"}, []string{dir})
+
+	if got["zkserver.sh"] != want {
+		t.Fatalf("zkServer.sh = %q, want %q (all: %v)", got["zkserver.sh"], want, got)
 	}
 }

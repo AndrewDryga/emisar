@@ -379,7 +379,13 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 
 	cleanArgs, err := validation.Validate(act.Args, req.Args, e.ProtectedPaths, executor.EffectiveCWD(act))
 	if err != nil {
+		// The message can echo an unflagged arg's raw value ("invalid duration
+		// %q", "path %s is denied"), so it gets the global rules too, like
+		// every other copy of an argument that reaches the journal or the wire.
 		detail := validationFailureDetail(err, req.Args, act.Args)
+		if global := e.Redactor(); global != nil {
+			detail, _ = global.Apply(detail)
+		}
 		ev := e.actionEvent(req, act, audit.EventValidationFailed, now)
 		ev.Request = &audit.RequestInfo{Reason: req.Reason}
 		ev.Error = detail
@@ -428,7 +434,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 			return e.emitExecError(ctx, req, act, cleanArgs, err)
 		}
 		scriptSHA = si.SHA256
-		plan = executor.PlanForScript(act, si.Path, si.SHA256, renderedArgv, envRendered, limits)
+		plan = executor.PlanForScript(act, si.Path, renderedArgv, envRendered, limits)
 	}
 	if g := act.Execution.CancelGrace.Std(); g > 0 {
 		plan.CancelGrace = g
@@ -590,6 +596,12 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 	ev.Execution.ExecutedCommand = executedCommand
 	ev.Redactions = toAuditRedactions(hits)
 	ev.Error = resultError
+	if ev.Error == "" && execRes.Status == executor.StatusFailed {
+		// A process that never started carries its cause only in StartError;
+		// journal it (redacted, as emitExecError does) so the local record of
+		// an execution_failed says why.
+		ev.Error = redactInvocationValue(combinedRedactor, execRes.StartError, cleanArgs, act.Args)
+	}
 	journaled := e.journal(ctx, ev)
 
 	return &Result{

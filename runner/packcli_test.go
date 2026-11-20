@@ -49,6 +49,52 @@ func TestPackListCmd_Table(t *testing.T) {
 	}
 }
 
+// The ACTIONS column counts each pack's own actions, not the registry total.
+func TestPackListCmd_TableCountsActionsPerPack(t *testing.T) {
+	root := t.TempDir()
+	writeValidPack(t, root, "redis")
+	nginx := writeValidPack(t, root, "nginx")
+	manifest, err := os.ReadFile(filepath.Join(nginx, "pack.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest = append(manifest, []byte("  - actions/b.yaml\n")...)
+	if err := os.WriteFile(filepath.Join(nginx, "pack.yaml"), manifest, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	action, err := os.ReadFile(filepath.Join(nginx, "actions", "a.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	action = []byte(strings.Replace(string(action), "id: nginx.a", "id: nginx.b", 1))
+	if err := os.WriteFile(filepath.Join(nginx, "actions", "b.yaml"), action, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	withPacksDir(t, root)
+	withJSONOut(t, false)
+
+	var execErr error
+	out := captureStdout(t, func() {
+		cmd := packListCmd()
+		cmd.SilenceUsage, cmd.SilenceErrors = true, true
+		execErr = cmd.Execute()
+	})
+	if execErr != nil {
+		t.Fatalf("pack list: %v", execErr)
+	}
+	counts := map[string]string{}
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n")[1:] {
+		fields := strings.Fields(line)
+		if len(fields) < 3 {
+			t.Fatalf("short pack list row %q:\n%s", line, out)
+		}
+		counts[fields[0]] = fields[2]
+	}
+	if counts["redis"] != "1" || counts["nginx"] != "2" {
+		t.Fatalf("action counts = %v, want redis=1 nginx=2:\n%s", counts, out)
+	}
+}
+
 // `pack list --json` prints the full pack structs. Decoded as raw maps — not
 // back into packspec.Pack, which would pass whatever the tags say — so the
 // KEYS a fleet script parses are pinned to the documented snake_case shape.

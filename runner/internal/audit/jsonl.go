@@ -116,7 +116,7 @@ const tailWindow = MaxLineBytes + 2
 // doctor, and pack verify.
 //
 // A missing or empty journal seeds an empty chain: the first event then carries
-// prev_hash="", which is what VerifyChain expects at the head of a file.
+// prev_hash="", which is what VerifyReader expects at the head of a file.
 // Callers hold the journal lock so a peer's in-progress append is never healed.
 func healAndSeed(path string) (string, error) {
 	f, err := openJournalFile(path, os.O_RDWR, nil)
@@ -164,7 +164,11 @@ func healAndSeed(path string) (string, error) {
 		if err := f.Sync(); err != nil {
 			return "", err
 		}
-		tail = tail[:cut+1]
+		// Re-read from the healed end: the window above was sized against the
+		// torn tail, so it may no longer reach the newline before the final
+		// complete line. The file now ends on a newline (or is empty), so the
+		// second pass never truncates and recurses no further.
+		return healAndSeed(path)
 	}
 
 	last, delimited := lastNonEmptyLine(tail)
@@ -306,11 +310,11 @@ func (s *JSONLSink) Write(_ context.Context, ev Event) error {
 
 	// Rotate before writing if this line would cross the threshold.
 	// Rotation resets the chain head to "" so the new file is a self-
-	// contained chain — the per-file invariant VerifyChain assumes (it
+	// contained chain — the per-file invariant VerifyReader assumes (it
 	// starts every file from prev_hash=""). When a rotation happens,
 	// re-stamp this event as the new file's head and re-marshal so it
 	// actually carries prev_hash="" instead of a dangling backward link
-	// to the rotated-away file (which VerifyChain would flag as tamper).
+	// to the rotated-away file (which VerifyReader would flag as tamper).
 	if err := s.maybeRotateLocked(int64(len(b) + 1)); err != nil {
 		// Rotation mutates multiple directory entries. Any reported failure can
 		// leave durability ambiguous, so refuse later writes until a restart
@@ -428,7 +432,7 @@ func (s *JSONLSink) maybeRotateLocked(incoming int64) error {
 		}
 	}
 	if s.maxBackups >= 1 {
-		if err := renameReplacing(s.path, s.path+".1"); err != nil {
+		if err := os.Rename(s.path, s.path+".1"); err != nil {
 			return s.reopenAfterRotationFailure(fmt.Errorf("audit: rotate active jsonl: %w", err))
 		}
 	} else {
@@ -445,7 +449,7 @@ func (s *JSONLSink) maybeRotateLocked(incoming int64) error {
 		if s.maxBackups < 1 {
 			return openErr
 		}
-		if restoreErr := renameReplacing(s.path+".1", s.path); restoreErr != nil {
+		if restoreErr := os.Rename(s.path+".1", s.path); restoreErr != nil {
 			return errors.Join(openErr, fmt.Errorf("audit: restore active jsonl: %w", restoreErr))
 		}
 		return s.reopenAfterRotationFailure(openErr)
@@ -459,7 +463,7 @@ func (s *JSONLSink) maybeRotateLocked(incoming int64) error {
 	// A rotated file begins a fresh per-file hash chain: the next event
 	// becomes its head with prev_hash="". Without this reset the new
 	// file's first line would carry a backward link to the rotated-away
-	// file, which VerifyChain (per-file, expecting "" at the start) reads
+	// file, which VerifyReader (per-file, expecting "" at the start) reads
 	// as a tamper break — false-alarming on every rotated log.
 	return nil
 }
@@ -483,10 +487,6 @@ func renameReplacingIfPresent(from, to string) error {
 		}
 		return err
 	}
-	return renameReplacing(from, to)
-}
-
-func renameReplacing(from, to string) error {
 	return os.Rename(from, to)
 }
 
@@ -509,20 +509,6 @@ func (e *VerifyError) Error() string {
 		e.Line, e.EventID, e.Expected, e.Got)
 }
 
-// VerifyChain re-derives the prev_hash chain from path and returns nil
-// if every event correctly chains from the previous serialized line.
-// On the first break it returns a *VerifyError pointing at the offending
-// line. Use VerifyReader to plug into a non-file source (e.g., piped
-// from gzip or a test buffer).
-func VerifyChain(path string) error {
-	f, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	return VerifyReader(f)
-}
-
 // MaxLineBytes is the largest journal line, newline included, this package can
 // read back. Both the tail reader and the hash-chain verifier scan with this
 // ceiling, so a line written above it is not merely slow to parse — it is
@@ -530,7 +516,10 @@ func VerifyChain(path string) error {
 // after it. Write keeps every line it appends within it (see encodeLine).
 const MaxLineBytes = 1 << 20
 
-// VerifyReader is the io.Reader form of VerifyChain. Skips empty lines.
+// VerifyReader re-derives the prev_hash chain from one journal file's content
+// and returns nil if every event correctly chains from the previous serialized
+// line, starting from prev_hash="". On the first break it returns a
+// *VerifyError pointing at the offending line. Skips empty lines.
 func VerifyReader(r io.Reader) error {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 64*1024), MaxLineBytes)

@@ -38,8 +38,8 @@ const (
 	maxAPIBytes       = 4 << 20
 	maxManifestBytes  = 1 << 20
 	maxChecksumsBytes = 1 << 20
-	// Keep this equal to releasepublish's accepted attestation-bundle limit: a
-	// bundle the publisher admits must never brick every managed updater.
+	// Bounds the SHA256SUMS.sigstore.jsonl attestation download. The
+	// publisher does not cap the bundle, so a larger one fails every update.
 	maxChecksumBundleBytes = 4 << 20
 	maxArchiveBytes        = 256 << 20
 	maxInstallerBytes      = 512 << 10

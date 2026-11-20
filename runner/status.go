@@ -208,7 +208,7 @@ func compactDuration(duration time.Duration) string {
 	return duration.Round(time.Second).String()
 }
 
-func reportStatus(w io.Writer, checks []checkResult, runtimeChecks int) int {
+func reportStatus(w io.Writer, checks []checkResult, runtimeChecks int) {
 	style := newStyler(w)
 
 	var fails, warns int
@@ -251,5 +251,4 @@ func reportStatus(w io.Writer, checks []checkResult, runtimeChecks int) int {
 	default:
 		fmt.Fprintln(w, style.ok("Runner is connected and healthy."))
 	}
-	return fails
 }

@@ -6,7 +6,6 @@ package packspec
 
 import (
 	"fmt"
-	"runtime"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -15,8 +14,8 @@ import (
 // SchemaVersion is the currently supported pack schema version.
 const SchemaVersion = 1
 
-// Pack is the on-disk pack.yaml manifest. It references action and runbook
-// YAML files relative to the pack root.
+// Pack is the on-disk pack.yaml manifest. It references action YAML files
+// relative to the pack root.
 //
 // The json tags mirror the on-disk names so `emisar pack list/info --json`
 // emits one snake_case document a fleet script can parse. Root is a
@@ -68,17 +67,13 @@ type Pack struct {
 }
 
 // Requirements describes optional host requirements declared by a pack.
-// The runner records these and ships them to cloud in the runner_state
-// advertisement, but does not enforce them at load time:
+// They are published in the pack catalog and shown by `emisar pack info`,
+// but the runner does not enforce them at load time:
 //
-//   - OS mismatch is surfaced via cloud-side fleet filtering (the cloud
-//     catalog knows which runners declare which OS) rather than by
-//     refusing to load the pack on the wrong OS.
+//   - A pack loads on any OS; the declared list informs the operator and
+//     `emisar pack suggest` rather than refusing the pack on the wrong OS.
 //   - Binaries that aren't on PATH cause the action to fail at execution
 //     time — a more useful signal than a load-time PATH check.
-//
-// MatchesHost is available for callers who want to filter packs by OS
-// (e.g., a future pack catalog UI or a smoke-test command).
 type Requirements struct {
 	OS       []string `yaml:"os,omitempty" json:"os,omitempty"`
 	Binaries []string `yaml:"binaries,omitempty" json:"binaries,omitempty"`
@@ -111,24 +106,10 @@ type Detect struct {
 func (d Detect) validate(packID string) error {
 	for _, p := range d.Ports {
 		if p < 1 || p > 65535 {
-			return fmt.Errorf("pack %s: detect.port %d out of range (1-65535)", packID, p)
+			return fmt.Errorf("pack %s: detect.ports %d out of range (1-65535)", packID, p)
 		}
 	}
 	return nil
-}
-
-// MatchesHost reports whether the current runtime.GOOS is in the OS
-// allowlist. An empty list matches any OS.
-func (r Requirements) MatchesHost() bool {
-	if len(r.OS) == 0 {
-		return true
-	}
-	for _, os := range r.OS {
-		if os == runtime.GOOS {
-			return true
-		}
-	}
-	return false
 }
 
 // Setup is the operator-facing "how to make this pack work" block. It is
@@ -307,7 +288,7 @@ func (p *Pack) Validate() error {
 		return fmt.Errorf("pack: missing id")
 	}
 	if !validPackID(p.ID) {
-		return fmt.Errorf("pack: invalid id %q (must match [a-z][a-z0-9-]{0,63})", p.ID)
+		return fmt.Errorf("pack: invalid id %q (must be dot-separated segments of [a-z][a-z0-9_-]*, at most 128 bytes)", p.ID)
 	}
 	if p.Name == "" {
 		return fmt.Errorf("pack %s: missing name", p.ID)

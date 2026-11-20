@@ -122,7 +122,7 @@ func TestFollowJSONL_ReopensAfterRenameRotation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	lines := make(eventLineWriter, 1)
-	go func() { done <- followJSONL(ctx, active, f, lines) }()
+	go func() { done <- followJSONL(ctx, active, f, 0, lines) }()
 
 	if err := os.Rename(active, active+".1"); err != nil {
 		t.Fatal(err)
@@ -139,6 +139,56 @@ func TestFollowJSONL_ReopensAfterRenameRotation(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("follow did not reopen the rotated active path")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("follow shutdown: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("follow ignored context cancellation")
+	}
+}
+
+// An event appended after the backlog was read but before following starts
+// must still be streamed: the follow resumes at the offset the backlog read
+// up to, not at whatever the end of the file is by then.
+func TestFollowJSONL_ResumesWhereBacklogEnded(t *testing.T) {
+	dir := t.TempDir()
+	active := filepath.Join(dir, "events.jsonl")
+	const backlog = "{\"event_id\":\"evt_backlog\"}\n"
+	if err := os.WriteFile(active, []byte(backlog), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Open(active)
+	if err != nil {
+		t.Fatal(err)
+	}
+	printed, end, err := lastNLines(f, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := strings.TrimSuffix(backlog, "\n"); len(printed) != 1 || printed[0] != want {
+		t.Fatalf("backlog = %q, want [%q]", printed, want)
+	}
+
+	const raced = "{\"event_id\":\"evt_between_read_and_follow\"}\n"
+	appendLine(t, active, raced)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	lines := make(eventLineWriter, 1)
+	go func() { done <- followJSONL(ctx, active, f, end, lines) }()
+
+	select {
+	case got := <-lines:
+		if got != raced {
+			t.Fatalf("followed line = %q, want %q", got, raced)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("follow skipped the event appended before it started")
 	}
 	cancel()
 	select {
@@ -260,7 +310,7 @@ func TestEventsTailCmd_ShortAndEmptyLog(t *testing.T) {
 		if execErr != nil {
 			t.Fatalf("events tail (empty log): %v", execErr)
 		}
-		if strings.TrimSpace(out) != "" {
+		if out != "" {
 			t.Fatalf("an empty log should produce no output, got:\n%q", out)
 		}
 	})
@@ -420,8 +470,6 @@ func TestEventsGrepCmd_FilterByRequestID(t *testing.T) {
 	}
 }
 
-// Combined filters AND together: an action that matches but a caller that
-// doesn't yields nothing. and (no matches).
 // event_type is the field a SIEM alerts on — action_blocked_by_admission exists
 // precisely so a rule can fire on it — and `events grep` had no filter for it at
 // all, while `--event` matched an event ID and `--caller` a request ULID. So the
@@ -450,6 +498,8 @@ func TestEventsGrepCmd_FilterByType(t *testing.T) {
 	}
 }
 
+// Combined filters AND together: an action that matches but a caller that
+// doesn't yields nothing.
 func TestEventsGrepCmd_CombinedFiltersAndNoMatch(t *testing.T) {
 	withFlags(t)
 	dir := t.TempDir()
@@ -473,7 +523,7 @@ func TestEventsGrepCmd_CombinedFiltersAndNoMatch(t *testing.T) {
 
 // A single line beyond the scanner's 4 MiB max buffer makes `events grep`
 // return the scanner's error (bufio.ErrTooLong) rather than silently truncating
-// — a pathologically long log line is surfaced, not swallowed. closes
+// — a pathologically long log line is surfaced, not swallowed.
 func TestEventsGrepCmd_OversizedLineErrors(t *testing.T) {
 	withFlags(t)
 	dir := t.TempDir()

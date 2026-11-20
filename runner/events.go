@@ -58,7 +58,7 @@ func eventsTailCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			lines, err := lastNLines(f, n)
+			lines, end, err := lastNLines(f, n)
 			if err != nil {
 				_ = f.Close()
 				return err
@@ -70,7 +70,7 @@ func eventsTailCmd() *cobra.Command {
 				_ = f.Close()
 				return nil
 			}
-			return followJSONL(cmd.Context(), path, f, os.Stdout)
+			return followJSONL(cmd.Context(), path, f, end, os.Stdout)
 		},
 	}
 	cmd.Flags().Int("lines", 50, "number of trailing events to print")
@@ -153,21 +153,22 @@ func eventsGrepCmd() *cobra.Command {
 	return cmd
 }
 
-// lastNLines returns the trailing n lines of a file as strings. Reads from
-// the end in 8 KiB chunks to avoid loading the whole file. Acceptable for
-// human-scale JSONL logs.
-func lastNLines(f *os.File, n int) ([]string, error) {
+// lastNLines returns the trailing n lines of a file as strings, plus the
+// file size it read up to so a follow resumes exactly there and never skips
+// an event appended in between. Reads from the end in 8 KiB chunks to avoid
+// loading the whole file. Acceptable for human-scale JSONL logs.
+func lastNLines(f *os.File, n int) ([]string, int64, error) {
 	if n < 0 {
-		return nil, fmt.Errorf("line count must be non-negative")
-	}
-	if n == 0 {
-		return nil, nil
+		return nil, 0, fmt.Errorf("line count must be non-negative")
 	}
 	stat, err := f.Stat()
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	size := stat.Size()
+	if n == 0 || size == 0 {
+		return nil, size, nil
+	}
 	const chunk = 8 * 1024
 	var buf []byte
 	pos := size
@@ -180,7 +181,7 @@ func lastNLines(f *os.File, n int) ([]string, error) {
 		pos -= read
 		seg := make([]byte, read)
 		if _, err := f.ReadAt(seg, pos); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		buf = append(seg, buf...)
 		newlines = 0
@@ -194,15 +195,13 @@ func lastNLines(f *os.File, n int) ([]string, error) {
 	if len(lines) > n {
 		lines = lines[len(lines)-n:]
 	}
-	return lines, nil
+	return lines, size, nil
 }
 
-func followJSONL(ctx context.Context, path string, f *os.File, out io.Writer) error {
+// followJSONL streams what is appended to path from offset pos of f onward.
+func followJSONL(ctx context.Context, path string, f *os.File, pos int64, out io.Writer) error {
 	defer func() { _ = f.Close() }()
-	pos, err := f.Seek(0, io.SeekEnd)
-	if err != nil {
-		return err
-	}
+	var err error
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 

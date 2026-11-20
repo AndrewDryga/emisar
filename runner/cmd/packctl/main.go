@@ -34,8 +34,9 @@ func main() {
 Author packs, then 'catalog build --base-url <where you host> --repo-url
 <your source repository>' and put the tree on any static HTTPS host
 (natively on GCS via 'catalog publish'; S3 / MinIO / nginx by syncing the
-files). Runners install the exact immutable tarball URL from v1/catalog.json. The name-based '--registry' install flow
-uses a different URL layout that packctl does not build.
+files). Runners install the exact immutable tarball URL from
+v1/catalog.json. The name-based '--registry' install flow uses a different
+URL layout that packctl does not build.
 Guide: https://emisar.dev/docs/pack-registry
 
 packctl is deliberately a separate binary from emisar: your fleet hosts never

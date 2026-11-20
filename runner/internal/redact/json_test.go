@@ -115,6 +115,16 @@ func TestApplyJSONRefusesDuplicateObjectKeys(t *testing.T) {
 	}
 }
 
+// Output must be exactly one JSON value: a second document or trailing bytes
+// after the first are refused, not silently dropped by decoding only the first.
+func TestApplyJSONRefusesMoreThanOneValue(t *testing.T) {
+	for _, input := range []string{`{"a":1} {"b":2}`, `{"a":1}garbage`, `1 2`} {
+		if _, _, err := Empty().ApplyJSON([]byte(input)); !errors.Is(err, ErrInvalidJSON) {
+			t.Errorf("ApplyJSON(%q) error=%v, want ErrInvalidJSON", input, err)
+		}
+	}
+}
+
 // json.Marshal escapes <, >, and & unconditionally, six bytes for one, and the
 // engine re-checks the REDACTED document against the same max_stdout_bytes the
 // action proved against - so a URL- or markup-bearing result that fit came back

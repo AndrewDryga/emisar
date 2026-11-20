@@ -1,7 +1,7 @@
 ---
 name: signed-dispatch
 sources: [mcp/sign.go, mcp/internal/attest, runner/internal/signing, runner/internal/attest, portal/apps/emisar/lib/emisar/runs/attestation.ex, portal/apps/emisar/lib/emisar/runs.ex]
-updated: 2026-11-05
+updated: 2026-11-20
 ---
 
 # Signed dispatch (bridge-attested dispatch)
@@ -73,7 +73,7 @@ operator's signing key. So:
    change the action, pack, args, reason, operation, origin, or target set without
    invalidating the signature, cannot alter the CA-signed certificate, and has
    no key to mint either.
-3. The runner verifies, in order: the certificate is signed by a CA it trusts;
+3. The runner verifies all of the following: the certificate is signed by a CA it trusts;
    the certificate is inside its validity window; this runner's identity suffix,
    derived from its local external ID, occurs exactly once in the signed target
    set; the signed

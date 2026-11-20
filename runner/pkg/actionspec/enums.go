@@ -83,7 +83,7 @@ func (p Parser) Valid() bool {
 	return false
 }
 
-// ValidateEnums returns an error if any enum-typed fields on an Action are
+// validateEnums returns an error if any enum-typed fields on an Action are
 // invalid.
 func validateEnums(kind Kind, risk Risk, parser Parser) error {
 	if !kind.Valid() {

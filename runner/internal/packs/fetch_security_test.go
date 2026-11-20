@@ -36,8 +36,8 @@ func gzipTar(t *testing.T, build func(tw *tar.Writer)) []byte {
 // header Size. (archive/tar's Writer enforces Write length == header Size, so
 // a fixture cannot under-declare a body; the streaming LimitReader/n>max guard
 // in fetch.go defends a hand-crafted/non-stdlib tar that lies, which this
-// stdlib-built fixture can't express — the honest-header check at fetch.go:118
-// is the reachable guard here.)
+// stdlib-built fixture can't express — the honest-header hdr.Size check in
+// extractTarGz is the reachable guard here.)
 func writeReg(t *testing.T, tw *tar.Writer, name string, size int) {
 	t.Helper()
 	if err := tw.WriteHeader(&tar.Header{

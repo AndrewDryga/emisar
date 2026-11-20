@@ -26,7 +26,7 @@ func TestRunVerifiesReleaseAndHandsItToInstaller(t *testing.T) {
 	root := t.TempDir()
 	executable := writeReceiptFixture(t, root, officialRepository)
 	name := fmt.Sprintf("emisar-0.24.1-%s-%s", runtime.GOOS, runtime.GOARCH)
-	archive := releaseArchive(t, name, map[string]archiveEntry{
+	archive := releaseArchive(t, map[string]archiveEntry{
 		name + "/emisar":     {body: "runner-binary", mode: 0o755},
 		name + "/install.sh": {body: "#!/usr/bin/env bash\n", mode: 0o755},
 	})
@@ -139,7 +139,7 @@ type checksumOnlyRelease struct {
 func newChecksumOnlyRelease(t *testing.T) *checksumOnlyRelease {
 	t.Helper()
 	name := fmt.Sprintf("emisar-0.24.1-%s-%s", runtime.GOOS, runtime.GOARCH)
-	archive := releaseArchive(t, name, map[string]archiveEntry{
+	archive := releaseArchive(t, map[string]archiveEntry{
 		name + "/emisar":     {body: "runner-binary", mode: 0o755},
 		name + "/install.sh": {body: "#!/usr/bin/env bash\n", mode: 0o755},
 	})
@@ -237,7 +237,7 @@ func TestRunStripsIdentityOverridesFromTheInstallerHandoff(t *testing.T) {
 	root := t.TempDir()
 	executable := writeReceiptFixture(t, root, officialRepository)
 	name := fmt.Sprintf("emisar-0.19.0-%s-%s", runtime.GOOS, runtime.GOARCH)
-	archive := releaseArchive(t, name, map[string]archiveEntry{
+	archive := releaseArchive(t, map[string]archiveEntry{
 		name + "/emisar":     {body: "runner-binary", mode: 0o755},
 		name + "/install.sh": {body: "#!/usr/bin/env bash\n", mode: 0o755},
 	})
@@ -297,7 +297,7 @@ func TestRunFallsBackToImmutableGitHubMirrorWhenEmisarDownloadFails(t *testing.T
 	root := t.TempDir()
 	executable := writeReceiptFixture(t, root, officialRepository)
 	name := fmt.Sprintf("emisar-0.19.0-%s-%s", runtime.GOOS, runtime.GOARCH)
-	archive := releaseArchive(t, name, map[string]archiveEntry{
+	archive := releaseArchive(t, map[string]archiveEntry{
 		name + "/emisar":     {body: "runner-binary", mode: 0o755},
 		name + "/install.sh": {body: "#!/usr/bin/env bash\n", mode: 0o755},
 	})
@@ -534,7 +534,7 @@ type archiveEntry struct {
 	kind byte
 }
 
-func releaseArchive(t *testing.T, _ string, entries map[string]archiveEntry) []byte {
+func releaseArchive(t *testing.T, entries map[string]archiveEntry) []byte {
 	t.Helper()
 	var compressed bytes.Buffer
 	gzipWriter := gzip.NewWriter(&compressed)

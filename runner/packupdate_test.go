@@ -62,6 +62,14 @@ func TestPackRegistryHTTPClientRefusesHTTPSDowngrade(t *testing.T) {
 	}
 }
 
+// The catalog fetch allows 30s by context; a client-wide Timeout would
+// silently cut it to the client's limit.
+func TestPackRegistryHTTPClientLeavesDeadlineToCaller(t *testing.T) {
+	if got := packRegistryHTTPClient().Timeout; got != 0 {
+		t.Fatalf("client Timeout = %v, want 0 (callers set context deadlines)", got)
+	}
+}
+
 func TestUpdateOnePack_VerifiesHashAndReplacesSafely(t *testing.T) {
 	const id = "redis"
 	srcDir := writeSourcePack(t, id)

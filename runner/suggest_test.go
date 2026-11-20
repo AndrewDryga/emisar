@@ -93,7 +93,7 @@ func TestWriteSuggestions_ReloadGuidance(t *testing.T) {
 }
 
 // `--names-only` prints just the ids, one per line, for scripting
-// (suggest.go:82-85) — no headers, no evidence, no install lines.
+// — no headers, no evidence, no install lines.
 func TestPackSuggest_NamesOnly(t *testing.T) {
 	catalog := writeCatalogFile(t, `
 		{"id":"linux-core","name":"Linux core","os":[],"detect":{}},
@@ -103,14 +103,8 @@ func TestPackSuggest_NamesOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("suggest --names-only: %v", err)
 	}
-	lines := strings.Fields(strings.TrimSpace(out))
-	for _, l := range lines {
-		if strings.ContainsAny(l, " \t") {
-			t.Fatalf("--names-only line %q should be a bare id", l)
-		}
-	}
-	if !strings.Contains(out, "linux-core") || strings.Contains(out, "Install:") {
-		t.Errorf("--names-only should print bare ids and no guide; output:\n%s", out)
+	if want := "linux-core\ndebugging\n"; out != want {
+		t.Errorf("--names-only output = %q, want %q", out, want)
 	}
 }
 

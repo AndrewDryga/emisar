@@ -159,10 +159,9 @@ func TestDispatch_MaxLengthIsBytes(t *testing.T) {
 	rejected(t, dispatchValidate(t, reg, id, map[string]any{"mode": "fast", "note": multibyteOver}), "note", "max_length")
 }
 
-// closes PCK-003 (required) — a missing required arg is rejected at dispatch,
-// and a valid value passes. Grounded in shell.run_script's required `script`
-// (the break-glass action's sole arg). is the same row for that
-// action specifically.
+// A missing required arg is rejected at dispatch, and a valid value passes.
+// Grounded in shell.run_script's required `script` (the break-glass action's
+// sole arg).
 //
 // Also `script` is bounded by max_length: 5459 so the worst-case JSON-escaped
 // argument map fits the shared 32 KiB control-plane envelope: the exact limit
@@ -216,17 +215,18 @@ func TestDispatch_NginxStatus_LoopbackOnly(t *testing.T) {
 	}
 }
 
-// nginx's five log-reading actions take a `log_path` interpolated into a
-// `/bin/sh -c "tail ... <path>"` pipeline. The anchored pattern blocks shell
-// metacharacters, but `.` and `/` are charset members so it does NOT stop `..`;
+// nginx's five log-reading actions take a `log_path` passed to their fixed
+// `/bin/sh -c` program as a positional argument (`log="$1"`), so the shell
+// never re-parses it. The anchored pattern bounds the path's lexical shape, but
+// `.` and `/` are charset members so it does NOT stop `..`;
 // containment against traversal (and symlink escape) rests on
 // `allowed_prefixes: [/var/log/nginx]`, which runs the runner's
 // Clean+EvalSymlinks check. Because all five actions are `risk: low` (no
 // approval gate), a missing prefix would be a gate-bypassing arbitrary
 // root-readable file read (/etc/shadow, .pgpass, arbitrary .env). Drive both
 // halves at the real dispatch seam: the default log path passes, a `../` escape
-// to /etc is rejected by the prefix containment, and a shell-metacharacter
-// value is rejected by the pattern.
+// to /etc is rejected by the prefix containment, and a value outside the path
+// character class is rejected by the pattern.
 func TestDispatch_NginxLogPath_TraversalContained(t *testing.T) {
 	reg := loadRealLibrary(t)
 	// Every action carrying the shared log_path arg, with its declared default.
@@ -257,9 +257,8 @@ func TestDispatch_NginxLogPath_TraversalContained(t *testing.T) {
 				"log_path": "/var/log/nginx/../../../etc/shadow",
 			}), "log_path", "allowed_prefixes")
 
-			// A shell-metacharacter value is stopped earlier, by the pattern —
-			// the log_path lands in a /bin/sh -c pipeline, so this is the
-			// injection-containment boundary.
+			// A value outside the path character class is stopped earlier, by
+			// the pattern's lexical check, before canonical containment runs.
 			rejected(t, dispatchValidate(t, reg, c.id, map[string]any{
 				"log_path": "/var/log/nginx/$(id)",
 			}), "log_path", "pattern")
@@ -312,9 +311,10 @@ func TestDispatch_ShowcaseExtras_PerElementContained(t *testing.T) {
 
 // a messaging arg is bounded at dispatch. Grounded in
 // kafka.delete_consumer_group's `group` (pattern `^[a-zA-Z0-9_.\-]{1,255}$`):
-// a metacharacter-bearing group id is rejected; a legitimate one passes. The
-// group is interpolated into a `/bin/sh -c` kafka-consumer-groups.sh pipeline,
-// so the anchored pattern is the shell-containment boundary.
+// a group id outside that character class or past 255 characters is rejected;
+// a legitimate one passes. The group reaches kafka-consumer-groups.sh as a
+// positional argument (`"$1"`), so the shell never re-parses it; the pattern
+// bounds the identifier's characters and length.
 func TestDispatch_KafkaDeleteConsumerGroup_GroupBounded(t *testing.T) {
 	reg := loadRealLibrary(t)
 	const id = "kafka.delete_consumer_group"
@@ -337,14 +337,15 @@ func TestDispatch_DockerStop_ContainerBounded(t *testing.T) {
 
 // an orchestration node/name arg is bounded at dispatch.
 // Grounded in kubernetes.cordon's `name` (pattern `^[a-z0-9][a-z0-9.\-]{0,253}$`,
-// a DNS-1123-ish node name) interpolated into a `/bin/sh -c` kubectl pipeline:
-// an uppercase/metacharacter value is rejected, a real node name passes.
+// a DNS-1123-ish node name) passed to kubectl as a positional argument
+// (`cordon "$1"`): a value off the node-name shape is rejected, a real node
+// name passes.
 func TestDispatch_KubernetesCordon_NodeNameBounded(t *testing.T) {
 	reg := loadRealLibrary(t)
 	const id = "kubernetes.cordon"
 
 	accepted(t, dispatchValidate(t, reg, id, map[string]any{"name": "ip-10-0-1-23.eu-west-1.compute.internal"}))
-	// Leading uppercase violates the anchored class; metacharacters can't reach the shell.
+	// Leading uppercase, a space, and `;` all fall outside the node-name class.
 	rejected(t, dispatchValidate(t, reg, id, map[string]any{"name": "Node; reboot"}), "name", "pattern")
 }
 
@@ -411,7 +412,7 @@ func TestDispatch_JvmHeapDump_PidBounded(t *testing.T) {
 // pattern `^[A-Za-z_][A-Za-z0-9_]{0,127}$` + max_length 128) — a SQL/metachar
 // value injected into the `KILL MUTATION WHERE database='...'` clause is
 // rejected. The bool half is covered separately in
-// TestDispatch_BooleanArgCoercion.
+// TestDispatch_BooleanIntStringCoercion.
 func TestDispatch_ClickhouseKillMutation_IdentifierBounded(t *testing.T) {
 	reg := loadRealLibrary(t)
 	const id = "ch.kill_mutation"
@@ -425,9 +426,8 @@ func TestDispatch_ClickhouseKillMutation_IdentifierBounded(t *testing.T) {
 	}), "database", "pattern")
 }
 
-// closes PCK-003 (coercion / bool half) — the bool, int, and string
-// coercions accept the right shapes and reject the wrong ones at the real
-// dispatch seam. Grounded in showcase.every_arg_type (a bool `verbose`, an
+// The bool, int, and string coercions accept the right shapes and reject the
+// wrong ones at the real dispatch seam. Grounded in showcase.every_arg_type (a bool `verbose`, an
 // integer `port` with an `allowed` set, a string `mode` enum):
 //   - a real bool passes; a string "true" is a TYPE error (the runner does NOT
 //     coerce a string into a bool — the only safe way across the shell boundary
@@ -452,9 +452,8 @@ func TestDispatch_BooleanIntStringCoercion(t *testing.T) {
 	rejected(t, dispatchValidate(t, reg, id, map[string]any{"mode": "turbo"}), "mode", "enum")
 }
 
-// closes PCK-003 (unknown-arg at the real seam) — an arg key the action does
-// NOT declare is rejected at dispatch (the runner accepts only declared args;
-// the cloud can't smuggle an extra slot). Grounded in bonding.status, which
+// An arg key the action does NOT declare is rejected at dispatch (the runner
+// accepts only declared args; the cloud can't smuggle an extra slot). Grounded in bonding.status, which
 // declares exactly one arg (`bond`): a valid bond passes, but adding an
 // undeclared `extra` key is refused. (internal/validation/args_test.go covers
 // this on a synthetic schema; this proves it on a real action.)
@@ -501,14 +500,14 @@ func TestDispatch_VmLabelValues_LabelLengthBounded(t *testing.T) {
 	rejected(t, dispatchValidate(t, reg, id, map[string]any{"label": "a" + strings.Repeat("b", 128)}), "label", "pattern")
 }
 
-// nomad.job_dispatch's `meta_kv` is a caller-supplied string interpolated into a
-// `/bin/sh -c` loop that builds an unbounded `-meta k=v -meta k=v ...` argv for
-// `nomad job dispatch`. Its anchored pattern bounds each pair, but the trailing
-// `(,...)*` left the PAIR COUNT unbounded — so a multi-megabyte `a=b,a=b,...`
-// (every pair individually valid) passed validation and reached the shell,
-// either failing with E2BIG or dispatching a job bloated with tens of thousands
-// of meta vars (a bounded resource/DoS abuse). `max_length: 1024` is what now
-// caps total argv size at the dispatch seam; a realistic meta string passes.
+// nomad.job_dispatch's `meta_kv` is a caller-supplied string passed as a
+// positional argument (`$2`) to a fixed `/bin/sh -c` loop that splits it on
+// commas into a `-meta k=v -meta k=v ...` argv for `nomad job dispatch`. Its
+// anchored pattern bounds each pair, but the trailing `(,...)*` leaves the PAIR
+// COUNT unbounded — so a multi-megabyte `a=b,a=b,...` (every pair individually
+// valid) would either fail with E2BIG or dispatch a job bloated with tens of
+// thousands of meta vars (a bounded resource/DoS abuse). `max_length: 1024` is
+// what caps the total length at the dispatch seam; a realistic meta string passes.
 func TestDispatch_NomadJobDispatch_MetaKvLengthBounded(t *testing.T) {
 	reg := loadRealLibrary(t)
 	const id = "nomad.job_dispatch"
@@ -553,15 +552,15 @@ func TestDispatch_NomadExecMutators_NoLeadingDashIdentifier(t *testing.T) {
 	rejected(t, dispatchValidate(t, reg, "nomad.alloc_restart", map[string]any{"alloc_id": "abc12345", "task": "-help"}), "task", "pattern")
 }
 
-// cockroach.set_cluster_setting's `value` is interpolated verbatim into a
-// `/bin/sh -c "cockroach sql ... -e \"SET CLUSTER SETTING <name> = <value>\""`
-// pipeline — landing inside the double-quoted `-e` slot where `$(...)`, a
-// backtick, and a `"`-breakout `;` all execute. The quoted alternative of the
-// pattern is the only shell-containment boundary (the runner does NOT escape),
-// so it must exclude `"` `$` backtick `\`. Drive the real dispatch seam: the
-// shipped legit values ('64 MiB', DEFAULT) pass, and command-substitution /
-// quote-breakout payloads that the pre-fix `'[^']…'` alternative admitted are
-// now rejected on the pattern.
+// cockroach.set_cluster_setting's `value` reaches a fixed `/bin/sh -c` program
+// as a positional argument (`${2}`), so the shell expands it once and never
+// re-parses `$(...)` or backticks. It still lands verbatim in the SQL text of
+// `SET CLUSTER SETTING <name> = <value>`, so the pattern defines the accepted
+// value syntax: a single-quoted literal over a narrow character whitelist
+// (excluding `'` `"` `$` backtick `\` `;`) or a bare token. Drive the real
+// dispatch seam: the shipped legit values ('64 MiB', DEFAULT) pass, and values
+// carrying characters outside that whitelist, which the pre-fix `'[^']…'`
+// alternative admitted, are rejected on the pattern.
 func TestDispatch_CockroachSetClusterSetting_ValueShellSafe(t *testing.T) {
 	reg := loadRealLibrary(t)
 	const id = "cockroach.set_cluster_setting"
@@ -571,8 +570,8 @@ func TestDispatch_CockroachSetClusterSetting_ValueShellSafe(t *testing.T) {
 	accepted(t, dispatchValidate(t, reg, id, map[string]any{"name": name, "value": "'64 MiB'"}))
 	accepted(t, dispatchValidate(t, reg, id, map[string]any{"name": name, "value": "DEFAULT"}))
 
-	// Command substitution and a `"`-breakout `;`-chain — both matched the old
-	// `'[^']{1,254}'` alternative; the shell-safe charset now rejects them.
+	// `$`, backticks, `"` and `;` — all matched the old `'[^']{1,254}'`
+	// alternative; the accepted-value whitelist now rejects them.
 	rejected(t, dispatchValidate(t, reg, id, map[string]any{"name": name, "value": "'$(touch /tmp/pwned)'"}), "value", "pattern")
 	rejected(t, dispatchValidate(t, reg, id, map[string]any{"name": name, "value": `'" ; id ; "'`}), "value", "pattern")
 	rejected(t, dispatchValidate(t, reg, id, map[string]any{"name": name, "value": "'`id`'"}), "value", "pattern")

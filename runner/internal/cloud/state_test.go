@@ -443,7 +443,7 @@ func TestRunnerState_WireBudget(t *testing.T) {
 			t.Fatal(err)
 		}
 		if _, err := os.Stat(filepath.Join(root, "AGENTS.md")); err != nil {
-			t.Skipf("checked-in pack catalog unavailable: %v", err)
+			t.Fatalf("checked-in pack catalog unavailable: %v", err)
 		}
 		reg, err := packs.LoadAll([]string{root}, packs.LoadOptions{})
 		if err != nil {

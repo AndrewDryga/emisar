@@ -15,11 +15,9 @@ import (
 // TestE2E_ConcurrentMixedActions exercises the full pipeline end-to-end:
 // engine + executor + redactor + JSONL journal. It dispatches N runs in
 // parallel, mixing a successful action, a validation_failed call, and
-// an action that exits non-zero; then asserts the JSONL log contains
-// exactly N lines with consistent event_ids, action_ids, statuses, and
-// computed SHA-256s.
-//
-// This is the cross-cutting test the audit flagged as missing.
+// an action that exits non-zero; asserts each returned status and exit
+// code; then asserts the JSONL log holds one line per returned event_id,
+// each with a non-zero time and a non-empty event type.
 func TestE2E_ConcurrentMixedActions(t *testing.T) {
 	e, j, root := setupEngineExtra(t, map[string]string{
 		"nonzero.yaml": `

@@ -10,8 +10,9 @@ import (
 )
 
 // repoPacksDir resolves the real pack library at the repo root
-// (../../../packs from runner/internal/packs). Skips the test if it is not
-// present (e.g. the runner module checked out on its own).
+// (../../../packs from runner/internal/packs). The library is a required
+// fixture: runner tests run from the monorepo, so a missing tree fails the
+// test rather than silently skipping the security contracts that load it.
 func repoPacksDir(t *testing.T) string {
 	t.Helper()
 	dir, err := filepath.Abs(filepath.Join("..", "..", "..", "packs"))
@@ -19,7 +20,7 @@ func repoPacksDir(t *testing.T) string {
 		t.Fatalf("resolve packs dir: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "AGENTS.md")); err != nil {
-		t.Skipf("real pack library not found at %s: %v", dir, err)
+		t.Fatalf("real pack library not found at %s: %v", dir, err)
 	}
 	return dir
 }
@@ -68,9 +69,8 @@ func TestLibrary_RiskDistribution(t *testing.T) {
 	}
 }
 
-// closes the PCK-101…114 `-T05`-representative named-action risk checks —
-// the genuinely destructive actions each category names MUST carry the
-// high/critical risk the policy gate depends on. A silent downgrade of one
+// The genuinely destructive actions each inventory category names MUST carry
+// the high/critical risk the policy gate depends on. A silent downgrade of one
 // of these to a lower tier would bypass approval; this pins the label to the
 // real action YAML loaded from disk.
 func TestLibrary_NamedDestructiveActionRisk(t *testing.T) {
@@ -78,11 +78,11 @@ func TestLibrary_NamedDestructiveActionRisk(t *testing.T) {
 
 	// id -> expected risk, sampled by name across the inventory categories.
 	wantCritical := []string{
-		// PCK-101 web/proxy
+		// web/proxy
 		"nginx.stop_immediate", "httpd.graceful_stop",
-		// PCK-102 relational DB
+		// relational DB
 		"cockroach.set_cluster_setting",
-		// PCK-103 NoSQL/KV/cache/search (data-loss + topology criticals)
+		// NoSQL/KV/cache/search (data-loss + topology criticals)
 		"redis.flushall", "redis.flush_db", "redis.shutdown_nosave",
 		"redis.cluster_failover", "redis.replicaof",
 		"mongo.replset_stepdown",
@@ -90,50 +90,50 @@ func TestLibrary_NamedDestructiveActionRisk(t *testing.T) {
 		"cassandra.nodetool_drain", "cassandra.nodetool_removenode",
 		"ch.kill_mutation", "ch.system_drop_replica",
 		"mc.flush_all", "es.close_index",
-		// PCK-104 messaging/streaming
+		// messaging/streaming
 		"kafka.reset_offsets_to_earliest", "kafka.reset_offsets_to_latest",
 		"rmq.purge_queue",
-		// PCK-105 containers/registries
+		// containers/registries
 		"docker.volume_prune",
-		// PCK-106 orchestration/mesh
+		// orchestration/mesh
 		"consul.raft_remove_peer", "consul.snapshot_restore",
 		"nomad.node_purge", "nomad.operator_raft_remove_peer",
 		"kubernetes.drain",
-		// PCK-108 linux host
+		// linux host
 		"linux.reboot_host",
-		// PCK-110 firewall
+		// firewall
 		"fw.iptables_flush_chain", "pfsense.reboot",
-		// PCK-111 storage
+		// storage
 		"zfs.dataset_rollback",
-		// PCK-112 cloud APIs
+		// cloud APIs
 		"ec2.terminate_instance", "iam.deactivate_access_key",
 		"iam.delete_access_key", "cf.purge_all_cache",
-		// PCK-113 runtimes
+		// runtimes
 		"jvm.heap_dump", "postfix.delete_qid",
-		// PCK-114 provisioning/secrets/break-glass
+		// provisioning/secrets/break-glass
 		"cloud-init.clean", "vault.operator_seal", "vault.operator_step_down",
 		"shell.run_script",
 	}
 	wantHigh := []string{
-		// PCK-101 web reloads
+		// web reloads
 		"nginx.reload", "httpd.graceful_reload",
-		// PCK-102 connection-severing mutators
+		// connection-severing mutators
 		"postgres.terminate_backend",
-		// PCK-103 high mutators
+		// high mutators
 		"redis.client_kill", "redis.config_set",
-		// PCK-105 stop/kill/restart
+		// stop/kill/restart
 		"docker.stop",
-		// PCK-106 workload/node mutations
+		// workload/node mutations
 		"kubernetes.cordon", "nomad.node_drain", "frr.bgp_neighbor_shutdown",
-		// PCK-107 irreversible TSDB deletes
+		// irreversible TSDB deletes
 		"prom.delete_series",
-		// PCK-108 service/unit mutations
+		// service/unit mutations
 		"linux.systemctl_restart",
-		// PCK-110 block/ban
+		// block/ban
 		"fw.iptables_block_ip",
-		// PCK-112 state/detach
+		// state/detach
 		"ec2.stop_instance",
-		// PCK-114 kill/strace/sysctl
+		// kill/strace/sysctl
 		"debugging.kill_pid",
 	}
 

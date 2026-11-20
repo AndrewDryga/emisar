@@ -164,20 +164,23 @@ func SystemdPresent() bool {
 }
 
 // scanBinaries resolves each name against the process $PATH, then the
-// standard dirs, returning name->path for those found.
+// standard dirs, returning name->path for those found. The disk probe uses
+// the authored spelling (zkServer.sh exists only in that case on a
+// case-sensitive filesystem); results are keyed by the lowercase name.
 func scanBinaries(names, dirs []string) map[string]string {
 	pathDirs := filepath.SplitList(os.Getenv("PATH"))
 	found := make(map[string]string)
 	for _, raw := range names {
-		name := strings.ToLower(strings.TrimSpace(raw))
+		probe := strings.TrimSpace(raw)
+		name := strings.ToLower(probe)
 		if name == "" || found[name] != "" {
 			continue
 		}
-		if p := firstExecutable(name, pathDirs); p != "" {
+		if p := firstExecutable(probe, pathDirs); p != "" {
 			found[name] = p
 			continue
 		}
-		if p := firstExecutable(name, dirs); p != "" {
+		if p := firstExecutable(probe, dirs); p != "" {
 			found[name] = p
 		}
 	}

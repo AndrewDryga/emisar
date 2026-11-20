@@ -53,15 +53,12 @@ func TestPlanForScript(t *testing.T) {
 
 	// No interpreter → defaults to /bin/sh; the script path is argv[0], with
 	// rendered args following.
-	p := PlanForScript(a, "/packs/p/scripts/run.sh", "deadbeef", []string{"--flag"}, nil, lim)
+	p := PlanForScript(a, "/packs/p/scripts/run.sh", []string{"--flag"}, nil, lim)
 	if p.Binary != "/bin/sh" {
 		t.Errorf("default interpreter, got %q", p.Binary)
 	}
 	if len(p.Argv) != 2 || p.Argv[0] != "/packs/p/scripts/run.sh" || p.Argv[1] != "--flag" {
 		t.Errorf("argv=%v", p.Argv)
-	}
-	if p.ScriptSHA256 != "deadbeef" {
-		t.Errorf("scriptSHA=%q", p.ScriptSHA256)
 	}
 	if p.CWD != "/" {
 		t.Errorf("cwd should default to /, got %q", p.CWD)
@@ -72,7 +69,7 @@ func TestPlanForScript(t *testing.T) {
 
 	// An explicit interpreter is honoured and the script stays argv[0].
 	a.Execution.Script.Interpreter = "/usr/bin/python3"
-	got := PlanForScript(a, "/s.py", "", nil, nil, lim)
+	got := PlanForScript(a, "/s.py", nil, nil, lim)
 	if got.Binary != "/usr/bin/python3" {
 		t.Errorf("interp=%q", got.Binary)
 	}
@@ -80,7 +77,7 @@ func TestPlanForScript(t *testing.T) {
 		t.Errorf("argv=%v", got.Argv)
 	}
 	a.Execution.CWD = "/work"
-	if got := PlanForScript(a, "/s.py", "", nil, nil, lim); got.CWD != "/work" {
+	if got := PlanForScript(a, "/s.py", nil, nil, lim); got.CWD != "/work" {
 		t.Errorf("explicit cwd=%q", got.CWD)
 	}
 }

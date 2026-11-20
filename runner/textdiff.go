@@ -32,11 +32,11 @@ type diffLine struct {
 // diffContext is how many unchanged lines surround each hunk — git's default.
 const diffContext = 3
 
-// maxDiffCells bounds the LCS table. The largest script in the pack catalog is
-// under a thousand lines, so a 2000x2000 pair fits with room to spare at 16 MB
-// of transient int32s. A larger pair renders as a whole-file replacement rather
-// than sizing an allocation from input: packs.Fetch admits files up to 8 MiB,
-// and squaring that would be tens of gigabytes.
+// maxDiffCells bounds the LCS table at 16 MB of transient int32s, counted over
+// the lines left after trimming the common prefix and suffix (a 2000x2000
+// changed region, for example). A larger region renders as a full delete and
+// insert rather than sizing an allocation from input: packs.Fetch admits
+// files up to 8 MiB, and squaring that would be tens of gigabytes.
 const maxDiffCells = 4_000_000
 
 // splitLines splits file content into lines, dropping the trailing newline so

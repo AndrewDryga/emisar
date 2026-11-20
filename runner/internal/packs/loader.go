@@ -8,8 +8,11 @@
 //     child that contains a pack.yaml is loaded.
 //
 // All references inside a pack (action paths, script paths) are resolved
-// relative to the pack root and must remain inside it. Duplicate action
-// IDs (within or across packs) abort the load — fail closed.
+// relative to the pack root and must remain inside it. By default an invalid
+// pack or a duplicate action ID (within or across packs) aborts the load —
+// fail closed. With LoadOptions.SkipBrokenPacks the offending pack is removed
+// instead and reported through Registry.Degraded; a pack loaded earlier keeps
+// an action ID a later pack duplicates.
 package packs
 
 import (
@@ -57,8 +60,11 @@ func (o LoadOptions) logger() *slog.Logger {
 	return slog.Default()
 }
 
-// LoadAll discovers and loads packs from each path in dirs. The runner fails
-// closed if any pack is invalid.
+// LoadAll discovers and loads packs from each path in dirs. By default it
+// fails closed if any pack is invalid. With SkipBrokenPacks, a pack that fails
+// to load is recorded in Registry.Degraded and the rest still load; a
+// configured root that is not a directory or cannot be listed still fails the
+// load.
 func LoadAll(dirs []string, opts LoadOptions) (*Registry, error) {
 	reg := newRegistry()
 	for _, root := range dirs {
@@ -72,8 +78,12 @@ func LoadAll(dirs []string, opts LoadOptions) (*Registry, error) {
 		if !info.IsDir() {
 			return nil, fmt.Errorf("packs: %s is not a directory", root)
 		}
-		if _, err := os.Stat(filepath.Join(root, "pack.yaml")); err == nil {
-			if err := loadPackInto(reg, root, opts); err != nil {
+		isPack, err := hasManifest(root)
+		if err != nil || isPack {
+			if err == nil {
+				err = loadPackInto(reg, root, opts)
+			}
+			if err != nil {
 				if !opts.SkipBrokenPacks {
 					return nil, err
 				}
@@ -93,10 +103,14 @@ func LoadAll(dirs []string, opts LoadOptions) (*Registry, error) {
 				continue
 			}
 			sub := filepath.Join(root, e.Name())
-			if _, err := os.Stat(filepath.Join(sub, "pack.yaml")); err != nil {
+			isPack, err := hasManifest(sub)
+			if err == nil && !isPack {
 				continue
 			}
-			if err := loadPackInto(reg, sub, opts); err != nil {
+			if err == nil {
+				err = loadPackInto(reg, sub, opts)
+			}
+			if err != nil {
 				if !opts.SkipBrokenPacks {
 					return nil, err
 				}
@@ -105,6 +119,21 @@ func LoadAll(dirs []string, opts LoadOptions) (*Registry, error) {
 		}
 	}
 	return reg, nil
+}
+
+// hasManifest reports whether dir holds a pack.yaml. Only absence means "not a
+// pack": any other stat failure (permission denied, a symlink loop, an I/O
+// error) is returned so the pack is reported as broken instead of silently
+// vanishing from the registry.
+func hasManifest(dir string) (bool, error) {
+	manifest := filepath.Join(dir, "pack.yaml")
+	if _, err := os.Stat(manifest); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return false, nil
+		}
+		return false, fmt.Errorf("packs: stat %s: %w", manifest, err)
+	}
+	return true, nil
 }
 
 // LoadOne loads a single pack at root (which must contain pack.yaml). Used
@@ -185,7 +214,6 @@ func loadPackInto(reg *Registry, root string, opts LoadOptions) (err error) {
 		}
 		if outputValidator != nil {
 			action.Output.Schema = normalizedSchema
-			reg.outputSchemas[action.ID] = outputValidator
 		}
 		if action.Kind == actionspec.KindScript {
 			si, scriptBytes, err := resolveScript(absRoot, action.Execution.Script.Path, action.ID, pack.AllowSymlinks)
@@ -197,7 +225,13 @@ func loadPackInto(reg *Registry, root string, opts LoadOptions) (err error) {
 			reg.packHashInputs[pack.ID] = append(reg.packHashInputs[pack.ID],
 				hashEntry{rel: action.Execution.Script.Path, data: scriptBytes})
 		}
+		// Registered only once the action can no longer fail: removePack finds
+		// a validator through reg.actions, so one stored earlier would outlive
+		// a pack that fails on this action's script.
 		reg.actions[action.ID] = action
+		if outputValidator != nil {
+			reg.outputSchemas[action.ID] = outputValidator
+		}
 		reg.packHashInputs[pack.ID] = append(reg.packHashInputs[pack.ID],
 			hashEntry{rel: relPath, data: data})
 	}
@@ -429,9 +463,6 @@ func resolveScript(packRoot, rel, actionID string, allowSymlinks bool) (ScriptIn
 	full, err := resolveInsidePack(packRoot, rel, allowSymlinks)
 	if err != nil {
 		return ScriptInfo{}, nil, fmt.Errorf("packs: action %s: script: %w", actionID, err)
-	}
-	if _, err := os.Stat(full); err != nil {
-		return ScriptInfo{}, nil, fmt.Errorf("packs: action %s: stat script: %w", actionID, err)
 	}
 	si := ScriptInfo{Path: full}
 	data, err := os.ReadFile(full)

@@ -251,8 +251,15 @@ func validateShellProgramReferences(action *actionspec.Action, argv []string) er
 // program. The version forms used to live in a second, shorter table that
 // omitted node and awk, so exactly those two escaped the check.
 func codeInterpreter(base string) bool {
+	return codeInterpreters[interpreterName(base)]
+}
+
+// interpreterName maps a versioned interpreter binary (node22, gawk5,
+// tclsh8.6) to its codeInterpreters entry, so the argv and environment checks
+// see the same program. Any other base is returned unchanged.
+func interpreterName(base string) string {
 	if codeInterpreters[base] {
-		return true
+		return base
 	}
 	for name := range codeInterpreters {
 		suffix, found := strings.CutPrefix(base, name)
@@ -260,10 +267,10 @@ func codeInterpreter(base string) bool {
 			continue
 		}
 		if strings.Trim(suffix, "0123456789.") == "" {
-			return true
+			return name
 		}
 	}
-	return false
+	return base
 }
 
 func environmentSelectsCode(base, name string) bool {
@@ -273,6 +280,7 @@ func environmentSelectsCode(base, name string) bool {
 	if (shellInterpreters[base] || execWrappers[base]) && indirectCodeSelectionEnvVars[name] {
 		return true
 	}
+	base = interpreterName(base)
 	switch {
 	case strings.HasPrefix(base, "python"):
 		return name == "HOME" || name == "PYTHONHOME" || name == "PYTHONPATH" || name == "PYTHONUSERBASE"

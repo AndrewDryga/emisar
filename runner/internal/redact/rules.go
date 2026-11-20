@@ -1,6 +1,6 @@
 // Package redact implements output redaction. Redactions are applied to
-// stdout/stderr (and runbook final templates) before the data is returned to
-// the caller or written to the local journal.
+// stdout/stderr before the data is returned to the caller or written to the
+// local journal.
 package redact
 
 import (
@@ -179,10 +179,11 @@ func DefaultRules() []actionspec.RedactionRule {
 			//   ems-          — SCIM provisioning bearer tokens
 			//   emo- / emor- / emoc- — OAuth access / refresh token and
 			//                          authorization code
+			//   emdg-         — MCP device-grant code the installer polls with
 			// emkey-auth- (the enrollment keys' pre-rename prefix) and
 			// tskey-auth- (pre-rebrand) are kept as legacy matches so keys
 			// surfaced in old logs and host files still get redacted.
-			Pattern:     `\b(?:(?:emk|ems|rnrtok)-[A-Za-z0-9_-]{30,}|emo[rc]?-[A-Za-z0-9_-]{30,}|emkey-enroll-[A-Za-z0-9_-]{30,}|(?:emkey|tskey)-auth-[A-Za-z0-9_-]{30,})\b`,
+			Pattern:     `\b(?:(?:emk|ems|emdg|rnrtok)-[A-Za-z0-9_-]{30,}|emo[rc]?-[A-Za-z0-9_-]{30,}|emkey-enroll-[A-Za-z0-9_-]{30,}|(?:emkey|tskey)-auth-[A-Za-z0-9_-]{30,})\b`,
 			Replacement: "[REDACTED_EMISAR_TOKEN]",
 		},
 		{
@@ -288,8 +289,9 @@ func DefaultRules() []actionspec.RedactionRule {
 	}
 }
 
-// CompileAll compiles rules + DefaultRules. It returns the combined list.
-// Duplicates by Name are dropped, preferring the first occurrence.
+// CompileAll compiles the given rule batches, in order, into one list.
+// Duplicates by Name are dropped, preferring the first occurrence. It adds no
+// defaults: callers that want the built-in net pass DefaultRules() as a batch.
 func CompileAll(rules ...[]actionspec.RedactionRule) ([]Rule, error) {
 	out := make([]Rule, 0)
 	seen := make(map[string]struct{})

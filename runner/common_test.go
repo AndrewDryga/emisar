@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/andrewdryga/emisar/runner/internal/config"
@@ -212,10 +213,9 @@ func actionIDs(rt *runtime) []string {
 	return ids
 }
 
-// TestResolveConfigPath_WellKnownMustBeRegularFile: auto-discovery only accepts
-// a regular file at a well-known path — a directory there must NOT win, and
-// with no flag/env set resolution falls through to the no-config error.
-func TestResolveConfigPath_WellKnownMustBeRegularFile(t *testing.T) {
+// TestIsRegularFile: a directory at a well-known config path is rejected; a
+// regular file is accepted.
+func TestIsRegularFile(t *testing.T) {
 	if isRegularFile(t.TempDir()) {
 		t.Fatal("isRegularFile must reject a directory")
 	}
@@ -243,19 +243,10 @@ func TestResolveConfigPath_NoConfigAnywhere(t *testing.T) {
 		t.Fatal("resolveConfigPath must error when no config is discoverable")
 	}
 	for _, want := range []string{"EMISAR_CONFIG", "--config"} {
-		if !contains(err.Error(), want) {
+		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %q should mention %q (where it looked / how to fix)", err, want)
 		}
 	}
-}
-
-func contains(s, sub string) bool {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
 }
 
 // An explicit --config value is returned as-is, never stat-checked, so a
@@ -327,7 +318,7 @@ func TestBoot_AdmissionCompileErrorWrapped(t *testing.T) {
 	if err == nil {
 		t.Fatal("boot() must reject a malformed admission glob")
 	}
-	if !contains(err.Error(), "admission") {
+	if !strings.Contains(err.Error(), "admission") {
 		t.Fatalf("the error should be wrapped as an admission failure, got %q", err)
 	}
 }

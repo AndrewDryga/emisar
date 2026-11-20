@@ -173,11 +173,13 @@ func (v *Verifier) CAIDs() []string {
 func (v *Verifier) MaxAge() time.Duration { return v.maxAge }
 
 // Check decides whether a dispatch may run. Enforcement off allows every
-// dispatch. Enforcement on uses the single CA trust path, in this exact
-// order: a present cert, a trusted + valid CA signature over it, the cert inside
-// its own validity window, its scope satisfied by THIS runner's local identity,
-// the attestation inside the (independent) freshness window, the leaf signature
-// valid under the CERT's public key, and a never-seen nonce. The cert-validity
+// dispatch. Enforcement on uses the single CA trust path and requires all of: a
+// present cert; a supported claim format whose portal origin, intent, exact
+// arguments, and target set match the delivered dispatch; a well-formed nonce;
+// a trusted + valid CA signature over the cert; the cert inside its own
+// validity window; its scope satisfied by THIS runner's local identity; the
+// attestation inside the (independent) freshness window; the leaf signature
+// valid under the CERT's public key; and a never-seen nonce. The cert-validity
 // and attestation-freshness windows are SEPARATE gates — a long cert TTL must not
 // widen the replay window. A passing check CONSUMES the nonce so an identical
 // replay is refused; a failing check never burns one.
@@ -226,7 +228,7 @@ func (v *Verifier) Check(dispatch Dispatch, att *Attestation) Decision {
 		return refuse("target_mismatch",
 			"this runner generation is not named exactly once in the signed target set")
 	}
-	// 3. The signer emits 16 random bytes as lowercase hex, and step 7 journals
+	// 3. The signer emits 16 random bytes as lowercase hex, and step 8 journals
 	//    every accepted nonce. The nonce journal reloads only that shape, within
 	//    a 256-byte record, so accepting another one here would persist a record
 	//    the next boot reads as a corrupt journal and refuse signed dispatch.

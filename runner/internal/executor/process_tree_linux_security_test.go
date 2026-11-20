@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -40,10 +41,10 @@ func TestExecutor_CancellationKillsDescendantProcessGroup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Status == StatusOK {
-		t.Fatal("cancelled process tree reported success")
+	childPID := readSurvivorPID(t, pidPath)
+	if res.Status != StatusCancelled {
+		t.Fatalf("status = %s, want cancelled", res.Status)
 	}
-	childPID := readProcessID(t, pidPath)
 	waitForProcessExit(t, childPID, 3*time.Second)
 }
 
@@ -74,10 +75,11 @@ func TestExecutor_CancellationKillsDescendantAfterLeaderExits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	childPID := readSurvivorPID(t, pidPath)
 	if res.Status != StatusCancelled {
 		t.Fatalf("status = %s, want cancelled", res.Status)
 	}
-	waitForProcessExit(t, readProcessID(t, pidPath), 3*time.Second)
+	waitForProcessExit(t, childPID, 3*time.Second)
 }
 
 func TestExecutor_DescendantHoldingOutputPipeCannotHangWait(t *testing.T) {
@@ -92,16 +94,20 @@ func TestExecutor_DescendantHoldingOutputPipeCannotHangWait(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	childPID := readSurvivorPID(t, pidPath)
 	if elapsed := time.Since(start); elapsed > 3*time.Second {
 		t.Fatalf("Execute waited on an inherited pipe for %s", elapsed)
 	}
 	if res.Status != StatusFailed || !strings.Contains(res.StartError, "WaitDelay") {
 		t.Fatalf("result=%+v, want a bounded inherited-pipe failure", res)
 	}
-	waitForProcessExit(t, readProcessID(t, pidPath), 3*time.Second)
+	waitForProcessExit(t, childPID, 3*time.Second)
 }
 
-func readProcessID(t *testing.T, path string) int {
+// readSurvivorPID reads the descendant's PID and registers a SIGKILL for it
+// before any assertion runs, so a failing test never leaves the looping
+// descendant behind.
+func readSurvivorPID(t *testing.T, path string) int {
 	t.Helper()
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -111,6 +117,7 @@ func readProcessID(t *testing.T, path string) int {
 	if err != nil {
 		t.Fatalf("parse pid %q: %v", raw, err)
 	}
+	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
 	return pid
 }
 
@@ -154,8 +161,9 @@ func TestExecutor_SuccessfulActionReapsDetachedDescendant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	childPID := readSurvivorPID(t, pidPath)
 	if res.Status != StatusOK {
 		t.Fatalf("status = %s, want ok", res.Status)
 	}
-	waitForProcessExit(t, readProcessID(t, pidPath), 3*time.Second)
+	waitForProcessExit(t, childPID, 3*time.Second)
 }

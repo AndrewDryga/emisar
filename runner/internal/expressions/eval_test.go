@@ -80,6 +80,7 @@ func TestArgStrings(t *testing.T) {
 		{"any slice expands per element", []any{"a", int64(2)}, []string{"a", "2"}},
 		{"empty slice", []string{}, []string{}},
 		{"unformattable yields nothing", map[string]any{"k": "v"}, nil},
+		{"unformattable array element yields nothing", []any{"a", map[string]any{"k": "v"}}, nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

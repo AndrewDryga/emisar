@@ -35,6 +35,7 @@ func TestDefaultRules_EmisarCredentialPrefixes(t *testing.T) {
 		{"oauth access token (emo-)", "emo-" + tail},
 		{"oauth refresh token (emor-)", "emor-" + tail},
 		{"oauth authorization code (emoc-)", "emoc-" + tail},
+		{"mcp device-grant code (emdg-)", "emdg-" + tail},
 		{"enrollment key (emkey-enroll-)", "emkey-enroll-" + tail},
 		{"pre-rename enrollment key (emkey-auth-)", "emkey-auth-" + tail},
 		{"pre-rebrand enrollment key (tskey-auth-)", "tskey-auth-" + tail},
@@ -258,16 +259,10 @@ func TestCompileRule_EmptyReplacementDefaults(t *testing.T) {
 }
 
 // the always-on default set covers the documented secret
-// families and every rule compiles. Pins the count so a rule cannot be dropped
-// silently, and checks each family is present by name (rules.go:55-57,62-191).
+// families and every rule compiles, checking each family is present by name.
+// The rule count is pinned once, in rules_count_test.go.
 func TestDefaultRules_FamiliesPresentAndCompile(t *testing.T) {
 	defs := DefaultRules()
-
-	// Pin the count: the set is the documented last-resort net; an accidental
-	// deletion (or an un-synced add) should trip this. There are 20 rules.
-	if got := len(defs); got != 20 {
-		t.Fatalf("DefaultRules count changed: got %d, want 20 (update this test deliberately if a rule was added/removed)", got)
-	}
 
 	want := []string{
 		"bearer-token", "basic-auth", "jwt", "emisar-token",

@@ -180,10 +180,7 @@ func (c *Client) passesSignatureGate(ctx context.Context, s *runState, m RunActi
 		return true
 	}
 
-	var att *signing.Attestation
-	if m.Attestation != nil {
-		att = m.Attestation
-	}
+	att := m.Attestation
 	if att != nil && m.Opts.hasOverrides() {
 		return c.refuseSignature(ctx, s, m, signing.Decision{
 			Code:   "intent_mismatch",

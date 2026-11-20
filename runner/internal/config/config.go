@@ -316,7 +316,7 @@ func (c *Config) Validate() error {
 	}
 	if c.Events.MaxPreviewBytes > MaxPreviewBytesLimit {
 		return fmt.Errorf(
-			"config: events.max_preview_bytes must not exceed %d (a larger preview writes journal lines the chain verifier cannot read back)",
+			"config: events.max_preview_bytes must not exceed %d (the journal may omit larger previews to keep each record within its line limit)",
 			MaxPreviewBytesLimit,
 		)
 	}
@@ -343,7 +343,7 @@ func (c *Config) Validate() error {
 	}
 	for i := range c.Redaction.Rules {
 		if err := c.Redaction.Rules[i].Validate(); err != nil {
-			return fmt.Errorf("config: redaction[%d]: %w", i, err)
+			return fmt.Errorf("config: redaction.rules[%d]: %w", i, err)
 		}
 	}
 	return nil

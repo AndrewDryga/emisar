@@ -279,7 +279,7 @@ func TestValidate_SigningEnforcementRequiresDataDir(t *testing.T) {
 }
 
 // TestValidate_MaxAttestationAgeDefault confirms the 24h default the signing
-// validator applies when max_attestation_age is unset (config.go:240-242) —
+// validator applies when max_attestation_age is unset (validateSigning, via Config.Validate) —
 // the bound that caps replay exposure and defines the journal retention horizon.
 func TestValidate_MaxAttestationAgeDefault(t *testing.T) {
 	cfg := validConfig()
@@ -332,7 +332,7 @@ func TestValidate_RejectsHeartbeatAboveWatchdog(t *testing.T) {
 }
 
 // TestValidate_RejectsWrongSchemaVersion covers: schema_version
-// must equal the supported version (config.go:145-147). Zero (the field unset)
+// must equal the supported version (Config.Validate). Zero (the field unset)
 // and any other value are both rejected.
 func TestValidate_RejectsWrongSchemaVersion(t *testing.T) {
 	for _, v := range []int{0, 2, SchemaVersion + 1} {
@@ -402,10 +402,9 @@ func TestValidateCloudTransportSecurityRejectsQuery(t *testing.T) {
 func TestValidate_MaxPreviewBytesCeiling(t *testing.T) {
 	base := validConfig
 
-	// A megabyte preview writes journal lines past audit.MaxLineBytes, and both
-	// the tail reader and the hash-chain verifier scan with that ceiling — so
-	// the line is not slow to parse, it is unreadable, and chain verification
-	// breaks for everything after it. Refused at load rather than clamped.
+	// A megabyte preview could not fit audit.MaxLineBytes, so the journal writer
+	// would omit it from the record to keep the line readable: the operator would
+	// get none of the preview they asked for. Refused at load rather than clamped.
 	cfg := base()
 	cfg.Events.MaxPreviewBytes = 1 << 20
 	if err := cfg.Validate(); err == nil {

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 
 	"github.com/andrewdryga/emisar/runner/internal/jsonvalue"
 )
@@ -86,13 +85,6 @@ func decodeOneJSON(input []byte) (any, error) {
 	decoder.UseNumber()
 	var value any
 	if err := decoder.Decode(&value); err != nil {
-		return nil, err
-	}
-	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		if err == nil {
-			return nil, errors.New("multiple JSON values")
-		}
 		return nil, err
 	}
 	return value, nil

@@ -220,9 +220,6 @@ func mintCA(key crypto.Signer, name string, ttl time.Duration) ([]byte, error) {
 	return der, nil
 }
 
-// mintLeaf issues a dispatch-signing certificate carrying the scope as its one
-// emisar URI SAN. That SAN is what makes the certificate recognisable as ours;
-// without it an enforcing runner refuses the dispatch as cert_profile.
 // caKeyMaterial resolves the CA private key from a file or from argv.
 //
 // --ca-key takes the key MATERIAL, so the root of trust for signed dispatch
@@ -251,6 +248,9 @@ func caKeyMaterial(inline, file string) (string, error) {
 	}
 }
 
+// mintLeaf issues a dispatch-signing certificate carrying the scope as its one
+// emisar URI SAN. That SAN is what makes the certificate recognisable as ours;
+// without it an enforcing runner refuses the dispatch as cert_profile.
 func mintLeaf(caKey crypto.Signer, caCert *x509.Certificate, leafPub crypto.PublicKey, name string, scope attest.Scope, ttl time.Duration) ([]byte, error) {
 	scopeURI, err := attest.EncodeScopeURI(scope)
 	if err != nil {
@@ -584,7 +584,8 @@ after this, issue fresh certificates as they expire with
 			fmt.Print("1. Runner config — add under signing on every runner (PUBLIC, safe to commit):\n\n")
 			printTrustBlock(ca.name, ca.certPEM)
 			fmt.Print("2. CA PRIVATE key — store OFFLINE in a file; you re-issue certificates with it as\n")
-			fmt.Print("   they expire (emisar signing new-cert --ca-key-file <that file>):\n\n")
+			fmt.Print("   they expire (emisar signing new-cert --ca-key-file <that file>\n")
+			fmt.Print("   --ca-cert <the certificate from step 1>):\n\n")
 			fmt.Printf("   %s\n\n", ca.keyText)
 			fmt.Print("3. MCP client — set these env vars (keep the private key SECRET):\n\n")
 			fmt.Printf("   EMISAR_SIGNING_KEY=%s\n", leaf.keyText)

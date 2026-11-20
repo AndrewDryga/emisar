@@ -35,6 +35,11 @@ func TestPrimaryExecutable(t *testing.T) {
 			}},
 			want: "/bin/sh",
 		},
+		{
+			name:   "exec without command",
+			action: &actionspec.Action{Kind: actionspec.KindExec},
+			want:   "",
+		},
 	}
 
 	for _, tt := range tests {
@@ -65,6 +70,7 @@ func TestPrimaryExecutableAvailable(t *testing.T) {
 		{"available", true},
 		{executable, true},
 		{nonExecutable, false},
+		{filepath.Join(dir, "missing"), false},
 		{"missing", false},
 	} {
 		action := &actionspec.Action{Kind: actionspec.KindExec, Execution: actionspec.Execution{

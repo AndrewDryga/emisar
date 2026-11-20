@@ -140,18 +140,16 @@ func packListCmd() *cobra.Command {
 			if flagJSONOut {
 				return printJSON(ps)
 			}
+			actionCounts := map[string]int{}
+			for _, a := range reg.Actions() {
+				actionCounts[a.PackID]++
+			}
 			tw := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
 			fmt.Fprintln(tw, "ID\tVERSION\tACTIONS\tHASH\tDESCRIPTION")
 			for _, p := range ps {
-				actions := 0
-				for _, a := range reg.Actions() {
-					if a.PackID == p.ID {
-						actions++
-					}
-				}
 				hash, _ := reg.PackHash(p.ID)
 				fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%s\n",
-					p.ID, p.Version, actions, shortHash(hash), listDescription(p.Description))
+					p.ID, p.Version, actionCounts[p.ID], shortHash(hash), listDescription(p.Description))
 			}
 			return tw.Flush()
 		},
@@ -286,7 +284,8 @@ rejected before it reaches the runner.
 
 The pack is copied to <dest>/<pack-id>. A running daemon is reloaded
 automatically (SIGHUP) so it re-reads the catalog and re-advertises;
-without one, reload manually: systemctl reload emisar.
+without one, reload the service manually: systemctl reload emisar on
+Linux, launchctl kill SIGHUP system/com.emisar.runner on macOS.
 
 After a successful install the pack's declared verify action runs once
 (--no-verify skips it), so a wrong credential shows up here instead of at
@@ -321,7 +320,7 @@ on disk either way; fix the host's environment and re-run 'pack verify'.
 				if !hashEqual(wantHash, gotHash) {
 					return fmt.Errorf(
 						"hash mismatch for pack %q:\n  expected %s\n  got      %s\nrefusing to install",
-						pack.ID, normalizeHash(wantHash), gotHash)
+						pack.ID, "sha256:"+normalizeHash(wantHash), gotHash)
 				}
 			}
 
@@ -354,7 +353,7 @@ on disk either way; fix the host's environment and re-run 'pack verify'.
 				verifyAfterInstall(cmd.Context(), os.Stdout, pack.ID)
 			}
 			fmt.Println()
-			announceReload(os.Stdout, nil, "Reload the runner to load it: sudo systemctl reload emisar")
+			announceReload(os.Stdout, "Reload the runner to load it")
 			return nil
 		},
 	}
@@ -410,7 +409,7 @@ func looksLikeLocalPath(arg string) bool {
 	if strings.ContainsRune(arg, '/') || strings.ContainsRune(arg, os.PathSeparator) {
 		return true
 	}
-	if arg == "." || arg == ".." || strings.HasPrefix(arg, ".") {
+	if strings.HasPrefix(arg, ".") {
 		return true
 	}
 	if fi, err := os.Stat(arg); err == nil && fi.IsDir() {
@@ -433,7 +432,8 @@ func packUninstallCmd() *cobra.Command {
 Resolves the destination the same way 'pack install' does (--dest, else
 config paths.packs[0]) and removes <dest>/<name>. A running daemon is
 reloaded automatically (SIGHUP) so it drops the pack's actions from the
-advertised catalog; without one, reload manually: systemctl reload emisar.
+advertised catalog; without one, reload the service manually: systemctl reload emisar on
+Linux, launchctl kill SIGHUP system/com.emisar.runner on macOS.
 
   emisar pack uninstall redis
   emisar pack rm redis`,
@@ -489,12 +489,19 @@ advertised catalog; without one, reload manually: systemctl reload emisar.
 				return err
 			}
 
+			// Drop a leftover replacement backup first: with the target gone,
+			// the next install would restore it as an interrupted replacement
+			// and bring back the pack the operator removed.
+			backup := filepath.Join(dest, "."+name+".previous")
+			if err := os.RemoveAll(backup); err != nil {
+				return fmt.Errorf("remove pack backup %s: %w", backup, err)
+			}
 			if err := os.RemoveAll(target); err != nil {
 				return fmt.Errorf("remove %s: %w", target, err)
 			}
 
 			fmt.Printf("removed pack %s from %s\n", name, target)
-			announceReload(os.Stdout, nil, "Reload the runner to drop its actions: sudo systemctl reload emisar")
+			announceReload(os.Stdout, "Reload the runner to drop its actions")
 			return nil
 		},
 	}

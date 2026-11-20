@@ -16,7 +16,7 @@ func TestSystemdServiceResult(t *testing.T) {
 		{"active and enabled is healthy", "active", "enabled", checkOK, "active, enabled at boot"},
 		{"active but disabled warns about reboots", "active", "disabled", checkWarn, "sudo systemctl enable emisar"},
 		{"inactive warns with the start command", "inactive", "enabled", checkWarn, "sudo systemctl start emisar"},
-		{"failed warns with the start command", "failed", "enabled", checkWarn, "systemd: failed"},
+		{"failed warns with the start command", "failed", "enabled", checkWarn, "systemd: failed — start it: sudo systemctl start emisar"},
 		{"unknown state still warns", "unknown", "unknown", checkWarn, "systemd: unknown"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

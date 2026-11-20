@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"testing"
 
@@ -247,7 +248,7 @@ func TestPackInstall_FromLocalPath(t *testing.T) {
 		t.Errorf("install should report the installed pack; output:\n%s", out)
 	}
 	// The reload reminder is the operator's next step.
-	if !strings.Contains(out, "reload emisar") {
+	if !strings.Contains(out, manualReloadCommand(goruntime.GOOS)) {
 		t.Errorf("install should remind the operator to reload; output:\n%s", out)
 	}
 }
@@ -428,7 +429,7 @@ func TestPackInstall_NoDestNoConfigErrors(t *testing.T) {
 // The install/uninstall help examples show only what the operator must type:
 // --dest defaults to the configured packs dir, so an example that carries it
 // teaches a flag nobody needs. The automatic-SIGHUP prose stays — it's the
-// behavior, and the manual systemctl line is the honest fallback.
+// behavior, and the manual systemctl/launchctl lines are the honest fallback.
 func TestPackHelpExamplesOmitDefaultDest(t *testing.T) {
 	for name, help := range map[string]string{
 		"install":   packInstallCmd().Long,
@@ -441,8 +442,10 @@ func TestPackHelpExamplesOmitDefaultDest(t *testing.T) {
 			if !strings.Contains(help, "automatically (SIGHUP)") {
 				t.Errorf("%s help must keep the automatic-reload behavior:\n%s", name, help)
 			}
-			if !strings.Contains(help, "systemctl reload emisar") {
-				t.Errorf("%s help must keep the manual reload fallback:\n%s", name, help)
+			for _, fallback := range []string{"systemctl reload emisar", "launchctl kill SIGHUP system/com.emisar.runner"} {
+				if !strings.Contains(help, fallback) {
+					t.Errorf("%s help must keep the manual reload fallback %q:\n%s", name, fallback, help)
+				}
 			}
 		})
 	}
@@ -473,8 +476,45 @@ func TestPackUninstall_RemovesAndReminds(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dest, "redis")); !os.IsNotExist(err) {
 		t.Fatalf("uninstall should have removed the pack dir: %v", err)
 	}
-	if !strings.Contains(out, "removed pack redis") || !strings.Contains(out, "reload") {
+	if !strings.Contains(out, "removed pack redis") || !strings.Contains(out, manualReloadCommand(goruntime.GOOS)) {
 		t.Errorf("uninstall should report removal + remind to reload; output:\n%s", out)
+	}
+}
+
+// A leftover replacement backup must not outlive an uninstall: with the
+// target gone, the next install would restore the old tree as an interrupted
+// replacement and then refuse to install the new one.
+func TestPackUninstall_RemovesStaleBackupSoReinstallIsFresh(t *testing.T) {
+	dest := t.TempDir()
+	src := writeValidPack(t, t.TempDir(), "redis")
+	if err := copyTree(src, filepath.Join(dest, "redis")); err != nil {
+		t.Fatalf("seed installed pack: %v", err)
+	}
+	backup := filepath.Join(dest, ".redis.previous")
+	if err := copyTree(src, backup); err != nil {
+		t.Fatalf("seed stale backup: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(backup, "OLD"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := packUninstallCmd()
+	cmd.SilenceUsage, cmd.SilenceErrors = true, true
+	cmd.SetArgs([]string{"redis", "--dest", dest, "--yes"})
+	var runErr error
+	captureStdout(t, func() { runErr = cmd.Execute() })
+	if runErr != nil {
+		t.Fatalf("uninstall: %v", runErr)
+	}
+	if _, err := os.Stat(backup); !os.IsNotExist(err) {
+		t.Fatalf("uninstall left the replacement backup behind: %v", err)
+	}
+
+	if err := replacePackTree(src, filepath.Join(dest, "redis"), false); err != nil {
+		t.Fatalf("reinstall after uninstall: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "redis", "OLD")); !os.IsNotExist(err) {
+		t.Fatalf("reinstall restored the old tree: %v", err)
 	}
 }
 

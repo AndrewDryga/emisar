@@ -1,7 +1,6 @@
 package packspec
 
 import (
-	"runtime"
 	"testing"
 )
 
@@ -145,27 +144,4 @@ func setupWithHostAccess(mutate func(*HostAccess)) Setup {
 	}
 	mutate(&access)
 	return Setup{HostAccess: []HostAccess{access}}
-}
-
-func TestRequirements_MatchesHost(t *testing.T) {
-	// Empty OS list matches everything.
-	if !(Requirements{}).MatchesHost() {
-		t.Fatal("empty requirements should match")
-	}
-	// Current OS is in the list.
-	if !(Requirements{OS: []string{runtime.GOOS}}).MatchesHost() {
-		t.Fatalf("current OS %s should match", runtime.GOOS)
-	}
-	// Current OS not in list of one unrelated OS.
-	other := "linux"
-	if runtime.GOOS == "linux" {
-		other = "windows"
-	}
-	if (Requirements{OS: []string{other}}).MatchesHost() {
-		t.Fatalf("other OS %s should not match host %s", other, runtime.GOOS)
-	}
-	// Mixed list including current OS still matches.
-	if !(Requirements{OS: []string{other, runtime.GOOS}}).MatchesHost() {
-		t.Fatalf("mixed list including %s should match", runtime.GOOS)
-	}
 }

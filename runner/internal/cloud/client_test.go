@@ -1261,43 +1261,30 @@ func TestClient_ConcurrencyCap(t *testing.T) {
 		<-done
 	})
 
-	// Two concurrent runs; second should be rejected.
-	sendRunAction(t, conn, cli, "req_first", "t.echo", map[string]any{"msg": "1"})
+	// Hold the only slot with a run that does not finish on its own, so the
+	// second dispatch arrives while the cap is genuinely reached.
+	sendRunAction(t, conn, cli, "req_first", "t.sleep", nil)
+	waitUntil(t, 3*time.Second, func() bool { return cli.countInflight() == 1 })
 	sendRunAction(t, conn, cli, "req_second", "t.echo", map[string]any{"msg": "2"})
 
-	// Look for any error message with concurrency_cap_reached. We can't
-	// guarantee ordering — the first might finish before the second
-	// arrives, in which case the second runs successfully. To make the
-	// test deterministic we'd need a slower action; for now, just
-	// verify that EITHER both succeed OR the second was capped.
-	deadline := time.After(3 * time.Second)
-	tick := time.NewTicker(20 * time.Millisecond)
-	defer tick.Stop()
-	for {
-		results := conn.sentByType(MsgActionResult)
-		errs := conn.sentByType(MsgError)
-		if len(results)+len(errs) >= 2 {
-			// At least one of these branches must be true:
-			//   1. both succeeded (cap wasn't hit because the first finished first)
-			//   2. error with concurrency_cap_reached delivered
-			cappedSeen := false
-			for _, e := range errs {
-				if e["code"] == "concurrency_cap_reached" {
-					cappedSeen = true
-				}
+	second := testRequestID("req_second")
+	waitUntil(t, 3*time.Second, func() bool {
+		for _, e := range conn.sentByType(MsgError) {
+			if e["code"] == "concurrency_cap_reached" && e["request_id"] == second {
+				return true
 			}
-			if cappedSeen || len(results) == 2 {
-				return
-			}
-			t.Fatalf("unexpected mix: results=%+v errs=%+v", results, errs)
 		}
-		select {
-		case <-tick.C:
-		case <-deadline:
-			t.Fatalf("timed out waiting for two responses; results=%v errs=%v",
-				len(results), len(errs))
+		return false
+	})
+	for _, r := range conn.sentByType(MsgActionResult) {
+		if r["request_id"] == second {
+			t.Fatalf("capped dispatch still ran: %+v", r)
 		}
 	}
+
+	// Cancel the in-flight sleep so the test shuts down promptly.
+	raw, _ := json.Marshal(CancelMsg{Envelope: Envelope{Type: MsgCancel, ProtocolVersion: ProtocolVersion, RequestID: testRequestID("req_first")}})
+	conn.in <- raw
 }
 
 func TestClient_AuditWriteDoesNotHoldClientMutex(t *testing.T) {

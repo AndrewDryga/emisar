@@ -242,8 +242,6 @@ func collapseSpace(s string) string {
 	return strings.Join(strings.Fields(s), " ")
 }
 
-// wrapText word-wraps s to at most width columns, returning one string per
-// line. Empty input yields no lines.
 // setupLink matches the same opt-in link syntax the pack page renders. Only
 // https, so an authored `javascript:` or `file:` target is never presented as
 // somewhere to go.
@@ -276,6 +274,8 @@ func writeLinks(w io.Writer, indent string, links []string) {
 	}
 }
 
+// wrapText word-wraps s to at most width columns, returning one string per
+// line. Empty input yields no lines.
 func wrapText(s string, width int) []string {
 	words := strings.Fields(s)
 	if len(words) == 0 {

@@ -28,9 +28,9 @@ func packCatalogCmd() *cobra.Command {
 Works for ANY registry, not just emisar's: point --base-url at wherever you
 host it, --repo-url at your source repository, and 'publish' to your own GCS
 bucket — or skip 'publish' and sync the built tree to S3, MinIO, or any static
-file host (it is plain files). Runners
-install the exact immutable tarball URL listed in v1/catalog.json. The
-name-based '--registry' install flow uses a different URL layout.
+file host (it is plain files). Runners install the exact immutable tarball
+URL listed in v1/catalog.json. The name-based '--registry' install flow uses
+a different URL layout.
 Guide: https://emisar.dev/docs/pack-registry
 
 'build' produces, under an output dir, the immutable per-pack tarballs

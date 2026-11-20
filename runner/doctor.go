@@ -115,7 +115,7 @@ func doctorCmd() *cobra.Command {
 	var probe bool
 	cmd := &cobra.Command{
 		Use:   "doctor",
-		Short: "Run offline preflight checks for a runner that won't connect or run",
+		Short: "Run preflight checks for a runner that won't connect or run",
 		Long: `doctor diagnoses the common reasons a runner can't connect or run
 actions — before you reach for the logs. It checks the config, the
 control-plane credential, the pack directories and the packs they hold, the
@@ -128,7 +128,7 @@ non-zero if any check fails. --json reports the same checks as a
 machine-readable object.
 
 doctor executes no action by default: every check reads local state or opens
-one HTTP request. --probe adds the online check — it runs each installed
+one HTTP request. --probe adds pack verification — it runs each installed
 pack's declared verify action, the same probe as 'pack verify', which
 authenticates to that pack's target. Use it when diagnosing why a pack's
 actions fail; it costs one real call per pack.`,
@@ -158,8 +158,9 @@ actions fail; it costs one real call per pack.`,
 
 // runDoctor runs every preflight check and returns one result per check.
 // Config is the prerequisite — if it can't load, the checks that depend on it
-// are skipped rather than run against a zero config. probe adds the one check
-// that executes actions; without it doctor stays entirely offline.
+// are skipped rather than run against a zero config. The default checks include
+// control-plane reachability but run no pack action; probe adds the one check
+// that executes actions.
 func runDoctor(ctx context.Context, probe bool) []checkResult {
 	return runDoctorChecks(ctx, probe, true)
 }

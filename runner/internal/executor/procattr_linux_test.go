@@ -34,8 +34,11 @@ func TestApplyProcAttr_LinuxSetsPdeathsigAndSetpgid(t *testing.T) {
 // Credential, Foreground, etc.).
 func TestApplyProcAttr_LinuxPreservesExistingSysProcAttr(t *testing.T) {
 	cmd := exec.Command("/bin/true")
-	cmd.SysProcAttr = &syscall.SysProcAttr{Foreground: false}
+	cmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: 65534, Gid: 65534}}
 	applyProcAttr(cmd)
+	if cred := cmd.SysProcAttr.Credential; cred == nil || cred.Uid != 65534 || cred.Gid != 65534 {
+		t.Errorf("existing Credential was not preserved: %+v", cred)
+	}
 	if cmd.SysProcAttr.Pdeathsig != syscall.SIGKILL {
 		t.Error("Pdeathsig not applied on top of existing SysProcAttr")
 	}

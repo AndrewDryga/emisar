@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/andrewdryga/emisar/runner/internal/actionhost"
 	"github.com/andrewdryga/emisar/runner/internal/cloud"
 	"github.com/andrewdryga/emisar/runner/internal/config"
 	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
@@ -408,57 +407,6 @@ func TestCheckDispatchLog(t *testing.T) {
 	})
 }
 
-func TestDoctorUsesActionHostExecutableVerdict(t *testing.T) {
-	exec := &actionspec.Action{
-		Kind:      actionspec.KindExec,
-		Execution: actionspec.Execution{Command: &actionspec.Command{Binary: "redis-cli"}},
-	}
-	script := &actionspec.Action{
-		Kind:      actionspec.KindScript,
-		Execution: actionspec.Execution{Script: &actionspec.Script{Interpreter: "/bin/sh"}},
-	}
-	execNoCmd := &actionspec.Action{Kind: actionspec.KindExec}
-
-	if got := actionhost.PrimaryExecutable(exec); got != "redis-cli" {
-		t.Errorf("exec binary = %q, want redis-cli", got)
-	}
-	if got := actionhost.PrimaryExecutable(script); got != "/bin/sh" {
-		t.Errorf("script interpreter = %q, want /bin/sh", got)
-	}
-	if got := actionhost.PrimaryExecutable(execNoCmd); got != "" {
-		t.Errorf("exec with no command = %q, want empty", got)
-	}
-}
-
-func TestActionHostExecutableAvailability(t *testing.T) {
-	action := func(binary string) *actionspec.Action {
-		return &actionspec.Action{Kind: actionspec.KindExec, Execution: actionspec.Execution{
-			Command: &actionspec.Command{Binary: binary},
-		}}
-	}
-	// A real path that exists: the test binary itself.
-	if !actionhost.PrimaryExecutableAvailable(action(os.Args[0])) {
-		t.Errorf("PrimaryExecutableAvailable(%q) = false, want true", os.Args[0])
-	}
-	if actionhost.PrimaryExecutableAvailable(action("/definitely/not/here/emisar-xyz")) {
-		t.Error("missing absolute path reported available")
-	}
-	if actionhost.PrimaryExecutableAvailable(action("emisar-definitely-not-a-real-binary-xyz")) {
-		t.Error("missing PATH binary reported available")
-	}
-
-	// A bare name resolvable on PATH.
-	dir := t.TempDir()
-	fake := filepath.Join(dir, "emisar-fake-tool")
-	if err := os.WriteFile(fake, []byte("#!/bin/sh\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", dir)
-	if !actionhost.PrimaryExecutableAvailable(action("emisar-fake-tool")) {
-		t.Error("PATH binary reported unavailable")
-	}
-}
-
 func TestHTTPProbeURL(t *testing.T) {
 	tests := []struct {
 		raw     string
@@ -639,7 +587,7 @@ func hostOf(rawURL string) string {
 // loadable config, a present credential, packs that load, action binaries on
 // disk, and a reachable control plane. The cloud check HEADs cfg.Cloud.URL, so
 // we point it at a loopback httptest server (loopback cleartext is allowed).
-// The one-action pack runs /bin/true, which resolves. Driven through the real
+// The one-action pack declares /bin/sh with argv -c true. Driven through the real
 // command; RunE returns nil and reportDoctor prints to os.Stdout.
 func TestDoctorCmd_AllPassExitZero(t *testing.T) {
 	withFlags(t)

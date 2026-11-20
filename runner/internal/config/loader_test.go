@@ -260,7 +260,7 @@ execution:
 }
 
 // TestLoad_EMISAR_URLOverride covers: $EMISAR_URL overrides
-// cloud.url from the file (loader.go:36-40), so the same baked-in config can
+// cloud.url from the file (in Load), so the same baked-in config can
 // target dev/prod control planes without re-templating. The override lands
 // before Validate, so the env value is the one that's transport-checked.
 func TestLoad_EMISAR_URLOverride(t *testing.T) {
@@ -282,7 +282,7 @@ func TestLoad_EMISAR_URLOverride(t *testing.T) {
 
 // TestLoad_EmptyEMISAR_URLLeavesConfig confirms the override is skipped when
 // the env var is empty, so an unset/blank EMISAR_URL never blanks a valid
-// configured cloud.url (loader.go:38).
+// configured cloud.url (in Load).
 func TestLoad_EmptyEMISAR_URLLeavesConfig(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.yaml")

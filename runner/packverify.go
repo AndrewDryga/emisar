@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -303,17 +304,30 @@ func truncateDetail(s string) string {
 
 // writeVerifyReport renders the probe rows as a table plus a count line.
 func writeVerifyReport(w io.Writer, report packVerifyReport) {
-	style := newStyler(w)
+	renderVerifyReport(w, newStyler(w), report)
+}
+
+func renderVerifyReport(w io.Writer, style styler, report packVerifyReport) {
 	if len(report.Packs) == 0 {
 		fmt.Fprintln(w, "no packs installed")
 		return
 	}
-	tw := tabwriter.NewWriter(w, 0, 2, 2, ' ', 0)
+	// Aligned first, colored second: tabwriter measures a cell with len(), so
+	// an ANSI escape inside the status cell counts toward its width, and the
+	// escapes differ in length per status, which skews the columns.
+	var aligned bytes.Buffer
+	tw := tabwriter.NewWriter(&aligned, 0, 2, 2, ' ', 0)
 	for _, r := range report.Packs {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
-			verifyStatusLabel(style, r.Status), r.PackID, r.ActionID, verifyRowDetail(r))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", r.Status, r.PackID, r.ActionID, verifyRowDetail(r))
 	}
 	tw.Flush()
+	for i, line := range strings.Split(strings.TrimSuffix(aligned.String(), "\n"), "\n") {
+		if i < len(report.Packs) && strings.HasPrefix(line, report.Packs[i].Status) {
+			status := report.Packs[i].Status
+			line = verifyStatusLabel(style, status) + line[len(status):]
+		}
+		fmt.Fprintln(w, line)
+	}
 
 	counts := []string{fmt.Sprintf("%d ok", report.OK)}
 	if report.Failed > 0 {

@@ -19,9 +19,6 @@ import (
 
 const defaultMaxStringBytes = 32 << 10
 
-// Validate normalizes raw against the arg schema. It returns a new map of
-// validated values (only declared args) or a *Error describing the first
-// failure. raw must not be mutated.
 // A float64 round-trips in at most 24 characters; 64 leaves room for an
 // author's padded literal without leaving the door open to a 30 KB one.
 const maxNumberLiteralBytes = 64
@@ -31,6 +28,10 @@ const maxNumberLiteralBytes = 64
 // what the envelope alone allowed.
 const defaultMaxItems = 256
 
+// Validate normalizes raw against the arg schema. It returns a new map of
+// validated values (only declared args) or a *Error describing the first
+// failure. raw must not be mutated.
+//
 // protected lists absolute roots no action argument may name, whatever the
 // pack declares. Callers outside the dispatch path (the authoring-time lints)
 // pass nil: they validate example values against a schema, not a real host.

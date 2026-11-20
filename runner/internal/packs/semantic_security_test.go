@@ -183,11 +183,10 @@ func TestLoad_ExecWrappersRejectOpenEndedArguments(t *testing.T) {
 
 func TestLoad_ExecWrapperControlFormsRejectOpenEndedArguments(t *testing.T) {
 	tests := []struct {
-		name      string
-		binary    string
-		args      string
-		argv      string
-		wantError string
+		name   string
+		binary string
+		args   string
+		argv   string
 	}{
 		{name: "su command", binary: "su", args: freeStringArg("program"), argv: `argv: ["-c", "{{ args.program }}", "root"]`},
 		{name: "su session command", binary: "su", args: freeStringArg("program"), argv: `argv: ["--session-command={{ args.program }}", "root"]`},
@@ -201,10 +200,6 @@ func TestLoad_ExecWrapperControlFormsRejectOpenEndedArguments(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			wantError := tc.wantError
-			if wantError == "" {
-				wantError = "must not be passed through " + tc.binary + " command selection"
-			}
 			assertActionLoad(
 				t,
 				"testpack.wrapper_control",
@@ -213,7 +208,7 @@ func TestLoad_ExecWrapperControlFormsRejectOpenEndedArguments(t *testing.T) {
 				tc.argv,
 				"",
 				false,
-				wantError,
+				"must not be passed through "+tc.binary+" command selection",
 			)
 		})
 	}
@@ -396,6 +391,14 @@ func TestLoad_DirectInterpretersRejectDynamicModuleSearchEnvironment(t *testing.
 		{binary: "Rscript", name: "R_PROFILE"},
 		{binary: "tclsh", name: "TCLLIBPATH"},
 		{binary: "pwsh", name: "PSModulePath"},
+		// A version suffix names the same interpreter, as it does for the
+		// argv check, so the module-search variable is still code selection.
+		{binary: "node22", name: "NODE_PATH"},
+		{binary: "gawk5", name: "AWKPATH"},
+		{binary: "gawk5", name: "AWKLIBPATH"},
+		{binary: "tclsh8.6", name: "TCLLIBPATH"},
+		{binary: "wish8.6", name: "TCLLIBPATH"},
+		{binary: "luajit2", name: "LUA_PATH"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.binary+"_"+tc.name, func(t *testing.T) {
@@ -411,6 +414,21 @@ func TestLoad_DirectInterpretersRejectDynamicModuleSearchEnvironment(t *testing.
 			)
 		})
 	}
+}
+
+// A pack-authored module path stays allowed for a versioned interpreter; only
+// a caller-supplied one is code selection.
+func TestLoad_VersionedInterpreterKeepsPackAuthoredModulePath(t *testing.T) {
+	assertActionLoad(
+		t,
+		"testpack.fixed_module_path",
+		"node22",
+		`args: []`,
+		`argv: ["-c", "true"]`,
+		`  env: {NODE_PATH: "/opt/app/node_modules"}`,
+		false,
+		"",
+	)
 }
 
 func TestLoad_StaticRuntimeWrapperInputsRemainPackAuthored(t *testing.T) {

@@ -273,10 +273,7 @@ func wholeExpression(s string) (string, bool) {
 // that reach argv — a list secret expands into separate tokens, not one
 // bracketed "%v" blob. Values it cannot format yield no strings.
 func ArgStrings(v any) []string {
-	if elems, ok, err := expandArray(v); ok {
-		if err != nil {
-			return nil
-		}
+	if elems, ok, _ := expandArray(v); ok {
 		return elems
 	}
 	if s, err := formatScalar(v); err == nil {
