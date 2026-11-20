@@ -29,7 +29,7 @@ mrr =
         WHEN billing_interval = 'month' THEN unit_price_amount * quantity::numeric / billing_frequency
         WHEN billing_interval = 'year' THEN unit_price_amount * quantity::numeric / (12 * billing_frequency)
       END AS mrr_minor
-    FROM subscriptions
+    FROM billing_subscriptions
     WHERE status = 'active'
       AND unit_price_amount IS NOT NULL
       AND currency_code IS NOT NULL
@@ -57,7 +57,7 @@ subscription_mix =
     coalesce(billing_interval, 'unknown') AS billing_interval,
     count(*) AS subscriptions,
     sum(quantity) AS billed_quantity
-  FROM subscriptions
+  FROM billing_subscriptions
   GROUP BY plan, status, coalesce(billing_interval, 'unknown')
   ORDER BY subscriptions DESC, plan, status
   """)
@@ -81,7 +81,7 @@ account_revenue =
       WHEN s.billing_interval = 'year' THEN s.unit_price_amount * s.quantity::numeric / NULLIF(12 * s.billing_frequency, 0)
     END, 2) AS mrr_minor_units,
     s.current_period_end
-  FROM subscriptions s
+  FROM billing_subscriptions s
   JOIN accounts a ON a.id = s.account_id AND a.deleted_at IS NULL
   ORDER BY mrr_minor_units DESC NULLS LAST, a.name
   LIMIT 500
@@ -102,7 +102,7 @@ revenue_quality =
     count(*) FILTER (WHERE status = 'active' AND billing_frequency IS NULL) AS missing_frequency,
     count(*) FILTER (WHERE status = 'active' AND (billing_interval IS NULL OR billing_interval NOT IN ('month', 'year'))) AS unsupported_cadence,
     count(*) FILTER (WHERE status = 'active' AND unit_price_amount IS NOT NULL AND currency_code IS NOT NULL AND billing_frequency > 0 AND billing_interval IN ('month', 'year')) AS included_in_mrr
-  FROM subscriptions
+  FROM billing_subscriptions
   """)
 
 Analytics.table(revenue_quality)

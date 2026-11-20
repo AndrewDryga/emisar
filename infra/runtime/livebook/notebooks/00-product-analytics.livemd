@@ -39,7 +39,7 @@ freshness =
   UNION ALL
   SELECT 'audit_events', max(inserted_at) FROM audit_events
   UNION ALL
-  SELECT 'subscriptions', max(updated_at) FROM subscriptions
+  SELECT 'subscriptions', max(updated_at) FROM billing_subscriptions
   ORDER BY dataset
   """)
 

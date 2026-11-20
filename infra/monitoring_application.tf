@@ -13,8 +13,8 @@ locals {
     }
 
     billing_sync_failures = {
-      description = "Paddle lifecycle or billable-runner quantity reconciliation failures."
-      filter      = "resource.type=\"gce_instance\" AND (jsonPayload.message=\"billing_sync.retrieve_failed\" OR jsonPayload.message=\"billing_sync.upsert_failed\" OR jsonPayload.message=\"billing_sync.runner_quantity_failed\" OR jsonPayload.message=\"billing_runner_quantity_sync.failed\")"
+      description = "Paddle lifecycle, missed-subscription discovery, or billable-runner quantity reconciliation failures."
+      filter      = "resource.type=\"gce_instance\" AND (jsonPayload.message=\"billing_sync.retrieve_failed\" OR jsonPayload.message=\"billing_sync.upsert_failed\" OR jsonPayload.message=\"billing_sync.runner_quantity_failed\" OR jsonPayload.message=\"billing_runner_quantity_sync.failed\" OR jsonPayload.message=\"billing_sync.discovery_failed\" OR jsonPayload.message=\"billing_sync.discovery_upsert_failed\" OR jsonPayload.message=\"billing_sync.discovery_crashed\")"
     }
 
     cluster_failures = {
@@ -97,7 +97,7 @@ resource "google_monitoring_alert_policy" "billing_sync_failures" {
   combiner     = "OR"
 
   documentation {
-    content   = "A Paddle lifecycle or billable-runner quantity reconciliation failed. Lifecycle failures can leave plan gating stale; quantity failures can leave the customer under- or overbilled. Check the log message and error, compare the affected subscription row and runner count with Paddle, and verify the API key still has subscription write authority before retrying the reconciliation."
+    content   = "A Paddle lifecycle or billable-runner quantity reconciliation failed. Lifecycle failures can leave plan gating stale; discovery failures delay repairing a subscription whose creation webhook was missed; quantity failures can leave the customer under- or overbilled. Check the log message and error, compare the affected subscription row and runner count with Paddle, and verify the API key still has subscription write authority before retrying the reconciliation."
     mime_type = "text/markdown"
   }
 

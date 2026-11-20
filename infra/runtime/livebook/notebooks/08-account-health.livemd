@@ -23,7 +23,7 @@ health =
   Analytics.query(db, """
   WITH members AS (
     SELECT account_id, count(*) FILTER (WHERE deleted_at IS NULL AND disabled_at IS NULL) AS members
-    FROM memberships GROUP BY account_id
+    FROM account_memberships GROUP BY account_id
   ), runner_health AS (
     SELECT account_id,
       count(*) FILTER (WHERE deleted_at IS NULL AND disabled_at IS NULL) AS runners,
@@ -65,7 +65,7 @@ health =
   LEFT JOIN runner_health rh ON rh.account_id = a.id
   LEFT JOIN agents ag ON ag.account_id = a.id
   LEFT JOIN runs ru ON ru.account_id = a.id
-  LEFT JOIN subscriptions s ON s.account_id = a.id
+  LEFT JOIN billing_subscriptions s ON s.account_id = a.id
   WHERE a.deleted_at IS NULL
   ORDER BY runs_30d DESC, a.name
   LIMIT 500

@@ -38,14 +38,14 @@ quality =
   FROM (
     SELECT 1 AS position, 'active subscriptions missing exact revenue facts' AS check_name,
       count(*) FILTER (WHERE status = 'active' AND (unit_price_amount IS NULL OR currency_code IS NULL OR billing_frequency IS NULL OR billing_interval IS NULL)) AS failing_rows
-    FROM subscriptions
+    FROM billing_subscriptions
     UNION ALL
     SELECT 2, 'active subscriptions with unsupported cadence',
       count(*) FILTER (WHERE status = 'active' AND (billing_interval IS NULL OR billing_interval NOT IN ('month', 'year')))
-    FROM subscriptions
+    FROM billing_subscriptions
     UNION ALL
     SELECT 3, 'memberships referencing deleted accounts', count(*)
-    FROM memberships m JOIN accounts a ON a.id = m.account_id
+    FROM account_memberships m JOIN accounts a ON a.id = m.account_id
     WHERE m.deleted_at IS NULL AND a.deleted_at IS NOT NULL
     UNION ALL
     SELECT 4, 'enabled runners never connected', count(*)
@@ -73,9 +73,9 @@ Analytics.table(quality)
 ```elixir
 values =
   Analytics.query(db, """
-  SELECT 'subscription.status' AS field, status AS value, count(*) AS rows FROM subscriptions GROUP BY status
+  SELECT 'subscription.status' AS field, status AS value, count(*) AS rows FROM billing_subscriptions GROUP BY status
   UNION ALL
-  SELECT 'subscription.billing_interval', coalesce(billing_interval, '<null>'), count(*) FROM subscriptions GROUP BY billing_interval
+  SELECT 'subscription.billing_interval', coalesce(billing_interval, '<null>'), count(*) FROM billing_subscriptions GROUP BY billing_interval
   UNION ALL
   SELECT 'action_run.status', status, count(*) FROM action_runs GROUP BY status
   UNION ALL
@@ -100,7 +100,7 @@ datasets =
   UNION ALL SELECT 'action_runs', count(*), max(inserted_at) FROM action_runs
   UNION ALL SELECT 'approval_requests', count(*), max(inserted_at) FROM approval_requests
   UNION ALL SELECT 'audit_events', count(*), max(inserted_at) FROM audit_events
-  UNION ALL SELECT 'subscriptions', count(*), max(updated_at) FROM subscriptions
+  UNION ALL SELECT 'subscriptions', count(*), max(updated_at) FROM billing_subscriptions
   ORDER BY dataset
   """)
 
