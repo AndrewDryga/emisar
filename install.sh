@@ -1236,11 +1236,15 @@ drop_config_skeleton() {
     # supplied enrollment key is handled separately below.
     if [ -n "${EMISAR_GROUP:-}" ] && \
        printf '%s' "${EMISAR_GROUP}" | grep -qE '^[A-Za-z0-9._-]+$'; then
-      if grep -qE '^[[:space:]]*group:[[:space:]]' "${cfg}"; then
-        sed -i.bak "s|^\([[:space:]]*\)group:[[:space:]].*|\1group: \"${EMISAR_GROUP}\"|" "${cfg}"
-        rm -f "${cfg}.bak"
+      # Only the runner block's own group key: a label named `group` sits one
+      # level deeper under runner.labels and is the operator's, not ours.
+      local cfg_staged_group
+      cfg_staged_group="$(mktemp "${cfg}.tmp.XXXXXX")"
+      if set_runner_group "${cfg}" "${EMISAR_GROUP}" > "${cfg_staged_group}"; then
+        mv -f "${cfg_staged_group}" "${cfg}"
         log "config exists at ${cfg}; set runner.group=${EMISAR_GROUP} (rest untouched)"
       else
+        rm -f "${cfg_staged_group}"
         warn "config at ${cfg} has no 'group:' line; set runner.group by hand"
       fi
     elif [ -n "${EMISAR_GROUP:-}" ]; then
@@ -1288,6 +1292,105 @@ drop_config_skeleton() {
   chmod 600 "${env}"
   chown "root:${SERVICE_GROUP}" "${env}" 2>/dev/null || chown 0:0 "${env}"
 
+  # A host installed without a key is a supported state: the first run left
+  # it stopped with "edit before starting". A re-run (to pin a version or add
+  # packs) must keep it there rather than restart a runner that can only exit
+  # and then roll the whole install back.
+  if [ "${config_preexisted}" = "1" ] && [ "${INIT}" = "systemd" ] &&
+     existing_config_awaits_enrollment "${cfg}" "${env}"; then
+    log "config exists at ${cfg} but the runner has no enrollment key or cached token yet"
+    needs_configuration=1
+  fi
+}
+
+# Print the scalar value of a direct child KEY of the top-level BLOCK mapping
+# in a block-style YAML file, unquoted and without a trailing comment. Returns
+# 1 when the key is absent and 2 when the value is not a plain or simply quoted
+# scalar, so a caller never acts on a value it misread.
+config_scalar() {
+  local file="$1" block="$2" key="$3" raw
+  raw="$(awk -v block="${block}" -v key="${key}" '
+    /^[^[:space:]#]/ { inblock = ($0 ~ ("^" block ":[[:space:]]*(#.*)?$")); indent = ""; next }
+    !inblock || /^[[:space:]]*(#.*)?$/ { next }
+    {
+      match($0, /^[[:space:]]*/)
+      if (indent == "") indent = substr($0, 1, RLENGTH)
+      if (substr($0, 1, RLENGTH) != indent) next
+      rest = substr($0, RLENGTH + 1)
+      if (index(rest, key ":") == 1) { print substr(rest, length(key) + 2); found = 1; exit }
+    }
+    END { exit found ? 0 : 1 }
+  ' "${file}")" || return 1
+  raw="${raw#"${raw%%[![:space:]]*}"}"
+  case "${raw}" in
+    \"*)
+      raw="${raw#\"}"
+      case "${raw}" in *\\*|*\"*\"*) return 2;; *\"*) ;; *) return 2;; esac
+      raw="${raw%%\"*}"
+      ;;
+    \'*)
+      raw="${raw#\'}"
+      case "${raw}" in *\'*\'*) return 2;; *\'*) ;; *) return 2;; esac
+      raw="${raw%%\'*}"
+      ;;
+    *)
+      raw="${raw%%[[:space:]]#*}"
+      raw="${raw%"${raw##*[![:space:]]}"}"
+      case "${raw}" in [\[\{\&\*\!\|\>]*) return 2;; esac
+      ;;
+  esac
+  printf '%s\n' "${raw}"
+}
+
+# Rewrite only runner.group in an existing config, on stdout. Exits 3 when
+# the runner block has no direct group key.
+set_runner_group() {
+  awk -v group="$2" '
+    /^[^[:space:]#]/ { inrunner = ($0 ~ /^runner:[[:space:]]*(#.*)?$/); indent = ""; print; next }
+    !inrunner || done || /^[[:space:]]*(#.*)?$/ { print; next }
+    {
+      match($0, /^[[:space:]]*/)
+      if (indent == "") indent = substr($0, 1, RLENGTH)
+      if (substr($0, 1, RLENGTH) == indent && $0 ~ /^[[:space:]]*group:([[:space:]]|$)/) {
+        print indent "group: \"" group "\""
+        done = 1
+        next
+      }
+      print
+    }
+    END { exit done ? 0 : 3 }
+  ' "$1"
+}
+
+# True only when the runner as configured could not authenticate: no key was
+# supplied by this run, runner.env sets nothing in the configured
+# cloud.enrollment_key_env, and no file exists at the token path the runner
+# resolves (cloud.token_path, else token.json under paths.data_dir, either one
+# relative to the config's directory). Anything it cannot read with certainty
+# counts as configured, which keeps the previous start-and-verify behavior.
+existing_config_awaits_enrollment() {
+  local cfg="$1" env="$2" key_env token_path data_dir unit_env status=0
+  [ "${ENROLLMENT_KEY_UPDATE}" = "1" ] && return 1
+  key_env="$(config_scalar "${cfg}" cloud enrollment_key_env)" || return 1
+  [[ "${key_env}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || return 1
+  [ -f "${env}" ] &&
+    grep -qE "^[[:space:]]*(export[[:space:]]+)?${key_env}[[:space:]]*=[[:space:]]*[\"']?[^\"'[:space:]]" "${env}" &&
+    return 1
+  # A unit drop-in can supply the key with Environment= instead.
+  unit_env="$(systemctl show --property=Environment --value emisar.service 2>/dev/null || true)"
+  grep -qE "(^|[[:space:]\"'])${key_env}=[^\"'[:space:]]" <<<"${unit_env}" && return 1
+  token_path="$(config_scalar "${cfg}" cloud token_path)" || status=$?
+  [ "${status}" -le 1 ] || return 1
+  if [ -z "${token_path}" ]; then
+    data_dir="$(config_scalar "${cfg}" paths data_dir)" || return 1
+    [ -n "${data_dir}" ] || return 1
+    token_path="${data_dir}/token.json"
+  fi
+  case "${token_path}" in
+    /*) ;;
+    *) token_path="$(dirname "${cfg}")/${token_path}";;
+  esac
+  [ ! -e "${token_path}" ] && [ ! -L "${token_path}" ]
 }
 
 STAGE_DIR=""

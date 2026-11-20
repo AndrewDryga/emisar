@@ -80,6 +80,8 @@ func runnerChecks() []runnerCheck {
 		{"uninstall hint names custom directories", false, runnerUninstallHint},
 		{"next steps numbered only after configuration steps", false, runnerNextStepsNumbering},
 		{"config ownership without the service group", false, runnerConfigOwnership},
+		{"reinstall group rewrite keeps labels", false, runnerReinstallGroupRewrite},
+		{"reinstall keeps an unenrolled host stopped", false, runnerReinstallUnenrolled},
 		{"uninstall without download tools", false, runnerUninstallWithoutDownloadTools},
 	}
 }
@@ -2224,6 +2226,7 @@ printf 'CONFIG WRITTEN\n'
 				"ETC_DIR": etc, "DATA_DIR": "/var/lib/emisar", "LOG_DIR": "/var/log/emisar",
 				"EMISAR_URL": "", "EMISAR_ENROLLMENT_KEY": "", "EMISAR_GROUP": "web",
 				"ENROLLMENT_KEY_UPDATE": "0", "URL_EXPLICIT": "0", "TRACE": trace,
+				"needs_configuration": "0", "config_preexisted": "0",
 			}))
 		if err != nil {
 			return fmt.Errorf("service group %s: %w", tc.group, err)
@@ -2234,6 +2237,178 @@ printf 'CONFIG WRITTEN\n'
 		want := fmt.Sprintf("%s %s/config.yaml\n%s %s/runner.env\n", tc.want, etc, tc.want, etc)
 		if err := exactFile(trace, want); err != nil {
 			return fmt.Errorf("service group %s: %w", tc.group, err)
+		}
+	}
+	return nil
+}
+
+// reinstallConfigFunctions are the install.sh functions a re-run over an
+// existing config.yaml executes.
+var reinstallConfigFunctions = []string{
+	"drop_config_skeleton", "config_skeleton", "safe_config_value", "runner_env_skeleton",
+	"set_runner_group", "config_scalar", "existing_config_awaits_enrollment",
+}
+
+// runReinstallConfig runs drop_config_skeleton over an existing config in etc
+// and returns its output followed by a `needs_configuration=` line.
+func runReinstallConfig(h *harness, etc string, env map[string]string) ([]byte, error) {
+	base := map[string]string{
+		"OS": "linux", "INIT": "systemd", "SERVICE_GROUP": "emisar", "ETC_DIR": etc,
+		"DATA_DIR": "/var/lib/emisar", "LOG_DIR": "/var/log/emisar",
+		"EMISAR_URL": "", "EMISAR_ENROLLMENT_KEY": "", "EMISAR_GROUP": "",
+		"ENROLLMENT_KEY_UPDATE": "0", "URL_EXPLICIT": "0", "UNIT_ENV": "",
+		"needs_configuration": "0", "config_preexisted": "0",
+	}
+	for k, v := range env {
+		base[k] = v
+	}
+	return requireOutput(h.functions(h.repoPath("install.sh"), reinstallConfigFunctions, `
+log() { printf 'log: %s\n' "$*"; }
+warn() { printf 'warn: %s\n' "$*"; }
+chown() { :; }
+systemctl() { printf '%s\n' "${UNIT_ENV}"; }
+backup_enrollment_state() { :; }
+write_enrollment_key() { :; }
+drop_config_skeleton
+printf 'needs_configuration=%s\n' "${needs_configuration}"
+`, base))
+}
+
+// runnerReinstallGroupRewrite proves a re-run with EMISAR_GROUP changes only
+// runner.group. The rewrite used to match every `group:` line at any indent,
+// so a runner label named group (EMISAR_RUNNER_LABEL_GROUP) silently took the
+// group's value, and a config without runner.group got its label rewritten.
+func runnerReinstallGroupRewrite(h *harness) error {
+	cases := []struct {
+		name, config, want, output string
+	}{
+		{
+			name: "installer layout",
+			config: "schema_version: 1\n\nrunner:\n  # group comment\n  group: \"old\"\n  labels:\n" +
+				"    group: \"payments\"\n    role: \"web\"\n\ncloud:\n  url: \"wss://emisar.dev\"\n  group: \"not-runner\"\n",
+			want: "schema_version: 1\n\nrunner:\n  # group comment\n  group: \"web-02\"\n  labels:\n" +
+				"    group: \"payments\"\n    role: \"web\"\n\ncloud:\n  url: \"wss://emisar.dev\"\n  group: \"not-runner\"\n",
+			output: "set runner.group=web-02",
+		},
+		{
+			name: "labels before group at a wider indent",
+			config: "runner:\n    labels:\n        group: payments\n    group: old # kept for the console\n" +
+				"paths:\n    data_dir: /var/lib/emisar\n",
+			want: "runner:\n    labels:\n        group: payments\n    group: \"web-02\"\n" +
+				"paths:\n    data_dir: /var/lib/emisar\n",
+			output: "set runner.group=web-02",
+		},
+		{
+			name:   "no runner group",
+			config: "runner:\n  labels:\n    group: payments\n",
+			want:   "runner:\n  labels:\n    group: payments\n",
+			output: "has no 'group:' line",
+		},
+	}
+	for index, tc := range cases {
+		etc := h.path("reinstall-group", strconv.Itoa(index))
+		if err := h.mkdir(etc); err != nil {
+			return err
+		}
+		cfg := filepath.Join(etc, "config.yaml")
+		if err := writeFile(cfg, tc.config, 0o640); err != nil {
+			return err
+		}
+		if err := writeFile(filepath.Join(etc, "runner.env"), "EMISAR_ENROLLMENT_KEY=emkey-enroll-x\n", 0o600); err != nil {
+			return err
+		}
+		output, err := runReinstallConfig(h, etc, map[string]string{"EMISAR_GROUP": "web-02"})
+		if err != nil {
+			return fmt.Errorf("%s: %w", tc.name, err)
+		}
+		if !strings.Contains(string(output), tc.output) {
+			return fmt.Errorf("%s: output lacks %q:\n%s", tc.name, tc.output, output)
+		}
+		if err := exactFile(cfg, tc.want); err != nil {
+			return fmt.Errorf("%s: %w", tc.name, err)
+		}
+		leftovers, _ := filepath.Glob(cfg + ".*")
+		if len(leftovers) != 0 {
+			return fmt.Errorf("%s: left staging files %v", tc.name, leftovers)
+		}
+	}
+	return nil
+}
+
+// runnerReinstallUnenrolled proves a re-run over a host installed without an
+// enrollment key keeps it in the "edit before starting" state, judged from the
+// credentials the runner would actually use: the configured key variable in
+// runner.env or the unit's Environment=, and the configured token path, which
+// may be relative to the config directory. A re-run used to assume any existing
+// config was ready, restart a runner that could only exit, and roll back.
+func runnerReinstallUnenrolled(h *harness) error {
+	const installerConfig = "runner:\n  group: \"web\"\ncloud:\n  url: \"wss://emisar.dev\"\n" +
+		"  enrollment_key_env: EMISAR_ENROLLMENT_KEY\n  token_path: %s\npaths:\n  data_dir: /nonexistent\n"
+	const stubEnv = "# Drop your cloud enrollment key here.\n#EMISAR_ENROLLMENT_KEY=emkey-enroll-replace-me\n"
+	cases := []struct {
+		name   string
+		config string // %s is the case's own data directory
+		env    string
+		token  string // path under the case directory to create, if any
+		extra  map[string]string
+		needs  string
+	}{
+		{name: "never enrolled", config: installerConfig, env: stubEnv, needs: "1"},
+		{name: "runner.env has the key", config: installerConfig,
+			env: "EMISAR_ENROLLMENT_KEY=emkey-enroll-x\n", needs: "0"},
+		{name: "runner.env has a quoted key", config: installerConfig,
+			env: "EMISAR_ENROLLMENT_KEY=\"emkey-enroll-x\"\n", needs: "0"},
+		{name: "runner.env is missing", config: installerConfig, needs: "1"},
+		{name: "cached token", config: installerConfig, env: stubEnv, token: "data/token", needs: "0"},
+		{name: "this run supplies a key", config: installerConfig, env: stubEnv,
+			extra: map[string]string{"ENROLLMENT_KEY_UPDATE": "1"}, needs: "0"},
+		{name: "unit Environment= supplies the key", config: installerConfig, env: stubEnv,
+			extra: map[string]string{"UNIT_ENV": "LANG=C EMISAR_ENROLLMENT_KEY=emkey-enroll-x"}, needs: "0"},
+		{name: "custom key variable set", env: "SITE_KEY=emkey-enroll-x\n", needs: "0",
+			config: "cloud:\n  url: \"wss://emisar.dev\"\n  enrollment_key_env: \"SITE_KEY\" # site\n  token_path: %s\n"},
+		{name: "custom key variable unset", env: "EMISAR_ENROLLMENT_KEY=emkey-enroll-x\n", needs: "1",
+			config: "cloud:\n  url: \"wss://emisar.dev\"\n  enrollment_key_env: SITE_KEY\n  token_path: %s\n"},
+		{name: "relative token path present", env: stubEnv, token: "etc/state/token", needs: "0",
+			config: "cloud:\n  enrollment_key_env: EMISAR_ENROLLMENT_KEY\n  token_path: state/token # %s\n"},
+		{name: "relative token path absent", env: stubEnv, needs: "1",
+			config: "cloud:\n  enrollment_key_env: EMISAR_ENROLLMENT_KEY\n  token_path: state/token # %s\n"},
+		{name: "default token under the data dir", env: stubEnv, token: "etc/data/token.json", needs: "0",
+			config: "cloud:\n  enrollment_key_env: EMISAR_ENROLLMENT_KEY\npaths:\n  data_dir: 'data' # %s\n"},
+		{name: "unreadable token path counts as configured", env: stubEnv, needs: "0",
+			config: "cloud:\n  enrollment_key_env: EMISAR_ENROLLMENT_KEY\n  token_path: [%s]\npaths:\n  data_dir: data\n"},
+		{name: "launchd is unchanged", config: installerConfig, env: stubEnv,
+			extra: map[string]string{"INIT": "launchd"}, needs: "0"},
+	}
+	for index, tc := range cases {
+		dir := h.path("reinstall-unenrolled", strconv.Itoa(index))
+		etc := filepath.Join(dir, "etc")
+		if err := h.mkdir(etc); err != nil {
+			return err
+		}
+		if err := writeFile(filepath.Join(etc, "config.yaml"),
+			fmt.Sprintf(tc.config, filepath.Join(dir, "data", "token")), 0o640); err != nil {
+			return err
+		}
+		if tc.env != "" {
+			if err := writeFile(filepath.Join(etc, "runner.env"), tc.env, 0o600); err != nil {
+				return err
+			}
+		}
+		if tc.token != "" {
+			token := filepath.Join(dir, filepath.FromSlash(tc.token))
+			if err := h.mkdir(filepath.Dir(token)); err != nil {
+				return err
+			}
+			if err := writeFile(token, "{}\n", 0o600); err != nil {
+				return err
+			}
+		}
+		output, err := runReinstallConfig(h, etc, tc.extra)
+		if err != nil {
+			return fmt.Errorf("%s: %w", tc.name, err)
+		}
+		if !strings.Contains(string(output), "\nneeds_configuration="+tc.needs+"\n") {
+			return fmt.Errorf("%s: want needs_configuration=%s:\n%s", tc.name, tc.needs, output)
 		}
 	}
 	return nil
