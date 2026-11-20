@@ -144,8 +144,8 @@ services:
         # sets this, so prod enforces HTTPS for every request host.
         EMISAR_DEV_HOST_EXCLUDES: "1"
         # DEV-ONLY: compile in the /dev routes so the passwordless magic-link
-        # sign-in email is viewable at /dev/mailbox (paired with the matching
-        # EMISAR_DEV_ROUTES env below, which switches the mailer to in-memory).
+        # sign-in email is viewable at /dev/mailbox. The same compiled flag makes
+        # runtime.exs select the in-memory mailer at boot; no runtime env needed.
         EMISAR_DEV_ROUTES: "1"
     image: emisar/portal:dev
     depends_on:
@@ -163,8 +163,9 @@ services:
       PHX_HOST: "localhost"
       PORT: "4000"
       URL_PORT: "${PORTAL_PORT:-4010}"
-      # Speak plain HTTP for local. force_ssl in runtime.exs is gated
-      # on this knob — see config/runtime.exs.
+      # Plain HTTP for local: false makes runtime.exs generate http:// URLs and
+      # drop the secure-cookie pin. The redirect itself is prod.exs force_ssl,
+      # which the EMISAR_DEV_HOST_EXCLUDES build arg above opens for these hosts.
       FORCE_SSL: "false"
       # Billing: stub by default (prod runtime.exs refuses to boot without
       # PADDLE_API_KEY unless the disable flag is set). To run REAL Paddle
@@ -180,10 +181,6 @@ services:
       PADDLE_API_KEY: "${PADDLE_API_KEY:-}"
       PADDLE_WEBHOOK_SECRET: "${PADDLE_WEBHOOK_SECRET:-}"
       PADDLE_CLIENT_TOKEN: "${PADDLE_CLIENT_TOKEN:-}"
-      # DEV-ONLY: deliver mail into the in-memory mailbox served at /dev/mailbox
-      # (the /dev routes are compiled in via the build arg above). Lets you
-      # complete the passwordless magic-link sign-in with no mail provider.
-      EMISAR_DEV_ROUTES: "1"
     # Defaults preserve the packaged smoke-stack URLs. Isolated scenarios set
     # PORTAL_PORT themselves; KEYCLOAK_PORT is both its listener and issuer
     # port, while KEYCLOAK_PUBLISH_PORT may independently request an ephemeral
@@ -395,6 +392,7 @@ services:
   #   /signing/config.yaml   runner-signed's config (template + the fresh CA cert)
   #   /signing/leaf_key       EMISAR_SIGNING_KEY for the bridge
   #   /signing/cert_chain     EMISAR_SIGNING_CERT for the bridge
+  #   /signing/format         certificate profile revision (stale-volume check)
   # `docker compose down -v` rotates the keys. Reuses the runner image (emisar
   # binary + a shell); runs as root to write the fresh named volume. Profile-gated
   # so the default `docker compose up` is unchanged. See `./run e2e signing`.

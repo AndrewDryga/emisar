@@ -29,7 +29,6 @@ type Selection struct {
 	Deps             bool
 	Workflows        bool
 	MCPListing       bool
-	PortalRelease    bool
 	PacksRelease     bool
 	RunnerImage      bool
 	AdminDiagnostics bool
@@ -83,7 +82,6 @@ func Select(ctx context.Context, root, event, base string) (Selection, error) {
 	if event == "push" {
 		selection.AdminDiagnostics = true
 		selection.Portal = true
-		selection.PortalRelease = true
 		if !selection.PacksRelease {
 			reason, err := packsReleaseDrift(ctx, root)
 			if err != nil {
@@ -106,7 +104,7 @@ func (selection *Selection) include(file string) {
 		*selection = Selection{
 			Portal: true, Runner: true, MCP: true, Tools: true, Packs: true,
 			Infra: true, Deps: true, Workflows: true, MCPListing: true,
-			PortalRelease: true, PacksRelease: true, RunnerImage: true, AdminDiagnostics: true,
+			PacksRelease: true, RunnerImage: true, AdminDiagnostics: true,
 			SigningE2E: true, SSOE2E: true,
 		}
 		return
@@ -122,14 +120,12 @@ func (selection *Selection) include(file string) {
 	goCheckoutContract := file == ".gitattributes"
 	if strings.HasPrefix(file, "portal/") || slices.Contains([]string{".dockerignore", "install.sh", "install-mcp.sh", "install-mcp.ps1", ".tool-versions"}, file) {
 		selection.Portal = true
-		selection.PortalRelease = true
 	}
 	if file == ".trivyignore.yaml" {
 		selection.Portal = true
 	}
 	if packRuntimeSource {
 		selection.Portal = true
-		selection.PortalRelease = true
 	}
 	// The pack/catalog schema is a cross-language contract: Go writes it, the
 	// Portal reads it. Its Portal-side proof (pack_baseline, published_registry,
@@ -138,7 +134,6 @@ func (selection *Selection) include(file string) {
 	// halves can only break together.
 	if toolutil.HasAnyPrefix(file, "runner/pkg/packspec/", "runner/pkg/actionspec/", "runner/internal/catalog/") {
 		selection.Portal = true
-		selection.PortalRelease = true
 	}
 	// dev/json-corpus is the golden both hostile-JSON validators must agree on;
 	// the module boundary forbids sharing their code, so the corpus IS the
@@ -150,13 +145,16 @@ func (selection *Selection) include(file string) {
 	if strings.HasPrefix(file, "dev/command-corpus/") {
 		selection.Runner = true
 		selection.Portal = true
-		selection.PortalRelease = true
 	}
 	// The containers docs publish a config.yaml that operators mount over the
 	// image's baked file; the runner's loader test is what proves it still boots
 	// with the image's URL, packs and risk ceiling, so a docs-only edit runs it.
 	containersDocs := file == "portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs/containers.html.heex"
-	sharedInstallerHarness := toolutil.HasAnyPrefix(file, "tools/cmd/installtest/", "tools/internal/installtest/harness")
+	// Every installtest file not named for one client (the harness, the process
+	// setup it runs each installer under, the Windows-host wrappers) is shared.
+	installtestFile := strings.HasPrefix(file, "tools/internal/installtest/")
+	sharedInstallerHarness := strings.HasPrefix(file, "tools/cmd/installtest/") ||
+		installtestFile && !toolutil.HasAnyPrefix(file, "tools/internal/installtest/runner", "tools/internal/installtest/mcp")
 	runnerInstallerHarness := sharedInstallerHarness || strings.HasPrefix(file, "tools/internal/installtest/runner")
 	mcpInstallerHarness := sharedInstallerHarness || strings.HasPrefix(file, "tools/internal/installtest/mcp")
 	if strings.HasPrefix(file, "runner/") || jsonCorpus || containersDocs || runnerInstallerHarness || goCheckoutContract || slices.Contains([]string{"install.sh", "README.md", "go.work", "go.work.sum"}, file) {
@@ -175,7 +173,6 @@ func (selection *Selection) include(file string) {
 	if file == "server.json" {
 		selection.MCPListing = true
 		selection.Portal = true
-		selection.PortalRelease = true
 	}
 	// .github/workflows and .githooks route here because actionlint and the
 	// shell lint both live inside the TOOLING gate. Workflow changes previously
@@ -192,15 +189,27 @@ func (selection *Selection) include(file string) {
 	// validates. docker-compose.yml + config.exs are the two sides of the tooling
 	// gate's e2e-stack-version check; neither selected Tools before, so editing
 	// either re-introduced the drift that check exists to catch.
-	// The listed files mirror trackedShellFiles' pathspec (`.shell run *.sh
-	// .githooks`): every file that gate shellchecks has to select the gate, or a
-	// syntax error in the contributor shell profile ships green.
+	// The listed files and the .sh rule mirror trackedShellFiles' pathspec
+	// (`.shell run *.sh .githooks`, minus the installers, infra/runtime and packs
+	// that other gates lint): every file that gate shellchecks has to select the
+	// gate, or a syntax error in the contributor shell profile ships green.
 	// portal/Dockerfile is here because the tooling gate's release-toolchain
 	// phase is what holds its ELIXIR/OTP/hex/rebar3 ARG defaults to .tool-versions
 	// and the CI workflow's pins; a Dockerfile-only bump otherwise selected only
 	// the Portal job, which cannot see that disagreement.
-	// The shared clipboard module's browser regressions live in tooling.
-	if toolutil.HasAnyPrefix(file, "tools/", "dev/", ".agent/", ".claude/", ".codex/", ".gemini/", "skills/", "dist/", ".github/workflows/", ".github/actions/", ".githooks/") || strings.Contains(file, "/.agent/") || slices.Contains([]string{"run", ".shell", "go.work", "go.work.sum", ".gitattributes", ".gitignore", ".tool-versions", "docker-compose.yml", "portal/config/config.exs", "portal/Dockerfile", "portal/apps/emisar_web/assets/js/copy.js"}, file) || filepath.Ext(file) == ".md" {
+	// The Portal JS modules whose browser regressions live in tooling
+	// (tools/internal/browser) select it too.
+	trackedShellScript := filepath.Ext(file) == ".sh" &&
+		!slices.Contains([]string{"install.sh", "install-mcp.sh"}, file) &&
+		!toolutil.HasAnyPrefix(file, "infra/runtime/", "packs/")
+	if toolutil.HasAnyPrefix(file, "tools/", "dev/", ".agent/", ".claude/", ".codex/", ".gemini/", "skills/", "dist/", ".github/workflows/", ".github/actions/", ".githooks/") || strings.Contains(file, "/.agent/") || trackedShellScript || slices.Contains([]string{
+		"run", ".shell", "go.work", "go.work.sum", ".gitattributes", ".gitignore", ".tool-versions", "docker-compose.yml", "portal/config/config.exs", "portal/Dockerfile",
+		"portal/apps/emisar_web/assets/js/copy.js",
+		"portal/apps/emisar_web/assets/js/code_input.js",
+		"portal/apps/emisar_web/assets/js/dialog_focus.js",
+		"portal/apps/emisar_web/assets/js/tooltip.js",
+		"portal/apps/emisar_web/assets/js/overlay.js",
+	}, file) || filepath.Ext(file) == ".md" {
 		selection.Tools = true
 	}
 	// Full-script HTTP response-bound regressions live in devtool, not in
@@ -549,10 +558,10 @@ func WriteSelection(ctx context.Context, root, event, base, outputPath, summaryP
 	if err != nil {
 		return err
 	}
-	output := fmt.Sprintf("portal=%t\nmcp=%t\nrunner=%t\npacks=%t\ninfra=%t\ndeps=%t\nmcp_listing=%t\ngo_modules=%s\nportal_release=%t\npacks_release=%t\nrunner_image=%t\npack_behavior=%s\nsigning_e2e=%t\nsso_e2e=%t\nadmin_diagnostics=%t\n",
+	output := fmt.Sprintf("portal=%t\nmcp=%t\nrunner=%t\npacks=%t\ninfra=%t\ndeps=%t\nmcp_listing=%t\ngo_modules=%s\npacks_release=%t\nrunner_image=%t\npack_behavior=%s\nsigning_e2e=%t\nsso_e2e=%t\nadmin_diagnostics=%t\n",
 		selection.Portal, selection.MCP, selection.Runner, selection.Packs, selection.Infra, selection.Deps,
 		selection.MCPListing, modules,
-		selection.PortalRelease, selection.PacksRelease, selection.RunnerImage, packBehavior,
+		selection.PacksRelease, selection.RunnerImage, packBehavior,
 		selection.SigningE2E, selection.SSOE2E, selection.AdminDiagnostics)
 	if err := appendOrPrint(outputPath, output); err != nil {
 		return err
@@ -564,7 +573,7 @@ func WriteSelection(ctx context.Context, root, event, base, outputPath, summaryP
 		}
 		return "skip"
 	}
-	summary := fmt.Sprintf("### Gates for this change\n| Area | |\n|---|---|\n| Portal - Test | %s |\n| Portal - Image | %s |\n| Go - Runner | %s |\n| Go - Runner (root) | %s |\n| Go - MCP | %s |\n| MCP - Windows | %s |\n| Go - Tools | %s |\n| Packs - Validate | %s |\n| Packs - Behavior (%d) | %s |\n| Runner - Image | %s |\n| E2E - Signing | %s |\n| E2E - SSO | %s |\n| Terraform - Validate | %s |\n| Dependencies - Release age | %s |\n| Portal - MCP Registry Listing | %s |\n",
+	summary := fmt.Sprintf("### Gates for this change\n| Area | |\n|---|---|\n| Portal - Test | %s |\n| Portal - Image | %s |\n| Go - Runner | %s |\n| Go - Runner (root) | %s |\n| Go - MCP | %s |\n| MCP - Windows | %s |\n| Go - Tools | %s |\n| Packs - Validate | %s |\n| Packs - Behavior (%d) | %s |\n| Runner - Image | %s |\n| E2E - Signed dispatch | %s |\n| E2E - SSO and SCIM | %s |\n| Terraform - Validate | %s |\n| Dependencies - Release age | %s |\n| Portal - MCP Registry Listing | %s |\n",
 		mark(selection.Portal), mark(selection.Portal), mark(selection.Runner), mark(selection.Runner),
 		mark(selection.MCP), mark(selection.MCP), mark(selection.Tools), mark(selection.Packs),
 		len(selection.PackBehavior), mark(len(selection.PackBehavior) > 0),

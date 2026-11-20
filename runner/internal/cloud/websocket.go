@@ -236,7 +236,7 @@ func (d *WebsocketDialer) Dial(ctx context.Context) (Conn, error) {
 	// bound while decoding. Keep the transport ceiling aligned with it.
 	conn.SetReadLimit(maxRunActionMessageBytes)
 
-	return &wsConn{ws: conn, log: log}, nil
+	return &wsConn{ws: conn}, nil
 }
 
 // -- Token persistence ----------------------------------------------
@@ -584,7 +584,7 @@ func (d *WebsocketDialer) register(ctx context.Context) (runnerToken, error) {
 	var parsed struct {
 		Token string `json:"token"`
 		// Optional so an older portal still registers a newer runner: absent
-		// simply means this token is never due for rotation.
+		// means the runner asks for a refresh on its next dial (refreshDue).
 		RefreshAfter string `json:"refresh_after"`
 	}
 	// Unknown fields are ignored, matching the additive-safety the wire contract
@@ -697,8 +697,7 @@ func (d *WebsocketDialer) logger() *slog.Logger {
 // wsConn adapts a github.com/coder/websocket.Conn to the cloud.Conn interface.
 // Messages are JSON-encoded text frames; binary frames are an error.
 type wsConn struct {
-	ws  *websocket.Conn
-	log *slog.Logger
+	ws *websocket.Conn
 }
 
 func (c *wsConn) Send(ctx context.Context, msg any) error {

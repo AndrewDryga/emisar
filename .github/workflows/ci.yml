@@ -63,7 +63,6 @@ jobs:
       deps: ${{ steps.detect.outputs.deps }}
       mcp_listing: ${{ steps.detect.outputs.mcp_listing }}
       go_modules: ${{ steps.detect.outputs.go_modules }}
-      portal_release: ${{ steps.detect.outputs.portal_release }}
       packs_release: ${{ steps.detect.outputs.packs_release }}
       runner_image: ${{ steps.detect.outputs.runner_image }}
       pack_behavior: ${{ steps.detect.outputs.pack_behavior }}
@@ -344,7 +343,7 @@ jobs:
           for i in $(seq 1 30); do
             if curl -fsS -H 'x-forwarded-proto: https' http://localhost:4000/healthz \
               >/dev/null 2>"$health_error"; then
-              echo "healthz OK after ~${i}s"
+              echo "healthz OK after ${i} probes"
               break
             fi
             if [ "$i" = "30" ]; then
@@ -393,7 +392,7 @@ jobs:
              end'
 
           portal_logs=$(docker logs "$cid" 2>&1)
-          warning="EMISAR_SSO_ALLOWED_IDP_HOSTS is ignored outside development and test builds"
+          warning="EMISAR_SSO_ALLOWED_IDP_HOSTS is ignored outside development builds"
           warning_count=$(printf '%s\n' "$portal_logs" | grep -Fc "$warning" || true)
           if [ "$warning_count" -lt 1 ]; then
             echo "::error::Expected an ignored private-IdP warning"
@@ -454,7 +453,7 @@ jobs:
         run: trivy image --format cyclonedx --output /tmp/emisar-portal.cdx.json emisar/portal:ci
 
       - name: Export tested image
-        if: github.event_name == 'push' && needs.changes.outputs.portal_release == 'true'
+        if: github.event_name == 'push'
         run: |
           set -euo pipefail
           docker save emisar/portal:ci | gzip -1 > /tmp/emisar-portal-image.tar.gz
@@ -463,7 +462,7 @@ jobs:
             /tmp/emisar-portal-image.tar.gz /tmp/emisar-portal.cdx.json /tmp/emisar-portal-contract.json
 
       - name: Upload tested image
-        if: github.event_name == 'push' && needs.changes.outputs.portal_release == 'true'
+        if: github.event_name == 'push'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: portal-image-${{ github.sha }}
@@ -475,7 +474,7 @@ jobs:
           overwrite: true
 
       - name: Upload tested image SBOM
-        if: github.event_name == 'push' && needs.changes.outputs.portal_release == 'true'
+        if: github.event_name == 'push'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: portal-sbom-${{ github.sha }}

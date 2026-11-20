@@ -12,11 +12,47 @@ import (
 	"testing"
 )
 
-func TestCopyListenerSelectsBrowserChecks(t *testing.T) {
+func TestPortalJSModulesSelectBrowserChecks(t *testing.T) {
+	for _, name := range []string{"copy.js", "code_input.js", "dialog_focus.js", "tooltip.js", "overlay.js"} {
+		t.Run(name, func(t *testing.T) {
+			var selection Selection
+			selection.include("portal/apps/emisar_web/assets/js/" + name)
+			if !selection.Portal || !selection.Tools {
+				t.Fatalf("%s change skipped its Portal or browser checks: %+v", name, selection)
+			}
+		})
+	}
 	var selection Selection
-	selection.include("portal/apps/emisar_web/assets/js/copy.js")
-	if !selection.Portal || !selection.Tools {
-		t.Fatalf("clipboard change skipped its Portal or browser checks: %+v", selection)
+	selection.include("portal/apps/emisar_web/assets/js/app.js")
+	if selection.Tools {
+		t.Fatalf("a module without tooling browser regressions selected tools: %+v", selection)
+	}
+}
+
+func TestTrackedShellScriptsSelectTooling(t *testing.T) {
+	for _, test := range []struct {
+		file      string
+		wantTools bool
+	}{
+		{file: "dev/signing/init.sh", wantTools: true},
+		{file: "infra/packs/emisar-admin/scripts/callback.sh", wantTools: true},
+		{file: "portal/docker/prune-runtime-packages.sh", wantTools: true},
+		{file: "portal/docker/verify-runtime.sh", wantTools: true},
+		{file: "portal/docker/verify-tls.sh", wantTools: true},
+		{file: "runner/release/verify-image.sh", wantTools: true},
+		// Other gates lint these, so they stay off the tooling gate.
+		{file: "install.sh"},
+		{file: "install-mcp.sh"},
+		{file: "infra/runtime/portal/startup.sh"},
+		{file: "packs/nomad/scripts/by_meta.sh"},
+	} {
+		t.Run(test.file, func(t *testing.T) {
+			var selection Selection
+			selection.include(test.file)
+			if selection.Tools != test.wantTools {
+				t.Fatalf("%s Tools = %t, want %t", test.file, selection.Tools, test.wantTools)
+			}
+		})
 	}
 }
 
@@ -67,7 +103,7 @@ func TestSelect(t *testing.T) {
 	t.Run("migration rename selects portal", func(t *testing.T) {
 		runGit(t, root, "mv", migration, "old.exs")
 		commitAll(t, root, "rename")
-		selection, err := Select(context.Background(), root, "push", base)
+		selection, err := Select(context.Background(), root, "pull_request", base)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -100,7 +136,7 @@ func TestSelect(t *testing.T) {
 		if !selection.Workflows || !selection.Portal || !selection.Runner || !selection.MCP || !selection.Tools || !selection.Packs || !selection.Infra || !selection.Deps || !selection.MCPListing || !selection.RunnerImage {
 			t.Fatalf("workflow selection is incomplete: %+v", selection)
 		}
-		if selection.PortalRelease || selection.PacksRelease {
+		if selection.PacksRelease {
 			t.Fatalf("workflow-only PR selected release: %+v", selection)
 		}
 		if len(selection.PackBehavior) != 0 || !selection.SigningE2E || !selection.SSOE2E {
@@ -211,7 +247,7 @@ func TestSelect(t *testing.T) {
 			if !selection.Workflows || !selection.Portal || !selection.Runner || !selection.MCP || !selection.Tools || !selection.Packs || !selection.Infra || !selection.Deps || !selection.MCPListing || !selection.RunnerImage {
 				t.Fatalf("%s selection is incomplete: %+v", file, selection)
 			}
-			if selection.PortalRelease || selection.PacksRelease {
+			if selection.PacksRelease {
 				t.Fatalf("%s selected release for a pull request: %+v", file, selection)
 			}
 			if len(selection.PackBehavior) != 3 || !selection.SigningE2E || !selection.SSOE2E {
@@ -231,7 +267,7 @@ func TestSelect(t *testing.T) {
 		if got := selection.GoModules(); strings.Join(got, ",") != "runner,mcp,tools" {
 			t.Fatalf("GoModules() = %q, want every Go module", got)
 		}
-		if selection.Portal || selection.PortalRelease || selection.PacksRelease {
+		if selection.Portal || selection.PacksRelease {
 			t.Fatalf("Go checkout attributes selected an unrelated release: %+v", selection)
 		}
 		resetHard(t, root, base)
@@ -263,7 +299,7 @@ func TestSelect(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !selection.Packs || selection.Portal || selection.PortalRelease || selection.PacksRelease {
+		if !selection.Packs || selection.Portal || selection.PacksRelease {
 			t.Fatalf("pack test plan selected runtime publication inputs: %+v", selection)
 		}
 		if len(selection.PackBehavior) != 2 ||
@@ -281,7 +317,7 @@ func TestSelect(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !selection.Portal || !selection.PortalRelease || !selection.Packs || !selection.PacksRelease {
+		if !selection.Portal || !selection.Packs || !selection.PacksRelease {
 			t.Fatalf("pack runtime source omitted publication inputs: %+v", selection)
 		}
 		resetHard(t, root, base)
@@ -490,6 +526,9 @@ func TestSelect(t *testing.T) {
 			{name: "shared harness", file: "tools/internal/installtest/harness.go", wantRunner: true, wantMCP: true},
 			{name: "shared harness tests", file: "tools/internal/installtest/harness_test.go", wantRunner: true, wantMCP: true},
 			{name: "command", file: "tools/cmd/installtest/main.go", wantRunner: true, wantMCP: true},
+			{name: "shared unix process setup", file: "tools/internal/installtest/process_unix.go", wantRunner: true, wantMCP: true},
+			{name: "shared windows process setup", file: "tools/internal/installtest/process_windows.go", wantRunner: true, wantMCP: true},
+			{name: "unix installers on windows", file: "tools/internal/installtest/unix_installers_windows.go", wantRunner: true, wantMCP: true},
 		} {
 			t.Run(test.name, func(t *testing.T) {
 				writeFixture(t, root, test.file, "package fixture\n")
@@ -587,7 +626,7 @@ func TestSelect(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !selection.MCPListing || !selection.Portal || !selection.PortalRelease {
+		if !selection.MCPListing || !selection.Portal {
 			t.Fatalf("server.json selection = %+v", selection)
 		}
 		resetHard(t, root, base)
@@ -614,7 +653,7 @@ func TestSelect(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !selection.Infra || !selection.Portal || !selection.PortalRelease || selection.PacksRelease {
+		if !selection.Infra || !selection.Portal || selection.PacksRelease {
 			t.Fatalf("infra push selection = %+v", selection)
 		}
 		resetHard(t, root, base)
@@ -636,7 +675,7 @@ func TestSelect(t *testing.T) {
 	// Both pack gates decide validity by running `emisar pack validate`, so every
 	// package that command links has to route to both: the infra gate loads
 	// infra/packs/emisar-admin with the runner it builds from this tree, and the
-	// packs gate loads all 101 public packs. A tightened arg rule, template
+	// packs gate loads every public pack. A tightened arg rule, template
 	// reference or output-schema bound otherwise rejects a published pack from a
 	// commit that selects neither job, and the failure lands on whoever pushed
 	// next. Keep this list equal to `go list -deps ./internal/packs` minus the
@@ -689,11 +728,11 @@ func TestSelect(t *testing.T) {
 	t.Run("installer selects portal not infra", func(t *testing.T) {
 		writeFixture(t, root, "install.sh", "#!/bin/sh\n")
 		commitAll(t, root, "installer")
-		selection, err := Select(context.Background(), root, "push", base)
+		selection, err := Select(context.Background(), root, "pull_request", base)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !selection.Portal || !selection.PortalRelease || selection.Infra {
+		if !selection.Portal || selection.Infra {
 			t.Fatalf("installer selection = %+v", selection)
 		}
 		resetHard(t, root, base)
@@ -702,11 +741,11 @@ func TestSelect(t *testing.T) {
 	t.Run("PowerShell MCP installer selects portal and MCP", func(t *testing.T) {
 		writeFixture(t, root, "install-mcp.ps1", "param()\n")
 		commitAll(t, root, "Windows MCP installer")
-		selection, err := Select(context.Background(), root, "push", base)
+		selection, err := Select(context.Background(), root, "pull_request", base)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !selection.Portal || !selection.PortalRelease || !selection.MCP || selection.Infra {
+		if !selection.Portal || !selection.MCP || selection.Infra {
 			t.Fatalf("PowerShell installer selection = %+v", selection)
 		}
 		resetHard(t, root, base)
