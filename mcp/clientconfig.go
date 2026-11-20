@@ -352,9 +352,10 @@ func appendConfigBlock(raw, block string) string {
 	return strings.TrimRight(raw, "\n") + "\n\n" + block
 }
 
-// replaceYAMLEntry replaces only our direct child when the client already has
-// a shared top-level key. A top-level key without our child is still refused:
-// hand-merging arbitrary YAML is outside this deliberately small editor.
+// replaceYAMLEntry inserts or replaces only our direct child under the
+// client's top-level key, appending the key when it is absent. A duplicated,
+// inline, or otherwise ambiguous shape is refused: hand-merging arbitrary YAML
+// is outside this deliberately small editor.
 func replaceYAMLEntry(raw, top, entry string) (string, error) {
 	lines := strings.Split(raw, "\n")
 	topIndex := -1
@@ -395,6 +396,13 @@ func replaceYAMLEntry(raw, top, entry string) (string, error) {
 		}
 	}
 
+	// Blank lines that end the block belong between it and whatever follows
+	// (or to the file's final newline), so an edit lands before them.
+	blockEnd := topEnd
+	for blockEnd > topIndex+1 && strings.TrimSpace(lines[blockEnd-1]) == "" {
+		blockEnd--
+	}
+
 	entryStart := -1
 	for index := topIndex + 1; index < topEnd; index++ {
 		trimmed := strings.TrimRight(lines[index], "\r")
@@ -418,13 +426,13 @@ func replaceYAMLEntry(raw, top, entry string) (string, error) {
 		}
 		insertion := strings.Split(strings.TrimSuffix(indentYAMLBlock(entry, indent), "\n"), "\n")
 		edited := make([]string, 0, len(lines)+len(insertion))
-		edited = append(edited, lines[:topEnd]...)
+		edited = append(edited, lines[:blockEnd]...)
 		edited = append(edited, insertion...)
-		edited = append(edited, lines[topEnd:]...)
+		edited = append(edited, lines[blockEnd:]...)
 		return strings.Join(edited, "\n"), nil
 	}
 
-	entryEnd := topEnd
+	entryEnd := blockEnd
 	for index := entryStart + 1; index < topEnd; index++ {
 		trimmed := strings.TrimRight(lines[index], "\r")
 		if strings.TrimSpace(trimmed) == "" {
@@ -497,9 +505,7 @@ func (client detectedClient) remove() error {
 	return nil
 }
 
-// removeTOMLTable drops [mcp_servers.emisar] and its child tables through the
-// next unrelated table header. A client's own CLI may have written the env as a
-// child table where this bridge writes an inline one.
+// tomlEmisarHeader matches the [mcp_servers.emisar] header and its child tables.
 var tomlEmisarHeader = regexp.MustCompile(`^[ \t]*\[mcp_servers\.emisar(\.[^\]]+)?\][ \t]*$`)
 
 var (
@@ -526,7 +532,11 @@ func hasEmisarKeyUnderMCPServers(raw string) bool {
 	return false
 }
 
-// removeTOMLTable holds the blank and comment lines after the last emisar key
+// removeTOMLTable drops [mcp_servers.emisar] and its child tables through the
+// next unrelated table header. A client's own CLI may have written the env as a
+// child table where this bridge writes an inline one.
+//
+// It holds the blank and comment lines after the last emisar key
 // rather than dropping them: a comment there usually introduces the next table,
 // and it is the operator's. Held lines that more emisar content follows are part
 // of our table.
@@ -752,7 +762,7 @@ func claudeAllowList(document map[string]any) ([]string, error) {
 // invalid TOML, and hand-merging into an existing allow array is the kind of
 // edit that silently corrupts a config we do not own — so an existing table is
 // left untouched and the caller prints the manual snippet instead.
-var grokPermissionTable = regexp.MustCompile(`(?m)^[ \t]*\[permission\][ \t]*$`)
+var grokPermissionTable = regexp.MustCompile(`(?m)^[ \t]*\[permission\][ \t]*(?:#[^\r\n]*)?\r?$`)
 
 func addGrokPermission(path string) error {
 	raw, err := readConfigFile(path)

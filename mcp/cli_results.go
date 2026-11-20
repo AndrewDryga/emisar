@@ -200,7 +200,7 @@ func writeCLIErrorIssues(out *strings.Builder, arguments, raw, inputSchema json.
 }
 
 func cliErrorIssuePath(path string) string {
-	path = cliResultText(terminalSafeLine(path), 240)
+	path = cliInlineText(path, 240)
 	switch {
 	case path == "" || path == "$":
 		return "arguments"
@@ -215,7 +215,7 @@ func cliErrorIssueMessage(issue cliErrorIssue, valueKind string, schema map[stri
 	if message := cliErrorConstraintMessage(issue.Code, valueKind, schema); message != "" {
 		return message
 	}
-	if message := cliResultText(terminalSafeLine(issue.Message), maxCLIHumanStringRunes); message != "" {
+	if message := cliInlineText(issue.Message, maxCLIHumanStringRunes); message != "" {
 		return message
 	}
 	switch issue.Code {
@@ -494,7 +494,7 @@ func cliSafeReadContinuation(next cliToolResultNext, account string) string {
 	}
 }
 
-func renderCLIRuns(w io.Writer, runs []cliRunResult, includeIdentity bool) string {
+func renderCLIRuns(w io.Writer, runs []cliRunResult) string {
 	var out strings.Builder
 	for index, run := range runs[:min(len(runs), maxCLIResultItems)] {
 		if index > 0 {
@@ -508,9 +508,7 @@ func renderCLIRuns(w io.Writer, runs []cliRunResult, includeIdentity bool) strin
 		out.WriteString(" — ")
 		out.WriteString(cliResultStatus(w, run.Status))
 		out.WriteByte('\n')
-		if includeIdentity {
-			writeCLIResultField(&out, "Run ID", run.RunID, maxCLIFleetRefRunes)
-		}
+		writeCLIResultField(&out, "Run ID", run.RunID, maxCLIFleetRefRunes)
 		if run.StepID != "" {
 			writeCLIResultField(&out, "Step", run.StepID, 160)
 		}
@@ -574,7 +572,7 @@ func writeCLIOutputBlock(out *strings.Builder, label, value string) {
 	}
 	fmt.Fprintf(out, "  %s\n", label)
 	for _, line := range strings.Split(value, "\n") {
-		fmt.Fprintf(out, "    %s\n", terminalSafeText(line))
+		fmt.Fprintf(out, "    %s\n", line)
 	}
 }
 

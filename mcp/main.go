@@ -531,10 +531,11 @@ func newBridgeFromEnv(defaultClient string, allowStoredCLI bool, account string,
 	if err != nil {
 		return nil, err
 	}
-	// Drop the key from the environment once it is parsed: it is readable from
-	// /proc/<pid>/environ for the life of the process, and every child the
-	// client spawns inherits it. Go cannot wipe the string newSigner already
-	// holds, so this narrows the exposure rather than removing it.
+	// Drop the key from this process's environment once it is parsed, so any
+	// child the bridge starts later does not inherit it by default. This does
+	// not change the launching client's environment or Linux's initial
+	// /proc/<pid>/environ block, and Go cannot wipe the string newSigner
+	// already holds: it is not secret-memory erasure.
 	_ = os.Unsetenv("EMISAR_SIGNING_KEY")
 
 	// A durably promoted successor takes precedence over the bootstrap key in
@@ -1214,8 +1215,8 @@ func writeFrame(w io.Writer, frame []byte) error {
 	// parse, so a raw newline here can only be insignificant space BETWEEN
 	// tokens — a control character inside a JSON string is rejected, and an
 	// escaped \n stays one line — which makes a space semantically identical.
-	// Refusing instead returned an error that unwound through serve into
-	// fatalln, so one reformatted upstream response killed the process and
+	// Refusing instead returned an error that unwound through serve into a
+	// fatal exit, so one reformatted upstream response killed the process and
 	// every concurrent in-flight request with it, including dispatches that had
 	// already reached the portal. Locally built frames never contain newlines,
 	// so this is a no-op for them.

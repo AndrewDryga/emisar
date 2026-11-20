@@ -58,15 +58,15 @@ func runAuthCommandWithDeviceAuth(
 	}
 	switch {
 	case len(args) == 0:
-		return loginCLIAuth(account, "", stdout, stderr, authenticator)
+		return loginCLIAuth("", stdout, stderr, authenticator)
 	case len(args) == 1 && args[0] == "login":
-		return loginCLIAuth(account, "", stdout, stderr, authenticator)
+		return loginCLIAuth("", stdout, stderr, authenticator)
 	case len(args) == 2 && args[0] == "login":
 		if args[1] == "-h" || args[1] == "--help" {
 			fmt.Fprint(stdout, authHelpText)
 			return 0
 		}
-		return loginCLIAuth(account, args[1], stdout, stderr, authenticator)
+		return loginCLIAuth(args[1], stdout, stderr, authenticator)
 	case len(args) == 1 && args[0] == "status":
 		return showCLIAuthStatus(account, "", stdout, stderr)
 	case len(args) == 2 && args[0] == "status":
@@ -324,18 +324,16 @@ func storeCLIAccountCredential(
 	return 0
 }
 
-func resolveCLIAuthOrigin(account, rawOrigin string) (string, error) {
+func resolveCLIAuthOrigin(rawOrigin string) (string, error) {
 	if rawOrigin != "" {
 		return parseEndpoint(rawOrigin, allowInsecureEndpoints())
 	}
-	_, state, err := loadCLICredential(account)
+	_, state, err := loadCLICredential("")
 	switch {
 	case err == nil:
 		return state.EndpointOrigin, nil
-	case errors.Is(err, os.ErrNotExist) && account == "":
-		return defaultCLIEndpointOrigin, nil
 	case errors.Is(err, os.ErrNotExist):
-		return "", fmt.Errorf("account %q is not stored; run emisar-mcp accounts list", account)
+		return defaultCLIEndpointOrigin, nil
 	default:
 		return "", fmt.Errorf("stored CLI credential: %w", err)
 	}

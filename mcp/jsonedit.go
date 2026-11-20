@@ -15,9 +15,11 @@ import (
 // drop the operator's comments and reorder every key in the document.
 //
 // A key is matched by its raw quoted spelling, so a container written with
-// escapes (`"mcpServers"`) reads as absent and the edit adds a second
-// container. Both spellings are legal JSON that no client emits; the textual
-// match is what keeps the rest of the file byte-identical.
+// escapes (`"mcp\u0053ervers"`) reads as absent and the edit inserts a second
+// container that decodes to the same name. renderJSON then re-parses the result
+// and refuses the edit unless the decoded emisar entry equals the intended one.
+// Escaped spellings are legal JSON that no client emits; the textual match is
+// what keeps the rest of the file byte-identical.
 
 const maxJSONConfigBytes = 8 << 20
 

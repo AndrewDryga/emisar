@@ -275,8 +275,6 @@ func humanJSONLabel(key string) string {
 		switch strings.ToLower(word) {
 		case "api", "id", "mcp", "ok", "sha", "sha256", "uri", "url":
 			words[index] = strings.ToUpper(word)
-		case "":
-			continue
 		default:
 			if index == 0 {
 				runes := []rune(word)

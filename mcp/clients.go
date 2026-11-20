@@ -33,8 +33,9 @@ type clientAdapter struct {
 	container []string
 	entry     func(request clientEntryRequest) any
 
-	// YAML: the client's top-level key. A block is appended only when the key is
-	// absent, because merging into existing YAML risks a duplicate key.
+	// YAML: the client's top-level key. A block is appended when the key is
+	// absent; under an existing block-mapping key the emisar child is inserted or
+	// replaced. An inline or duplicated top-level key is refused.
 	yamlTop string
 
 	// file resolves the configuration file; marker resolves the path whose
@@ -370,11 +371,11 @@ func (adapter clientAdapter) installed(roots configRoots) bool {
 }
 
 var (
-	tomlEmisarTable = regexp.MustCompile(`(?m)^[ \t]*\[mcp_servers\.emisar\][ \t]*$`)
+	tomlEmisarTable = regexp.MustCompile(`(?m)^[ \t]*\[mcp_servers\.emisar\][ \t]*\r?$`)
 	// Noncanonical but valid TOML spellings are refused rather than merged. The
 	// tiny editor owns one spelling and must never append a semantic duplicate.
 	tomlEmisarReference = regexp.MustCompile(`(?m)^[ \t]*(?:\[[^]\r\n]*mcp_servers["']?[ \t]*\.[ \t]*["']?emisar(?:["'. \t][^]\r\n]*)?\][^\r\n]*|[^#\r\n]*mcp_servers["']?[ \t]*\.[ \t]*["']?emisar(?:["'. \t][^#\r\n]*)?=|["']?mcp_servers["']?[ \t]*=)`)
-	yamlEmisarEntry     = regexp.MustCompile(`(?m)^[ \t]+emisar:[ \t]*$`)
+	yamlEmisarEntry     = regexp.MustCompile(`(?m)^[ \t]+emisar:[ \t]*\r?$`)
 	jsonEmisarKey       = regexp.MustCompile(`"emisar"[ \t\r\n]*:`)
 )
 

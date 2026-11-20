@@ -141,7 +141,6 @@ work.
 Run `emisar-mcp` in a terminal to see its command help. You can run any name
 shown by `list_tools`, including `list_runners`. MCP clients start the same
 program automatically and send MCP requests through stdin.
-Use `emisar-mcp --help` for current registration commands and config locations.
 Pin a reviewed release for managed rollouts:
 
 ```sh
@@ -165,7 +164,7 @@ the direct CLI's stored credential:
 | `EMISAR_SIGNING_KEY` | no | Ed25519 or ECDSA P-256 leaf private key (base64 PKCS#8) for bridge-attested dispatch |
 | `EMISAR_SIGNING_CERT` | no | X.509 certificate chain for `EMISAR_SIGNING_KEY` (base64 PEM); required with it |
 | `NO_COLOR`, `CLICOLOR`, `TERM` | no | Output conventions the direct CLI follows: `NO_COLOR` set or `TERM=dumb` disables color, and `CLICOLOR=0` does too |
-| `XDG_CONFIG_HOME` (Unix), `APPDATA` (Windows) | no | Where `connect`/`disconnect` look for and rewrite client configuration, and where the bridge keeps its own credential store |
+| `XDG_CONFIG_HOME` (Linux), `APPDATA` (Windows) | no | Where `connect`/`disconnect` look for and rewrite client configuration, and where the bridge keeps its own credential store |
 
 Client metadata is untrusted enrichment. It is never used for authorization,
 posture, policy, or approval. Keys are limited to 128 characters, values to 512
@@ -482,9 +481,11 @@ revoke connected keys in AI agents. Never-used installer keys stay hidden
 there and expire after 30 days.
 
 If durable storage is unavailable, the bridge keeps using the configured key
-but does not offer automatic rotation. Containers should persist `/config`.
-OAuth tokens, arbitrary Bearer tokens, non-expiring quick-connect keys, and
-audit-export tokens bypass local rotation state.
+but does not offer automatic rotation. Containers should persist the bridge's
+config directory. In Linux containers, this is `$XDG_CONFIG_HOME/emisar` when
+`XDG_CONFIG_HOME` is set, otherwise `~/.config/emisar`.
+OAuth tokens, arbitrary Bearer tokens, and audit-export tokens bypass local
+rotation state.
 
 ## Bridge-attested dispatch
 

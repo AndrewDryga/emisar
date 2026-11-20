@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -237,6 +238,13 @@ func TestBrowserAuthDenialAndHostileURLStoreNothing(t *testing.T) {
 			wantApprovalPage: true,
 		},
 		{
+			name:             "expired",
+			verificationURL:  func(origin string) string { return origin + "/activate?code=ABCD-2345" },
+			pollError:        "expired_token",
+			want:             "The browser sign-in code expired",
+			wantApprovalPage: true,
+		},
+		{
 			name:             "cross-origin verification URL",
 			verificationURL:  func(string) string { return "https://attacker.example/activate?code=ABCD-2345" },
 			want:             "invalid complete verification URL",
@@ -302,13 +310,40 @@ func TestBrowserAuthDenialAndHostileURLStoreNothing(t *testing.T) {
 	}
 }
 
+// A transport error whose text happens to contain "expired" or "denied" is not
+// a device-grant outcome: the real cause is printed, not a misleading summary.
+func TestBrowserAuthTransportFailureKeepsTheRealCause(t *testing.T) {
+	for name, transportErr := range map[string]error{
+		"expired certificate": x509.CertificateInvalidError{Reason: x509.Expired},
+		"permission denied":   errors.New("dial tcp: connect: permission denied"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			useTestUserConfigDir(t)
+			authenticator := deviceAuthenticator{
+				client:      &http.Client{Transport: stubRoundTripper{err: transportErr}},
+				openBrowser: func(string) bool { return false },
+				stdoutIsTTY: func(io.Writer) bool { return false },
+				now:         time.Now,
+				wait:        func(context.Context, time.Duration) error { return nil },
+			}
+			var stdout, stderr bytes.Buffer
+			code := runAuthCommandWithDeviceAuth("", []string{"login", "https://emisar.test"}, &stdout, &stderr, authenticator)
+			if code != 1 || !strings.Contains(stderr.String(), "Browser sign-in failed") ||
+				!strings.Contains(stderr.String(), strings.TrimSpace(transportErr.Error())) {
+				t.Fatalf("login exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+			}
+		})
+	}
+}
+
 func TestMainBrowserAuthUnsupportedExplainsHowToRecover(t *testing.T) {
 	for _, status := range []int{http.StatusBadRequest, http.StatusNotFound} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
 			_, configEnv := useTestUserConfigDir(t)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 				if request.URL.Path != "/api/mcp/device_authorization" {
-					t.Fatalf("path = %q", request.URL.Path)
+					t.Errorf("path = %q", request.URL.Path)
+					return
 				}
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(status)
@@ -976,7 +1011,7 @@ func TestDirectCLINeverCompletesPartialEnvironmentFromStoredAccount(t *testing.T
 		"whitespace key": {"EMISAR_API_KEY": " \n"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			env := copyStringMap(configEnv)
+			env := maps.Clone(configEnv)
 			for key, value := range override {
 				env[key] = value
 			}
@@ -1110,12 +1145,4 @@ func assertMode(t *testing.T, path string, want os.FileMode) {
 	if info.Mode().Perm() != want {
 		t.Fatalf("%s mode = %04o, want %04o", path, info.Mode().Perm(), want)
 	}
-}
-
-func copyStringMap(source map[string]string) map[string]string {
-	copy := make(map[string]string, len(source))
-	for key, value := range source {
-		copy[key] = value
-	}
-	return copy
 }

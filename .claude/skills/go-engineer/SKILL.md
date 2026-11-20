@@ -26,7 +26,7 @@ whole positional argv elements).
 
 ## 3. Match the house style
 - Errors are values: `fmt.Errorf("…: %w", err)`; `error` is the last return.
-- `log/slog` only (runner); stderr `fatalln` is fine for the tiny `mcp` bridge.
+- `log/slog` only (runner); the `mcp` bridge uses plain stderr startup diagnostics, without `slog` ceremony.
 - Tests: stdlib + table-driven (`t.Run`, `t.Helper`, `t.TempDir`) — no testify.
 - Small single-purpose packages; pure types in `pkg/`, logic in `internal/`.
 - A new dependency is new attack surface — justify it in one sentence or use stdlib.

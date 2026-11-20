@@ -22,14 +22,10 @@ import (
 	"time"
 )
 
-// The bridge is a thin stdio↔HTTP shim. Its only jobs are:
-//   1. POST each JSON-RPC frame to the portal's /api/mcp/rpc endpoint.
-//   2. Forward the response back to stdout.
-//   3. Mint one private request token so retries preserve transport identity.
-//
-// All MCP-protocol semantics (renderRunBlocks, wait_for_run,
-// pending-approval messages) now live in the portal, so the tests here
-// only pin the proxy contract, not any tool-output formatting.
+// These tests pin the stdio-to-HTTP transport contract: each JSON-RPC frame is
+// POSTed to the portal's /api/mcp/rpc endpoint, the validated response is
+// written back to stdout, and a private request token keeps retries on the same
+// transport identity. Tool semantics and output belong to the portal.
 
 func (b *bridge) forward(frame []byte) ([]byte, error) {
 	meta := parseRequestMeta(frame)
@@ -840,7 +836,7 @@ func TestReadFrameLine_BudgetsJSONBodyWithoutLineDelimiter(t *testing.T) {
 	}
 }
 
-// -- buildUserAgent: stamps client + host ---------------------------
+// -- buildUserAgentWithDefault: stamps client + host ----------------
 
 func TestBuildUserAgent_ContainsBridgeAndClient(t *testing.T) {
 	t.Setenv("EMISAR_CLIENT", "claude-desktop")
@@ -1513,7 +1509,7 @@ func TestForward_Empty200BodyIsRejectedAndCorrelated(t *testing.T) {
 		t.Fatal("an empty 200 cannot be a JSON-RPC response")
 	}
 
-	// And serve writes nothing for an empty 200 (len(resp)==0 branch).
+	// And serve turns the empty 200 into a correlated -32603 transport error.
 	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -1526,7 +1522,7 @@ func TestForward_Empty200BodyIsRejectedAndCorrelated(t *testing.T) {
 	}
 }
 
-// / — the relay is buffered, not streamed: forward reads
+// The relay is buffered, not streamed: forward reads
 // the COMPLETE (capped) body before returning one slice, even when the portal
 // writes it in chunks with flushes between them. (No partial/streamed frame is
 // emitted.)
@@ -2612,16 +2608,23 @@ func TestParseClientMetadata_FailsClosed(t *testing.T) {
 	}
 }
 
-// A number rendered to exactly 512 chars is accepted; one longer is rejected —
-// the limit is measured on the string representation, matching the portal.
+// A string or number value of exactly 512 characters is accepted; one longer
+// is rejected. A number's limit is measured on its string representation,
+// matching the portal.
 func TestParseClientMetadata_ValueLengthBoundary(t *testing.T) {
-	ok := `{"a":"` + strings.Repeat("v", 512) + `"}`
-	if _, err := parseClientMetadata(ok); err != nil {
-		t.Errorf("a 512-char value should be accepted, got %v", err)
-	}
-	tooLong := `{"a":"` + strings.Repeat("v", 513) + `"}`
-	if _, err := parseClientMetadata(tooLong); err == nil {
-		t.Error("a 513-char value should be rejected")
+	for _, test := range []struct{ name, ok, tooLong string }{
+		{"string", `{"a":"` + strings.Repeat("v", 512) + `"}`, `{"a":"` + strings.Repeat("v", 513) + `"}`},
+		{"number", `{"a":` + strings.Repeat("1", 512) + `}`, `{"a":` + strings.Repeat("1", 513) + `}`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := parseClientMetadata(test.ok); err != nil {
+				t.Errorf("a 512-char value should be accepted, got %v", err)
+			}
+			_, err := parseClientMetadata(test.tooLong)
+			if err == nil || !strings.Contains(err.Error(), "exceeds 512 characters") {
+				t.Errorf("a 513-char value should be rejected for its length, got %v", err)
+			}
+		})
 	}
 }
 

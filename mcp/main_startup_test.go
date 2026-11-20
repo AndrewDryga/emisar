@@ -291,7 +291,7 @@ func TestMain_UnknownFlagExitsTwo(t *testing.T) {
 	}
 }
 
-// A missing EMISAR_URL or EMISAR_API_KEY (or both) is fatal: fatalln to
+// A missing EMISAR_URL or EMISAR_API_KEY (or both) is fatal: a diagnostic to
 // stderr, exit 1. The message names the variable that is actually missing, so
 // an operator with one of the two already set is not sent hunting. A key that
 // is only whitespace is a missing key, not a key the portal will reject.
@@ -314,7 +314,7 @@ func TestMain_MissingRequiredEnvIsFatal(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			stdout, stderr, code := runMain(t, "", nil, c.env)
 			if code != 1 {
-				t.Errorf("exit code = %d, want 1 (fatalln)", code)
+				t.Errorf("exit code = %d, want 1", code)
 			}
 			if !strings.Contains(stderr, c.want) {
 				t.Errorf("stderr = %q, want it to name the missing env (%q)", stderr, c.want)
@@ -359,7 +359,7 @@ func TestMain_APIKeySurroundingWhitespaceIsTrimmed(t *testing.T) {
 
 // A failed endpoint-scheme check is fatal at startup: a cleartext
 // http:// URL to a public host (no EMISAR_ALLOW_INSECURE override) makes main()
-// fatalln and exit 1. The bridge never silently downgrades to shipping the
+// print a diagnostic and exit 1. The bridge never silently downgrades to shipping the
 // Bearer key over plaintext. (The pure parseEndpoint logic is covered by
 // TestParseEndpoint; this pins that main wires the failure to a fatal.)
 func TestMain_CleartextPublicEndpointIsFatal(t *testing.T) {
@@ -368,7 +368,7 @@ func TestMain_CleartextPublicEndpointIsFatal(t *testing.T) {
 		"EMISAR_API_KEY": "emk-x",
 	})
 	if code != 1 {
-		t.Errorf("exit code = %d, want 1 (fatalln)", code)
+		t.Errorf("exit code = %d, want 1", code)
 	}
 	if !strings.Contains(stderr, "cleartext http") {
 		t.Errorf("stderr should explain the cleartext refusal, got %q", stderr)
@@ -423,7 +423,7 @@ func TestMain_CleartextPublicEndpointAllowedWithOverride(t *testing.T) {
 
 // A malformed signing-key configuration
 // (only one of the pair, or a non-hex / wrong-length seed) is fatal at startup:
-// newSigner's error is surfaced via fatalln, exit 1. (newSigner's pure cases are
+// newSigner's error is surfaced on stderr, exit 1. (newSigner's pure cases are
 // covered by TestNewSigner; this pins that main treats the error as fatal.)
 func TestMain_BadSigningKeyConfigIsFatal(t *testing.T) {
 	// (the signing-key branch of the startup glue)
@@ -450,7 +450,7 @@ func TestMain_BadSigningKeyConfigIsFatal(t *testing.T) {
 			}
 			stdout, stderr, code := runMain(t, "", nil, env)
 			if code != 1 {
-				t.Errorf("exit code = %d, want 1 (fatalln)", code)
+				t.Errorf("exit code = %d, want 1", code)
 			}
 			if !strings.Contains(stderr, c.want) {
 				t.Errorf("stderr = %q, want it to contain %q", stderr, c.want)
@@ -484,7 +484,7 @@ func TestMain_BadClientMetadataIsFatal(t *testing.T) {
 			}
 			stdout, stderr, code := runMain(t, "", nil, env)
 			if code != 1 {
-				t.Errorf("exit code = %d, want 1 (fatalln)", code)
+				t.Errorf("exit code = %d, want 1", code)
 			}
 			if !strings.Contains(stderr, c.want) {
 				t.Errorf("stderr = %q, want it to contain %q", stderr, c.want)

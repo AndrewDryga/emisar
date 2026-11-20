@@ -31,6 +31,14 @@ const (
 
 var errBrowserAuthUnsupported = errors.New("server does not support direct CLI browser authentication")
 
+// The device-grant outcomes the portal reports. Callers classify them with
+// errors.Is: a transport error's text can contain "denied" or "expired" too.
+var (
+	errApprovalDenied  = errors.New("approval was denied; no credential was stored")
+	errApprovalExpired = errors.New("approval code expired; run auth again")
+	errApprovalInvalid = errors.New("approval code is no longer valid; run auth again")
+)
+
 type deviceAuthenticator struct {
 	client      *http.Client
 	openBrowser func(string) bool
@@ -74,11 +82,11 @@ func newDeviceAuthenticator() deviceAuthenticator {
 }
 
 func loginCLIAuth(
-	account, rawOrigin string,
+	rawOrigin string,
 	stdout, stderr io.Writer,
 	authenticator deviceAuthenticator,
 ) int {
-	origin, err := resolveCLIAuthOrigin(account, rawOrigin)
+	origin, err := resolveCLIAuthOrigin(rawOrigin)
 	if err != nil {
 		return cliCommandError(
 			stderr,
@@ -110,14 +118,14 @@ func loginCLIAuth(
 				"For a self-hosted server, upgrade it and make sure `/api/mcp/device_authorization` is routed.",
 				"Or set EMISAR_URL and EMISAR_API_KEY together for direct commands.",
 			)
-		case strings.Contains(err.Error(), "denied"):
+		case errors.Is(err, errApprovalDenied):
 			return cliCommandError(
 				stderr,
 				"Browser sign-in was denied",
 				[]string{"No credential was saved."},
 				"Run `emisar-mcp auth` again and approve the request in your browser.",
 			)
-		case strings.Contains(err.Error(), "expired") || strings.Contains(err.Error(), "no longer valid"):
+		case errors.Is(err, errApprovalExpired) || errors.Is(err, errApprovalInvalid):
 			return cliCommandError(
 				stderr,
 				"The browser sign-in code expired",
@@ -206,11 +214,12 @@ func (auth deviceAuthenticator) authorize(
 		fmt.Fprintln(stdout)
 		return response, nil
 	}
-	return deviceTokenResponse{}, errors.New("approval code expired; run auth again")
+	return deviceTokenResponse{}, errApprovalExpired
 }
 
-// deviceAuthTransientFailureNotice is how many consecutive transport failures
-// pass before the poll loop prints one line naming the last error, so a run
+// deviceAuthTransientFailureNotice is how many transport failures within one
+// authorization attempt (not necessarily consecutive) pass before the poll loop
+// prints one line naming the last error, so a run
 // against an unreachable server explains itself instead of only "code expired".
 const deviceAuthTransientFailureNotice = 5
 
@@ -307,11 +316,11 @@ func (auth deviceAuthenticator) poll(
 		case "", "authorization_pending":
 			return deviceTokenResponse{}, true, nil
 		case "access_denied":
-			return deviceTokenResponse{}, false, errors.New("approval was denied; no credential was stored")
+			return deviceTokenResponse{}, false, errApprovalDenied
 		case "expired_token":
-			return deviceTokenResponse{}, false, errors.New("approval code expired; run auth again")
+			return deviceTokenResponse{}, false, errApprovalExpired
 		case "invalid_grant":
-			return deviceTokenResponse{}, false, errors.New("approval code is no longer valid; run auth again")
+			return deviceTokenResponse{}, false, errApprovalInvalid
 		default:
 			return deviceTokenResponse{}, false, fmt.Errorf("server returned terminal error %q", result.Error)
 		}

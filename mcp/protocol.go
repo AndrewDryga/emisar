@@ -72,7 +72,7 @@ func parseProtocolJSON(frame []byte) (parsedProtocolFrame, error) {
 		return parsedProtocolFrame{}, errors.New("run_action params.arguments must be a JSON object")
 	}
 
-	args, err := extractRawActionArgs(parsed.Arguments, "run_action args")
+	args, err := extractRawActionArgs(parsed.Arguments)
 	if err != nil {
 		return parsedProtocolFrame{}, err
 	}
@@ -81,20 +81,20 @@ func parseProtocolJSON(frame []byte) (parsedProtocolFrame, error) {
 	return parsed, nil
 }
 
-func extractRawActionArgs(arguments json.RawMessage, label string) (json.RawMessage, error) {
+func extractRawActionArgs(arguments json.RawMessage) (json.RawMessage, error) {
 	var input map[string]json.RawMessage
 	if err := json.Unmarshal(arguments, &input); err != nil {
-		return nil, fmt.Errorf("decode %s: %w", label, err)
+		return nil, fmt.Errorf("decode run_action args: %w", err)
 	}
 	args := input["args"]
 	if len(args) == 0 {
-		return nil, fmt.Errorf("%s are required", label)
+		return nil, errors.New("run_action args are required")
 	}
 	if firstJSONByte(args) != '{' {
-		return nil, fmt.Errorf("%s must be a JSON object", label)
+		return nil, errors.New("run_action args must be a JSON object")
 	}
 	if len(args) > maxRawActionArgsBytes {
-		return nil, fmt.Errorf("%s are %d bytes, limit is %d", label, len(args), maxRawActionArgsBytes)
+		return nil, fmt.Errorf("run_action args are %d bytes, limit is %d", len(args), maxRawActionArgsBytes)
 	}
 	return args, nil
 }

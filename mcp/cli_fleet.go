@@ -469,7 +469,7 @@ func cliFleetActionInspectCommand(candidate cliFleetAction, account string) stri
 		arguments.ActionID != candidate.ActionID || arguments.PackRef != candidate.PackRef {
 		return ""
 	}
-	return cliFleetNextCommandForOS(candidate.Next, "get_action", account, runtime.GOOS)
+	return cliFleetNextCommandForOS(candidate.Next, getActionToolName, account, runtime.GOOS)
 }
 
 func hasJSONValue(raw json.RawMessage) bool {

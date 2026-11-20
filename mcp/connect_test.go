@@ -130,6 +130,15 @@ func TestSelectClientsWithoutATerminal(t *testing.T) {
 		}
 	})
 
+	t.Run("every client already connected is not an empty choice", func(t *testing.T) {
+		connected := []detectedClient{clients[1]}
+		stdout := &bytes.Buffer{}
+		selection, ok := selectClients(connectOptions{}, connected, false, strings.NewReader(""), stdout)
+		if !ok || len(selection.clients) != 0 || stdout.Len() != 0 {
+			t.Fatalf("selection = %+v ok=%v stdout=%q", selection.clients, ok, stdout)
+		}
+	})
+
 	t.Run("no terminal still authenticates the CLI", func(t *testing.T) {
 		selection, ok := selectClients(connectOptions{}, clients, true, strings.NewReader(""), &bytes.Buffer{})
 		if !ok || !selection.cliNeeded || len(selection.clients) != 0 {
@@ -864,19 +873,24 @@ func TestGrokPermissionLeavesAnOperatorsOwnTable(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(client.ConfigFile), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	existing := "[permission]\nallow = [\"Bash(ls)\"]\n"
-	if err := os.WriteFile(client.ConfigFile, []byte(existing), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := addGrokPermission(client.ConfigFile); err == nil {
-		t.Fatal("expected a refusal rather than a second [permission] table")
-	}
-	raw, err := readConfigFile(client.ConfigFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if raw != existing {
-		t.Errorf("the operator's table was modified:\n%s", raw)
+	for _, existing := range []string{
+		"[permission]\nallow = [\"Bash(ls)\"]\n",
+		"[permission]\r\nallow = [\"Bash(ls)\"]\r\n",
+		"[permission] # mine\nallow = [\"Bash(ls)\"]\n",
+	} {
+		if err := os.WriteFile(client.ConfigFile, []byte(existing), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := addGrokPermission(client.ConfigFile); err == nil {
+			t.Fatalf("expected a refusal rather than a second [permission] table for %q", existing)
+		}
+		raw, err := readConfigFile(client.ConfigFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if raw != existing {
+			t.Errorf("the operator's table was modified:\n%s", raw)
+		}
 	}
 }
 

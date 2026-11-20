@@ -1080,6 +1080,6 @@ func writeCLIJSONBlock(out *strings.Builder, indent string, raw json.RawMessage)
 	}
 	value := cliResultMultiline(pretty.String(), maxCLIResultOutputRunes)
 	for _, line := range strings.Split(value, "\n") {
-		fmt.Fprintf(out, "%s%s\n", indent, terminalSafeText(line))
+		fmt.Fprintf(out, "%s%s\n", indent, line)
 	}
 }

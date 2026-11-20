@@ -528,7 +528,7 @@ func (b *bridge) writeCLICallFailure(operationID string, callErr error, exactJSO
 		case strings.Contains(message, "request frame exceeds"):
 			summary = "The request is too large"
 			next = []string{"Reduce the JSON arguments, then try again."}
-		case strings.Contains(message, "attest") || strings.Contains(message, "sign"):
+		case strings.HasPrefix(message, "attest run_action:"):
 			summary = "The request could not be signed"
 			next = []string{"Check EMISAR_SIGNING_KEY and EMISAR_SIGNING_CERT, then try again."}
 		case strings.Contains(message, "credential"):

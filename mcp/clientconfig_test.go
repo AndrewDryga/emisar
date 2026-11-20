@@ -647,6 +647,29 @@ func TestConnectedClientIsDetected(t *testing.T) {
 	}
 }
 
+// A config saved with CRLF line endings still reads as connected, so disconnect
+// sees the entry and connect does not add a second one.
+func TestCRLFConfigIsDetectedAsConnected(t *testing.T) {
+	for _, testCase := range []struct{ id, raw string }{
+		{"codex", "[mcp_servers.emisar]\r\ncommand = \"emisar-mcp\"\r\n"},
+		{"goose", "extensions:\r\n  emisar:\r\n    name: emisar\r\n"},
+	} {
+		t.Run(testCase.id, func(t *testing.T) {
+			adapter, _ := lookupClientAdapter(testCase.id)
+			client := adapter.resolve(testConfigRoots(t))
+			if err := os.MkdirAll(filepath.Dir(client.ConfigFile), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(client.ConfigFile, []byte(testCase.raw), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if !client.configured(client.ConfigFile) {
+				t.Errorf("a CRLF config with an emisar entry does not read as connected:\n%q", testCase.raw)
+			}
+		})
+	}
+}
+
 // A config file can express a second MCP server with its own `command`, which
 // the client runs on next start. So a value that escapes its string literal is
 // arbitrary code execution on the operator's workstation off the back of a
@@ -744,6 +767,49 @@ func TestYAMLClientInsertsUnderAnExistingKey(t *testing.T) {
 	}
 	if strings.Contains(raw, "\nemisar:\n") {
 		t.Errorf("emisar was added as a new top-level key, not under extensions:\n%s", raw)
+	}
+}
+
+// The entry lands inside the block, before its trailing blank lines, so the
+// file keeps its final newline and the blank line before the next key.
+func TestYAMLEntryEditKeepsTrailingBlankLinesOutside(t *testing.T) {
+	const entry = "emisar:\n  name: emisar\n"
+	for _, test := range []struct{ name, raw, want string }{
+		{
+			name: "insert at end of file",
+			raw:  "extensions:\n  developer:\n    enabled: true\n",
+			want: "extensions:\n  developer:\n    enabled: true\n  emisar:\n    name: emisar\n",
+		},
+		{
+			name: "insert without a final newline",
+			raw:  "extensions:\n  developer:\n    enabled: true",
+			want: "extensions:\n  developer:\n    enabled: true\n  emisar:\n    name: emisar",
+		},
+		{
+			name: "insert before a sibling top-level key",
+			raw:  "extensions:\n  developer:\n    enabled: true\n\nmodel: sonnet\n",
+			want: "extensions:\n  developer:\n    enabled: true\n  emisar:\n    name: emisar\n\nmodel: sonnet\n",
+		},
+		{
+			name: "replace at end of file",
+			raw:  "extensions:\n  emisar:\n    name: old\n",
+			want: "extensions:\n  emisar:\n    name: emisar\n",
+		},
+		{
+			name: "replace before a sibling top-level key",
+			raw:  "extensions:\n  emisar:\n    name: old\n\nmodel: sonnet\n",
+			want: "extensions:\n  emisar:\n    name: emisar\n\nmodel: sonnet\n",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := replaceYAMLEntry(test.raw, "extensions", entry)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != test.want {
+				t.Errorf("got:  %q\nwant: %q", got, test.want)
+			}
+		})
 	}
 }
 

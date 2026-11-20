@@ -174,7 +174,7 @@ func cliUsageError(stderr io.Writer, message string) int {
 	}
 	next := []string{"Run `emisar-mcp --help` to see available commands."}
 	switch {
-	case strings.Contains(message, "JSON") || strings.Contains(message, "JSON object"):
+	case strings.Contains(message, "JSON"):
 		next = []string{
 			"Pass one JSON object, or use `-` to read the object from stdin.",
 			"Run `emisar-mcp help <tool>` to see that tool's arguments.",

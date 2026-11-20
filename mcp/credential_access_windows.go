@@ -264,11 +264,9 @@ func validateWindowsCredentialSDDL(sddl, currentSID string) error {
 	}
 
 	want := map[string]bool{
-		"SY":           false,
-		"BA":           false,
-		currentSID:     false,
-		"S-1-5-18":     false,
-		"S-1-5-32-544": false,
+		"SY":       false,
+		"BA":       false,
+		currentSID: false,
 	}
 	aliases := map[string]string{
 		"S-1-5-18":     "SY",

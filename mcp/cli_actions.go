@@ -223,7 +223,7 @@ func renderCLIRunAction(w io.Writer, raw []byte, account string) (string, bool) 
 	}
 	if len(result.Runs) > 0 {
 		out.WriteByte('\n')
-		out.WriteString(renderCLIRuns(w, result.Runs, true))
+		out.WriteString(renderCLIRuns(w, result.Runs))
 	}
 	return out.String(), true
 }
@@ -262,7 +262,7 @@ func renderCLIRecentRuns(w io.Writer, raw []byte) (string, bool) {
 
 	var out strings.Builder
 	fmt.Fprintf(&out, "%d recent %s\n\n", len(result.Runs), plural(len(result.Runs), "run", "runs"))
-	out.WriteString(renderCLIRuns(w, result.Runs, true))
+	out.WriteString(renderCLIRuns(w, result.Runs))
 	if hasJSONValue(result.NextCursor) {
 		out.WriteString("\nMore runs are available; use --json to continue with the returned cursor.\n")
 	}
@@ -354,7 +354,7 @@ func renderCLIWaitForRun(w io.Writer, raw []byte) (string, bool) {
 		if json.Unmarshal(envelope.Run, &run) != nil || run.RunID == "" || run.Status == "" {
 			return "", false
 		}
-		return renderCLIRuns(w, []cliRunResult{run}, true), true
+		return renderCLIRuns(w, []cliRunResult{run}), true
 	case firstJSONByte(envelope.Execution) == '{':
 		return renderCLIRunbookExecution(w, envelope.Execution)
 	case firstJSONByte(envelope.ExecutionOutputs) == '{':

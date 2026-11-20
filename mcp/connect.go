@@ -465,6 +465,11 @@ func selectClients(
 		selection.clients = candidates
 		return selection, true
 	}
+	if len(candidates) == 0 {
+		// Nothing is left to ask about: the caller reports that every detected
+		// client is connected, and still acquires a CLI credential if needed.
+		return selection, true
+	}
 
 	if !readerIsTerminal(stdin) {
 		// Without a terminal there is nobody to ask, and connecting a client the
@@ -569,7 +574,7 @@ func resolveConnectOrigin(raw string) (string, error) {
 	if raw != "" {
 		return parseEndpoint(raw, allowInsecureEndpoints())
 	}
-	return resolveCLIAuthOrigin("", "")
+	return resolveCLIAuthOrigin("")
 }
 
 func currentConfigRoots() (configRoots, error) {

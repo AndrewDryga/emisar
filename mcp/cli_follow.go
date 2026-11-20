@@ -109,9 +109,6 @@ func (b *bridge) followCLIAction(
 	raw []byte,
 	stdout, stderr io.Writer,
 ) int {
-	if err := validateCLIHumanMutation(runActionToolName, operationID, raw); err != nil {
-		return b.writeCLIFollowFailure(stderr, operationID, err)
-	}
 	var initial struct {
 		OK          bool           `json:"ok"`
 		OperationID string         `json:"operation_id"`
@@ -188,7 +185,7 @@ func (b *bridge) followCLIAction(
 	}
 
 	_, _ = io.WriteString(stdout, "\nFinal status\n\n")
-	_, _ = io.WriteString(stdout, renderCLIRuns(stdout, completed, true))
+	_, _ = io.WriteString(stdout, renderCLIRuns(stdout, completed))
 	failed = false
 	for _, run := range completed {
 		failed = failed || cliRunFailed(run.Status)
@@ -268,9 +265,6 @@ func (b *bridge) followCLIRunbook(
 	raw []byte,
 	stdout, stderr io.Writer,
 ) int {
-	if err := validateCLIHumanMutation(executeRunbookToolName, operationID, raw); err != nil {
-		return b.writeCLIFollowFailure(stderr, operationID, err)
-	}
 	var initial struct {
 		OK          bool                `json:"ok"`
 		OperationID string              `json:"operation_id"`
@@ -686,8 +680,10 @@ func expectedCLIRunbookRuns(execution cliRunbookExecution) (
 				stepID: item.StepID, runnerRef: item.RunnerRef,
 				actionID: item.ActionID, packRef: item.PackRef,
 			}
-			if item.StepID == "" || item.RunnerRef == "" || item.ActionID == "" || item.PackRef == "" ||
-				!cliRunbookItemTerminal(item.Status) {
+			// A halted execution leaves the items it never dispatched pending.
+			settled := cliRunbookItemTerminal(item.Status) ||
+				(execution.Status == "halted" && item.Status == "pending")
+			if item.StepID == "" || item.RunnerRef == "" || item.ActionID == "" || item.PackRef == "" || !settled {
 				return nil, nil, errors.New("the runbook response contained an invalid action identity")
 			}
 			identities[identity] = struct{}{}

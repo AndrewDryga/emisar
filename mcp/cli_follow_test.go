@@ -31,7 +31,8 @@ func TestCLIHumanRunActionFollowsExactContinuation(t *testing.T) {
 			} `json:"params"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			t.Fatal(err)
+			t.Errorf("decode request: %v", err)
+			return
 		}
 		switch call {
 		case 1:
@@ -301,6 +302,40 @@ func TestCLIHumanExecuteRunbookRejectsChangedFrozenItem(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "different or invalid runbook execution") || strings.Contains(stdout, "danger.erase") {
 		t.Fatalf("changed frozen item reached output:\nstdout=%s\nstderr=%s", stdout, stderr)
+	}
+}
+
+// A halted execution leaves the items it never dispatched pending; the human
+// renderer reports them instead of rejecting the response.
+func TestCLIHumanExecuteRunbookRendersHaltedExecutionWithUndispatchedItems(t *testing.T) {
+	var calls atomic.Int32
+	var operationID string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch call := calls.Add(1); call {
+		case 1:
+			operationID = r.Header.Get(operationIDHeader)
+			writeCLIResult(t, w, r, fmt.Sprintf(`{"structuredContent":{"ok":true,"operation_id":%q,"execution":{"runbook_execution_id":"exec-1","runbook_ref":"database-check@3","kind":"published","definition_sha256":"sha256:live","status":"halted","stages":[{"stage_id":"inspect","title":"Inspect","mode":"sequential","status":"halted","items":[{"item_id":"item-1","step_id":"status","runner_ref":"db-1~abc","status":"failed","action_id":"postgres.status","pack_ref":"postgres@1/sha256:abc","latest_attempt":{"run_id":"run-1","attempt_number":1,"status":"failed"}}]},{"stage_id":"report","title":"Report","mode":"sequential","status":"halted","items":[{"item_id":"item-2","step_id":"render_report","runner_ref":"ops-1~ghi","status":"pending","action_id":"linux.uptime","pack_ref":"linux@1/sha256:def"}]}],"runs_next":{"tool":"recent_runs","arguments":{"runbook_execution_id":"exec-1","limit":15}}}},"content":[],"isError":false}`, operationID))
+		case 2:
+			writeCLIResult(t, w, r, fmt.Sprintf(`{"structuredContent":{"ok":true,"runs":[{"run_id":"run-1","operation_id":%q,"runbook_execution_id":"exec-1","step_id":"status","runner_ref":"db-1~abc","action_id":"postgres.status","pack_ref":"postgres@1/sha256:abc","status":"failed","stdout":"disk full"}],"next_cursor":null},"content":[],"isError":false}`, operationID))
+		default:
+			t.Errorf("unexpected request %d", call)
+		}
+	}))
+	defer srv.Close()
+
+	stdout, stderr, code := runCLITest(newTestBridge(srv), []string{executeRunbookToolName, `{}`}, "")
+	if code != 1 || stderr != "" || calls.Load() != 2 {
+		t.Fatalf("exit=%d calls=%d stdout=%q stderr=%q", code, calls.Load(), stdout, stderr)
+	}
+	for _, want := range []string{
+		"Runbook halted — 0 succeeded · 1 failed · 2 total",
+		"disk full",
+		"render_report",
+		"No action attempt was recorded.",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("stdout missing %q:\n%s", want, stdout)
+		}
 	}
 }
 

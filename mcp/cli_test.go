@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -260,7 +262,8 @@ func TestCLIToolCallsPreserveJSONAndReturnStructuredContent(t *testing.T) {
 					} `json:"params"`
 				}
 				if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-					t.Fatalf("decode request: %v", err)
+					t.Errorf("decode request: %v", err)
+					return
 				}
 				if !jsonEqual(request.Params.Arguments, []byte(tc.wantArgs)) {
 					t.Errorf("arguments = %s, want %s", request.Params.Arguments, tc.wantArgs)
@@ -320,7 +323,8 @@ func TestCLIFindActionsAcceptsTextAndJSONObject(t *testing.T) {
 					} `json:"params"`
 				}
 				if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-					t.Fatalf("decode request: %v", err)
+					t.Errorf("decode request: %v", err)
+					return
 				}
 				if !jsonEqual(request.Params.Arguments, []byte(test.wantArgs)) {
 					t.Errorf("arguments = %s, want %s", request.Params.Arguments, test.wantArgs)
@@ -699,7 +703,8 @@ func TestCLIRunActionUsesExistingOperationAndAttestationPath(t *testing.T) {
 			} `json:"params"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			t.Fatalf("decode request: %v", err)
+			t.Errorf("decode request: %v", err)
+			return
 		}
 		gotArgs = request.Params.Arguments.Args
 		writeCLIResult(t, w, r, `{"structuredContent":{"ok":true},"content":[],"isError":false}`)
@@ -838,6 +843,31 @@ func TestCLILocalPreSendFailureDoesNotAdvertiseOperationRecovery(t *testing.T) {
 	}
 	if got := calls.Load(); got != 0 {
 		t.Fatalf("local failure made %d HTTP requests", got)
+	}
+}
+
+// A credential-state error that wraps a path containing "sign" or "attest" is
+// still a credential failure; only the signing path's own prefix means signing.
+func TestCLILocalFailureClassification(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"signing", fmt.Errorf("attest run_action: %w", errors.New("bad key")), "The request could not be signed"},
+		{"credential path with sign", fmt.Errorf("refresh credential state: %w", errors.New("open /home/designer/.config/emisar/x: permission denied")), "The account credential could not be used"},
+		{"credential path with attest", fmt.Errorf("recover credential state: %w", errors.New("open /home/attestor/.config/emisar/x: permission denied")), "The account credential could not be used"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			if code := (&bridge{}).writeCLICallFailure("", localBridge(tc.err), false, &stdout, &stderr); code != 1 {
+				t.Fatalf("exit=%d", code)
+			}
+			if !strings.Contains(stderr.String(), "Error: "+tc.want) {
+				t.Fatalf("stderr = %q, want summary %q", stderr.String(), tc.want)
+			}
+		})
 	}
 }
 
@@ -1266,7 +1296,38 @@ func writeCLIResult(t *testing.T, w http.ResponseWriter, r *http.Request, result
 	_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":%s}`, request.ID, result)
 }
 
+// jsonEqual compares two JSON documents ignoring object key order and
+// insignificant space. Numbers stay json.Number, so integers above 2^53 and a
+// number versus its string spelling are both distinct.
 func jsonEqual(a, b []byte) bool {
-	var left, right any
-	return json.Unmarshal(a, &left) == nil && json.Unmarshal(b, &right) == nil && fmt.Sprint(left) == fmt.Sprint(right)
+	left, leftOK := decodeExactJSON(a)
+	right, rightOK := decodeExactJSON(b)
+	return leftOK && rightOK && reflect.DeepEqual(left, right)
+}
+
+func decodeExactJSON(raw []byte) (any, bool) {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var value any
+	if decoder.Decode(&value) != nil {
+		return nil, false
+	}
+	_, err := decoder.Token()
+	return value, err == io.EOF
+}
+
+func TestJSONEqualIsExact(t *testing.T) {
+	for _, test := range []struct {
+		a, b string
+		want bool
+	}{
+		{`{"a":1,"b":[true,null]}`, `{ "b": [true, null], "a": 1 }`, true},
+		{`9007199254740993`, `9007199254740992`, false},
+		{`{"n":1}`, `{"n":"1"}`, false},
+		{`{"n":1}`, `{"n":1} {}`, false},
+	} {
+		if got := jsonEqual([]byte(test.a), []byte(test.b)); got != test.want {
+			t.Errorf("jsonEqual(%s, %s) = %v, want %v", test.a, test.b, got, test.want)
+		}
+	}
 }
