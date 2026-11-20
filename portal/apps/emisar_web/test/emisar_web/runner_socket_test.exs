@@ -1,6 +1,5 @@
 defmodule EmisarWeb.RunnerSocketTest do
   use EmisarWeb.ConnCase, async: true
-  import ExUnit.CaptureLog
   alias Emisar.{Catalog, Fixtures, Repo, Runners, Runs}
   alias Emisar.RequestContext
   alias Emisar.Runners.{Presence, Runner}
