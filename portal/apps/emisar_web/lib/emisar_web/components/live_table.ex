@@ -695,9 +695,33 @@ defmodule EmisarWeb.LiveTable do
   defp face_label(nil, _value, label), do: label
   defp face_label(group, _value, label), do: "#{group} · #{label}"
 
-  # Filter option tuples are {value, label} or {value, label, description}.
+  # Filter option tuples are {value, label} or {value, label, description}. A
+  # compound identity's label is {person, detail}: the combobox stacks it on two
+  # lines, and every one-line surface (trigger, chip, search, native select)
+  # joins it.
   defp option_value(option), do: elem(option, 0)
-  defp option_label(option), do: elem(option, 1)
+
+  defp option_label(option) do
+    case elem(option, 1) do
+      {primary, detail} -> "#{primary} · #{detail}"
+      label -> label
+    end
+  end
+
+  defp option_primary(option) do
+    case elem(option, 1) do
+      {primary, _detail} -> primary
+      label -> label
+    end
+  end
+
+  defp option_detail(option) do
+    case elem(option, 1) do
+      {_primary, detail} -> detail
+      _label -> nil
+    end
+  end
+
   defp option_description({_v, _l, description}), do: description
   defp option_description(_option), do: nil
 
@@ -747,8 +771,8 @@ defmodule EmisarWeb.LiveTable do
     end)
   end
 
-  defp filter_select_option({value, label}, selected),
-    do: %{value: value, label: label, disabled: false, selected: value in selected}
+  defp filter_select_option({value, _label} = option, selected),
+    do: %{value: value, label: option_label(option), disabled: false, selected: value in selected}
 
   defp filter_combobox_groups(values) do
     values
@@ -770,7 +794,8 @@ defmodule EmisarWeb.LiveTable do
   defp filter_combobox_option(option, group_label, variant) do
     %{
       value: option_value(option),
-      label: option_label(option),
+      label: option_primary(option),
+      detail: option_detail(option),
       description: option_description(option),
       search: String.downcase("#{group_label} #{option_label(option)} #{option_value(option)}"),
       variant: variant

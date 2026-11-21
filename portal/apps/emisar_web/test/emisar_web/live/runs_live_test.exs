@@ -126,7 +126,8 @@ defmodule EmisarWeb.RunsLiveTest do
 
   test "a deep-linked api_key_id scopes runs to that agent and reads active in the Agent filter",
        %{conn: conn} do
-    {conn, _owner, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
+    owner_label = owner.display_name || owner.email
     {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, name: "Claude Code")
 
     {_raw2, other_key} =
@@ -159,8 +160,20 @@ defmodule EmisarWeb.RunsLiveTest do
     # input holds the key's id, and the combobox label shows its name.
     refute html =~ "Agent:"
     assert html =~ ~s(name="api_key_id" value="#{key.id}")
-    # Owner first, key prefix last: same-named agents stay tellable apart.
+    # The trigger joins the owner and the agent; the key prefix tells
+    # same-named agents apart.
     assert html =~ " · Claude Code · #{key.key_prefix}…"
+
+    # In the open list the owner leads and the agent with its key sits beneath.
+    option =
+      html
+      |> LazyHTML.from_document()
+      |> LazyHTML.query(~s([data-combobox-option][data-value="#{key.id}"]))
+
+    assert option |> LazyHTML.query("span") |> LazyHTML.text() ==
+             "Claude Code · #{key.key_prefix}…"
+
+    assert option |> LazyHTML.text() |> String.trim() |> String.starts_with?(owner_label)
 
     # The bare value deep-link (no source) still applies AND stays visible —
     # a filter must never narrow the feed from a hidden control.

@@ -572,8 +572,9 @@ defmodule EmisarWeb.CoreComponents do
   A searchable single-value picker for bounded catalogs.
 
   The caller supplies ordered groups of `%{label: ..., options: [...]}`. Each
-  option carries `:value`, `:label`, and `:search`; `:description`, `:disabled`,
-  and `:variant` (`:default`, `:heading`, or `:child`) are optional. The selected
+  option carries `:value`, `:label`, and `:search`; `:detail` (a muted second
+  line, such as the agent and key under the person who owns it), `:description`,
+  `:disabled`, and `:variant` (`:default`, `:heading`, or `:child`) are optional. The selected
   face is supplied separately so a compact trigger can omit supporting catalog
   metadata that remains searchable inside the panel.
 
@@ -746,6 +747,7 @@ defmodule EmisarWeb.CoreComponents do
             ]}
           >
             {option.label}
+            <span :if={option[:detail]} class="block truncate text-zinc-400">{option.detail}</span>
           </button>
         </li>
       </ul>
