@@ -654,6 +654,24 @@ let liveSocket = new LiveSocket(liveSocketPath, Socket, {
   hooks: { LocalTime, Combobox, FilterableList, EnrollmentKeyFilters, ExpiryCountdown, ResendCooldown, MagicCodeExpiry, CodeInput, FlashAutoClose, Tooltip, DialogFocus, PendingButton, ReturnFocus, CloseTab, PortalPerformance }
 })
 
+// Expiration presets ("6 months", "1 year") fill their date input with a UTC
+// date that many months ahead. The input event lets the form validate it.
+document.addEventListener("click", event => {
+  const preset = event.target.closest?.("[data-expiry-months]")
+  if (!preset) return
+
+  const input = document.getElementById(preset.dataset.expiryTarget)
+  if (!input) return
+
+  const now = new Date()
+  const months = now.getUTCMonth() + Number(preset.dataset.expiryMonths)
+  const lastDay = new Date(Date.UTC(now.getUTCFullYear(), months + 1, 0)).getUTCDate()
+  const date = new Date(Date.UTC(now.getUTCFullYear(), months, Math.min(now.getUTCDate(), lastDay)))
+
+  input.value = date.toISOString().slice(0, 10)
+  input.dispatchEvent(new Event("input", {bubbles: true}))
+})
+
 // Show progress bar on live navigation and form submits
 topbar.config({barColors: {0: "#36e6a5"}, shadowColor: "rgba(0, 0, 0, .3)"})
 window.addEventListener("phx:page-loading-start", _info => {

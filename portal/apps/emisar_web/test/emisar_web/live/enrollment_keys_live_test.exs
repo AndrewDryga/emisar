@@ -268,6 +268,15 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     assert html =~ "Description (optional)"
     assert html =~ "Expiration date (UTC, optional)"
     assert html =~ "Leave blank for no expiration date"
+    assert has_element?(lv, "#enrollment_key_form input[type='date']#enrollment_key_expires_at")
+
+    assert has_element?(
+             lv,
+             "#enrollment_key_form button[data-expiry-target='enrollment_key_expires_at']" <>
+               "[data-expiry-months='12']",
+             "1 year"
+           )
+
     assert html =~ "Reusable key"
     assert html =~ "Otherwise, it can be used once"
     assert has_element?(lv, "h3", "Using your key")
@@ -672,10 +681,9 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     refute html =~ "At runner limit"
   end
 
-  # a `datetime-local` expiry (no seconds, no zone) is stored
-  # as UTC: the changeset appends ":00Z" before parsing, so "2030-12-25 at
-  # 10:30" persists as 10:30:00 UTC.
-  test "expires_at from a datetime-local field is stored as UTC", %{conn: conn} do
+  # The form posts a date with no time and no zone. It is read as UTC, and the
+  # key works through the end of that day.
+  test "an expiration date lasts through the end of that UTC day", %{conn: conn} do
     {conn, owner, account} = register_and_log_in(conn)
     subject = Fixtures.Subjects.subject_for(owner)
 
@@ -683,7 +691,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
 
     lv
     |> form("#enrollment_key_form", %{
-      "enrollment_key" => %{"description" => "expiring-key", "expires_at" => "2030-12-25T10:30"}
+      "enrollment_key" => %{"description" => "expiring-key", "expires_at" => "2030-12-25"}
     })
     |> render_submit()
 
@@ -692,7 +700,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
 
     # The column is :utc_datetime_usec, so the stored value carries
     # microseconds — compare on the truncated instant.
-    assert DateTime.truncate(key.expires_at, :second) == ~U[2030-12-25 10:30:00Z]
+    assert DateTime.truncate(key.expires_at, :second) == ~U[2030-12-25 23:59:59Z]
   end
 
   # a key created from account A's session is bound to A

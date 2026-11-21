@@ -174,20 +174,47 @@ defmodule EmisarWeb.DomainComponents do
       rows="2"
     />
 
-    <%!-- `datetime-local` posts as "YYYY-MM-DDTHH:MM" with no
-         timezone; ApiKeys reads it as UTC. Operators typing
-         "expires Dec 25 at 10am" get a key that expires at
-         10:00 UTC on that date, which is close enough for an
-         audit-friendly default without dragging browser-tz
-         guessing into the server. --%>
-    <.input
-      field={@form[:expires_at]}
-      type="datetime-local"
-      label="Expiration date (UTC, optional)"
-    />
-    <p class="mt-1 text-xs text-zinc-400">
+    <.expiry_date_field field={@form[:expires_at]}>
       Leave blank to expire the key in 30 days.
-    </p>
+    </.expiry_date_field>
+    """
+  end
+
+  @doc """
+  The optional expiration date of a credential: a date input with the browser's
+  calendar, plus presets that fill it in. The date posts as `YYYY-MM-DD` and the
+  key works through the end of that UTC day (`Emisar.BrowserInput.expiry/1`).
+  The inner block says what leaving it blank means for this credential.
+  """
+  attr :field, Phoenix.HTML.FormField, required: true
+  slot :inner_block, required: true
+
+  def expiry_date_field(assigns) do
+    assigns =
+      assign(assigns,
+        today: Date.to_iso8601(Date.utc_today()),
+        presets: [{"1 month", 1}, {"6 months", 6}, {"1 year", 12}, {"5 years", 60}]
+      )
+
+    ~H"""
+    <div class="space-y-1.5">
+      <.input field={@field} type="date" label="Expiration date (UTC, optional)" min={@today} />
+      <div class="flex flex-wrap gap-1.5" role="group" aria-label="Set the expiration date">
+        <.button
+          :for={{label, months} <- @presets}
+          type="button"
+          variant={:secondary}
+          size={:sm}
+          data-expiry-target={@field.id}
+          data-expiry-months={months}
+        >
+          {label}
+        </.button>
+      </div>
+      <p class="text-xs leading-relaxed text-zinc-400">
+        {render_slot(@inner_block)} The key works through the end of that day.
+      </p>
+    </div>
     """
   end
 

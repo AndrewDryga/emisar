@@ -459,16 +459,9 @@ defmodule EmisarWeb.EnrollmentKeysLive do
               label="Description (optional)"
               placeholder="Production web servers"
             />
-            <div class="space-y-1.5">
-              <.input
-                field={@form[:expires_at]}
-                type="datetime-local"
-                label="Expiration date (UTC, optional)"
-              />
-              <p class="text-xs leading-relaxed text-zinc-400">
-                Leave blank for no expiration date.
-              </p>
-            </div>
+            <.expiry_date_field field={@form[:expires_at]}>
+              Leave blank for no expiration date.
+            </.expiry_date_field>
             <div class="space-y-1.5">
               <.input
                 field={@form[:reusable]}

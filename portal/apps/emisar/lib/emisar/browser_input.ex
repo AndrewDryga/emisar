@@ -4,9 +4,8 @@ defmodule Emisar.BrowserInput do
   changesets that cast them.
 
   A create form posts raw browser strings: an untouched optional field arrives
-  as `""` rather than absent, and `<input type="datetime-local">` emits
-  `YYYY-MM-DDTHH:MM` (no seconds, no zone), which Ecto cannot cast to
-  `:utc_datetime_usec`. Both key shapes are normalized so a browser map and an
+  as `""` rather than absent, and `<input type="date">` emits `YYYY-MM-DD`
+  (no time, no zone), which Ecto cannot cast to `:utc_datetime_usec`. Both key shapes are normalized so a browser map and an
   internal atom-keyed map mean the same thing.
 
   This lived as byte-identical private blocks in the ApiKey and EnrollmentKey
@@ -15,7 +14,7 @@ defmodule Emisar.BrowserInput do
 
   @doc """
   Normalizes `attrs`, treating each field in `blank:` as an optional string
-  (`""` → `nil`) and each field in `expiry:` as a browser datetime-local value.
+  (`""` → `nil`) and each field in `expiry:` as a browser date value.
   Fields are matched by atom or string key, whichever shape the caller posts.
   """
   def normalize(attrs, spec) do
@@ -46,12 +45,12 @@ defmodule Emisar.BrowserInput do
   def blank_to_nil(value), do: value
 
   @doc """
-  An operator typing "expires Dec 25 at 10am" gets 10:00 UTC that day — the
-  browser sends no zone, and the form labels the field UTC rather than have the
-  server guess an offset. Anything that is not a browser minute stamp (an
-  already-typed `%DateTime{}`, a full timestamp, or garbage) passes through for
-  Ecto to cast or reject, so a malformed expiry can never quietly become "no
-  expiry" — which would hand out a credential with no cutoff.
+  An operator picking Dec 25 gets a key that works through the end of Dec 25
+  UTC — the browser sends no zone, and the form labels the field UTC rather
+  than have the server guess an offset. Anything that is not a browser date or
+  minute stamp (an already-typed `%DateTime{}`, a full timestamp, or garbage)
+  passes through for Ecto to cast or reject, so a malformed expiry can never
+  quietly become "no expiry" — which would hand out a credential with no cutoff.
   """
   def expiry(value) when is_binary(value) do
     case String.trim(value) do
@@ -61,6 +60,15 @@ defmodule Emisar.BrowserInput do
   end
 
   def expiry(value), do: value
+
+  # `<input type="date">` posts `YYYY-MM-DD`: the key works through the end of
+  # that UTC day. A minute stamp (`YYYY-MM-DDTHH:MM`) is read as that UTC minute.
+  defp parse_browser_expiry(<<_date::binary-size(10)>> = value) do
+    case Date.from_iso8601(value) do
+      {:ok, date} -> DateTime.new!(date, ~T[23:59:59], "Etc/UTC")
+      {:error, _reason} -> value
+    end
+  end
 
   defp parse_browser_expiry(value) do
     case DateTime.from_iso8601(value <> ":00Z") do

@@ -31,6 +31,14 @@ defmodule Emisar.BrowserInputTest do
       assert BrowserInput.expiry("2026-12-25T10:00") == ~U[2026-12-25 10:00:00Z]
     end
 
+    test "a browser date lasts through the end of that UTC day" do
+      assert BrowserInput.expiry("2026-12-25") == ~U[2026-12-25 23:59:59Z]
+    end
+
+    test "an impossible date passes through for Ecto to reject" do
+      assert BrowserInput.expiry("2026-13-45") == "2026-13-45"
+    end
+
     test "blank means no expiry was typed" do
       assert BrowserInput.expiry("   ") == nil
     end

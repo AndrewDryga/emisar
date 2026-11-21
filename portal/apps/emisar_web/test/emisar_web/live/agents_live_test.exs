@@ -1696,19 +1696,29 @@ defmodule EmisarWeb.AgentsLiveTest do
       refute Repo.one(ApiKey)
     end
 
-    # a `datetime-local` expiry on the custom-create form (no seconds, no zone)
-    # is stored as UTC: `ApiKeys` reads the browser's minute stamp as a UTC
-    # wallclock, so "2099-12-25 at 10:30" persists as 10:30:00 UTC. (The
+    # The custom-create form posts a date with no time and no zone. `ApiKeys`
+    # reads it as UTC, and the key works through the end of that day. (The
     # enrollment-keys form has the parallel; this is the agents path.)
-    test "a custom key's expires_at is parsed from datetime-local as UTC", %{conn: conn} do
+    test "a custom key's expiration date lasts through the end of that UTC day", %{conn: conn} do
       {conn, owner, account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
 
       lv |> render_click("select_client", %{"client" => "custom"})
 
+      assert has_element?(lv, "#api_key_form input[type='date']#api_key_expires_at")
+
+      for {label, months} <- [{"1 month", 1}, {"6 months", 6}, {"1 year", 12}, {"5 years", 60}] do
+        assert has_element?(
+                 lv,
+                 "#api_key_form button[type='button'][data-expiry-target='api_key_expires_at']" <>
+                   "[data-expiry-months='#{months}']",
+                 label
+               )
+      end
+
       lv
       |> form("#api_key_form", %{
-        "api_key" => %{"name" => "expiring-bot", "expires_at" => "2099-12-25T10:30"}
+        "api_key" => %{"name" => "expiring-bot", "expires_at" => "2099-12-25"}
       })
       |> render_submit()
 
@@ -1717,7 +1727,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       # The column is :utc_datetime_usec, so the stored value carries
       # microseconds — compare on the truncated instant.
-      assert DateTime.truncate(key.expires_at, :second) == ~U[2099-12-25 10:30:00Z]
+      assert DateTime.truncate(key.expires_at, :second) == ~U[2099-12-25 23:59:59Z]
       flush_key_broadcast(lv)
     end
 
