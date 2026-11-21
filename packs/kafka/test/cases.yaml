@@ -53,20 +53,51 @@ cases:
       - argv: [/bin/sh, -c, 'kafka-console-consumer.sh --bootstrap-server kafka:9092 --topic orders --group packtest-reset-earliest --timeout-ms 6000 --max-messages 1 2>/dev/null || true']
         expect:
           stdout_contains: [m1]
+  # The group starts BEHIND the log end (reset to earliest after consuming,
+  # with lag proven), so a reset that did nothing, ran as a dry run, or moved to
+  # the wrong position leaves lag and fails the probe. The probe reads columns
+  # by header name and requires both orders partitions with numeric offsets.
   - action: kafka.reset_offsets_to_latest
     args:
       group: packtest-reset-latest
       topic: orders
     arrange:
-      - argv: [/bin/sh, -c, 'printf "m1\nm2\nm3\n" | kafka-console-producer.sh --bootstrap-server kafka:9092 --topic orders']
+      - argv: [/bin/sh, -c, 'printf "m1\nm2\nm3\nm4\nm5\nm6\n" | kafka-console-producer.sh --bootstrap-server kafka:9092 --topic orders']
       - argv: [/bin/sh, -c, 'kafka-console-consumer.sh --bootstrap-server kafka:9092 --topic orders --group packtest-reset-latest --from-beginning --timeout-ms 5000 --consumer-property enable.auto.commit=true --consumer-property auto.commit.interval.ms=500 >/dev/null 2>&1 || true']
+      - argv: [kafka-consumer-groups.sh, --bootstrap-server, kafka:9092, --group, packtest-reset-latest, --topic, orders, --reset-offsets, --to-earliest, --execute]
+      - argv:
+          - /bin/sh
+          - -c
+          - |
+            out=$(kafka-consumer-groups.sh --bootstrap-server kafka:9092 --describe --group packtest-reset-latest) || exit 1
+            printf '%s\n' "$out" | awk '
+              /CURRENT-OFFSET/ { for (i = 1; i <= NF; i++) col[$i] = i; next }
+              ("TOPIC" in col) && $col["TOPIC"] == "orders" {
+                rows++
+                if ($col["LAG"] !~ /^[0-9]+$/) bad = 1
+                lag += $col["LAG"]
+              }
+              END { if (bad || rows != 2 || lag < 1) exit 1; print "orders-behind" }'
     expect:
       stdout_contains: [packtest-reset-latest, orders]
     probes:
-      # The group now carries committed offsets at the log's end for orders.
-      - argv: [/bin/sh, -c, 'kafka-consumer-groups.sh --bootstrap-server kafka:9092 --describe --group packtest-reset-latest']
+      - name: every orders partition is committed at its log end
+        argv:
+          - /bin/sh
+          - -c
+          - |
+            out=$(kafka-consumer-groups.sh --bootstrap-server kafka:9092 --describe --group packtest-reset-latest) || exit 1
+            printf '%s\n' "$out" | awk '
+              /CURRENT-OFFSET/ { for (i = 1; i <= NF; i++) col[$i] = i; next }
+              ("TOPIC" in col) && $col["TOPIC"] == "orders" {
+                rows++
+                p = $col["PARTITION"]; c = $col["CURRENT-OFFSET"]; e = $col["LOG-END-OFFSET"]; l = $col["LAG"]
+                if (p !~ /^[0-9]+$/ || c !~ /^[0-9]+$/ || e !~ /^[0-9]+$/ || l !~ /^[0-9]+$/) bad = 1
+                else if (c != e || l != 0 || seen[p]++) bad = 1
+              }
+              END { if (!bad && rows == 2) print "orders-at-latest" }'
         expect:
-          stdout_contains: [packtest-reset-latest, orders]
+          stdout_contains: [orders-at-latest]
   - action: kafka.delete_consumer_group
     args:
       group: packtest-delete-group

@@ -29,3 +29,17 @@ cases:
         argv: [systemctl, is-active, emisar.service]
         expect:
           stdout_contains: [active]
+
+  # Without a jail the action reloads everything: an empty jail argument is not
+  # the same request, since fail2ban-client treats only no argument or --all as
+  # a full reload and takes anything else as a jail name.
+  - name: reload-without-a-jail-reloads-every-jail
+    action: f2b.reload
+    expect:
+      status: success
+      stdout_contains: [OK]
+    probes:
+      - name: the server answers after the full reload
+        argv: [fail2ban-client, status]
+        expect:
+          stdout_contains: [Status]

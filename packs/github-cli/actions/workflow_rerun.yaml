@@ -6,8 +6,8 @@ kind: exec
 # is a deploy workflow, and rerunning it redeploys the run's original commit.
 risk: high
 description: >
-  Re-run one workflow run, up to 30 days after it first ran. Useful after
-  fixing a transient infrastructure issue. With --failed, only re-runs
+  Re-run one workflow run in the named repository, up to 30 days after
+  it first ran. Useful after fixing a transient infrastructure issue. With --failed, only re-runs
   failed jobs. A re-run uses the original run's commit (`GITHUB_SHA`) and
   ref and the privileges of the actor who first triggered it, so rerunning
   a deploy or release workflow deploys that run's commit again, which can
@@ -23,6 +23,12 @@ search_terms:
   - retry build
   - flaky failure
 args:
+  - name: repo
+    type: string
+    required: true
+    description: 'Repo in owner/name form.'
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,40}/[a-zA-Z0-9_.\\-]{1,100}$"
   - name: run_id
     type: integer
     required: true
@@ -40,7 +46,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "if [ '{{ args.failed_only }}' = 'true' ]; then gh run rerun {{ args.run_id }} --failed; else gh run rerun {{ args.run_id }}; fi"
+      - "if [ '{{ args.failed_only }}' = 'true' ]; then gh run rerun {{ args.run_id }} --repo \"$1\" --failed; else gh run rerun {{ args.run_id }} --repo \"$1\"; fi"
+      - "emisar"
+      - "{{ args.repo }}"
   timeout: 60s
 output:
   parser: text
@@ -49,4 +57,5 @@ output:
 examples:
   - title: Re-run failed jobs only
     args:
+      repo: "acme/api"
       run_id: 12345678

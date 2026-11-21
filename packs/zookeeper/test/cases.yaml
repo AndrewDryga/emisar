@@ -1,8 +1,9 @@
-services: [zookeeper]
+services: [zookeeper, zookeeper-no-ruok]
 
 # Four JVMs starting at once starve the NIO thread that answers four-letter
-# words, and a starved one closes the connection without a reply.
-workers: 2
+# words, and a starved one closes the connection without a reply. Each case
+# boots two nodes, so cases run one at a time.
+workers: 1
 versions:
   - version: "7.9.10"
     digest: "@sha256:1a870111c6e861f1e6015094fac902779981edb5cb1d2ad6b7437d2a6b8ba064"
@@ -31,6 +32,15 @@ cases:
     args: {server: "zookeeper:2181"}
     expect:
       stdout_contains: [imok]
+  # The node answers, but with the whitelist refusal instead of imok.
+  - name: zk.ruok-fails-without-imok
+    action: zk.ruok
+    args: {server: "zookeeper-no-ruok:2181"}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_contains: [not in the whitelist]
+      stderr_contains: [zookeeper did not answer imok]
   - action: zk.srvr
     args: {server: "zookeeper:2181"}
     expect:

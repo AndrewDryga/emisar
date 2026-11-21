@@ -31,6 +31,29 @@ cases:
       stdout_contains: [harness-db-page-2]
       json:
         /next_page_cursor: "eyJNYXJrZXIiOiAiaGFybmVzcy1wYWdlLTMifQ=="
+  # RDS refuses a MaxRecords below 20 or above 100, so a limit outside that
+  # range only bounds the items returned. A limit of 2 spans two one-item
+  # service pages and hands back the third page's cursor.
+  - name: rds.list-instances-small-limit-pages-on
+    action: rds.list_instances
+    args: {limit: 2}
+    expect:
+      stdout_contains: ['"harness-db"', harness-db-page-2]
+      stdout_not_contains: [harness-db-page-3]
+      json:
+        /next_page_cursor: "eyJNYXJrZXIiOiAiaGFybmVzcy1wYWdlLTMifQ=="
+  - name: rds.list-instances-large-limit-reads-every-page
+    action: rds.list_instances
+    args: {limit: 1000}
+    expect:
+      stdout_contains: ['"harness-db"', harness-db-page-2, harness-db-page-3]
+      json:
+        /next_page_cursor: null
+  - name: rds.recent_events-small-limit
+    action: rds.recent_events
+    args: {duration_minutes: 120, limit: 1}
+    expect:
+      stdout_contains: [Events, harness-db, maintenance]
   - action: rds.describe_instance
     args: {instance: harness-db}
     expect:

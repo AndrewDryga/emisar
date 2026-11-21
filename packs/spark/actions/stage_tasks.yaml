@@ -47,16 +47,18 @@ args:
     type: string
     required: false
     default: ""
-    description: Restrict to tasks in this state. Empty returns every task in the page.
+    description: Restrict to tasks in this state (Spark's TaskStatus values). Empty returns every task in the page.
     validation:
-      enum: ["", "running", "success", "killed", "failed", "pending"]
+      enum: ["", "running", "success", "killed", "failed", "unknown"]
   - name: sort_by
     type: string
     required: false
     default: "-runtime"
-    description: Sort order for the page. Slowest first by default.
+    description: >
+      Sort order for the page (Spark's TaskSorting values): `-runtime` slowest
+      first (default), `runtime` fastest first, or `ID` by task id.
     validation:
-      enum: ["-runtime", "runtime", "-executorRunTime", "executorRunTime", "-launchTime", "launchTime"]
+      enum: ["-runtime", "runtime", "ID"]
   - name: offset
     type: integer
     required: false

@@ -17,8 +17,9 @@
 #          Values are rendered into argv by the cloud-validated template engine
 #          and URL-encoded by curl; they never enter a shell string.
 #
-# When $VM_BEARER_TOKEN is set it is streamed to curl over stdin (-H @-),
-# so the token never appears in argv, a `ps` listing, or the audit log.
+# The URL, which can carry basic-auth userinfo, and $VM_BEARER_TOKEN when set
+# reach curl in a config document on stdin, so neither appears in argv, a `ps`
+# listing, or the audit log.
 #
 # VM_URL defaults to a local single-node VictoriaMetrics; override it for a
 # cluster (vmselect) or a remote / vmauth-fronted endpoint.
@@ -65,8 +66,30 @@ fi
 path=$1
 shift
 
+# A curl config string ends at an unescaped quote and a line ends a directive,
+# so a backslash or quote is escaped and a line break is refused.
+config_string() {
+	case "$2" in
+	*"$cr"* | *"$nl"*)
+		echo "victoriametrics: $1 must not contain a line break" >&2
+		exit 2
+		;;
+	esac
+	printf '"%s"' "$(printf '%s' "$2" | sed 's/[\\"]/\\&/g')"
+}
+nl='
+'
+cr=$(printf '\r')
+
+url=$(config_string VM_URL "$VM_URL$path")
+header=
 if [ -n "${VM_BEARER_TOKEN:-}" ]; then
-	printf 'Authorization: Bearer %s\n' "$VM_BEARER_TOKEN" | curl -q --globoff --proto '=http,https' -fsS -G -H @- "$@" "$VM_URL$path"
-else
-	curl -q --globoff --proto '=http,https' -fsS -G "$@" "$VM_URL$path"
+	header=$(config_string VM_BEARER_TOKEN "Authorization: Bearer $VM_BEARER_TOKEN")
 fi
+
+{
+	printf 'url = %s\n' "$url"
+	if [ -n "$header" ]; then
+		printf 'header = %s\n' "$header"
+	fi
+} | curl -q --globoff --proto '=http,https' -fsS -G --config - "$@"

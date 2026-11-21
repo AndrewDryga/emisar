@@ -2,7 +2,7 @@ schema_version: 1
 
 id: ssl-local
 name: Local SSL/TLS cert inspection
-version: 0.1.16
+version: 0.1.17
 # Unchanged by the 0.1.16 tier decision: that commit closed no hole. It records
 # why the seven actions stay `low` and widens a denylist that already returned
 # nothing for the paths it now names, so retiring 0.1.15 fleet-wide would fail
@@ -25,8 +25,21 @@ requires:
 setup:
   summary: >
     Inspects certificate and key files on the local runner host's
-    filesystem at the paths you pass as action arguments — no credentials
-    needed.
+    filesystem at the paths you pass as action arguments. Only
+    ssl.pkcs12_info needs a credential: the bundle password in
+    `PK12_PASSWORD`.
+  env:
+    - name: PK12_PASSWORD
+      required: false
+      description: >
+        Password of the PKCS#12 bundles ssl.pkcs12_info inspects; the other
+        actions do not use it. That action reads it through OpenSSL's
+        `-passin env:PK12_PASSWORD` and fails when the variable is unset, so
+        set it to an empty value for password-less bundles. Store it in the
+        runner's private environment file and allowlist it in
+        `execution.inherit_env`: the action env is scrubbed to
+        PATH/LANG/LC_ALL/TERM by default, so a variable present on the host
+        but not allowlisted is silently dropped.
   host_access:
     - actions:
         - ssl.find_certs

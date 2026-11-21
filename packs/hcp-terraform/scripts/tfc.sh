@@ -228,7 +228,7 @@ def summarize($changes; $drift):
     delete: ($changes | map(select(.action == "delete")) | length),
     replace: ($changes | map(select(.action == "replace")) | length),
     read: ($changes | map(select(.action == "read")) | length),
-    import: ($changes | map(select(.action == "import")) | length),
+    import: ($changes | map(select(.importing)) | length),
     drifted: ($drift | length)
   };
 
@@ -237,6 +237,10 @@ def summarize($changes; $drift):
 # two packs cannot report the same plan differently.
 def is_noop($action): $action == "no-op" or $action == "noop";
 
+# In this format an import is not an action: it is change.importing, present
+# alongside the real actions. An import-only resource arrives as no-op and is
+# kept as an "import" row; an import with an update keeps its update action.
+# Either way the import counts once.
 def norm_action($actions):
   ($actions // []) as $a
   | if ($a | sort) == ["create", "delete"] then "replace"
@@ -322,11 +326,13 @@ def project_plan:
   | [ ($plan | collection("resource_changes"; "array"))[]
       | .change as $change
       | replacement_paths($change) as $replace_paths
+      | ($change.importing != null) as $importing
       | {
           address: (.address // ""),
           resource_type: (.type // ""),
           module: (.module_address // ""),
-          action: norm_action($change.actions),
+          action: (norm_action($change.actions) | if $importing and is_noop(.) then "import" else . end),
+          importing: $importing,
           reason: (.action_reason // ""),
           replace_paths: ($replace_paths[:2] | map(clipped(32; 32))),
           replace_paths_truncated: omitted($replace_paths; 2)
@@ -355,7 +361,7 @@ def project_plan:
       source: "hcp_plan",
       cli_version: ($plan.terraform_version | clipped(32; 32)),
       summary: summarize($changes; $drift),
-      changes: ($changes | most_destructive_first | .[:10] | map(clip_resource | .reason |= clipped(36; 36))),
+      changes: ($changes | most_destructive_first | .[:10] | map(del(.importing) | clip_resource | .reason |= clipped(36; 36))),
       drift: ($drift | most_destructive_first | .[:3] | map(clip_resource)),
       outputs: ($outputs | .[:4] | map(.name |= clipped(40; 40) | .action |= clipped(12; 12))),
       truncated: {

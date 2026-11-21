@@ -11,6 +11,7 @@ services:
     volumes:
       - caddy_logs:/var/log/caddy
       - ${EMISAR_ROOT}/packs/caddy/test/fixtures/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${EMISAR_ROOT}/packs/caddy/test/fixtures/no-admin.caddyfile:/etc/caddy/no-admin.caddyfile:ro
 
   caddy:
     image: caddy:${PACKTEST_VERSION:-2.11.4}${PACKTEST_DIGEST-}

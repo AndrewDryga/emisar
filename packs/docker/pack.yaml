@@ -2,7 +2,7 @@ schema_version: 1
 
 id: docker
 name: Docker operations pack
-version: 0.2.32
+version: 0.2.33
 # Versions below this returned full docker exec and health-check command lines,
 # which can carry passwords, from the low-risk events_tail. They fail closed.
 retired_below: 0.2.30

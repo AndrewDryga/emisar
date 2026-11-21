@@ -2,7 +2,7 @@ schema_version: 1
 
 id: postgres
 name: Postgres operations
-version: 0.2.24
+version: 0.2.25
 # Versions below this set explain_analyze's read-only transaction with a startup
 # option. PgBouncer before 1.26, ignoring the options parameter, drops that option
 # in silence, so a query the action promised could not write did write. They fail

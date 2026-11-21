@@ -33,7 +33,7 @@ execution:
     binary: nodetool
     argv:
       - "tablestats"
-      - "{{ args.keyspace }}"
+      - "{{ args.keyspace? }}"
   timeout: 90s
   timeout_min: 10s
   timeout_max: 10m

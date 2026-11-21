@@ -2,8 +2,8 @@ schema_version: 1
 
 id: databricks
 name: Databricks
-version: 0.1.8
-retired_below: 0.1.8
+version: 0.1.9
+retired_below: 0.1.9
 description: >
   Look up data and run day-2 operations in a Databricks workspace over its REST
   API: run a bounded read-only SQL statement on a SQL warehouse, browse Unity
@@ -46,7 +46,7 @@ setup:
     - "Generate a personal access token in the workspace under Settings → Developer → Access tokens. A service principal is created in the account console under User management → Service principals, and its OAuth secret is issued there."
     - "Any Databricks env var you set must also be allowlisted in the runner's `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so a variable present on the host but not allowlisted is silently dropped and every action fails auth."
     - "databricks.sql_query only accepts a single statement whose first keyword is SELECT, VALUES, SHOW, DESCRIBE, or EXPLAIN. That guard is a guardrail against accidental writes, not a security boundary — the warehouse enforces exactly what the token's grants allow, so scope the token read-only if reads are all you mean to allow."
-    - "The token can do everything these actions expose, so let emisar policy decide who may reach the mutating actions: job_run_now and cluster_restart are high risk and need approval under the default policy."
+    - "The token can do everything these actions expose, so let emisar policy decide who may reach the mutating actions: job_run_now, job_run_cancel and cluster_restart are high risk and need approval under the default policy."
     - "Needs curl 7.76 or newer: the actions use --fail-with-body so a rejected request reports the API's error document instead of failing with empty output."
   verify: databricks.whoami
 

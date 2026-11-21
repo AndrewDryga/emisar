@@ -381,6 +381,23 @@ def plan_json_output():
                 "action_reason": "delete_because_no_resource_config",
                 "change": {"actions": ["delete"], "before": {}, "after": None},
             },
+            # Terraform marks an import with change.importing, never an
+            # "import" action: an import-only resource is a no-op, and an
+            # import can also carry an update.
+            {
+                "address": "aws_s3_bucket.imported",
+                "mode": "managed",
+                "type": "aws_s3_bucket",
+                "name": "imported",
+                "change": {"actions": ["no-op"], "before": {}, "after": {}, "importing": {"id": "imported-bucket"}},
+            },
+            {
+                "address": "aws_iam_policy.adopted",
+                "mode": "managed",
+                "type": "aws_iam_policy",
+                "name": "adopted",
+                "change": {"actions": ["update"], "before": {}, "after": {}, "importing": {"id": "arn:aws:iam::123456789012:policy/adopted"}},
+            },
             {
                 "address": "aws_iam_role.unchanged",
                 "mode": "managed",
@@ -439,7 +456,7 @@ SENTINEL_KEEP_ADDRESS = "AAA-sentinel-delete-" + "x" * 60
 SENTINEL_CLIP_ADDRESS = "AAB-sentinel-delete-" + "x" * 61
 
 
-def worst_resource_change(address, actions, reason=None):
+def worst_resource_change(address, actions, reason=None, importing=False):
     change = {
         "address": address,
         "module_address": "module." + BACKSLASH_FLOOD,
@@ -461,6 +478,8 @@ def worst_resource_change(address, actions, reason=None):
     }
     if reason is not None:
         change["action_reason"] = reason
+    if importing:
+        change["change"]["importing"] = {"id": address}
     return change
 
 
@@ -487,7 +506,9 @@ def worst_plan_json_output():
     changes += [worst_resource_change(f"{BACKSLASH_FLOOD}-update-{n:03d}", ["update"]) for n in range(99)]
     changes += [worst_resource_change(f"{U2028_FLOOD}-create-{n:03d}", ["create"]) for n in range(80)]
     changes += [worst_resource_change(f"{BACKSLASH_FLOOD}-read-{n:03d}", ["read"]) for n in range(15)]
-    changes += [worst_resource_change(f"{BACKSLASH_FLOOD}-import-{n:03d}", ["import"]) for n in range(5)]
+    changes += [
+        worst_resource_change(f"{BACKSLASH_FLOOD}-import-{n:03d}", ["no-op"], importing=True) for n in range(5)
+    ]
     # A future CLI verb the projection has never seen: it must survive as a
     # joined, clipped action and still land in the total.
     changes.append(worst_resource_change("future-verb", ["provision", "refresh-only"]))

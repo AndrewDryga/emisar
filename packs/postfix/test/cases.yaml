@@ -76,6 +76,23 @@ cases:
       stdout_contains:
         - "Subject: packtest postcat"
         - packtest postcat body marker
+  # A search that starts with "-" is a literal, not a grep option: -rv would
+  # otherwise search every file under the runner's working directory.
+  - action: postfix.maillog_grep
+    args: {pattern: "-rv"}
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - |
+            printf '%s\n' 'packtest-unrelated-file-canary-0d4e' > /tmp/packtest-unrelated
+            printf '%s\n' \
+              'Nov 20 10:00:00 mx postfix/smtp[101]: 4dLbQz1x7GzKLm9: to=<ops@example.test>, relay=mx-rv.example.test[192.0.2.7]:25, status=deferred' \
+              'Nov 20 10:00:01 mx postfix/qmgr[102]: 4dLbQz1x7GzKLm9: removed' \
+              >> /var/log/mail.log
+    expect:
+      stdout_contains: [relay=mx-rv.example.test]
+      stdout_not_contains: [packtest-unrelated-file-canary-0d4e, "removed"]
   - action: postfix.check_config
     runner_user: root
     runner_reason: Postfix reserves the postfix command itself for the superuser.
@@ -96,10 +113,10 @@ cases:
     runner_user: root
     runner_reason: Postfix reserves queue-control commands for the superuser.
     arrange:
-      # Same deterministic-queue setup as postcat_qid: defer delivery and pin
-      # short queue IDs so the enqueued message stays put with an ID matching
-      # the action's ^[A-F0-9]{6,20}$ pattern.
-      - argv: [/bin/sh, -c, "postconf -e 'defer_transports = smtp relay' 'enable_long_queue_ids = no' && postfix reload"]
+      # Defer delivery so the enqueued message stays put. This case and the
+      # hold, release and requeue cases use long queue IDs
+      # (enable_long_queue_ids = yes); postcat_qid keeps the short form.
+      - argv: [/bin/sh, -c, "postconf -e 'defer_transports = smtp relay' 'enable_long_queue_ids = yes' && postfix reload"]
       - argv: [/bin/sh, -c, "printf 'Subject: packtest delete\\n\\npacktest delete body marker\\n' | sendmail -f sender@example.test recipient@undeliverable.example"]
     resolve_args:
       queue_id:
@@ -141,10 +158,8 @@ cases:
     runner_user: root
     runner_reason: Postfix reserves queue-control commands for the superuser.
     arrange:
-      # Same deterministic-queue setup as postcat_qid/delete_qid: defer delivery
-      # and pin short queue IDs so the enqueued message stays put with an ID
-      # matching the action's ^[A-F0-9]{6,20}$ pattern.
-      - argv: [/bin/sh, -c, "postconf -e 'defer_transports = smtp relay' 'enable_long_queue_ids = no' && postfix reload"]
+      # Same deterministic-queue setup as delete_qid, with long queue IDs.
+      - argv: [/bin/sh, -c, "postconf -e 'defer_transports = smtp relay' 'enable_long_queue_ids = yes' && postfix reload"]
       - argv: [/bin/sh, -c, "printf 'Subject: packtest hold\\n\\npacktest hold body marker\\n' | sendmail -f sender@example.test recipient@undeliverable.example"]
     resolve_args:
       qid:
@@ -183,7 +198,7 @@ cases:
     runner_user: root
     runner_reason: Postfix reserves queue-control commands for the superuser.
     arrange:
-      - argv: [/bin/sh, -c, "postconf -e 'defer_transports = smtp relay' 'enable_long_queue_ids = no' && postfix reload"]
+      - argv: [/bin/sh, -c, "postconf -e 'defer_transports = smtp relay' 'enable_long_queue_ids = yes' && postfix reload"]
       - argv: [/bin/sh, -c, "printf 'Subject: packtest release\\n\\npacktest release body marker\\n' | sendmail -f sender@example.test recipient@undeliverable.example"]
       # Wait for this case's message to reach a stable queue, then hold its
       # exact ID. Retrying the whole command covers pickup+cleanup latency.
@@ -241,7 +256,7 @@ cases:
     runner_user: root
     runner_reason: Postfix reserves queue-control commands for the superuser.
     arrange:
-      - argv: [/bin/sh, -c, "postconf -e 'defer_transports = smtp relay' 'enable_long_queue_ids = no' && postfix reload"]
+      - argv: [/bin/sh, -c, "postconf -e 'defer_transports = smtp relay' 'enable_long_queue_ids = yes' && postfix reload"]
       - argv: [/bin/sh, -c, "printf 'Subject: packtest requeue\\n\\npacktest requeue body marker\\n' | sendmail -f sender@example.test recipient@undeliverable.example"]
       # Wait for this case's message to reach a stable queue, then hold its
       # exact ID. Retrying the whole command covers pickup+cleanup latency.

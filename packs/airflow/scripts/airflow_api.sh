@@ -316,7 +316,9 @@ assets() {
 asset_events() {
   v2_only airflow.asset_events
   reset_query
-  add_param asset_id "$1"
+  # 0 is the action's "every asset" default. Airflow filters on any integer it
+  # receives, so sending asset_id=0 would match no event at all.
+  [[ $1 == 0 ]] || add_param asset_id "$1"
   add_param source_dag_id "$2"
   add_param limit "$3"
   add_param order_by "$4"

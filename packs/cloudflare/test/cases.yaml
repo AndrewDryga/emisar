@@ -347,6 +347,25 @@ cases:
         /series/0/sum/requests: 52000
         /series/1/dimensions/datetime: "2026-08-11T09:00:00Z"
 
+  # A window past 72 populated hours sums every hourly group, not the oldest 72.
+  - name: cf.zone_analytics-sums-every-hourly-group
+    action: cf.zone_analytics
+    args: {zone_id: "22222222222222222222222222222222", hours: 299}
+    expect:
+      json:
+        /totals/requests: 300
+        /series/299/sum/requests: 1
+
+  # A window needing more hourly groups than the plan returns in one query is
+  # refused by name rather than summed from a prefix.
+  - name: cf.zone_analytics-refuses-a-window-past-the-page-limit
+    action: cf.zone_analytics
+    args: {zone_id: "33333333333333333333333333333333", hours: 168}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["returns at most 100 per query; ask for at most 99 hours"]
+
   - action: cf.dns_analytics_report
     args: {zone_id: abc123def456abc123def456abc123de}
     expect:

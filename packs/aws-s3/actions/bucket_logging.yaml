@@ -13,8 +13,18 @@ args:
     validation: {pattern: "^[a-z0-9.\\-]{3,63}$"}
 execution:
   command:
-    binary: aws
-    argv: [s3api, get-bucket-logging, --bucket, "{{ args.bucket }}", --output, json]
+    binary: /bin/sh
+    argv:
+      # A bucket that never had access logging answers with an empty configuration,
+      # which the CLI prints as nothing. Report that successful empty answer as
+      # {}; a failed call still exits with the CLI's own status.
+      - "-c"
+      - |-
+        set -eu
+        out=$(aws s3api get-bucket-logging --bucket "$1" --output json)
+        if [ -n "$out" ]; then printf '%s\n' "$out"; else echo '{}'; fi
+      - emisar
+      - "{{ args.bucket }}"
   timeout: 30s
 output:
   parser: json

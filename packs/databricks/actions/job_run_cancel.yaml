@@ -2,12 +2,14 @@ schema_version: 1
 id: databricks.job_run_cancel
 title: POST /jobs/runs/cancel
 kind: script
-risk: medium
+risk: high
 description: >
   Cancel a running job run — or a single task run — and report the state it
-  reached. Cancellation is asynchronous: the reported state is often still
-  TERMINATING; poll databricks.job_run_get until it settles. The job itself
-  stays defined and can be run again.
+  reached. High risk: it interrupts whatever the run is doing, including a
+  production job mid-write. Cancellation is asynchronous: this returns once
+  Databricks accepts the request, the reported state is often still
+  TERMINATING, and databricks.job_run_get shows when the run has settled. The
+  job itself stays defined and can be run again.
 side_effects:
   - Interrupts the run's tasks; a task stopped mid-write leaves whatever its own code leaves.
   - Asynchronous — the run may still be terminating when this returns.

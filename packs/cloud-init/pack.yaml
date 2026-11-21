@@ -2,12 +2,14 @@ schema_version: 1
 
 id: cloud-init
 name: cloud-init operations
-version: 0.1.21
+version: 0.1.22
 # 0.1.19 and below ran `cloud-init clean --logs` as the medium clean_logs,
 # which also deletes /var/lib/cloud, so with no approval the next boot
 # provisioned the host as a new instance; and collect_logs left its bundle,
-# which can hold user-data, in /tmp at the umask's mode.
-retired_below: 0.1.20
+# which can hold user-data, in /tmp at the umask's mode. 0.1.21 and below let
+# query_metadata take an option-shaped key such as `-au<path>`, which makes
+# `cloud-init query` read any file the runner can.
+retired_below: 0.1.22
 description: >
   cloud-init introspection + boot diagnostics + stage re-runs. Use when
   an EC2/GCE/Azure VM finishes booting but the workload didn't come up
@@ -34,12 +36,13 @@ setup:
     Reads the local runner host's cloud-init status, logs, and results —
     no credentials needed.
   notes:
-    - "Status, version, schema validation, and instance-id reads work without elevated host access."
+    - "Status, version, and instance-id reads work without elevated host access."
   host_access:
     - actions:
         - cloud-init.analyze_show
         - cloud-init.analyze_blame
         - cloud-init.analyze_dump
+        - cloud-init.schema_validate
         - cloud-init.userdata_dump
         - cloud-init.cloud_config_dump
         - cloud-init.vendor_data_dump

@@ -2,7 +2,10 @@ schema_version: 1
 
 id: supertokens
 name: SuperTokens authentication core
-version: 0.1.0
+version: 0.1.1
+# 0.1.0 and below deleted a linked account's primary login method when asked to
+# delete one of its other login methods.
+retired_below: 0.1.1
 description: >
   Diagnostics and user operations for a SuperTokens core over its HTTP API:
   health, versions, request rates, licensed features, settings, tenants and

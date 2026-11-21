@@ -103,6 +103,33 @@ INSTANCE_PAGES = {
 }
 
 
+# Every paged Describe call RDS serves bounds MaxRecords to 20..100 and refuses
+# anything else, so the fixture does too.
+PAGED = {
+    "DescribeDBInstances",
+    "DescribeDBClusters",
+    "DescribeDBSnapshots",
+    "DescribeDBClusterSnapshots",
+    "DescribeDBParameterGroups",
+    "DescribeDBClusterParameterGroups",
+    "DescribePendingMaintenanceActions",
+    "DescribeEvents",
+}
+
+
+def max_records_error(action, params):
+    if action not in PAGED or "MaxRecords" not in params:
+        return None
+    value = params["MaxRecords"][0]
+    if value.isdigit() and 20 <= int(value) <= 100:
+        return None
+    return (
+        "<ErrorResponse><Error><Type>Sender</Type><Code>InvalidParameterValue</Code>"
+        f"<Message>Invalid value {value} for MaxRecords. Must be between 20 and 100</Message>"
+        "</Error></ErrorResponse>"
+    )
+
+
 def response(action, params):
     if action == "DescribeDBInstances":
         identifier = params.get("DBInstanceIdentifier", [None])[0]
@@ -208,6 +235,15 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         params = parse_qs(self.rfile.read(length).decode())
         action = params.get("Action", [""])[0]
+        error = max_records_error(action, params)
+        if error is not None:
+            body = error.encode()
+            self.send_response(400)
+            self.send_header("Content-Type", "text/xml")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         payload = response(action, params)
         if payload is None:
             self.send_error(404)

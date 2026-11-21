@@ -17,7 +17,7 @@ args:
     default: ""
     description: kubeconfig context. Empty = current-context.
     validation:
-      pattern: "^[a-zA-Z0-9_.\\-]{0,128}$"
+      pattern: "^[a-zA-Z0-9_.@:/\\-]{0,128}$"
 execution:
   command:
     binary: /bin/sh
@@ -28,7 +28,7 @@ execution:
       # exits non-zero there; the pipe would throw that away. Capture keeps the
       # status and stops tail from SIGPIPE-ing kubectl on a busy cluster.
       - |
-        events=$(kubectl ${KCTX:+--context=$KCTX} get events -A --field-selector type=Warning --sort-by=.lastTimestamp); status=$?
+        events=$(kubectl ${KCTX:+"--context=$KCTX"} get events -A --field-selector type=Warning --sort-by=.lastTimestamp); status=$?
         printf '%s\n' "$events" | tail -n 60
         exit $status
   timeout: 30s

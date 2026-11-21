@@ -1,6 +1,8 @@
 services:
   runner-tools:
     network_mode: service:traefik
+    volumes:
+      - traefik_logs:/var/log/traefik:ro
 
   traefik:
     image: traefik:${PACKTEST_VERSION:-v3.7.13}${PACKTEST_DIGEST-}
@@ -15,9 +17,16 @@ services:
       - --metrics.prometheus.entrypoint=metrics
       - --entrypoints.metrics.address=:9080
       - --providers.file.filename=/etc/traefik/dynamic.yml
+      # The default CLF access log, read by the log_grep cases. Internal
+      # requests (the backend health checks and /ping) are logged too, so the
+      # request counter quickly passes the 4xx/5xx range on 200 lines.
+      - --accesslog=true
+      - --accesslog.addinternals=true
+      - --accesslog.filepath=/var/log/traefik/access.log
     volumes:
       - ${EMISAR_ROOT}/packs/traefik/test/fixtures/dynamic.yml:/etc/traefik/dynamic.yml:ro
-    healthcheck:
+      - traefik_logs:/var/log/traefik
+    healthcheck: &traefik_healthcheck
       test:
         - CMD
         - traefik
@@ -28,6 +37,26 @@ services:
       start_period: 20s
       start_interval: 1s
       retries: 20
+
+  # The same Traefik writing the JSON access-log format into the shared log
+  # volume, so the log_grep cases read both formats Traefik produces.
+  traefik-json:
+    image: traefik:${PACKTEST_VERSION:-v3.7.13}${PACKTEST_DIGEST-}
+    command:
+      - --global.checknewversion=false
+      - --global.sendanonymoususage=false
+      - --ping=true
+      - --ping.entrypoint=ping
+      - --entrypoints.ping.address=:8082
+      - --providers.file.filename=/etc/traefik/dynamic.yml
+      - --accesslog=true
+      - --accesslog.format=json
+      - --accesslog.addinternals=true
+      - --accesslog.filepath=/var/log/traefik/access.json
+    volumes:
+      - ${EMISAR_ROOT}/packs/traefik/test/fixtures/dynamic.yml:/etc/traefik/dynamic.yml:ro
+      - traefik_logs:/var/log/traefik
+    healthcheck: *traefik_healthcheck
 
   # Fault/size cases supplement the real Traefik SUT without replacing it.
   traefik-metrics-response:
@@ -41,3 +70,6 @@ services:
       start_period: 10s
       start_interval: 1s
       retries: 10
+
+volumes:
+  traefik_logs:

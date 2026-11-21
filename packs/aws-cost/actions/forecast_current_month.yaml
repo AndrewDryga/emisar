@@ -11,7 +11,17 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "START=$(date -u +%Y-%m-%d); END=$(date -u -d 'first day of next month' +%Y-%m-%d 2>/dev/null || date -u -v+1m -v1d +%Y-%m-%d); aws ce get-cost-forecast --time-period Start=$START,End=$END --metric UNBLENDED_COST --granularity MONTHLY --output json"
+      # One date read, then plain arithmetic: relative date phrases differ
+      # between GNU, busybox and BSD date, and a failed read stops the program
+      # before AWS is called.
+      - |-
+        set -eu
+        START=$(date -u +%Y-%m-%d)
+        case $START in [0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]) ;; *) echo "unexpected date: $START" >&2; exit 1 ;; esac
+        Y=${START%%-*}; M=${START#*-}; M=${M%-*}; M=${M#0}
+        if [ "$M" -eq 12 ]; then NY=$((Y + 1)); NM=1; else NY=$Y; NM=$((M + 1)); fi
+        END=$(printf '%04d-%02d-01' "$NY" "$NM")
+        exec aws ce get-cost-forecast --time-period "Start=$START,End=$END" --metric UNBLENDED_COST --granularity MONTHLY --output json
   timeout: 60s
 output:
   parser: json

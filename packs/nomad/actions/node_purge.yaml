@@ -4,13 +4,15 @@ title: Purge a dead node (PUT /v1/node/<id>/purge)
 kind: script
 risk: critical
 description: >
-  Remove a dead (down) node from the catalog; allocations on it are GC'd. There
-  is no `nomad node purge` CLI subcommand — this is the HTTP API
-  (PUT /v1/node/<id>/purge). Only valid for nodes that are down.
+  Remove a node from the catalog; allocations on it are GC'd. There is no
+  `nomad node purge` CLI subcommand — this is the HTTP API
+  (PUT /v1/node/<id>/purge). Intended for nodes that are down, but Nomad does
+  not check the node's status: it purges a ready node too. Confirm the node is
+  down with nomad.node_status_one first.
 side_effects:
   - Node entry removed permanently (one API PUT).
   - Allocations on it are GC'd.
-  - Only valid for nodes that are down — running nodes refuse purge.
+  - Nomad does not refuse a live node; a running client re-registers after the purge.
 args:
   - name: node_id
     type: string

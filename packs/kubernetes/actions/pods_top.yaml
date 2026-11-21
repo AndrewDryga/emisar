@@ -15,7 +15,7 @@ args:
     default: ""
     description: kubeconfig context. Empty = current.
     validation:
-      pattern: "^[a-zA-Z0-9_.\\-]{0,128}$"
+      pattern: "^[a-zA-Z0-9_.@:/\\-]{0,128}$"
 execution:
   command:
     binary: /bin/sh
@@ -25,7 +25,7 @@ execution:
       # when the API server is unreachable — both must fail the action rather
       # than read as "no pods". Capture so head can't SIGPIPE kubectl.
       - |
-        pods=$(kubectl ${KCTX:+--context=$KCTX} top pod -A --sort-by=cpu); status=$?
+        pods=$(kubectl ${KCTX:+"--context=$KCTX"} top pod -A --sort-by=cpu); status=$?
         printf '%s\n' "$pods" | head -50
         exit $status
   timeout: 30s

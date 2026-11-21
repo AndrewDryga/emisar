@@ -3,7 +3,7 @@ id: haproxy.disable_server
 title: disable server <backend>/<server>
 kind: exec
 risk: high
-description: Stop sending new traffic to one backend server (in-flight requests continue).
+description: Stop sending new traffic to one backend server (in-flight requests continue). Fails with HAProxy's message when the admin socket rejects the command (an unknown backend or server, or a socket below level admin).
 side_effects:
   - Server is marked MAINT — no new traffic.
   - Existing requests finish.
@@ -29,7 +29,11 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "echo 'disable server '\"$1\"'/'\"$2\"'' | socat - \"$HAPROXY_SOCK\""
+      - |
+        out=$(printf '%s\n' "disable server $1/$2" | socat - "$HAPROXY_SOCK") || exit
+        case $out in
+        *[![:space:]]*) printf '%s\n' "$out" >&2; exit 1 ;;
+        esac
       - "emisar"
       - "{{ args.backend }}"
       - "{{ args.server }}"

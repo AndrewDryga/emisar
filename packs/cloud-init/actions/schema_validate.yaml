@@ -6,7 +6,8 @@ risk: low
 description: >
   Validate the rendered cloud-config against the cloud-init schema.
   Use to catch typos / deprecated keys before they cause a silent
-  no-op on next boot.
+  no-op on next boot. Needs root: cloud-init refuses to read the system
+  user-data and vendor-data for any other user.
 side_effects:
   - One CLI call.
   - Read-only.

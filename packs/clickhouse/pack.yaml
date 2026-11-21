@@ -2,7 +2,7 @@ schema_version: 1
 
 id: clickhouse
 name: ClickHouse analytics DB
-version: 0.2.18
+version: 0.2.19
 # Versions below this returned raw Keeper node values, mutation SQL, exception
 # text and dictionary source URLs from low-risk reads (0.2.12 and below, live
 # query text too). They fail closed.

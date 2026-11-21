@@ -2,8 +2,11 @@ schema_version: 1
 
 id: nginx
 name: Nginx operations pack
-version: 0.2.30
-retired_below: 0.2.27
+version: 0.2.31
+# 0.2.30 and below returned ssl_chain_check's whole TLS session (session id,
+# ticket, master key) and, from upstream_list, any config lines after a
+# directive such as proxy_next_upstream, both at low risk.
+retired_below: 0.2.31
 description: >
   Operator pack for nginx — read-only status + access-log analysis,
   TLS cert probes, and narrow operator actions (test_config, reload,

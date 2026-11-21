@@ -17,7 +17,7 @@ args:
 execution:
   command:
     binary: aws
-    argv: ["s3api", "get-bucket-location", "--bucket", "{{ args.bucket }}"]
+    argv: ["s3api", "get-bucket-location", "--bucket", "{{ args.bucket }}", "--output", "json"]
   timeout: 30s
 output:
   parser: json

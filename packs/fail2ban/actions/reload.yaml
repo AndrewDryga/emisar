@@ -23,7 +23,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "fail2ban-client reload \"$1\""
+      - "if [ -n \"$1\" ]; then exec fail2ban-client reload \"$1\"; else exec fail2ban-client reload; fi"
       - "emisar"
       - "{{ args.jail }}"
   timeout: 30s

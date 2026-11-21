@@ -17,7 +17,9 @@ services:
       # default 15s deadline. Both limits apply to that same join request.
       JF_ROUTER_SERVICEREGISTRY_REQUESTTIMEOUT: "60s"
       JF_ROUTER_HTTPCLIENT_REQUESTTIMEOUTSECS: "60"
-      PACKTEST_ADMIN_PASSWORD: packtest-canary-artifactory-9d4e
+      # A quote and a backslash: generated passwords carry both, and both are
+      # special inside the quoted curl config value the pack writes.
+      PACKTEST_ADMIN_PASSWORD: 'packtest-canary-artifactory-9d4e\"q'
     volumes:
       - ${EMISAR_ROOT}/packs/artifactory/test/fixtures/seed.sh:/opt/jfrog/seed.sh:ro
     # bootstrap.creds is the documented way to create the admin user with a

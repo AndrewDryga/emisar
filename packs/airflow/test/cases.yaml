@@ -236,17 +236,22 @@ cases:
     expect:
       stdout_contains: [packtest_variable, '"value_bytes":37']
 
+  # The seeded packtest_pipeline run updates one asset from its load task.
   - action: airflow.assets
     versions: ["3.3.2"]
     expect:
       json:
-        /total_entries: 0
+        /total_entries: 1
+        /assets/0/name: packtest_orders
 
+  # The default asset_id of 0 means every asset, so the seeded event is listed.
   - action: airflow.asset_events
     versions: ["3.3.2"]
     expect:
       json:
-        /total_entries: 0
+        /total_entries: 1
+        /asset_events/0/source_dag_id: packtest_pipeline
+        /asset_events/0/source_task_id: load
 
   - action: airflow.backfills
     versions: ["3.3.2"]

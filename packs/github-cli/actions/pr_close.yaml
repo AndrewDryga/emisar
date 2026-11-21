@@ -4,13 +4,19 @@ title: gh pr close <num>
 kind: exec
 risk: medium
 description: >
-  Close one PR without merging. Use for stale or abandoned PRs.
+  Close one PR in the named repository without merging. Use for stale or abandoned PRs.
   Reopenable via the UI or `gh pr reopen`.
 side_effects:
   - PR state set to closed.
   - PR branch unchanged.
   - Notifications fire.
 args:
+  - name: repo
+    type: string
+    required: true
+    description: 'Repo in owner/name form.'
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,40}/[a-zA-Z0-9_.\\-]{1,100}$"
   - name: pr
     type: integer
     required: true
@@ -21,7 +27,7 @@ args:
 execution:
   command:
     binary: gh
-    argv: ["pr", "close", "{{ args.pr }}"]
+    argv: ["pr", "close", "{{ args.pr }}", "--repo", "{{ args.repo }}"]
   timeout: 30s
 output:
   parser: text
@@ -30,4 +36,5 @@ output:
 examples:
   - title: Close a stale PR
     args:
+      repo: "acme/api"
       pr: 1234

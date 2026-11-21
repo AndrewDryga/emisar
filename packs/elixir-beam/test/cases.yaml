@@ -381,6 +381,32 @@ cases:
           - 'if Process.info(Process.whereis(FixtureApp.Leaky), :binary) == {:binary, []}, do: IO.puts("the-collection-freed-them")'
         expect:
           stdout_contains: [the-collection-freed-them]
+  # The client timeout outlasts bin_leak's 26 s node deadline, so a collection
+  # that never finishes is stopped on the node and says so.
+  - name: beam.release_binary_leak-stops-on-the-node-at-its-deadline
+    action: beam.release_binary_leak
+    args: {limit: 3}
+    arrange:
+      - argv:
+          - /opt/fixture_app/bin/fixture_app
+          - rpc
+          - |
+            Code.compile_string("""
+            defmodule :recon do
+              def bin_leak(_limit) do
+                Process.register(self(), :fixture_stuck_read)
+                Process.sleep(:infinity)
+              end
+            end
+            """)
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["did not finish within 26000 ms, so it was stopped on the node"]
+    probes:
+      - argv: [/opt/fixture_app/bin/fixture_app, rpc, 'if Process.whereis(:fixture_stuck_read) == nil, do: IO.puts("the-read-is-gone")']
+        expect:
+          stdout_contains: [the-read-is-gone]
   - action: beam.release_scheduler_usage
     args: {sample_ms: 200}
     expect:

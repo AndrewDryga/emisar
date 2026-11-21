@@ -336,6 +336,18 @@ cases:
     args: {alloc_id: '11111111-2222-3333-4444-555555555555', path: local/app.log}
     env: {NOMAD_TOKEN: '11111111-2222-3333-4444-555555555555'}
     expect: {status: failure, exit: [1], stderr_contains: [Permission denied]}
+  - name: nomad.alloc_stats-rejects-short-id
+    action: nomad.alloc_stats
+    args: {alloc_id: '11111111'}
+    expect: {status: failure, reason: argument_invalid, error_contains: [must match pattern]}
+  - name: nomad.alloc_fs_ls-rejects-short-id
+    action: nomad.alloc_fs_ls
+    args: {alloc_id: '11111111'}
+    expect: {status: failure, reason: argument_invalid, error_contains: [must match pattern]}
+  - name: nomad.alloc_fs_stat-rejects-short-id
+    action: nomad.alloc_fs_stat
+    args: {alloc_id: '11111111', path: local/app.log}
+    expect: {status: failure, reason: argument_invalid, error_contains: [must match pattern]}
   - name: nomad.leader-invalid-token
     action: nomad.leader
     env: {NOMAD_TOKEN: '11111111-2222-3333-4444-555555555555'}

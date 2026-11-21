@@ -382,28 +382,33 @@ EOF
       '{user_id: $user_id, role: $role, had_role: .didUserHaveRole}'
     ;;
   delete-user)
+    # Looking up a linked login method returns its primary user, whose id
+    # names a different login method. The requested id is what the core
+    # removes (it resolves a mapped external id itself); the primary id is
+    # what still answers afterwards while any linked login method remains.
     resolve_user "$1"
     before=$(printf '%s' "$user" | jq '.user.loginMethods | length')
-    submit POST user/remove "$(jq -nc --arg u "$user_id" --argjson all "$2" \
+    submit POST user/remove "$(jq -nc --arg u "$1" --argjson all "$2" \
       '{userId: $u, removeAllLinkedAccounts: $all}')"
-    # Read back: without all_linked_accounts, a primary user's other login
-    # methods remain and the user still exists.
     rc=0
     after=$(get user/id "userId=$user_id") || rc=$?
     if [ "$rc" -ne 0 ]; then
       printf '%s\n' "$after"
       exit "$rc"
     fi
-    printf '%s' "$after" | jq -c --arg user_id "$user_id" --argjson before "$before" \
+    printf '%s' "$after" | jq -c --arg user_id "$1" --arg primary "$user_id" \
+      --argjson before "$before" \
       '(if .status == "OK" then (.user.loginMethods | length) else 0 end) as $left |
-       {user_id: $user_id, deleted: ($left == 0),
+       {user_id: $user_id, primary_user_id: $primary, deleted: ($left == 0),
         login_methods_removed: ($before - $left)}'
     ;;
   signing-keys)
     fetch .well-known/jwks.json
     project "$millis_to_iso"'{keys: [.keys[] | {kid: .kid, alg: .alg, kty: .kty,
       use: .use, dynamic: (.kid | startswith("d-")),
-      created: (if (.kid | test("^d-[0-9]+$")) then (.kid[2:] | tonumber | iso) else null end)}]}'
+      created: (if (.kid | startswith("d-") and (.[2:] | length > 0 and
+          (explode | all(.[]; . >= 48 and . <= 57))))
+        then (.kid[2:] | tonumber | iso) else null end)}]}'
     ;;
   passwordless-codes)
     email=${ARG_EMAIL:-}

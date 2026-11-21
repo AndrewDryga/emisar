@@ -309,17 +309,22 @@ cases:
       json:
         /source: hcp_plan
         /cli_version: 1.13.1
-        /summary/total: 3
+        /summary/total: 5
         /summary/create: 0
-        /summary/update: 1
+        /summary/update: 2
         /summary/delete: 1
         /summary/replace: 1
+        /summary/import: 2
         /summary/drifted: 1
         /changes/0/address: aws_s3_bucket.legacy
         /changes/0/action: delete
         /changes/1/address: aws_instance.api
         /changes/1/replace_paths/0: user_data
         /changes/1/replace_paths_truncated: 0
+        /changes/2/address: aws_iam_policy.adopted
+        /changes/2/action: update
+        /changes/4/address: aws_s3_bucket.imported
+        /changes/4/action: import
         /drift/0/address: aws_security_group.web
         /outputs/0/name: db_password
         /outputs/0/sensitive: true
@@ -390,7 +395,8 @@ cases:
       json:
         /source: hcp_plan
         /cli_version: 1.13.1
-        /summary/total: 3
+        /summary/total: 5
+        /summary/import: 2
         /summary/delete: 1
         /summary/replace: 1
         /changes/0/address: aws_s3_bucket.legacy

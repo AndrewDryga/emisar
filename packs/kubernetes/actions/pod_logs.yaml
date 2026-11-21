@@ -41,13 +41,13 @@ args:
     default: ""
     description: kubeconfig context.
     validation:
-      pattern: "^[a-zA-Z0-9_.\\-]{0,128}$"
+      pattern: "^[a-zA-Z0-9_.@:/\\-]{0,128}$"
 execution:
   command:
     binary: /bin/sh
     argv:
       - "-c"
-      - "kubectl ${KCTX:+--context=$KCTX} -n \"$1\" logs \"$2\" ${CONT:+-c $CONT} --tail={{ args.lines }}"
+      - "kubectl ${KCTX:+\"--context=$KCTX\"} -n \"$1\" logs \"$2\" ${CONT:+-c $CONT} --tail={{ args.lines }}"
       - "emisar"
       - "{{ args.namespace }}"
       - "{{ args.name }}"

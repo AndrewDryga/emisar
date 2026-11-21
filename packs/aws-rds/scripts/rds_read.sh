@@ -15,12 +15,20 @@ project_with_jq() {
 # default redaction rewrites any string under a token-named key, so passing the
 # CLI's own NextToken through would reach the model as [REDACTED] and no caller
 # could ever page past the first result.
+#
+# --max-items is the caller's limit; --page-size is only the MaxRecords each
+# service request carries, which every paged RDS Describe call bounds to
+# 20..100. The CLI fetches as many service pages as the limit needs and still
+# emits a continuation when it stops mid-listing.
 page() {
   filter=$1
   limit=$2
   token=$3
   shift 3
-  set -- aws rds "$@" --page-size "$limit" --max-items "$limit" --output json
+  page_size=$limit
+  [ "$page_size" -ge 20 ] || page_size=20
+  [ "$page_size" -le 100 ] || page_size=100
+  set -- aws rds "$@" --page-size "$page_size" --max-items "$limit" --output json
   [ -z "$token" ] || set -- "$@" --starting-token "$token"
   project_with_jq "$filter" "$@"
 }

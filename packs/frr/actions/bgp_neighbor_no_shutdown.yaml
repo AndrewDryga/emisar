@@ -7,12 +7,15 @@ description: >
   Re-advertise to an administratively shut BGP neighbor via vtysh, bringing this
   node's prefixes back to that peer — the reverse of frr.bgp_neighbor_shutdown,
   and how a drained node rejoins an anycast VIP once it is healthy. The change is
-  to the running config only (not persisted). Pair with frr.bgp_summary to
-  confirm the session reaches Established and PfxSnt returns.
+  to the running config only (not persisted). Fails without changing anything
+  when the default VRF has no `router bgp <asn>`, so it never creates a BGP
+  instance. Pair with frr.bgp_summary to confirm the session reaches
+  Established and PfxSnt returns.
 side_effects:
   - Clears the administrative shutdown on the session to the named peer; this node advertises its prefixes to it again.
   - For an anycast VIP, upstream ECMP starts sending traffic to this node again — run it only once the node is healthy.
   - Running-config only — not written to startup-config.
+  - Reads the running config first and refuses when the default VRF has no `router bgp <asn>`.
 search_terms:
   - undrain traffic
   - return node to rotation
@@ -35,14 +38,19 @@ args:
       pattern: "^[A-Za-z0-9][A-Za-z0-9._:\\-]{0,63}$"
 execution:
   command:
-    binary: vtysh
+    binary: /bin/sh
     argv:
       - "-c"
-      - "configure terminal"
-      - "-c"
-      - "router bgp {{ args.asn }}"
-      - "-c"
-      - "no neighbor {{ args.peer }} shutdown"
+      - |
+        cfg=$(vtysh -c "show running-config") || exit
+        if ! printf '%s\n' "$cfg" | grep -qx "router bgp $1"; then
+          echo "no router bgp $1 in the default VRF; refusing to create a BGP instance" >&2
+          exit 1
+        fi
+        exec vtysh -c "configure terminal" -c "router bgp $1" -c "no neighbor $2 shutdown"
+      - "emisar"
+      - "{{ args.asn }}"
+      - "{{ args.peer }}"
   timeout: 15s
 output:
   parser: text

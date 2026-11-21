@@ -10,8 +10,12 @@ set -euo pipefail
 
 base=http://localhost:8082/artifactory
 
+# The canary password carries a quote and a backslash, so it is escaped for
+# curl's quoted config string exactly as the pack's own script does.
+password=$(printf '%s' "${PACKTEST_ADMIN_PASSWORD}" | sed 's/[\\"]/\\&/g')
+
 req() {
-  printf 'user = "admin:%s"\n' "${PACKTEST_ADMIN_PASSWORD}" |
+  printf 'user = "admin:%s"\n' "$password" |
     curl -q --config - --fail --silent --show-error --max-time 30 "$@"
 }
 

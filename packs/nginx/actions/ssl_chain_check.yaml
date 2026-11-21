@@ -3,7 +3,10 @@ id: nginx.ssl_chain_check
 title: TLS chain dump for one vhost
 kind: exec
 risk: low
-description: Probe localhost:443 with SNI and dump the certificate chain. Use to confirm the intermediate cert is being served.
+description: >
+  Probe localhost:443 with SNI and dump the certificate chain it presents. Use
+  to confirm the intermediate cert is being served. Only the chain is
+  returned, never the session details openssl prints after it.
 side_effects:
   - One openssl s_client to localhost.
   - Read-only.
@@ -27,7 +30,20 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "openssl s_client -connect 127.0.0.1:{{ args.port }} -servername \"$1\" -showcerts </dev/null 2>/dev/null"
+      - |
+        set -eu
+        status=0
+        handshake=$(openssl s_client -connect 127.0.0.1:{{ args.port }} -servername "$1" -showcerts </dev/null 2>/dev/null) || status=$?
+        # Print only the first server-sent chain, never later session or peer text.
+        printf '%s\n' "$handshake" | awk '
+          /^Certificate chain$/ && !seen { seen=1; printing=1 }
+          printing { print }
+          printing && /^---$/ { printing=0 }
+        '
+        if [ "$status" -ne 0 ]; then
+          printf 'TLS connection to 127.0.0.1:%s failed\n' '{{ args.port }}' >&2
+        fi
+        exit "$status"
       - "emisar"
       - "{{ args.sni }}"
   timeout: 15s

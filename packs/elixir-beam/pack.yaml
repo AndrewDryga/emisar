@@ -2,7 +2,7 @@ schema_version: 1
 
 id: elixir-beam
 name: Elixir / BEAM runtime
-version: 0.1.14
+version: 0.1.15
 # Versions below this printed the full command line of a spawned port from
 # beam.release_ports, and crashed an ordinary GenServer named to
 # beam.release_supervisor_tree. Both are low-risk reads. They fail closed.

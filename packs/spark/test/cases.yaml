@@ -128,6 +128,19 @@ cases:
     expect:
       stdout_contains: [SUCCESS, taskId, executorId]
 
+  # A non-default TaskSorting value and a TaskStatus filter, both passed through
+  # verbatim to taskList; Spark answers an unknown value with an error.
+  - name: spark.stage_tasks-sort-by-id-success-only
+    action: spark.stage_tasks
+    args: {stage_id: 0, sort_by: ID, status: success}
+    resolve_args:
+      app_id:
+        argv: [/bin/sh, -c, 'curl -fsS "$SPARK_HISTORY_URL/api/v1/applications" | jq -r ".[0].id"']
+    expect:
+      json:
+        /0/index: 0
+        /0/status: SUCCESS
+
   - action: spark.executors
     resolve_args:
       app_id:

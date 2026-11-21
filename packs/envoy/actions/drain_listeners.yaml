@@ -4,14 +4,16 @@ title: POST /drain_listeners
 kind: exec
 risk: high
 description: >
-  Mark all listeners as draining. Existing connections close on
-  their own as requests complete; no new connections accepted on
-  drained listeners. Use during a planned restart to drain traffic
-  before flipping a load balancer.
+  Stop all listeners (or inbound listeners only) from accepting new
+  connections, immediately. This calls `POST /drain_listeners` without
+  `graceful`, which on Envoy 1.39 stops the listeners at once and skips
+  the drain period. A stopped listener stays stopped until Envoy
+  restarts. Use during a planned restart after the load balancer has
+  moved traffic away.
 side_effects:
-  - All listeners stop accepting new connections.
-  - Existing connections drain over the configured grace.
-  - Health checks may fail externally during drain.
+  - The listeners stop accepting new connections at once; there is no graceful drain period.
+  - The listeners stay stopped until Envoy restarts.
+  - Health checks may fail externally.
 search_terms:
   - graceful shutdown
 args:

@@ -1,0 +1,9 @@
+# A config with no `admin` global option, the common shape (Debian ships one),
+# so `caddy reload` has to find the admin API through CADDY_ADMIN.
+{
+    auto_https off
+}
+
+:80 {
+    respond "pack-test reloaded" 200
+}

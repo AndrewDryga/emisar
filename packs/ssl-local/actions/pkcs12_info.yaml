@@ -9,7 +9,7 @@ kind: exec
 # action.
 risk: low
 description: >
-  Inspect a PKCS#12 bundle's bag contents — cert subjects, key types — without exporting the private key. Requires the bundle's password via PK12_PASSWORD env var on the runner host (or empty for password-less bundles).
+  Inspect a PKCS#12 bundle's bag contents — cert subjects, key types — without exporting the private key. Requires the bundle's password in the runner's PK12_PASSWORD env var, allowlisted in `execution.inherit_env`; set it to an empty value for password-less bundles, since an unset variable fails the read.
 side_effects:
   - One file read.
   - Read-only — private keys NOT printed.

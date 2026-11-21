@@ -26,8 +26,21 @@ args:
         - /opt
 execution:
   command:
-    binary: caddy
-    argv: ["reload", "--config", "{{ args.file }}"]
+    binary: /bin/sh
+    argv:
+      # `caddy reload` takes the admin address from the config's own `admin`
+      # listener, else from CADDY_ADMIN, which it parses as a network address
+      # (host:port), while this pack documents CADDY_ADMIN as a URL. Strip an
+      # http:// URL down to host:port and hand it on as CADDY_ADMIN rather than
+      # --address, so a config that names its listener still wins.
+      - "-c"
+      - |-
+        case ${CADDY_ADMIN-} in
+          http://*) admin=${CADDY_ADMIN#http://}; CADDY_ADMIN=${admin%%/*}; export CADDY_ADMIN ;;
+        esac
+        exec caddy reload --config "$1"
+      - caddy.reload_config
+      - "{{ args.file }}"
   timeout: 60s
 output:
   parser: text

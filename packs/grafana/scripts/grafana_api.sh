@@ -74,7 +74,7 @@ safe_datasources() {
   '
 }
 
-# These two status reads never forward the settings/query/config document.
+# These status reads never forward the settings/query/config document.
 # Slurp requires exactly one typed JSON value; omitted labels/totals are valid
 # in native empty or recording-rule responses, but wrong types are not.
 safe_alerting_rules() {
@@ -107,6 +107,27 @@ safe_alerting_rules() {
              labels: (.labels // {}), totals: (.totals // {})}
             + (if has("state") then {state} else {} end)]}]
       }}
+  ' "$1"
+}
+
+# Alertmanager alerts carry annotations (rendered summaries and descriptions)
+# and a generator URL; only identity, labels, state and timing leave the host.
+safe_alerting_state() {
+  jq -cse '
+    def strings: type == "object" and all(.[]; type == "string");
+    def ids: . == null or (type == "array" and all(.[]; type == "string"));
+    def alert:
+      type == "object" and (.fingerprint | type == "string") and (.labels | strings)
+      and ([.startsAt, .endsAt, .updatedAt] | all(.[]; type == "string"))
+      and (.status | type == "object" and (.state | type == "string")
+        and (.silencedBy | ids) and (.inhibitedBy | ids))
+      and (.receivers | . == null or (type == "array"
+        and all(.[]; type == "object" and (.name | type == "string"))));
+    if length != 1 or (.[0] | type != "array") then error("invalid document") else .[0] end
+    | if all(.[]; alert) | not then error("invalid alert") else . end
+    | [.[] | {fingerprint, labels, state: .status.state,
+        silencedBy: (.status.silencedBy // []), inhibitedBy: (.status.inhibitedBy // []),
+        receivers: [(.receivers // [])[].name], startsAt, endsAt, updatedAt}]
   ' "$1"
 }
 
@@ -167,7 +188,10 @@ case "$mode" in
     projected_request safe_alerting_rules 262144 --get --data-urlencode 'limit_alerts=0' \
       "$api_base/api/prometheus/grafana/api/v1/rules"
     ;;
-  alerting-state) request "$api_base/api/alertmanager/grafana/api/v2/alerts" ;;
+  alerting-state)
+    projected_request safe_alerting_state 262144 \
+      "$api_base/api/alertmanager/grafana/api/v2/alerts"
+    ;;
   # Captured, not piped live: a pipeline exits with jq's status, so a 401 from
   # curl would be projected into an empty array and read as "no datasources".
   # Capturing means this branch owns the failure report too — --fail-with-body

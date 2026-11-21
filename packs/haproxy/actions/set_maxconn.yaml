@@ -3,7 +3,7 @@ id: haproxy.set_maxconn
 title: set maxconn frontend <name> <N>
 kind: exec
 risk: high
-description: Live-update the maxconn cap on one frontend without a reload; lowering it below the current connection count turns away new connections until the count drops.
+description: Live-update the maxconn cap on one frontend without a reload; lowering it below the current connection count turns away new connections until the count drops. Fails with HAProxy's message when the admin socket rejects the command (an unknown frontend, or a socket below level admin).
 side_effects:
   - Lowering below current conns rejects new connections until count drops.
 search_terms:
@@ -27,7 +27,11 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "echo 'set maxconn frontend '\"$1\"' {{ args.maxconn }}' | socat - \"$HAPROXY_SOCK\""
+      - |
+        out=$(printf '%s\n' "set maxconn frontend $1 {{ args.maxconn }}" | socat - "$HAPROXY_SOCK") || exit
+        case $out in
+        *[![:space:]]*) printf '%s\n' "$out" >&2; exit 1 ;;
+        esac
       - "emisar"
       - "{{ args.frontend }}"
   timeout: 15s

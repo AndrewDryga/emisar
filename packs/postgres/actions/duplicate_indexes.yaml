@@ -1,9 +1,15 @@
 schema_version: 1
 id: postgres.duplicate_indexes
-title: Duplicate indexes (same column set)
+title: Candidate duplicate indexes (same column list)
 kind: exec
 risk: low
-description: List indexes covering identical columns. One per group is redundant; drop after verifying.
+description: >
+  List groups of indexes on one table that share the same column list
+  (pg_index.indkey). Each group is an overlap candidate, not proof that any
+  index is redundant: indkey records every expression column as 0 and ignores
+  expressions, partial-index predicates, operator classes, the key/INCLUDE
+  split, uniqueness, and access method, so indexes in one group can serve different
+  queries. Each index's full definition is in pg_get_indexdef.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

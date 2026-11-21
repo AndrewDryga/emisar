@@ -2,7 +2,7 @@ schema_version: 1
 
 id: envoy
 name: Envoy proxy / service mesh
-version: 0.1.20
+version: 0.1.21
 # Through 0.1.19 the four traffic-shifting mutators took their admin URL from a
 # caller-supplied argument instead of ENVOY_ADMIN, so an agent could drain an
 # Envoy the operator never pointed the pack at — and two of them auto-run.

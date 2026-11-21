@@ -421,6 +421,29 @@ cases:
       - argv: [/bin/sh, -c, 'test "$(clickhouse-client --host clickhouse --user "$CH_USER" --password "$CH_PASSWORD" --query "SELECT count() FROM default.packtest_events")" = 3 && echo ch-optimize-rows-kept']
         expect:
           stdout_contains: [ch-optimize-rows-kept]
+  # OPTIMIZE ... FINAL rewrites even a table's only part, raising its merge
+  # level from 0 to 1; a plain OPTIMIZE leaves a lone part alone. So a level-1
+  # part proves both that the named table was the target and that FINAL ran.
+  - name: ch.optimize_table-hyphenated-names
+    action: ch.optimize_table
+    args: {database: packtest-db, table: events-mt}
+    arrange:
+      - argv: [/bin/sh, -c, 'clickhouse-client --host clickhouse --user "$CH_USER" --password "$CH_PASSWORD" --multiquery --query "CREATE TABLE \`packtest-db\`.\`events-mt\` (id UInt8) ENGINE = MergeTree ORDER BY id; INSERT INTO \`packtest-db\`.\`events-mt\` VALUES (1)"']
+    probes:
+      - argv: [/bin/sh, -c, 'test "$(clickhouse-client --host clickhouse --user "$CH_USER" --password "$CH_PASSWORD" --query "SELECT groupArray(level) FROM system.parts WHERE database = ''packtest-db'' AND table = ''events-mt'' AND active")" = "[1]" && echo ch-optimize-final-hyphenated']
+        expect:
+          stdout_contains: [ch-optimize-final-hyphenated]
+  # Unquoted, `default.events--` would run OPTIMIZE on default.events with FINAL
+  # commented out.
+  - name: ch.optimize_table-name-ending-in-comment
+    action: ch.optimize_table
+    args: {database: default, table: "events--"}
+    arrange:
+      - argv: [/bin/sh, -c, 'clickhouse-client --host clickhouse --user "$CH_USER" --password "$CH_PASSWORD" --multiquery --query "CREATE TABLE default.\`events--\` (id UInt8) ENGINE = MergeTree ORDER BY id; INSERT INTO default.\`events--\` VALUES (1)"']
+    probes:
+      - argv: [/bin/sh, -c, 'test "$(clickhouse-client --host clickhouse --user "$CH_USER" --password "$CH_PASSWORD" --query "SELECT groupArray(level) FROM system.parts WHERE database = ''default'' AND table = ''events--'' AND active")" = "[1]" && echo ch-optimize-final-comment-name']
+        expect:
+          stdout_contains: [ch-optimize-final-comment-name]
   - action: ch.kill_query
     args: {query_id: packtest-kill-query}
     arrange:

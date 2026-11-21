@@ -15,6 +15,9 @@ execution:
       - "status"
       - "-format=json"
   timeout: 15s
+  # `vault status` exits 0 unsealed, 2 sealed, 1 on error: a sealed Vault is a
+  # status answer (`"sealed": true`), while exit 1 stays a failed run.
+  success_exit_codes: [2]
 output:
   parser: json
   max_stdout_bytes: 8192

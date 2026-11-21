@@ -3,7 +3,7 @@ id: haproxy.enable_server
 title: enable server <backend>/<server>
 kind: exec
 risk: high
-description: Re-enable one backend server that was administratively disabled; it returns to rotation and live traffic reaches it again (subject to health checks).
+description: Re-enable one backend server that was administratively disabled; it returns to rotation and live traffic reaches it again (subject to health checks). Fails with HAProxy's message when the admin socket rejects the command (an unknown backend or server, or a socket below level admin).
 side_effects:
   - Server begins receiving traffic again (subject to health checks).
 search_terms:
@@ -26,7 +26,11 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "echo 'enable server '\"$1\"'/'\"$2\"'' | socat - \"$HAPROXY_SOCK\""
+      - |
+        out=$(printf '%s\n' "enable server $1/$2" | socat - "$HAPROXY_SOCK") || exit
+        case $out in
+        *[![:space:]]*) printf '%s\n' "$out" >&2; exit 1 ;;
+        esac
       - "emisar"
       - "{{ args.backend }}"
       - "{{ args.server }}"

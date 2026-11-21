@@ -12,6 +12,13 @@ env:
   VECTOR_METRICS_URL: http://vector:9598/metrics
   VECTOR_RESPONSE_CANARY: packtest-canary-vector-label-3ea17
 cases:
+  # demo_logs emits ten events a second, so a two-second tap returns many
+  # newline-delimited JSON events in one result.
+  - name: vector.tap-returns-many-event-lines
+    action: vector.tap
+    args: {component: fixture_remap, duration_ms: 2000}
+    expect:
+      stdout_contains: ['"pipeline":"packtest"']
   - action: vector.component_metrics
     expect:
       stdout_contains: [vector_component_sent_events_total, vector_component_sent_bytes_total, 'component_id="fixture_logs"', 'component_id="fixture_remap"', 'component_id="fixture_console"', 'component_kind="source"', 'component_kind="transform"', 'component_kind="sink"']

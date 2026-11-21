@@ -19,9 +19,12 @@ args:
     type: string
     required: false
     default: "--all"
-    description: Metadata key, or "--all" for everything.
+    description: >
+      Dot-delimited metadata key (`instance_id`, `v1.region`), or "--all" for
+      everything. A key cannot start with "-", so it is never read as one of
+      `cloud-init query`'s options, some of which name files to read.
     validation:
-      pattern: "^(--all|[a-zA-Z0-9_./\\-]{1,128})$"
+      pattern: "^(--all|[a-zA-Z0-9_][a-zA-Z0-9_./\\-]{0,127})$"
 execution:
   command:
     binary: cloud-init

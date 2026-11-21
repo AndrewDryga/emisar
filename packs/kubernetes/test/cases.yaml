@@ -87,6 +87,20 @@ cases:
   - action: kubernetes.namespaces
     expect:
       stdout_contains: [default, Active]
+  # kubeadm names its context kubernetes-admin@kubernetes. The copy's
+  # current-context names nothing, so the read succeeds only when the
+  # context argument selects the renamed context.
+  - name: kubernetes.namespaces-selects-a-kubeadm-style-context
+    action: kubernetes.namespaces
+    args: {context: "kubernetes-admin@kubernetes"}
+    env:
+      KUBECONFIG: /tmp/packtest-kubeadm-kubeconfig.yaml
+    arrange:
+      - argv: [cp, /shared/kubeconfig.yaml, /tmp/packtest-kubeadm-kubeconfig.yaml]
+      - argv: [kubectl, config, rename-context, default, "kubernetes-admin@kubernetes"]
+      - argv: [kubectl, config, set, current-context, packtest-no-such-context]
+    expect:
+      stdout_contains: [default, Active]
   - action: kubernetes.networkpolicies_list
     expect:
       stdout_contains: [harness-network-policy]

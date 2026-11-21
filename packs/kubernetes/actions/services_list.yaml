@@ -14,13 +14,13 @@ args:
     default: ""
     description: kubeconfig context.
     validation:
-      pattern: "^[a-zA-Z0-9_.\\-]{0,128}$"
+      pattern: "^[a-zA-Z0-9_.@:/\\-]{0,128}$"
 execution:
   command:
     binary: /bin/sh
     argv:
       - "-c"
-      - "kubectl ${KCTX:+--context=$KCTX} get svc -A"
+      - "kubectl ${KCTX:+\"--context=$KCTX\"} get svc -A"
   timeout: 30s
   env:
     KCTX: "{{ args.context }}"

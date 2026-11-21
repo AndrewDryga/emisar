@@ -3,7 +3,7 @@ id: fs.grep_file
 title: grep <pattern> <file>
 kind: script
 risk: medium
-description: Show matching lines in one file. Pattern is treated as POSIX ERE.
+description: Show matching lines in one file, up to 2000. Pattern is treated as POSIX ERE. No match returns empty output; a bad pattern or unreadable file fails.
 side_effects:
   - One read of the file.
   - Read-only.

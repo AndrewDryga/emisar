@@ -25,7 +25,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "CLICKHOUSE_PASSWORD=\"$CH_PASSWORD\" clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --query \"OPTIMIZE TABLE ${1}.${2} FINAL\""
+      # Each name is backquoted on its own: unquoted, a hyphen parses as minus
+      # and a trailing `--` comments out FINAL. The patterns admit no backquote.
+      - "CLICKHOUSE_PASSWORD=\"$CH_PASSWORD\" clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --query \"OPTIMIZE TABLE \\`${1}\\`.\\`${2}\\` FINAL\""
       - "emisar"
       - "{{ args.database }}"
       - "{{ args.table }}"

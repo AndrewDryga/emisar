@@ -14,9 +14,9 @@ args:
   - name: queue_id
     type: string
     required: true
-    description: Postfix queue ID.
+    description: Postfix queue ID, short (hex) or long (enable_long_queue_ids = yes).
     validation:
-      pattern: "^[A-F0-9]{6,20}$"
+      pattern: "^([A-F0-9]{6,20}|[0-9B-DF-HJ-NP-TV-Zb-df-hj-np-tv-z]{10,14}z[0-9B-DF-HJ-NP-TV-Zb-df-hj-np-tv-y]{1,12})$"
 execution:
   command:
     binary: postcat

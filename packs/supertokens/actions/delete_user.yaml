@@ -10,7 +10,8 @@ description: >
   email-verification state, TOTP devices and external id mapping. The app's
   own data about the user is untouched. With all_linked_accounts false, only
   this login method goes and a linked account's other login methods remain,
-  so deleted reports false while any remain. The output carries no email
+  so deleted reports false while any remain; the readback goes through the
+  primary user, which primary_user_id names. The output carries no email
   addresses.
 side_effects:
   - Permanently deletes the user from the core; the user can no longer sign in and cannot be restored.

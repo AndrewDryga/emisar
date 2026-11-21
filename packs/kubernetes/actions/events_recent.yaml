@@ -14,7 +14,7 @@ args:
     default: ""
     description: kubeconfig context.
     validation:
-      pattern: "^[a-zA-Z0-9_.\\-]{0,128}$"
+      pattern: "^[a-zA-Z0-9_.@:/\\-]{0,128}$"
 execution:
   command:
     binary: /bin/sh
@@ -26,7 +26,7 @@ execution:
       # kubectl. A cluster with genuinely no events still exits 0 — the
       # truthful empty result stays a success.
       - |
-        events=$(kubectl ${KCTX:+--context=$KCTX} get events -A --sort-by=.lastTimestamp); status=$?
+        events=$(kubectl ${KCTX:+"--context=$KCTX"} get events -A --sort-by=.lastTimestamp); status=$?
         printf '%s\n' "$events" | tail -50
         exit $status
   timeout: 30s

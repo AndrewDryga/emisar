@@ -15,6 +15,7 @@ defaults:
     stderr_not_contains:
       - packtest-canary-grafana-unrequested-783c
       - packtest-canary-grafana-annotation-f80a
+      - packtest-canary-grafana-firing-annotation-5b19
 cases:
   - action: grafana.alerting_rules
     expect:
@@ -33,9 +34,66 @@ cases:
         - '"annotations"'
         - '"alerts"'
         - packtest-canary-grafana-annotation-f80a
+  # The provisioned firing rule's alert carries annotation canaries and label
+  # text with quotes, braces and a non-ASCII letter.
   - action: grafana.alerting_state
+    arrange: &firing_alert
+      - name: wait for the firing alert
+        argv: [/bin/sh, -c, 'printf "user = \"admin:%s\"\n" "$GRAFANA_PASSWORD" | curl -fsS --config - http://grafana:3000/api/alertmanager/grafana/api/v2/alerts | grep -c packtest-firing-rule']
+        retry_for: 90s
+        retry_every: 1s
+    expect: &firing_alert_expect
+      stdout_not_contains: [packtest-canary-grafana-firing-annotation-5b19, '"annotations"', '"generatorURL"']
+      json:
+        /0/labels/alertname: Packtest firing rule
+        /0/labels/note: 'Full label λ "quoted" {braces}'
+        /0/labels/team: platform
+        /0/state: active
+        /0/silencedBy: []
+  - name: grafana.alerting_state-core-jq
+    action: grafana.alerting_state
+    env:
+      PATH: "/opt/jq-without-regex:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    arrange: *firing_alert
+    expect: *firing_alert_expect
+  # Fields the projection does not name never leave the host, whatever the
+  # response adds.
+  - name: grafana.alerting_state-unrequested-fields
+    action: grafana.alerting_state
+    env:
+      GRAFANA_URL: http://grafana-response:8080
+    arrange:
+      - argv: [curl, -fsS, "http://grafana-response:8080/configure?mode=ok"]
     expect:
-      stdout_contains: ["[]"]
+      stdout_not_contains: [packtest-canary-grafana-unrequested-783c, '"annotations"', '"generatorURL"', '"mutedBy"']
+      json:
+        /0/fingerprint: fixture-fingerprint
+        /0/labels/summary: Full label λ
+        /0/state: suppressed
+        /0/silencedBy/0: fixture-silence
+        /0/receivers/0: fixture-receiver
+  - name: grafana.alerting_state-wrong-labels
+    action: grafana.alerting_state
+    env:
+      GRAFANA_URL: http://grafana-response:8080
+    arrange:
+      - argv: [curl, -fsS, "http://grafana-response:8080/configure?mode=wrong-labels"]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["invalid or incomplete alerting-state JSON"]
+      stdout_not_contains: [packtest-canary-grafana-unrequested-783c]
+  - name: grafana.alerting_state-wrong-root
+    action: grafana.alerting_state
+    env:
+      GRAFANA_URL: http://grafana-response:8080
+    arrange:
+      - argv: [curl, -fsS, "http://grafana-response:8080/configure?mode=wrong-root"]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["invalid or incomplete alerting-state JSON"]
+      stdout_not_contains: [packtest-canary-grafana-unrequested-783c]
   - action: grafana.dashboards_search
     expect:
       stdout_contains: ["[]"]

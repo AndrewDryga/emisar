@@ -40,20 +40,35 @@ reject_dotdot() {
   esac
 }
 
-# Basic auth when a user is set, otherwise the access token. Both are written
-# as curl config directives so neither reaches the process table.
-auth_config() {
-  if [ -n "${ARTIFACTORY_USER:-}" ]; then
-    printf 'user = "%s:%s"\n' "$ARTIFACTORY_USER" "${ARTIFACTORY_PASSWORD:-}"
-  else
-    printf 'header = "Authorization: Bearer %s"\n' "${ARTIFACTORY_TOKEN:-}"
-  fi
+# A curl config string ends at an unescaped quote and a line ends a directive,
+# so a backslash or quote is escaped and a line break is refused. Generated
+# passwords routinely contain both characters.
+nl='
+'
+cr=$(printf '\r')
+config_string() {
+  case "$2" in
+    *"$cr"* | *"$nl"*)
+      printf '%s\n' "$1 must not contain a line break" >&2
+      exit 2
+      ;;
+  esac
+  printf '"%s"' "$(printf '%s' "$2" | sed 's/[\\"]/\\&/g')"
 }
+
+# Basic auth when a user is set, otherwise the access token. Both are written
+# as curl config directives so neither reaches the process table. Built once,
+# outside the request pipeline, so a refused value stops the script.
+if [ -n "${ARTIFACTORY_USER:-}" ]; then
+  auth_config="user = $(config_string ARTIFACTORY_USER/ARTIFACTORY_PASSWORD "$ARTIFACTORY_USER:${ARTIFACTORY_PASSWORD:-}")"
+else
+  auth_config="header = $(config_string ARTIFACTORY_TOKEN "Authorization: Bearer ${ARTIFACTORY_TOKEN:-}")"
+fi
 
 request() {
   # --fail-with-body: Artifactory answers a rejected request with a JSON
   # {"errors": [...]} body naming the repository or permission at fault.
-  auth_config | curl -q --config - --fail-with-body --silent --show-error --globoff \
+  printf '%s\n' "$auth_config" | curl -q --config - --fail-with-body --silent --show-error --globoff \
     --proto '=http,https' --connect-timeout 10 --max-time 60 \
     --max-filesize 4194304 "$@"
 }

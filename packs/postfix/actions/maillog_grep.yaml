@@ -9,7 +9,7 @@ args:
   - name: pattern
     type: string
     required: true
-    description: Literal match.
+    description: Literal match; a leading "-" is matched literally.
     validation:
       pattern: "^[a-zA-Z0-9_.@\\-]{1,128}$"
 execution:
@@ -25,7 +25,9 @@ execution:
         elif [ -r /var/log/maillog ]; then log=/var/log/maillog
         else echo "no readable mail log at /var/log/mail.log or /var/log/maillog" >&2; exit 1
         fi
-        grep -F "$P" "$log" | head -2000
+        # -e and -- keep a search that starts with "-" a literal, never an
+        # option such as -r that would search other files.
+        grep -F -e "$P" -- "$log" | head -2000
   env:
     P: "{{ args.pattern }}"
   timeout: 60s

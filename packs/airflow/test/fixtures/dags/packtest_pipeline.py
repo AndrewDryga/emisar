@@ -2,7 +2,8 @@
 
 Deliberately trivial: the cases assert on run and task-instance state, log
 content, and clear behavior, so the work itself only has to be deterministic
-and fast.
+and fast. The load task updates one asset, so the seeded successful run leaves
+an asset event behind for the asset cases.
 """
 
 from __future__ import annotations
@@ -10,8 +11,9 @@ from __future__ import annotations
 import datetime
 
 try:
-    from airflow.sdk import dag, task
+    from airflow.sdk import Asset, dag, task
 except ImportError:
+    from airflow.datasets import Dataset as Asset
     from airflow.decorators import dag, task
 
 START_DATE = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
@@ -31,7 +33,7 @@ def packtest_pipeline() -> None:
         print("packtest extract complete")
         return 7
 
-    @task
+    @task(outlets=[Asset("packtest_orders")])
     def load(rows: int) -> None:
         print(f"packtest load complete rows={rows}")
 

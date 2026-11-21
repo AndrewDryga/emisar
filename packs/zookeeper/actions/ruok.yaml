@@ -3,7 +3,11 @@ id: zk.ruok
 title: ruok (health probe)
 kind: exec
 risk: low
-description: Check server health — returns 'imok' if server is serving.
+description: >
+  Check server health with the `ruok` four-letter word. Succeeds only when the
+  server answers `imok`; an empty reply (a node in an error state) or a
+  refusal (ruok missing from 4lw.commands.whitelist) fails the run. It checks
+  one server, not ensemble quorum.
 side_effects: ["One 4lw command.", "Read-only."]
 args:
   - name: server
@@ -17,7 +21,13 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "S=''\"$1\"''; echo ruok | nc -w 5 ${S%:*} ${S##*:}"
+      # nc exits 0 once the connection succeeds, whatever the reply, so the
+      # reply itself is the health signal. A transport failure keeps nc's status.
+      - |
+        S=''"$1"''
+        out=$(echo ruok | nc -w 5 ${S%:*} ${S##*:}) || exit $?
+        printf '%s\n' "$out"
+        [ "$out" = imok ] || { echo "zookeeper did not answer imok" >&2; exit 1; }
       - "emisar"
       - "{{ args.server }}"
   timeout: 10s

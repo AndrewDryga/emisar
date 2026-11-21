@@ -9,9 +9,9 @@ description: >
   Change one CockroachDB cluster setting cluster-wide — SET CLUSTER SETTING
   <name> = <value>. An unrestricted config write (rate limits, GC TTLs, feature
   flags) that can materially change cluster behavior, so risk:critical →
-  default-denied. An operator allows it by explicit policy, and WHICH
-  settings/values are permitted is a portal policy decision, not a hardcoded
-  list. Read cockroach.cluster_settings first to see the current value.
+  default-denied. An operator allows it by explicit policy, which gates the
+  action as a whole: policy cannot narrow it by setting or value, so allowing
+  it allows every setting these patterns admit. Read cockroach.cluster_settings first to see the current value.
 
 side_effects:
   - The named cluster setting is changed for the WHOLE cluster, immediately.

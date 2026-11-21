@@ -2,7 +2,7 @@ schema_version: 1
 
 id: cockroach
 name: CockroachDB
-version: 0.2.1
+version: 0.2.2
 retired_below: 0.2.1
 description: >
   Investigate a CockroachDB cluster over the `cockroach` CLI — node liveness /

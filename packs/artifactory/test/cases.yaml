@@ -17,7 +17,9 @@ inherit_env: [ARTIFACTORY_PASSWORD, ARTIFACTORY_URL, ARTIFACTORY_USER]
 env:
   ARTIFACTORY_URL: "http://artifactory:8082"
   ARTIFACTORY_USER: admin
-  ARTIFACTORY_PASSWORD: packtest-canary-artifactory-9d4e
+  # Matches the SUT's admin password, quote and backslash included, so every
+  # case proves the credential survives the curl config encoding.
+  ARTIFACTORY_PASSWORD: 'packtest-canary-artifactory-9d4e\"q'
 defaults:
   expect:
     stdout_not_empty: true

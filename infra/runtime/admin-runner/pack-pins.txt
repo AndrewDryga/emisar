@@ -5,7 +5,7 @@
 #
 # A bump is a reviewed decision: verify the pack against the published
 # registry history (packs/PUBLISHING.md) before changing a line.
-cloud-init=0.1.20|sha256:8969d2af3b6c9160964736896ed027b48e128c8b7a2d3884bda832388eaa6df8
+cloud-init=0.1.22|sha256:2f81e71368b63ef6424863a607040544f2a4933dfc8452ae5e6e386a6fcf54d2
 debugging=0.3.4|sha256:e5fd955d6198afb38ad24a437ad850941b844426b42d5c5a513083a2fc3725e8
 docker=0.2.31|sha256:1e42add3372aceea953d664ca2a7cb09b6a03aa1102373933f46031ca58baf8e
 elixir-beam=0.1.14|sha256:320b441c52f814e7fef4db76d90350f0e4d81f840ce0221f6a24e9440d4526be

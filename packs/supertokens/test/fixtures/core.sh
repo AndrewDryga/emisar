@@ -9,6 +9,10 @@
 #   core.sh session EMAIL            a new session for the user; prints its handle
 #   core.sh sessions EMAIL           the user's session handles
 #   core.sh roles EMAIL              the user's roles
+#   core.sh map EMAIL EXTERNAL_ID    maps the user to an external id; prints
+#                                    the SuperTokens id it replaces in answers.
+#                                    The core refuses a user that already has
+#                                    roles or sessions.
 set -eu
 
 call() {
@@ -41,6 +45,12 @@ case "$command" in
   session) session "$1" ;;
   sessions) call GET "recipe/session/user?userId=$(id "$1")" | jq -c .sessionHandles ;;
   roles) call GET "recipe/user/roles?userId=$(id "$1")" | jq -c .roles ;;
+  map)
+    st_id=$(id "$1")
+    call POST recipe/userid/map "$(jq -nc --arg s "$st_id" --arg e "$2" \
+      '{superTokensUserId: $s, externalUserId: $e}')" >/dev/null
+    printf '%s\n' "$st_id"
+    ;;
   seed)
     # Two email/password users, one Google sign-in, two roles with admin
     # granted to alice, a session for alice whose token and session data carry

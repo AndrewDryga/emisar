@@ -40,9 +40,43 @@ cases:
   - action: nginx.vhost_list
     expect:
       stdout_contains: [packtest.local]
+  # Only upstream names and their server lines: not the comment, the
+  # keepalive or zone inside a block, nor the location lines after a
+  # proxy_next_upstream, whose header value no redaction rule would mask.
   - action: nginx.upstream_list
     expect:
-      stdout_contains: [packtest_backend, 127.0.0.1:8081]
+      stdout_contains:
+        - "upstream packtest_backend {\n    server 127.0.0.1:8081;\n}"
+        - "upstream packtest_inline {\n    server 127.0.0.1:8082 weight=2;\n}"
+        - "upstream packtest_split {\n    server 127.0.0.1:8083 max_fails=3;\n}"
+      stdout_not_contains:
+        - packtest-upstream-neighbour-7e2a
+        - proxy_next_upstream
+        - keepalive
+        - zone
+        - "upstream servers"
+        - packtest-canary-nginx-8c31f7
+  - name: nginx.upstream_list-config-error
+    action: nginx.upstream_list
+    # The real nginx, pointed at a copy of the config that no longer parses.
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - |
+            set -eu
+            cp /etc/nginx/nginx.conf /tmp/packtest-broken.conf
+            printf '%s\n' 'packtest_broken_directive on;' >> /tmp/packtest-broken.conf
+            mkdir -p /tmp/packtest-nginx-bin
+            printf '%s\n' '#!/bin/sh' 'exec /usr/sbin/nginx -c /tmp/packtest-broken.conf "$@"' > /tmp/packtest-nginx-bin/nginx
+            chmod 0755 /tmp/packtest-nginx-bin/nginx
+    env:
+      PATH: /tmp/packtest-nginx-bin:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ['nginx: [emerg] unknown directive "packtest_broken_directive"']
+      stderr_not_contains: [packtest-upstream-neighbour-7e2a, packtest-canary-nginx-8c31f7]
   - action: nginx.access_top_urls
     args: {lines: 1000, limit: 30, log_path: /var/log/nginx/access.log}
     arrange:
@@ -67,6 +101,55 @@ cases:
       - argv: [curl, -sS, -o, /dev/null, http://127.0.0.1/error500]
     expect:
       stdout_contains: [GET /error500, "500"]
+  # The status is the field after the request, not any 3-digit number: a 200
+  # with a 512- or 404-byte body is neither a 5xx nor a 4xx.
+  - name: nginx.log_grep_5xx-status-field-only
+    action: nginx.log_grep_5xx
+    args: {lines: 100, log_path: /var/log/nginx/access.log}
+    arrange: &status_lines
+      - argv:
+          - /bin/sh
+          - -c
+          - |
+            printf '%s\n' \
+              '203.0.113.1 - - [25/Sep/2026:10:00:00 +0000] "GET /ok-512 HTTP/1.1" 200 512 "-" "Mozilla/5.0"' \
+              '203.0.113.2 - - [25/Sep/2026:10:00:01 +0000] "GET /ok-404 HTTP/1.1" 200 404 "-" "Mozilla/5.0"' \
+              '203.0.113.3 - - [25/Sep/2026:10:00:02 +0000] "GET /gone HTTP/1.1" 404 500 "-" "Mozilla/5.0"' \
+              '203.0.113.4 - - [25/Sep/2026:10:00:03 +0000] "GET /broken HTTP/1.1" 502 404 "-" "Mozilla/5.0"' \
+              >> /var/log/nginx/access.log
+    expect:
+      stdout_contains: [GET /broken]
+      stdout_not_contains: [/ok-512, /ok-404, /gone]
+  - name: nginx.log_grep_4xx-status-field-only
+    action: nginx.log_grep_4xx
+    args: {lines: 100, log_path: /var/log/nginx/access.log}
+    arrange: *status_lines
+    expect:
+      stdout_contains: [GET /gone]
+      stdout_not_contains: [/ok-512, /ok-404, /broken]
+  # Only the presented chain: never the session id, ticket or master key that
+  # openssl prints after it for a TLS 1.2 connection.
+  - action: nginx.ssl_chain_check
+    args: {sni: packtest-chain.example, port: 24443}
+    arrange:
+      - argv: [/bin/sh, /packs/nginx/test/fixtures/tls-chain-fixture.sh, start]
+      - argv: [/bin/sh, /packs/nginx/test/fixtures/tls-chain-fixture.sh, verify-raw]
+        retry_for: 10s
+        retry_every: 250ms
+    expect:
+      stdout_contains: [Certificate chain, '0 s:CN=packtest-chain.example', '1 s:CN=Packtest-Chain-CA', '-----BEGIN CERTIFICATE-----']
+      stdout_not_contains: [SSL-Session, Session-ID, Master-Key, TLS session ticket, Resumption PSK, Server certificate, Cipher is]
+      stderr_not_contains: [SSL-Session, Session-ID, Master-Key, TLS session ticket]
+    cleanup:
+      - argv: [/bin/sh, /packs/nginx/test/fixtures/tls-chain-fixture.sh, stop]
+  - name: nginx.ssl_chain_check-closed-port
+    action: nginx.ssl_chain_check
+    args: {sni: packtest-chain.example, port: 24444}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ['TLS connection to 127.0.0.1:24444 failed']
+      stdout_not_contains: [Certificate chain, SSL-Session]
   - action: nginx.bytes_by_url
     args: {lines: 1000, limit: 30}
     arrange:

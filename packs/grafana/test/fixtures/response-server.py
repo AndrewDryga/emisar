@@ -39,6 +39,19 @@ def rules():
             "totals": {"firing": 1, "error": 1}, "unknown": CANARY}, "unknown": CANARY}
 
 
+def alerts():
+    return [{
+        "fingerprint": "fixture-fingerprint", "labels": {"alertname": "Fixture alert",
+        "summary": "Full label λ"}, "annotations": {"summary": CANARY, "runbook": CANARY},
+        "generatorURL": "http://grafana.invalid/alerting/" + CANARY,
+        "receivers": [{"name": "fixture-receiver", "unknown": CANARY}],
+        "status": {"state": "suppressed", "silencedBy": ["fixture-silence"],
+                   "inhibitedBy": [], "mutedBy": [CANARY]},
+        "startsAt": "2026-10-09T00:00:00Z", "endsAt": "2026-10-09T00:04:00Z",
+        "updatedAt": "2026-10-09T00:00:10Z", "unknown": CANARY,
+    }]
+
+
 def version():
     return {
         "buildInfo": {"version": "13.2.3", "commit": "fixture-commit", "edition": "Open Source",
@@ -94,6 +107,13 @@ class Handler(BaseHTTPRequestHandler):
         if not auth_ok:
             return self.reply({"message": "invalid credentials"}, 401)
         is_rules = url.path == "/api/prometheus/grafana/api/v1/rules"
+        if url.path == "/api/alertmanager/grafana/api/v2/alerts":
+            value = alerts()
+            if MODE == "wrong-labels":
+                value[0]["labels"] = {"team": {"unknown": CANARY}}
+            elif MODE == "wrong-root":
+                value = {"alerts": value}
+            return self.reply(value)
         if not is_rules and url.path != "/api/frontend/settings":
             return self.reply({"message": "unknown fixture path"}, 404)
         value = rules() if is_rules else version()

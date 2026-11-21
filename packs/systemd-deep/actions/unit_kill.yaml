@@ -4,11 +4,13 @@ title: systemctl kill -s <signal> <unit>
 kind: exec
 risk: high
 description: >
-  Send a signal to a unit's main process (or all processes). Useful
-  when a service is wedged and SIGTERM-via-stop isn't working. SIGKILL
-  is unrecoverable mid-syscall; consider SIGTERM/SIGHUP first.
+  Send a signal to every process in a unit — the main process and all
+  workers and helpers in its cgroup (`systemctl kill` defaults to
+  `--kill-whom=all`). Useful when a service is wedged and SIGTERM-via-stop
+  isn't working. SIGKILL is unrecoverable mid-syscall; consider
+  SIGTERM/SIGHUP first.
 side_effects:
-  - Signal sent to the unit.
+  - Signal sent to every process in the unit, not just its main process.
   - Behavior depends on signal — SIGHUP often triggers config reload.
 search_terms:
   - service will not stop

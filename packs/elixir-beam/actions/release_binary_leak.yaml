@@ -49,9 +49,9 @@ execution:
     - "{{ args.container }}"
     - "--release"
     - "{{ args.release }}"
+  # Fixed: the node deadline in scripts/release_ctl.sh (26 s) sits under this
+  # timeout, so a slow collection is stopped on the node and says so.
   timeout: 30s
-  timeout_min: 10s
-  timeout_max: 60s
 output:
   parser: text
   max_stdout_bytes: 131072

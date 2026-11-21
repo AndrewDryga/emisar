@@ -3,7 +3,11 @@ id: grafana.alerting_state
 title: GET /api/alertmanager/grafana/api/v2/alerts
 kind: script
 risk: low
-description: List currently-firing alerts known to Grafana's alertmanager.
+description: >
+  List the alerts Grafana's alertmanager holds (active, silenced and inhibited)
+  with fingerprint, labels, state, silences, inhibitions, receivers and
+  timing. Omit annotations and generator URLs. Return the complete projection
+  within a 256 KiB budget or fail without partial data.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:
@@ -15,7 +19,8 @@ execution:
   timeout: 30s
 output:
   parser: json
-  max_stdout_bytes: 524288
+  parser_required: true
+  max_stdout_bytes: 1048576
   max_stderr_bytes: 8192
 examples:
   - title: Active alerts

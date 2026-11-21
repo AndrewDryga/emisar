@@ -76,6 +76,11 @@ cases:
     args: {keyspace: packtest}
     expect:
       stdout_contains: [Keyspace, events]
+  # Without a keyspace the action covers every keyspace, system ones included.
+  - name: cassandra.nodetool_tablestats-all-keyspaces
+    action: cassandra.nodetool_tablestats
+    expect:
+      stdout_contains: [Keyspace, system_schema, packtest, events]
   - action: cassandra.nodetool_compactionstats
     expect:
       stdout_contains: [pending tasks]

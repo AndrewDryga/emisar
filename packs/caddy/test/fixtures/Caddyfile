@@ -1,5 +1,7 @@
 {
-    admin :2019
+    # Named explicitly, on Caddy's default loopback listener: the API answers
+    # the localhost, 127.0.0.1 and ::1 origins the actions and CLI use.
+    admin localhost:2019
     auto_https off
     metrics
 }

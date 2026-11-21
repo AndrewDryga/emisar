@@ -4,7 +4,7 @@ versions:
     digest: "@sha256:3ebc37595918b8accb852f8048fef2aff047d465167edd655528065b07bc364a"
     default: true
 secret_env: [AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY]
-inherit_env: [AWS_ACCESS_KEY_ID, AWS_DEFAULT_REGION, AWS_ENDPOINT_URL, AWS_SECRET_ACCESS_KEY]
+inherit_env: [AWS_ACCESS_KEY_ID, AWS_DEFAULT_OUTPUT, AWS_DEFAULT_REGION, AWS_ENDPOINT_URL, AWS_SECRET_ACCESS_KEY]
 env:
   AWS_ACCESS_KEY_ID: packtest-canary-aws-s3-access-924e
   AWS_DEFAULT_REGION: us-east-1
@@ -43,6 +43,18 @@ cases:
       stdout_contains: [LocationConstraint]
     cleanup:
       - argv: [aws, s3, rb, "s3://emisar-packtest-location", --force]
+  # A profile or environment that sets text output must not break a read that
+  # parses JSON.
+  - name: s3.bucket_location-under-text-output
+    action: s3.bucket_location
+    args: {bucket: emisar-packtest-location-text}
+    env: {AWS_DEFAULT_OUTPUT: text}
+    arrange:
+      - argv: [aws, s3, mb, "s3://emisar-packtest-location-text"]
+    expect:
+      stdout_contains: ['"LocationConstraint"']
+    cleanup:
+      - argv: [aws, s3, rb, "s3://emisar-packtest-location-text", --force]
   - action: s3.bucket_policy
     args: {bucket: emisar-packtest-policy}
     arrange:
@@ -62,6 +74,37 @@ cases:
         /Status: Enabled
     cleanup:
       - argv: [aws, s3, rb, "s3://emisar-packtest-versioning", --force]
+  - name: s3.bucket_versioning-under-text-output
+    action: s3.bucket_versioning
+    args: {bucket: emisar-packtest-versioning-text}
+    env: {AWS_DEFAULT_OUTPUT: text}
+    arrange:
+      - argv: [aws, s3, mb, "s3://emisar-packtest-versioning-text"]
+      - argv: [aws, s3api, put-bucket-versioning, --bucket, emisar-packtest-versioning-text, --versioning-configuration, "Status=Enabled"]
+    expect:
+      json:
+        /Status: Enabled
+    cleanup:
+      - argv: [aws, s3, rb, "s3://emisar-packtest-versioning-text", --force]
+  # A bucket that never had versioning answers with an empty configuration,
+  # which the CLI prints as nothing at all; the action reports it as {}.
+  - name: s3.bucket_versioning-never-enabled
+    action: s3.bucket_versioning
+    args: {bucket: emisar-packtest-versioning-bare}
+    arrange:
+      - argv: [aws, s3, mb, "s3://emisar-packtest-versioning-bare"]
+    expect:
+      stdout_contains: ['{}']
+      stdout_not_contains: [Status]
+    cleanup:
+      - argv: [aws, s3, rb, "s3://emisar-packtest-versioning-bare", --force]
+  - name: s3.bucket_versioning-missing-bucket-fails
+    action: s3.bucket_versioning
+    args: {bucket: emisar-packtest-versioning-missing}
+    expect:
+      status: failure
+      exit: [254]
+      stderr_contains: [NoSuchBucket]
   - action: s3.list_buckets
     args: {limit: 25}
     arrange:
@@ -151,3 +194,20 @@ cases:
     cleanup:
       - argv: [aws, s3, rb, "s3://emisar-packtest-logging", --force]
       - argv: [aws, s3, rb, "s3://emisar-packtest-log-target", --force]
+  - name: s3.bucket_logging-never-enabled
+    action: s3.bucket_logging
+    args: {bucket: emisar-packtest-logging-bare}
+    arrange:
+      - argv: [aws, s3, mb, "s3://emisar-packtest-logging-bare"]
+    expect:
+      stdout_contains: ['{}']
+      stdout_not_contains: [LoggingEnabled]
+    cleanup:
+      - argv: [aws, s3, rb, "s3://emisar-packtest-logging-bare", --force]
+  - name: s3.bucket_logging-missing-bucket-fails
+    action: s3.bucket_logging
+    args: {bucket: emisar-packtest-logging-missing}
+    expect:
+      status: failure
+      exit: [254]
+      stderr_contains: [NoSuchBucket]

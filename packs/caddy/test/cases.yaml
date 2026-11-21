@@ -62,8 +62,24 @@ cases:
         expect:
           stdout_contains: [stopped]
 
+  # The fixture names its admin listener, so the config's address wins over a
+  # CADDY_ADMIN that points nowhere.
   - action: caddy.reload_config
+    env:
+      CADDY_ADMIN: http://127.0.0.1:1
     probes:
       - argv: [curl, -fsS, http://127.0.0.1/]
         expect:
           stdout_contains: [pack-test ok]
+
+  # A config without an `admin` option reaches the API through the URL-form
+  # CADDY_ADMIN the pack documents.
+  - name: caddy.reload_config-admin-from-url
+    action: caddy.reload_config
+    args: {file: /etc/caddy/no-admin.caddyfile}
+    probes:
+      - argv: [curl, -fsS, http://127.0.0.1/]
+        retry_for: 10s
+        retry_every: 1s
+        expect:
+          stdout_contains: [pack-test reloaded]

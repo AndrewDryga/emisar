@@ -5,18 +5,19 @@ kind: exec
 risk: medium
 description: >
   Move one message into the hold queue. The message is not delivered
-  until released with postsuper_release. Used when a message needs to
+  until released with postsuper_release or requeued with
+  postsuper_requeue. Used when a message needs to
   be inspected without redelivering on every queue tick.
 side_effects:
   - Message moved to hold queue.
-  - No delivery attempts until released.
+  - No delivery attempts until released or requeued.
 args:
   - name: qid
     type: string
     required: true
-    description: Queue ID.
+    description: Queue ID, short (hex) or long (enable_long_queue_ids = yes).
     validation:
-      pattern: "^[A-F0-9]{6,20}$"
+      pattern: "^([A-F0-9]{6,20}|[0-9B-DF-HJ-NP-TV-Zb-df-hj-np-tv-z]{10,14}z[0-9B-DF-HJ-NP-TV-Zb-df-hj-np-tv-y]{1,12})$"
 execution:
   command:
     binary: postsuper

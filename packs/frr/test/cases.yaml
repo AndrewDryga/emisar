@@ -70,3 +70,25 @@ cases:
         expect:
           stdout_contains: ["BGP neighbor is 10.0.0.2"]
           stdout_not_contains: ["Administratively shut down"]
+
+  # `router bgp <asn>` in config mode creates the instance when the default VRF
+  # has none. With the instance removed, the drain must fail and leave no BGP
+  # instance behind rather than create an empty one.
+  - name: frr.bgp-neighbor-shutdown-refuses-an-absent-instance
+    action: frr.bgp_neighbor_shutdown
+    args: {asn: 65000, peer: "10.0.0.2"}
+    arrange:
+      - argv: [vtysh, -c, "configure terminal", -c, "no router bgp 65000"]
+      - argv: [/bin/sh, -c, "! vtysh -c 'show running-config' | grep -q '^router bgp'"]
+        retry_for: 10s
+        retry_every: 200ms
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["no router bgp 65000 in the default VRF"]
+    probes:
+      - name: no BGP instance was created
+        argv: [vtysh, -c, "show running-config"]
+        expect:
+          stdout_contains: ["Current configuration:"]
+          stdout_not_contains: ["router bgp"]

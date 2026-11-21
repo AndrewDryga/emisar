@@ -5,8 +5,9 @@ kind: exec
 risk: medium
 description: >
   Grep the Traefik access log for 5xx responses and tail the most recent —
-  the front-door view of backend failures. Matches both the JSON format
-  (DownstreamStatus field) and the default CLF format. Needs an access log on
+  the front-door view of backend failures. Matches the DownstreamStatus field
+  of the JSON format and the status field that follows the quoted request in
+  the default CLF format, never a body size or request counter. Needs an access log on
   disk, which Traefik writes only when accessLog.filePath is set; when it logs
   to stdout instead, query whichever log store collects it. Read-only.
 side_effects:
@@ -51,13 +52,19 @@ execution:
       # else the host administrator's TRAEFIK_ACCESS_LOG, else the default.
       # The env is deliberately NOT arg-validated — only root can set it, and
       # anyone who can already reads the file directly.
+      # The CLF branch walks the fixed leading fields (client, `-`, user,
+      # [timestamp], and the quoted request, whose method, path, and protocol
+      # never contain a space) and matches only the status that follows, so a
+      # body size or request counter in the status range does not match. The
+      # JSON branch needs the DownstreamStatus key at a field boundary and a
+      # delimiter after the number.
       # The pipeline exits with tail's status, so guard the log first — otherwise
       # a missing file reports success with no output, reading as "no 5xx".
       - |
         log="$1"
         [ -n "$log" ] || log="${TRAEFIK_ACCESS_LOG:-/var/log/traefik/access.log}"
         [ -r "$log" ] || { echo "access log not readable: $log" >&2; exit 1; }
-        grep -E '("DownstreamStatus":5[0-9][0-9]| 5[0-9][0-9] )' "$log" | tail -n {{ args.lines }}
+        grep -E '^[^ ]+ - [^[]* \[[^]]*\] "[^ ]+ [^ ]+ [^ "]+" 5[0-9][0-9] |[{,]"DownstreamStatus":5[0-9][0-9][,}]' "$log" | tail -n {{ args.lines }}
       - "emisar"
       - "{{ args.log_path? }}"
   timeout: 30s

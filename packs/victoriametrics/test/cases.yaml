@@ -3,9 +3,14 @@ versions:
   - version: v1.153.0
     digest: "@sha256:5eff7af5341e401471002f58d106d399e614a62f3d240f2dbc21901e49eed5dd"
     default: true
-inherit_env: [VM_URL]
+# Both credentials ride every real call: basic-auth userinfo in VM_URL, whose
+# user name carries a quote and a backslash for the stdin config document, and
+# a bearer token. The SUT checks neither; the spy records where they travelled.
+secret_env: [VM_URL, VM_BEARER_TOKEN]
+inherit_env: [VM_URL, VM_BEARER_TOKEN]
 env:
-  VM_URL: "http://victoriametrics:8428/prometheus"
+  VM_URL: 'http://pack"te\st:packtest-canary-vm-basic-3c7e@victoriametrics:8428/prometheus'
+  VM_BEARER_TOKEN: packtest-canary-vm-bearer-81d5
 defaults:
   expect:
     stdout_not_empty: true
@@ -27,7 +32,7 @@ cases:
     action: vm.query_instant
     args: {query: up}
     env:
-      VM_URL: http://victoriametrics:8428/does-not-exist
+      VM_URL: http://packtest:packtest-canary-vm-basic-3c7e@victoriametrics:8428/does-not-exist
     expect:
       status: failure
       exit: [22]
@@ -42,7 +47,7 @@ cases:
     action: vm.query_range
     args: {query: harness_metric, window: 7d, step: 60s}
     env:
-      VM_URL: http://cost-canary
+      VM_URL: http://packtest:packtest-canary-vm-basic-3c7e@cost-canary
     expect:
       stdout_contains: [PACKTEST_VM_COST_CANARY]
     probes:
@@ -55,7 +60,7 @@ cases:
     action: vm.query_range
     args: {query: harness_metric, window: 7d, step: 59s}
     env:
-      VM_URL: http://cost-canary
+      VM_URL: http://packtest:packtest-canary-vm-basic-3c7e@cost-canary
     expect:
       status: failure
       exit: [1]
@@ -69,7 +74,7 @@ cases:
     action: vm.query_range
     args: {query: harness_metric, window: 30d, step: 1h}
     env:
-      VM_URL: http://cost-canary
+      VM_URL: http://packtest:packtest-canary-vm-basic-3c7e@cost-canary
     expect:
       stdout_contains: [PACKTEST_VM_COST_CANARY]
     probes:
@@ -84,7 +89,7 @@ cases:
     action: vm.query_range
     args: {query: harness_metric, window: 10081m, step: 60s}
     env:
-      VM_URL: http://cost-canary
+      VM_URL: http://packtest:packtest-canary-vm-basic-3c7e@cost-canary
     expect:
       status: failure
       exit: [1]
@@ -94,6 +99,37 @@ cases:
       - argv: [/bin/sh, -c, "test ! -e /tmp/packtest-victoriametrics-cost-argv && echo client-not-invoked"]
         expect:
           stdout_contains: [client-not-invoked]
+  # The credentials reach curl only through its stdin config document.
+  - name: vm.labels-credentials-stay-off-argv
+    action: vm.labels
+    arrange: *ingest_metric
+    expect:
+      stdout_contains: [__name__, job]
+    probes:
+      - argv: [/bin/sh, -c, 'grep -q -- "--config -" /tmp/packtest-victoriametrics-argv && ! grep -q -e packtest-canary -e victoriametrics:8428 /tmp/packtest-victoriametrics-argv && echo argv-clean']
+        expect:
+          stdout_contains: [argv-clean]
+      - argv: [/bin/sh, -c, 'grep -qF ''url = "http://pack\"te\\st:packtest-canary-vm-basic-3c7e@victoriametrics:8428/prometheus/api/v1/labels"'' /tmp/packtest-victoriametrics-config && grep -qF ''header = "Authorization: Bearer packtest-canary-vm-bearer-81d5"'' /tmp/packtest-victoriametrics-config && echo config-carries-both']
+        expect:
+          stdout_contains: [config-carries-both]
+  - name: vm.labels-basic-auth-url-only
+    action: vm.labels
+    unset_env: [VM_BEARER_TOKEN]
+    arrange: *ingest_metric
+    expect:
+      stdout_contains: [__name__, job]
+    probes:
+      - argv: [/bin/sh, -c, '! grep -q -e packtest-canary -e victoriametrics:8428 /tmp/packtest-victoriametrics-argv && grep -q packtest-canary-vm-basic-3c7e /tmp/packtest-victoriametrics-config && ! grep -q "^header" /tmp/packtest-victoriametrics-config && echo url-only-off-argv']
+        expect:
+          stdout_contains: [url-only-off-argv]
+  - name: vm.labels-url-line-break
+    action: vm.labels
+    env:
+      VM_URL: "http://packtest:packtest-canary-vm-basic-3c7e@victoriametrics:8428/prometheus\nheader = \"X-Injected: 1\""
+    expect:
+      status: failure
+      exit: [2]
+      stderr_contains: [VM_URL must not contain a line break]
   - action: vm.series
     args: {match: harness_metric, limit: 10}
     arrange: *ingest_metric

@@ -33,3 +33,32 @@ groups:
           team: platform
           environment: packtest
         isPaused: true
+  # Fires on its first evaluation, so alerting_state has a live alert whose
+  # annotations must stay on the host and whose label text must arrive whole.
+  - orgId: 1
+    name: packtest-state-group
+    folder: packtest-alerts
+    interval: 10s
+    rules:
+      - uid: packtest-firing-rule
+        title: Packtest firing rule
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: __expr__
+            model:
+              datasource: {type: __expr__, uid: __expr__}
+              expression: 1==1
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+              type: math
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        annotations:
+          summary: packtest-canary-grafana-firing-annotation-5b19
+          description: packtest-canary-grafana-firing-annotation-5b19
+        labels:
+          team: platform
+          note: 'Full label λ "quoted" {braces}'

@@ -10,8 +10,9 @@ description: >
   MUTATION WHERE …. Use to stop a mutation wedged on a failure (see
   ch.stuck_mutations) so the table's merges and inserts can proceed. Destructive
   — the mutation is abandoned mid-flight — so risk:critical → default-denied. An
-  operator allows it by explicit policy, and WHICH mutations are permitted is a
-  portal policy decision.
+  operator allows it by explicit policy, which gates the action as a whole:
+  policy cannot narrow it by database, table, or mutation, so allowing it allows
+  every mutation these patterns admit.
 
 side_effects:
   - The matching mutation is cancelled; its partial work is abandoned.

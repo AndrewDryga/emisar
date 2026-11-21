@@ -329,6 +329,14 @@ cases:
   - action: supertokens.signing_keys
     expect:
       stdout_contains: ['"alg":"RS256"', '"dynamic":true', '"dynamic":false']
+  # A dynamic key's creation time comes from its kid without jq's optional
+  # regex builtins.
+  - name: supertokens.signing_keys-jq-without-regex
+    action: supertokens.signing_keys
+    env:
+      PATH: /opt/jq-without-regex:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    expect:
+      stdout_contains: ['"created":"20', '"dynamic":true,"kid":"d-', '"created":null,"dynamic":false']
 
   # The core returns no code or magic link here; pre-auth session ids are dropped.
   - action: supertokens.passwordless_codes
@@ -465,6 +473,30 @@ cases:
       - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, call, GET, 'recipe/role/users?role=admin']
         expect:
           stdout_contains: ['"users":[]']
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, call, GET, 'users/count?includeAllTenants=true']
+        expect:
+          stdout_contains: ['"count":2']
+  # The core removes the id it is given, resolving a mapped external id
+  # itself; the lookup answers with the mapped id, which for a linked login
+  # method names its primary user instead. Linking needs a license, so this
+  # case proves the requested id is the one carried through.
+  - name: supertokens.delete_user-mapped-id
+    action: supertokens.delete_user
+    arrange:
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, seed]
+    resolve_args:
+      user_id:
+        argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, map, bob@example.com, packtest-ext-bob]
+    expect:
+      stdout_not_contains: ['"user_id":"packtest-ext-bob"']
+      json:
+        /primary_user_id: packtest-ext-bob
+        /deleted: true
+        /login_methods_removed: 1
+    probes:
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, call, GET, 'user/id?userId=packtest-ext-bob']
+        expect:
+          stdout_contains: [UNKNOWN_USER_ID_ERROR]
       - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, call, GET, 'users/count?includeAllTenants=true']
         expect:
           stdout_contains: ['"count":2']

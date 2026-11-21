@@ -2,7 +2,7 @@ schema_version: 1
 
 id: kubernetes
 name: Kubernetes operations pack
-version: 0.2.11
+version: 0.2.12
 # 0.2.9 and below rated get_yaml and pod_describe `low`, so a pod template's
 # env literals — injected credentials included — auto-ran without approval.
 retired_below: 0.2.10
@@ -24,16 +24,17 @@ requires:
 setup:
   summary: >
     kubectl finds the cluster and credentials from a kubeconfig on the
-    runner host. Point it at one with `KUBECONFIG`, or rely on the default
-    `~/.kube/config`. Each action takes an optional context argument.
+    runner host. Point `KUBECONFIG` at that file's absolute path and
+    allowlist it in the runner's `execution.inherit_env`. Each action takes
+    an optional context argument.
   env:
     - name: KUBECONFIG
       description: >
-        Path (or colon-separated paths) to the kubeconfig file. Omit to
-        use the default `~/.kube/config`.
+        Absolute path (or colon-separated paths) to the kubeconfig file.
+        Reaches actions only when listed in `execution.inherit_env`.
       example: /etc/emisar/kubeconfig
   notes:
-    - "If `KUBECONFIG` is unset, kubectl reads `~/.kube/config` on the runner host — a file, so it needs no `inherit_env` entry."
+    - "Without `KUBECONFIG`, kubectl looks for `.kube/config` under `HOME`, and the runner passes only PATH/LANG/LC_ALL/TERM to actions by default, so a default runner finds no kubeconfig. Set `KUBECONFIG` as above, or add `HOME` to `execution.inherit_env` to use the runner user's `~/.kube/config`."
     - The kubeconfig must embed working credentials (client cert, token, or an exec auth plugin); whatever identity it carries gates which actions succeed, and mutators (cordon, drain, delete_pod) need RBAC for those verbs. Use auth_can_i to confirm what the identity may do.
     - "RKE2: point `KUBECONFIG` at `/etc/rancher/rke2/rke2.yaml` on a server node (root-readable, mode 0600); for a remote runner rewrite its 127.0.0.1:6443 server URL to a reachable address. RKE2 does not bundle metrics-server, so nodes_top / pods_top error until one is installed. RKE2 host/etcd/containerd specifics live in the separate rke2 pack."
   verify: kubernetes.cluster_info

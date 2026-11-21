@@ -54,3 +54,32 @@ cases:
           stdout_contains: [maxconn-123]
     cleanup:
       - argv: [/bin/sh, -c, "echo 'set maxconn frontend fe_main 2000' | socat - UNIX-CONNECT:/run/haproxy/admin.sock"]
+
+  # HAProxy answers a refused runtime command with text over a socket exchange
+  # that succeeds, so socat exits 0. These targets do not exist: the action
+  # must fail with HAProxy's message instead of reporting a change it never made.
+  - name: haproxy.disable-server-unknown-server-fails
+    action: haproxy.disable_server
+    args: {backend: be_main, server: no_such_server}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [No such server.]
+    probes:
+      - argv: [/bin/sh, -c, "echo 'show stat' | socat - UNIX-CONNECT:/run/haproxy/admin.sock | grep 'be_main,s1' | grep -vq MAINT && echo s1-untouched"]
+        expect:
+          stdout_contains: [s1-untouched]
+  - name: haproxy.enable-server-unknown-backend-fails
+    action: haproxy.enable_server
+    args: {backend: no_such_backend, server: s1}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [No such backend.]
+  - name: haproxy.set-maxconn-unknown-frontend-fails
+    action: haproxy.set_maxconn
+    args: {frontend: no_such_frontend, maxconn: 123}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [No such frontend.]

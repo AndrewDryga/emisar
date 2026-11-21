@@ -299,6 +299,32 @@ cases:
       reason_contains: [process exited with code 1]
       stderr_contains: ["file not readable: /tmp/packtest-grep/absent.log"]
 
+  # grep exits 1 when a valid search matches nothing: an empty answer, not a
+  # failed run. A bad pattern exits 2 and still fails.
+  - name: fs.grep-file-no-match-is-empty
+    action: fs.grep_file
+    args: {path: /tmp/packtest-grep-none/app.log, pattern: "ERROR"}
+    arrange:
+      - argv: [/bin/sh, -c, "mkdir -p /tmp/packtest-grep-none && printf 'alpha ok\\nbravo ok\\n' > /tmp/packtest-grep-none/app.log"]
+    expect:
+      status: success
+      stdout_not_contains: [alpha ok, bravo ok]
+    probes:
+      - name: the file was readable and held no match
+        argv: [/bin/sh, -c, "test -r /tmp/packtest-grep-none/app.log && ! grep -q ERROR /tmp/packtest-grep-none/app.log && echo searched-no-match"]
+        expect:
+          stdout_contains: [searched-no-match]
+
+  - name: fs.grep-file-bad-pattern-fails
+    action: fs.grep_file
+    args: {path: /tmp/packtest-grep-bad/app.log, pattern: "("}
+    arrange:
+      - argv: [/bin/sh, -c, "mkdir -p /tmp/packtest-grep-bad && printf 'alpha ok\\n' > /tmp/packtest-grep-bad/app.log"]
+    expect:
+      status: failure
+      exit: [2]
+      stderr_contains: ["Unmatched ("]
+
   - action: fs.grep_recursive
     args: {path: /tmp/packtest-rgrep, pattern: "ERROR"}
     arrange:
@@ -312,6 +338,30 @@ cases:
     expect:
       stdout_contains: ["/tmp/packtest-rgrep/nested/app.log:2:bravo ERROR connect refused"]
       stdout_not_contains: [quiet.log]
+
+  - name: fs.grep-recursive-no-match-is-empty
+    action: fs.grep_recursive
+    args: {path: /tmp/packtest-rgrep-none, pattern: "ERROR"}
+    arrange:
+      - argv: [/bin/sh, -c, "mkdir -p /tmp/packtest-rgrep-none && printf 'nothing to see\\n' > /tmp/packtest-rgrep-none/quiet.log"]
+    expect:
+      status: success
+      stdout_not_contains: [quiet.log]
+    probes:
+      - name: the tree was readable and held no match
+        argv: [/bin/sh, -c, "test -r /tmp/packtest-rgrep-none/quiet.log && ! grep -rq ERROR /tmp/packtest-rgrep-none && echo searched-no-match"]
+        expect:
+          stdout_contains: [searched-no-match]
+
+  - name: fs.grep-recursive-bad-pattern-fails
+    action: fs.grep_recursive
+    args: {path: /tmp/packtest-rgrep-bad, pattern: "("}
+    arrange:
+      - argv: [/bin/sh, -c, "mkdir -p /tmp/packtest-rgrep-bad && printf 'nothing to see\\n' > /tmp/packtest-rgrep-bad/quiet.log"]
+    expect:
+      status: failure
+      exit: [2]
+      stderr_contains: ["Unmatched ("]
 
   # Same PEM redaction rule as fs.head_file, for the recursive search that can
   # surface a key committed into a source tree. grep prints each matching line

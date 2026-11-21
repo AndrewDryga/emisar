@@ -9,7 +9,9 @@ search_terms:
   - destroy count
 description: >
   List what a run's plan would create, update, delete, or replace, with
-  per-action counts, drift, and planned output changes. The summary counts
+  per-action counts, drift, and planned output changes. An import counts from
+  the change's `importing` marker, alone or with another action; an
+  import-only resource is listed with action `import`. The summary counts
   always cover the whole plan; the change, drift, and output lists keep a
   bounded sample — most destructive first — and `truncated` reports how many
   entries each list dropped, so the result fits the runner's structured-output

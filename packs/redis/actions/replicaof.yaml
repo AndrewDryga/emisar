@@ -16,7 +16,7 @@ args:
   - name: host
     type: string
     required: true
-    description: New master host, or the literal "NO" to demote.
+    description: New master host, or the literal "NO" with port "ONE" to promote this node to master.
     validation:
       pattern: "^[a-zA-Z0-9._][a-zA-Z0-9._\\-]{0,252}$"
   - name: port

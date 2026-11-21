@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -8,6 +9,10 @@ API_TOKEN = "packtest-canary-cloudflare-token-9f3e2"
 
 ZONE_ID = "abc123def456abc123def456abc123de"
 EMPTY_RULES_ZONE_ID = "11111111111111111111111111111111"
+# Analytics-only zones: one with 300 populated hourly groups, and one whose plan
+# returns at most 100 records per query.
+BUSY_ANALYTICS_ZONE_ID = "22222222222222222222222222222222"
+SMALL_PLAN_ZONE_ID = "33333333333333333333333333333333"
 ERROR_EXTRA = "cloudflare-error-extra-fixture-02c4"
 ACCOUNT_ID = "9f8e7d6c5b4a39281706f5e4d3c2b1a0"
 RECORD_A = "372e67954025e0ba6aaa6d586b9e0b59"
@@ -151,6 +156,35 @@ def paginate(items, query):
     window = items[start : start + per_page]
     info = {"page": page, "per_page": per_page, "count": len(window), "total_count": len(items)}
     return window, info
+
+
+# The two hourly groups the main zone reports for any window.
+ZONE_ANALYTICS_GROUPS = [
+    {
+        "dimensions": {"datetime": "2026-08-11T08:00:00Z"},
+        "sum": {
+            "requests": 52000,
+            "bytes": 9800000000,
+            "cachedRequests": 41000,
+            "cachedBytes": 8100000000,
+            "threats": 120,
+            "pageViews": 30000,
+        },
+        "uniq": {"uniques": 8000},
+    },
+    {
+        "dimensions": {"datetime": "2026-08-11T09:00:00Z"},
+        "sum": {
+            "requests": 48000,
+            "bytes": 9100000000,
+            "cachedRequests": 39000,
+            "cachedBytes": 7600000000,
+            "threats": 80,
+            "pageViews": 27000,
+        },
+        "uniq": {"uniques": 7600},
+    },
+]
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -668,41 +702,36 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/client/v4/graphql":
             body = self.read_json()
             variables = body.get("variables", {})
-            if variables.get("zone") != ZONE_ID or "httpRequests1hGroups" not in body.get("query", ""):
+            zone = variables.get("zone")
+            query = body.get("query", "")
+            limit = re.search(r"httpRequests1hGroups\(\s*limit:\s*(\d+)", query)
+            if zone not in (ZONE_ID, BUSY_ANALYTICS_ZONE_ID, SMALL_PLAN_ZONE_ID) or limit is None:
                 self.send_json({"data": None, "errors": [{"message": "zone not found"}]})
                 return
+            if zone == ZONE_ID:
+                groups = ZONE_ANALYTICS_GROUPS
+                max_page = 10000
+            else:
+                groups = [
+                    {
+                        "dimensions": {"datetime": f"2026-08-{1 + hour // 24:02d}T{hour % 24:02d}:00:00Z"},
+                        "sum": {"requests": 1, "bytes": 1, "cachedRequests": 0, "cachedBytes": 0, "threats": 0, "pageViews": 1},
+                        "uniq": {"uniques": 1},
+                    }
+                    for hour in range(300)
+                ]
+                max_page = 100 if zone == SMALL_PLAN_ZONE_ID else 10000
+            # Honor the requested limit, and stop at the plan's page size the
+            # way a provider that clamps would: the script has to notice.
+            groups = groups[: min(int(limit.group(1)), max_page)]
             self.send_json(
                 {
                     "data": {
                         "viewer": {
                             "zones": [
                                 {
-                                    "httpRequests1hGroups": [
-                                        {
-                                            "dimensions": {"datetime": "2026-08-11T08:00:00Z"},
-                                            "sum": {
-                                                "requests": 52000,
-                                                "bytes": 9800000000,
-                                                "cachedRequests": 41000,
-                                                "cachedBytes": 8100000000,
-                                                "threats": 120,
-                                                "pageViews": 30000,
-                                            },
-                                            "uniq": {"uniques": 8000},
-                                        },
-                                        {
-                                            "dimensions": {"datetime": "2026-08-11T09:00:00Z"},
-                                            "sum": {
-                                                "requests": 48000,
-                                                "bytes": 9100000000,
-                                                "cachedRequests": 39000,
-                                                "cachedBytes": 7600000000,
-                                                "threats": 80,
-                                                "pageViews": 27000,
-                                            },
-                                            "uniq": {"uniques": 7600},
-                                        },
-                                    ]
+                                    "settings": {"httpRequests1hGroups": {"maxPageSize": max_page}},
+                                    "httpRequests1hGroups": groups,
                                 }
                             ]
                         }

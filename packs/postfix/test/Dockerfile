@@ -10,6 +10,8 @@ RUN apt-get update \
 
 FROM boky/postfix:${PACKTEST_VERSION}${PACKTEST_DIGEST}
 
-RUN apk add --no-cache perl
+RUN apk add --no-cache perl \
+    # maillog_grep's cases write their log lines here as the non-root runner.
+    && install -m 0666 /dev/null /var/log/mail.log
 
 COPY --from=qshape /usr/sbin/qshape /usr/local/bin/qshape

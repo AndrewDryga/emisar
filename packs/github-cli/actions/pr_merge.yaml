@@ -4,8 +4,8 @@ title: gh pr merge <num> --<method>
 kind: exec
 risk: high
 description: >
-  Merge an open PR. Squash, merge-commit, or rebase. Branch protection
-  rules still apply — required checks/approvals must be satisfied or
+  Merge an open PR in the named repository. Squash, merge-commit, or
+  rebase. Branch protection rules still apply — required checks/approvals must be satisfied or
   the merge is rejected. Use --auto in the GH UI for "merge when ready"
   instead; this action commits NOW.
 side_effects:
@@ -13,6 +13,12 @@ side_effects:
   - main/master CI pipeline likely triggers.
   - PR branch may be auto-deleted depending on repo settings.
 args:
+  - name: repo
+    type: string
+    required: true
+    description: 'Repo in owner/name form.'
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,40}/[a-zA-Z0-9_.\\-]{1,100}$"
   - name: pr
     type: integer
     required: true
@@ -33,7 +39,7 @@ args:
 execution:
   command:
     binary: gh
-    argv: ["pr", "merge", "{{ args.pr }}", "--{{ args.method }}"]
+    argv: ["pr", "merge", "{{ args.pr }}", "--repo", "{{ args.repo }}", "--{{ args.method }}"]
   timeout: 60s
 output:
   parser: text
@@ -42,4 +48,5 @@ output:
 examples:
   - title: Squash-merge PR 1234
     args:
+      repo: "acme/api"
       pr: 1234

@@ -4,13 +4,13 @@ title: mc admin service restart <alias>
 kind: exec
 risk: high
 description: >
-  Restart MinIO across the cluster. Coordinated rolling restart —
-  one node at a time so the cluster stays available. Use after a
-  config change that requires restart.
+  Restart every MinIO server in the deployment behind the alias.
+  `mc admin service restart` signals all servers together; it is not a
+  rolling restart. Use after a config change that requires restart.
 side_effects:
-  - Rolling restart across nodes.
-  - Brief unavailability per node; cluster-wide writes still served.
-  - Active uploads may need retry.
+  - Every server in the deployment restarts at the same time.
+  - Brief deployment-wide outage; reads and writes fail until the servers are back.
+  - Active uploads and other in-flight requests may need retry.
 args:
   - name: alias
     type: string

@@ -5,7 +5,8 @@ kind: exec
 risk: medium
 description: >
   Sample live events flowing OUT of a named component for a bounded
-  window, as JSON, then auto-exit. The run terminates after duration_ms —
+  window, then auto-exit. Output is newline-delimited JSON: one JSON object
+  per tapped event, not a single JSON document. The run terminates after duration_ms —
   NOT on --limit alone, which caps events PER sampling interval, not total,
   so without a duration a tap can run indefinitely. Adds slight overhead on
   the running Vector instance while sampling. Connects to the local API
@@ -57,7 +58,9 @@ execution:
       - "{{ args.component }}"
   timeout: 20s
 output:
-  parser: json
+  # `vector tap --format json` prints one JSON object per event line, which a
+  # whole-stdout JSON parse rejects as soon as two events arrive.
+  parser: text
   max_stdout_bytes: 1048576
   max_stderr_bytes: 8192
 examples:

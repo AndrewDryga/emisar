@@ -9,12 +9,14 @@ description: >
   from an anycast VIP so the upstream ECMP routes around it within a BFD
   interval. Reversible: re-advertise with `no neighbor <peer> shutdown` once the
   node is healthy. The change is to the running config only (not persisted), so a
-  daemon restart re-advertises. Pair with frr.bgp_summary to confirm PfxSnt drops
-  to 0 after the drain.
+  daemon restart re-advertises. Fails without changing anything when the default
+  VRF has no `router bgp <asn>`, so it never creates a BGP instance. Pair with
+  frr.bgp_summary to confirm PfxSnt drops to 0 after the drain.
 side_effects:
   - Shuts the BGP session to the named peer; this node withdraws every prefix it advertises to it (often just an anycast /32 — frr.bgp_summary PfxSnt shows the count).
   - For an anycast VIP, upstream ECMP drops this node within a BFD interval and traffic shifts to the remaining advertisers.
   - Running-config only — not written to startup-config, so an FRR restart or reboot re-advertises.
+  - Reads the running config first and refuses when the default VRF has no `router bgp <asn>`.
   - Reversible with `no neighbor <peer> shutdown` (re-advertise when the node is healthy again).
 search_terms:
   - drain traffic
@@ -36,14 +38,19 @@ args:
       pattern: "^[A-Za-z0-9][A-Za-z0-9._:\\-]{0,63}$"
 execution:
   command:
-    binary: vtysh
+    binary: /bin/sh
     argv:
       - "-c"
-      - "configure terminal"
-      - "-c"
-      - "router bgp {{ args.asn }}"
-      - "-c"
-      - "neighbor {{ args.peer }} shutdown"
+      - |
+        cfg=$(vtysh -c "show running-config") || exit
+        if ! printf '%s\n' "$cfg" | grep -qx "router bgp $1"; then
+          echo "no router bgp $1 in the default VRF; refusing to create a BGP instance" >&2
+          exit 1
+        fi
+        exec vtysh -c "configure terminal" -c "router bgp $1" -c "neighbor $2 shutdown"
+      - "emisar"
+      - "{{ args.asn }}"
+      - "{{ args.peer }}"
   timeout: 15s
 output:
   parser: text

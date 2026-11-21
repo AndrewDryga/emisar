@@ -4,19 +4,23 @@ title: postsuper -r <qid|ALL>
 kind: exec
 risk: high
 description: >
-  Re-queue one message (or ALL deferred). The message is re-classified
-  from the deferred queue back to active, retrying delivery.
+  Requeue one message, or with ALL every message in the hold, incoming,
+  active and deferred queues (`postsuper -r`). Each is moved to the
+  maildrop queue and re-processed by pickup and cleanup into a new queue
+  file, so a held message is released and becomes eligible for delivery
+  again.
 side_effects:
-  - Message(s) moved from deferred to active.
+  - Message(s) moved from the hold, incoming, active or deferred queue to maildrop and re-processed by cleanup.
+  - Held messages are released and become eligible for delivery.
   - Delivery attempted on next tick.
   - ALL can cause a delivery burst on a large queue.
 args:
   - name: qid
     type: string
     required: true
-    description: Queue ID, or the literal "ALL".
+    description: Queue ID, short (hex) or long (enable_long_queue_ids = yes), or the literal "ALL" for every message in the hold, incoming, active and deferred queues.
     validation:
-      pattern: "^([A-F0-9]{6,20}|ALL)$"
+      pattern: "^([A-F0-9]{6,20}|[0-9B-DF-HJ-NP-TV-Zb-df-hj-np-tv-z]{10,14}z[0-9B-DF-HJ-NP-TV-Zb-df-hj-np-tv-y]{1,12}|ALL)$"
 execution:
   command:
     binary: postsuper
@@ -30,6 +34,6 @@ examples:
   - title: Requeue one
     args:
       qid: "3ABCDEF12345"
-  - title: Requeue all deferred
+  - title: Requeue every queued message
     args:
       qid: "ALL"

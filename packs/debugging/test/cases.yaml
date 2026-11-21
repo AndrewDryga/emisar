@@ -390,3 +390,16 @@ cases:
       stdout_contains: [PACKTEST_VISIBLE=harmless-marker]
     cleanup:
       - argv: [/bin/sh, -c, "kill $(cat /tmp/packtest-environ.pid) 2>/dev/null || true"]
+
+  # Fifteen echoes at the default one-second interval need about 14 seconds;
+  # a deadline shorter than that would end ping before the count and exit 1
+  # on a healthy loopback.
+  - name: debugging.ping-host-count-above-ten-completes
+    action: debugging.ping_host
+    args: {host: 127.0.0.1, count: 15}
+    runner_user: root
+    runner_reason: >
+      ICMP echo needs CAP_NET_RAW, which no_new_privs stops ping's own file
+      capability from supplying.
+    expect:
+      stdout_contains: ["15 packets transmitted, 15 received", "0% packet loss"]

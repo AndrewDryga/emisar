@@ -11,7 +11,18 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "END=$(date -u +%Y-%m-01); START=$(date -u -d 'last month 1st' +%Y-%m-01 2>/dev/null || date -u -v-1m -v1d +%Y-%m-01); aws ce get-savings-plans-coverage --time-period Start=$START,End=$END --granularity MONTHLY --output json"
+      # One date read, then plain arithmetic: relative date phrases differ
+      # between GNU, busybox and BSD date, and a failed read stops the program
+      # before AWS is called.
+      - |-
+        set -eu
+        NOW=$(date -u +%Y-%m)
+        case $NOW in [0-9][0-9][0-9][0-9]-[0-1][0-9]) ;; *) echo "unexpected date: $NOW" >&2; exit 1 ;; esac
+        Y=${NOW%-*}; M=${NOW#*-}; M=${M#0}
+        if [ "$M" -eq 1 ]; then PY=$((Y - 1)); PM=12; else PY=$Y; PM=$((M - 1)); fi
+        START=$(printf '%04d-%02d-01' "$PY" "$PM")
+        END=$(printf '%04d-%02d-01' "$Y" "$M")
+        exec aws ce get-savings-plans-coverage --time-period "Start=$START,End=$END" --granularity MONTHLY --output json
   timeout: 60s
 output:
   parser: json

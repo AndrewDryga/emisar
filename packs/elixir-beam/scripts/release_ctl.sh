@@ -964,7 +964,7 @@ ELIXIR
 
   bin_leak)
     require_int "limit" "$limit" 1 100
-    rpc 55000 "$(cat <<ELIXIR
+    rpc 26000 "$(cat <<ELIXIR
 unless Code.ensure_loaded?(:recon) and function_exported?(:recon, :bin_leak, 1) do
   raise "recon is not available in this release"
 end

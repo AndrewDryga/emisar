@@ -2,7 +2,7 @@ schema_version: 1
 
 id: github-cli
 name: GitHub CLI operations
-version: 0.1.18
+version: 0.1.19
 # 0.1.17 and below rated workflow_rerun `medium`, so under the default policy a
 # rerun of a deploy run (its original, possibly older commit) needed no approval.
 retired_below: 0.1.18

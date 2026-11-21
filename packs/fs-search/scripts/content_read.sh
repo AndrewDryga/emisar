@@ -72,6 +72,18 @@ recursive_root_reaches_sensitive_path() {
 	return 1
 }
 
+# grep exits 1 for a valid search that matched nothing, which is an empty
+# answer rather than a failure; 2 (a bad pattern or an unreadable path) and
+# every refusal above keep failing.
+run_grep() {
+	rc=0
+	grep "$@" || rc=$?
+	if [ "$rc" -eq 1 ]; then
+		exit 0
+	fi
+	exit "$rc"
+}
+
 case "$path" in
 /dev | /dev/* | /proc/kcore)
 	echo "fs-search: refusing sensitive pseudo-filesystem path: $path" >&2
@@ -102,9 +114,9 @@ grep-file)
 	[ "$#" -eq 2 ] || { echo "fs-search: grep-file requires a pattern and case mode" >&2; exit 1; }
 	[ -r "$path" ] || { echo "file not readable: $path" >&2; exit 1; }
 	if [ "$2" = "true" ]; then
-		grep -i -E -e "$1" -- "$path" | head -n 2000
+		run_grep -m 2000 -i -E -e "$1" -- "$path"
 	elif [ "$2" = "false" ]; then
-		grep -E -e "$1" -- "$path" | head -n 2000
+		run_grep -m 2000 -E -e "$1" -- "$path"
 	else
 		echo "fs-search: invalid grep case mode: $2" >&2
 		exit 1
@@ -112,7 +124,7 @@ grep-file)
 	;;
 grep-recursive)
 	[ "$#" -eq 1 ] || { echo "fs-search: grep-recursive requires a pattern" >&2; exit 1; }
-	exec grep -rEnH --no-messages -m 500 \
+	run_grep -rEnH --no-messages -m 500 \
 		--exclude-dir=.ssh --exclude-dir=ssh --exclude-dir=private --exclude-dir=sudoers.d \
 		--exclude=shadow --exclude=gshadow --exclude=shadow- --exclude=gshadow- \
 		--exclude=sudoers --exclude=kcore -e "$1" -- "$path"

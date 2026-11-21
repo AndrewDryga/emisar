@@ -14,3 +14,18 @@ services:
       test: ["CMD-SHELL", "for c in conf cons envi mntr ruok srvr stat wchs; do echo $$c | nc -w 2 \"$$(hostname -i)\" 2181 | grep -q . || exit 1; done"]
       interval: 5s
       retries: 10
+
+  # A second real node with ruok left out of the 4lw whitelist, so zk.ruok
+  # meets the refusal reply a hardened deployment sends. srvr stays enabled to
+  # prove readiness; the heap is small because only the refusal is exercised.
+  zookeeper-no-ruok:
+    image: confluentinc/cp-zookeeper:${PACKTEST_VERSION:-7.9.10}${PACKTEST_DIGEST-}
+    environment:
+      KAFKA_OPTS: "-Dzookeeper.4lw.commands.whitelist=srvr"
+      KAFKA_HEAP_OPTS: "-Xms64m -Xmx128m"
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    healthcheck:
+      test: ["CMD-SHELL", "echo srvr | nc -w 2 \"$$(hostname -i)\" 2181 | grep -q Mode"]
+      interval: 5s
+      retries: 10

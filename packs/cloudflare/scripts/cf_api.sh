@@ -358,11 +358,18 @@ audit_logs() {
     --data-urlencode "per_page=$per_page"
 }
 
-readonly http_report_query='query($zone: String!, $since: Time!, $until: Time!) {
+# The window starts at an arbitrary second, so N hours can touch N+1 hourly
+# groups; the query asks for every one of them. How many records one query may
+# return is a per-zone, per-plan limit (the dataset's maxPageSize), read in the
+# same request so a window the plan cannot return whole fails instead of
+# summing a prefix and labelling it as the full range.
+http_report_query() {
+  printf '%s' 'query($zone: String!, $since: Time!, $until: Time!) {
   viewer {
     zones(filter: {zoneTag: $zone}) {
+      settings { httpRequests1hGroups { maxPageSize } }
       httpRequests1hGroups(
-        limit: 72,
+        limit: '"$1"',
         filter: {datetime_geq: $since, datetime_lt: $until},
         orderBy: [datetime_ASC]
       ) {
@@ -373,13 +380,16 @@ readonly http_report_query='query($zone: String!, $since: Time!, $until: Time!) 
     }
   }
 }'
+}
 
 zone_analytics() {
-  local zone_id=$1 hours=$2 since_ts until_ts response
+  local zone_id=$1 hours=$2 since_ts until_ts response groups max_page
+  # hours is the action's validated integer (1..8760).
+  groups=$((hours + 1))
   since_ts=$(hours_ago "$hours")
   until_ts=$(jq -nr 'now | todate')
   response=$(request POST "$api_base/graphql" -H 'Content-Type: application/json' --data "$(
-    jq -nc --arg query "$http_report_query" \
+    jq -nc --arg query "$(http_report_query "$groups")" \
       --arg zone "$zone_id" --arg since "$since_ts" --arg until "$until_ts" \
       '{query: $query, variables: {zone: $zone, since: $since, until: $until}}'
   )")
@@ -389,6 +399,10 @@ zone_analytics() {
   # ("too old", "zone not found") is what tells the caller what to change.
   printf '%s' "$response" | jq -e '(.errors // []) | length == 0' >/dev/null ||
     fail "Cloudflare GraphQL query failed: $(printf '%s' "$response" | jq -r '[.errors[]?.message // "unknown error"] | join("; ")')"
+  max_page=$(printf '%s' "$response" | jq -r '.data.viewer.zones[0].settings.httpRequests1hGroups.maxPageSize // empty')
+  if [[ $max_page =~ ^[0-9]+$ ]] && ((groups > max_page)); then
+    fail "A ${hours}-hour window spans up to $groups hourly groups, but this zone's plan returns at most $max_page per query; ask for at most $((max_page - 1)) hours."
+  fi
   printf '%s' "$response" | jq -ce --arg since "$since_ts" --arg until "$until_ts" '
     (.data.viewer.zones[0].httpRequests1hGroups // []) as $groups
     | {

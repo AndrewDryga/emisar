@@ -1,4 +1,4 @@
-services: [traefik, traefik-metrics-response]
+services: [traefik, traefik-json, traefik-metrics-response]
 versions:
   - version: v3.7.13
     digest: "@sha256:f86a2cab1b5c649070c49f883c743dd32d8485a56e3368c5f93b9e91f1e91259"
@@ -245,3 +245,46 @@ cases:
       status: failure
       exit: [22]
       stderr_contains: ["curl: (22)"]
+
+  # Access-log reads over real Traefik CLF (traefik) and JSON (traefik-json)
+  # logs. Six hundred /ping requests answer 200 with a 2-byte body while the
+  # CLF request counter runs through 400-599; matching any space-delimited
+  # status-shaped number reported those 200 lines as errors. Only the status
+  # field may match, and the arranged error request appears in both formats.
+  - name: traefik.log_grep_5xx-matches-only-the-status-field
+    action: traefik.log_grep_5xx
+    args: {lines: 5000}
+    arrange: &access_log_traffic
+      - argv: [/bin/sh, -c, 'curl -sS "http://127.0.0.1:8082/ping?n=[1-600]" >/dev/null']
+      - argv: [curl, -sS, -o, /dev/null, -H, "Host: packtest.example", http://127.0.0.1:8082/packtest-4xx]
+      - argv: [curl, -sS, -o, /dev/null, -u, "packtest:packtest-traefik-basicauth", -H, "Host: packtest.example", http://127.0.0.1:8082/packtest-5xx]
+      - argv: [curl, -sS, -o, /dev/null, -H, "Host: packtest.example", http://traefik-json:8082/packtest-4xx]
+      - argv: [curl, -sS, -o, /dev/null, -u, "packtest:packtest-traefik-basicauth", -H, "Host: packtest.example", http://traefik-json:8082/packtest-5xx]
+      # A 200 /ping line whose request counter is in the 5xx range must exist.
+      - argv: [/bin/sh, -c, 'grep -Eq "/ping[^ ]* HTTP/1.1\" 200 2 .* 5[0-9][0-9] \"ping@internal\"" /var/log/traefik/access.log && grep -q packtest-5xx /var/log/traefik/access.json']
+        retry_for: 10s
+        retry_every: 200ms
+    expect:
+      stdout_contains: ['"GET /packtest-5xx HTTP/1.1" 50']
+      stdout_not_contains: [/ping, packtest-4xx]
+  - name: traefik.log_grep_5xx-reads-the-json-format
+    action: traefik.log_grep_5xx
+    args: {log_path: /var/log/traefik/access.json}
+    arrange: *access_log_traffic
+    expect:
+      stdout_contains: ['"RequestPath":"/packtest-5xx"']
+      stdout_not_contains: [/ping, packtest-4xx]
+  - name: traefik.log_grep_4xx-matches-only-the-status-field
+    action: traefik.log_grep_4xx
+    args: {lines: 5000}
+    arrange: *access_log_traffic
+    expect:
+      stdout_contains: ['"GET /packtest-4xx HTTP/1.1" 401']
+      stdout_not_contains: [/ping, packtest-5xx]
+  - name: traefik.log_grep_4xx-reads-the-json-format
+    action: traefik.log_grep_4xx
+    args: {log_path: /var/log/traefik/access.json}
+    arrange: *access_log_traffic
+    expect:
+      stdout_contains: ['"DownstreamStatus":401', '"RequestPath":"/packtest-4xx"']
+      stdout_not_contains: [/ping, packtest-5xx]

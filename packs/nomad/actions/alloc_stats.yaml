@@ -9,9 +9,9 @@ args:
   - name: alloc_id
     type: string
     required: true
-    description: Allocation ID.
+    description: Full allocation ID (the 36-character UUID from nomad.job_allocations / nomad.alloc_status, not the 8-character short form); this API does not resolve prefixes.
     validation:
-      pattern: "^[a-fA-F0-9][a-fA-F0-9\\-]{3,35}$"
+      pattern: "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$"
   - name: namespace
     type: string
     required: false
@@ -32,4 +32,4 @@ output:
 examples:
   - title: Stats
     args:
-      alloc_id: "abc12345"
+      alloc_id: "8f3c2a1e-5b7d-4c9a-9e21-3d4f5a6b7c8d"
