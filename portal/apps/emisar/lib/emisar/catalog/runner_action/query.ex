@@ -243,6 +243,30 @@ defmodule Emisar.Catalog.RunnerAction.Query do
 
   def limit_to(queryable, limit), do: limit(queryable, ^limit)
 
+  @doc """
+  A bounded page of action ids, scoped to `account_id`, whose runner was
+  deleted before `cutoff`. A deleted runner's rows stay management authority
+  (`outside_runner_access/2`) until then; a runner that is not deleted never
+  matches, whatever its age.
+  """
+  def prunable_ids(account_id, %DateTime{} = cutoff, limit) when is_integer(limit) do
+    all()
+    |> by_account_id(account_id)
+    |> join(
+      :inner,
+      [runner_actions: a],
+      runner in ^Emisar.Runners.Runner.Query.all(),
+      on: a.runner_id == runner.id and a.account_id == runner.account_id,
+      as: :deleted_runner
+    )
+    |> where([deleted_runner: r], not is_nil(r.deleted_at) and r.deleted_at < ^cutoff)
+    |> limit(^limit)
+    |> select([runner_actions: a], a.id)
+  end
+
+  def by_ids(queryable \\ all(), ids) when is_list(ids),
+    do: where(queryable, [runner_actions: a], a.id in ^ids)
+
   # -- Pagination ------------------------------------------------------
 
   # (action_id, id), NOT last_seen_at: that column is in the observe upsert's

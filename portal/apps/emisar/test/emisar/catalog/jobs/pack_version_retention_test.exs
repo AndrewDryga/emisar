@@ -1,6 +1,6 @@
 defmodule Emisar.Catalog.Jobs.PackVersionRetentionTest do
   use Emisar.DataCase, async: true
-  alias Emisar.{Audit, Catalog, Fixtures, Repo}
+  alias Emisar.{Audit, Billing, Catalog, Fixtures, Repo, Runners}
   alias Emisar.Catalog.Jobs.PackVersionRetention
   alias Emisar.Catalog.PackBaseline
 
@@ -29,6 +29,14 @@ defmodule Emisar.Catalog.Jobs.PackVersionRetentionTest do
       pack_id: pack_id,
       version: "0.0.0"
     )
+  end
+
+  defp deleted_runner_action(account, days_ago) do
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+    action = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
+    deleted_at = DateTime.add(DateTime.utc_now(), -days_ago * 86_400, :second)
+    Fixtures.Runners.mark_deleted(runner, deleted_at)
+    action
   end
 
   defp markers(account_id, event_type) do
@@ -227,6 +235,53 @@ defmodule Emisar.Catalog.Jobs.PackVersionRetentionTest do
 
       refute Repo.reload(action)
       assert Catalog.check_pack_trusted(action) == {:error, :pack_untrusted, :no_pin}
+    end
+  end
+
+  describe "deleted runners' catalog rows" do
+    test "prunes the rows of a runner deleted past audit retention, with cleanup off" do
+      account = Fixtures.Accounts.create_account()
+      assert Runners.inactive_retention_hours(account) == {:error, :retention_disabled}
+      assert Catalog.pack_retention_days(account) == {:error, :retention_disabled}
+      days = Billing.account_audit_retention_days(account.id)
+      long_deleted = deleted_runner_action(account, days + 1)
+      recently_deleted = deleted_runner_action(account, days - 1)
+      live = Fixtures.Runners.create_runner(account_id: account.id)
+      live_action = Fixtures.Catalog.create_action(runner: live, action_id: "linux.uptime")
+
+      assert PackVersionRetention.execute([]) == :ok
+
+      refute Repo.reload(long_deleted)
+      assert Repo.reload(recently_deleted)
+      assert Repo.reload(live_action)
+    end
+
+    test "leaves another account's rows and is a no-op the second time, in bounded batches" do
+      account = Fixtures.Accounts.create_account()
+      other = Fixtures.Accounts.create_account(plan: "team")
+      days = Billing.account_audit_retention_days(account.id)
+      assert Billing.account_audit_retention_days(other.id) > days + 1
+
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      pruned =
+        for action_id <- ~w(linux.uptime linux.df linux.free),
+            do: Fixtures.Catalog.create_action(runner: runner, action_id: action_id)
+
+      Fixtures.Runners.mark_deleted(
+        runner,
+        DateTime.add(DateTime.utc_now(), -(days + 1) * 86_400, :second)
+      )
+
+      foreign = deleted_runner_action(other, days + 1)
+
+      assert PackVersionRetention.execute(batch_size: 2) == :ok
+      after_first = Repo.all(Catalog.RunnerAction)
+      assert PackVersionRetention.execute(batch_size: 2) == :ok
+
+      assert Enum.all?(pruned, &is_nil(Repo.reload(&1)))
+      assert Repo.reload(foreign)
+      assert Repo.all(Catalog.RunnerAction) == after_first
     end
   end
 end

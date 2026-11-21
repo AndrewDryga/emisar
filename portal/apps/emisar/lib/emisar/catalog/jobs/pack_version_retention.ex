@@ -6,16 +6,25 @@ defmodule Emisar.Catalog.Jobs.PackVersionRetention do
   automatic cleanup is on, which `Catalog.pack_retention_days/1` decides — the
   versions no runner has advertised within the account's window. Each sweep
   audits each nonempty committed batch, not an account-sized transaction.
+
+  Last, whatever the cleanup settings, it prunes the catalog action rows of
+  runners deleted longer ago than the account's audit retention. Until then
+  those rows stay management authority; by then the runs that runner finished
+  before its deletion have aged out under the same window
+  (`Runs.Jobs.ActionRunRetention`), so their command previews need nothing.
+  An autoscaled fleet registers each host as a new runner, so without this the
+  rows would pile up forever.
   """
   use Emisar.Jobs.Job,
     otp_app: :emisar,
     every: :timer.hours(24),
     initial_delay: :timer.minutes(10)
 
-  alias Emisar.{Accounts, Catalog, Jobs}
+  alias Emisar.{Accounts, Billing, Catalog, Jobs}
   require Logger
 
   @accounts_per_page 100
+  @runner_actions_batch_size 1_000
 
   @impl Emisar.Jobs.Executors.GloballyUnique
   def execute(config) do
@@ -34,7 +43,9 @@ defmodule Emisar.Catalog.Jobs.PackVersionRetention do
   end
 
   defp sweep_account(%Accounts.Account{} = account, deleted_total, batch_opts) do
-    deleted_total + retired_removed(account, batch_opts) + unseen_removed(account, batch_opts)
+    removed = retired_removed(account, batch_opts) + unseen_removed(account, batch_opts)
+    prune_deleted_runner_actions(account, batch_opts)
+    deleted_total + removed
   end
 
   defp retired_removed(%Accounts.Account{id: account_id}, batch_opts) do
@@ -52,6 +63,22 @@ defmodule Emisar.Catalog.Jobs.PackVersionRetention do
       # Automatic cleanup is off for this account: the normal answer, not a failure.
       {:error, :retention_disabled} -> 0
       {:error, reason} -> sweep_failed("unseen", account.id, reason)
+    end
+  end
+
+  defp prune_deleted_runner_actions(%Accounts.Account{id: account_id}, batch_opts) do
+    retention_days = Billing.account_audit_retention_days(account_id)
+    cutoff = DateTime.add(DateTime.utc_now(), -retention_days * 86_400, :second)
+    batch_size = Keyword.get(batch_opts, :batch_size, @runner_actions_batch_size)
+
+    pruned =
+      Jobs.Sweep.delete_in_batches(Catalog.RunnerAction.Query, account_id, cutoff, batch_size)
+
+    if pruned > 0 do
+      Logger.info("pack_version_retention.runner_actions_pruned",
+        account_id: account_id,
+        count: pruned
+      )
     end
   end
 

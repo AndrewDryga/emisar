@@ -256,6 +256,13 @@ defmodule Emisar.Fixtures.Runners do
     |> Repo.update!()
   end
 
+  @doc "Soft-deletes a runner as of `deleted_at`, to rig a deletion's age."
+  def mark_deleted(%Runner{} = runner, %DateTime{} = deleted_at) do
+    runner
+    |> Ecto.Changeset.change(deleted_at: deleted_at)
+    |> Repo.update!()
+  end
+
   @doc "Moves a runner between groups to exercise current reach checks."
   def move_to_group(%Runner{} = runner, group) do
     runner |> Ecto.Changeset.change(group: group) |> Repo.update!()
