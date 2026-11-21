@@ -35,8 +35,6 @@ detect:
   binaries:
     - nodetool
     - cqlsh
-  processes:
-    - CassandraDaemon
   ports:
     - 9042
 

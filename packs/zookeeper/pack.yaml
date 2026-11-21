@@ -22,8 +22,6 @@ detect:
   binaries:
     - zkServer.sh
     - zkCli.sh
-  processes:
-    - QuorumPeerMain
   ports:
     - 2181
 

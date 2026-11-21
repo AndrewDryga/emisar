@@ -27,8 +27,6 @@ requires:
 detect:
   binaries:
     - kafka-topics.sh
-  processes:
-    - kafka.Kafka
   ports:
     - 9092
 
