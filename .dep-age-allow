@@ -28,3 +28,4 @@ hex idna 8.0.0 2026-12-13 CVE-2026-117678; first fixed release for hostname proc
 hex jsonschex 0.11.3 2026-11-27 CVE-2026-117678; first compatible release for schema validation with idna 8
 hex swoosh 1.30.0 2026-12-03 CVE-2026-117678; first compatible release for email rendering with idna 8
 hex phoenix_live_view 1.2.14 2026-11-28 CVE-2026-126334; first fixed release for live_session on_mount hooks skipped on a join without url; founder triage 2026-11-20 order item 1
+hex phoenix 1.8.17 2026-11-28 CVE-2026-128361, CVE-2026-129344; first fixed release for Presence tracker and broadcast dispatch crashes; clears the Portal gate's advisory audit
