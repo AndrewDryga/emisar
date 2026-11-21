@@ -18,6 +18,7 @@ defmodule EmisarWeb.DomainComponents do
   import EmisarWeb.CoreComponents
   alias Emisar.Runs
   alias EmisarWeb.{FleetStates, TimeHelpers, URLHelpers}
+  alias Phoenix.LiveView.JS
 
   # The one spelling of the runner self-update, read by both surfaces that ask
   # for it — the page notice and the per-row version chip's tooltip — so an
@@ -193,20 +194,28 @@ defmodule EmisarWeb.DomainComponents do
     assigns =
       assign(assigns,
         today: Date.to_iso8601(Date.utc_today()),
+        value: expiry_date_value(assigns.field.value),
         presets: [{"1 month", 1}, {"6 months", 6}, {"1 year", 12}, {"5 years", 60}]
       )
 
     ~H"""
     <div class="space-y-1.5">
-      <.input field={@field} type="date" label="Expiration date (UTC, optional)" min={@today} />
+      <.input
+        field={@field}
+        type="date"
+        label="Expiration date (UTC, optional)"
+        value={@value}
+        min={@today}
+      />
       <div class="flex flex-wrap gap-1.5" role="group" aria-label="Set the expiration date">
         <.button
           :for={{label, months} <- @presets}
           type="button"
           variant={:secondary}
           size={:sm}
-          data-expiry-target={@field.id}
-          data-expiry-months={months}
+          phx-click={
+            JS.dispatch("emisar:expiry-preset", to: "##{@field.id}", detail: %{months: months})
+          }
         >
           {label}
         </.button>
@@ -217,6 +226,13 @@ defmodule EmisarWeb.DomainComponents do
     </div>
     """
   end
+
+  # A validated form holds the parsed expiry, and a date input shows nothing
+  # unless its value is a bare `YYYY-MM-DD`.
+  defp expiry_date_value(%DateTime{} = expires_at),
+    do: expires_at |> DateTime.to_date() |> Date.to_iso8601()
+
+  defp expiry_date_value(value), do: value
 
   @doc """
   A newly minted API key, shown once: the note to copy it now and the secret in a

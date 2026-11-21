@@ -654,17 +654,13 @@ let liveSocket = new LiveSocket(liveSocketPath, Socket, {
   hooks: { LocalTime, Combobox, FilterableList, EnrollmentKeyFilters, ExpiryCountdown, ResendCooldown, MagicCodeExpiry, CodeInput, FlashAutoClose, Tooltip, DialogFocus, PendingButton, ReturnFocus, CloseTab, PortalPerformance }
 })
 
-// Expiration presets ("6 months", "1 year") fill their date input with a UTC
-// date that many months ahead. The input event lets the form validate it.
-document.addEventListener("click", event => {
-  const preset = event.target.closest?.("[data-expiry-months]")
-  if (!preset) return
-
-  const input = document.getElementById(preset.dataset.expiryTarget)
-  if (!input) return
-
+// Expiration presets ("6 months", "1 year") dispatch this event at their date
+// input, which fills in a UTC date that many months ahead. The input event
+// lets the form validate it.
+window.addEventListener("emisar:expiry-preset", event => {
+  const input = event.target
   const now = new Date()
-  const months = now.getUTCMonth() + Number(preset.dataset.expiryMonths)
+  const months = now.getUTCMonth() + Number(event.detail.months)
   const lastDay = new Date(Date.UTC(now.getUTCFullYear(), months + 1, 0)).getUTCDate()
   const date = new Date(Date.UTC(now.getUTCFullYear(), months, Math.min(now.getUTCDate(), lastDay)))
 

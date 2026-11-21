@@ -270,12 +270,16 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     assert html =~ "Leave blank for no expiration date"
     assert has_element?(lv, "#enrollment_key_form input[type='date']#enrollment_key_expires_at")
 
-    assert has_element?(
-             lv,
-             "#enrollment_key_form button[data-expiry-target='enrollment_key_expires_at']" <>
-               "[data-expiry-months='12']",
-             "1 year"
-           )
+    preset = element(lv, "#enrollment_key_form button[type='button']", "1 year") |> render()
+    assert preset =~ "emisar:expiry-preset"
+    assert preset =~ "#enrollment_key_expires_at"
+
+    # A validated date stays in the input as a plain date, so the browser shows it.
+    lv
+    |> form("#enrollment_key_form", %{"enrollment_key" => %{"expires_at" => "2099-12-25"}})
+    |> render_change()
+
+    assert has_element?(lv, "#enrollment_key_expires_at[value='2099-12-25']")
 
     assert html =~ "Reusable key"
     assert html =~ "Otherwise, it can be used once"

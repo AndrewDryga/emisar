@@ -1723,13 +1723,12 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       assert has_element?(lv, "#api_key_form input[type='date']#api_key_expires_at")
 
+      # Each preset dispatches its month count at the date input.
       for {label, months} <- [{"1 month", 1}, {"6 months", 6}, {"1 year", 12}, {"5 years", 60}] do
-        assert has_element?(
-                 lv,
-                 "#api_key_form button[type='button'][data-expiry-target='api_key_expires_at']" <>
-                   "[data-expiry-months='#{months}']",
-                 label
-               )
+        preset = element(lv, "#api_key_form button[type='button']", label) |> render()
+        assert preset =~ "emisar:expiry-preset"
+        assert preset =~ "#api_key_expires_at"
+        assert preset =~ "&quot;months&quot;:#{months}}"
       end
 
       lv
