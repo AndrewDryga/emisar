@@ -27,8 +27,11 @@ for attempt in $(seq 1 60); do
     -H "Content-Type: application/json" \
     --data "$payload" \
     "$url"); then
-    echo "backend health request failed on attempt $attempt" >&2
-    exit 1
+    # A dropped connection or timeout is as transient as a 5xx: retry it
+    # inside the same deadline rather than failing the apply.
+    echo "backend health request failed on attempt $attempt; retrying" >&2
+    sleep 10
+    continue
   fi
 
   case "$status" in
