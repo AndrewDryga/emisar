@@ -274,8 +274,8 @@ defmodule Emisar.ApiKeysTest do
   end
 
   describe "list_key_options/1" do
-    test "returns {id, name} for the account's agent keys, revoked included" do
-      {_owner, account, subject} = owner_subject_pair()
+    test "returns each agent key with its owner and prefix, revoked included" do
+      {owner, account, subject} = owner_subject_pair()
       Fixtures.Accounts.create_subscription(account, "team")
 
       {:ok, _raw, live_key} =
@@ -292,8 +292,14 @@ defmodule Emisar.ApiKeysTest do
 
       assert {:ok, options} = ApiKeys.list_key_options(subject)
 
+      # Keys share names, so the owner and prefix are what tell them apart.
+      owner_label = owner.display_name || owner.email
+
       assert Enum.sort(options) ==
-               Enum.sort([{live_key.id, "live"}, {retired_key.id, "retired"}])
+               Enum.sort([
+                 {live_key.id, "live", owner_label, live_key.key_prefix},
+                 {retired_key.id, "retired", owner_label, retired_key.key_prefix}
+               ])
     end
 
     test "cross-account — B's options never include A's keys; a viewer can read" do
@@ -306,7 +312,7 @@ defmodule Emisar.ApiKeysTest do
       viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
       viewer_subject = Fixtures.Subjects.subject_for(viewer)
-      assert {:ok, [{_id, "mine"}]} = ApiKeys.list_key_options(viewer_subject)
+      assert {:ok, [{_id, "mine", _owner, _prefix}]} = ApiKeys.list_key_options(viewer_subject)
     end
 
     test "a subject without view_api_keys permission is refused" do

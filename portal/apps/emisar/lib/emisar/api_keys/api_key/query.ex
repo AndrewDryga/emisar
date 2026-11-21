@@ -303,11 +303,32 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
   end
 
   @doc """
-  `{key_id, name}` options for the runs "Agent" filter — the keys themselves,
-  as pickable choices. Compose with `for_subject/2`.
+  `{key_id, name, owner_label, key_prefix}` options for the runs "Agent" filter
+  — the keys themselves, as pickable choices. Several keys share a name (every
+  "Claude Code" connection, and each rotation of one), so the owner and the
+  prefix are what tell them apart. Compose with `for_subject/2`.
   """
-  def options(queryable \\ visible_to_operators()),
-    do: select(queryable, [api_keys: k], {k.id, k.name})
+  def options(queryable \\ visible_to_operators()) do
+    queryable
+    |> join(:left, [api_keys: k], m in Emisar.Accounts.Membership,
+      on: m.id == k.created_by_membership_id and m.account_id == k.account_id,
+      as: :option_owner
+    )
+    |> select(
+      [api_keys: k, option_owner: m],
+      {k.id, k.name,
+       coalesce(
+         fragment("NULLIF(BTRIM(?), '')", m.display_name),
+         coalesce(
+           m.email,
+           fragment(
+             "CASE WHEN ? IS NULL THEN 'Workspace member' ELSE 'Former member' END",
+             m.deleted_at
+           )
+         )
+       ), k.key_prefix}
+    )
+  end
 
   defp status_dynamic(statuses) do
     cond do

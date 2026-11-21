@@ -175,8 +175,22 @@ defmodule EmisarWeb.RunsLive do
   # Revoked keys stay pickable — their run history is exactly what gets
   # audited. Operator/runbook options are the DISTINCT dispatchers already in
   # the account's runs, so the picker never offers a choice that matches nothing.
+  # Several keys share a name: every "Claude Code" connection, and each rotation
+  # of one. Leading with the owner groups a member's agents together in the
+  # sorted list, and the key prefix tells same-named keys apart.
   defp dispatcher_child_options(:api_key_id, subject) do
-    sorted_options(ApiKeys.list_key_options(subject))
+    case ApiKeys.list_key_options(subject) do
+      {:ok, keys} ->
+        sorted_options(
+          {:ok,
+           Enum.map(keys, fn {id, name, owner, key_prefix} ->
+             {id, "#{owner} · #{name} · #{key_prefix}…"}
+           end)}
+        )
+
+      _error ->
+        []
+    end
   end
 
   defp dispatcher_child_options(:initiating_membership_id, subject) do

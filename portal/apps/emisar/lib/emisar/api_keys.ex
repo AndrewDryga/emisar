@@ -154,9 +154,9 @@ defmodule Emisar.ApiKeys do
   end
 
   @doc """
-  `{:ok, [{key_id, name}]}` — the account's visible agent keys (revoked ones
-  included: run history references them), for the runs page's "Agent" filter
-  options. `%Subject{}` needs `view_api_keys`.
+  `{:ok, [{key_id, name, owner_label, key_prefix}]}` — the account's visible
+  agent keys (revoked ones included: run history references them), for the runs
+  page's "Agent" filter options. `%Subject{}` needs `view_api_keys`.
   """
   def list_key_options(%Subject{} = subject) do
     with :ok <-

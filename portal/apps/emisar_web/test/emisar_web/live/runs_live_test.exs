@@ -159,7 +159,8 @@ defmodule EmisarWeb.RunsLiveTest do
     # input holds the key's id, and the combobox label shows its name.
     refute html =~ "Agent:"
     assert html =~ ~s(name="api_key_id" value="#{key.id}")
-    assert html =~ "Claude Code"
+    # Owner first, key prefix last: same-named agents stay tellable apart.
+    assert html =~ " · Claude Code · #{key.key_prefix}…"
 
     # The bare value deep-link (no source) still applies AND stays visible —
     # a filter must never narrow the feed from a hidden control.
