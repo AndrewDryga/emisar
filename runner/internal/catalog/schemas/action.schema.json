@@ -1,10 +1,10 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://registry.emisar.dev/v1/schemas/action.v7.schema.json",
+  "$id": "https://registry.emisar.dev/v1/schemas/action.v8.schema.json",
   "title": "emisar action definition (actions/*.yaml)",
   "description": "Authoring schema for a single action YAML. Documentation and editor validation only — the runner's loader (runner/pkg/actionspec) is the authoritative validator, and per-value argument validation happens at execution time.",
   "type": "object",
-  "required": ["schema_version", "id", "title", "kind", "risk", "description", "execution"],
+  "required": ["schema_version", "id", "title", "kind", "risk", "description", "side_effects", "execution", "output"],
   "additionalProperties": false,
   "properties": {
     "schema_version": {"type": "integer", "const": 1},
@@ -15,7 +15,7 @@
     "risk": {
       "type": "string",
       "enum": ["low", "medium", "high", "critical"],
-      "description": "low = read-only (no approval); medium/high = mutating/destructive (policy-gated); critical = default-deny."
+      "description": "The action's real-life impact; the account's policy maps tiers to gates. The shipped default policy runs low and medium, requires approval for high, and denies critical."
     },
     "description": {"type": "string", "minLength": 1, "maxLength": 4096},
     "side_effects": {"type": "array", "minItems": 1, "maxItems": 16, "items": {"type": "string", "minLength": 1, "maxLength": 1024}},
@@ -78,6 +78,7 @@
     },
     "execution": {
       "type": "object",
+      "required": ["timeout"],
       "additionalProperties": false,
       "properties": {
         "command": {
@@ -108,6 +109,7 @@
     },
     "output": {
       "type": "object",
+      "required": ["max_stdout_bytes", "max_stderr_bytes"],
       "additionalProperties": false,
       "allOf": [
         {
@@ -128,10 +130,10 @@
           "type": "object",
           "description": "A bounded Draft 2020-12 object schema. The runner rejects external references and unsafe identity, vocabulary, dynamic-reference, and content-assertion keywords, then compiles it when the pack loads."
         },
-        "max_stdout_bytes": {"type": "integer"},
+        "max_stdout_bytes": {"type": "integer", "minimum": 1},
         "max_stdout_bytes_min": {"type": "integer"},
         "max_stdout_bytes_max": {"type": "integer"},
-        "max_stderr_bytes": {"type": "integer"},
+        "max_stderr_bytes": {"type": "integer", "minimum": 1},
         "max_stderr_bytes_min": {"type": "integer"},
         "max_stderr_bytes_max": {"type": "integer"},
         "redact": {

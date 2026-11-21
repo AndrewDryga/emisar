@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://registry.emisar.dev/v1/schemas/catalog.v7.schema.json",
+  "$id": "https://registry.emisar.dev/v1/schemas/catalog.v8.schema.json",
   "title": "emisar pack registry catalog",
-  "description": "The published catalog.json contract: installable packs, immutable content identity, and complete reviewed action descriptors. Emitted by `emisar pack catalog build`. Trust rests on the authenticated artifact plus content_hash and the runner's re-hash.",
+  "description": "The published catalog.json contract: installable packs, immutable content identity, and complete reviewed action descriptors. Emitted by `packctl catalog build`. Trust rests on the authenticated artifact plus content_hash and the runner's re-hash.",
   "type": "object",
   "required": [
     "schema_version",
@@ -52,7 +52,7 @@
         },
         "version": {
           "type": "string",
-          "minLength": 1
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
         },
         "description": {
           "type": "string"
@@ -118,7 +118,7 @@
         },
         "retired_below": {
           "type": "string",
-          "minLength": 1
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
         }
       }
     },
@@ -133,7 +133,7 @@
       "properties": {
         "version": {
           "type": "string",
-          "minLength": 1
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
         },
         "content_hash": {
           "type": "string",
@@ -363,7 +363,7 @@
           "items": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 512
+            "maxLength": 1024
           }
         },
         "args": {
@@ -609,7 +609,7 @@
               "maxItems": 16,
               "items": {
                 "type": "string",
-                "maxLength": 512
+                "maxLength": 1024
               }
             },
             {

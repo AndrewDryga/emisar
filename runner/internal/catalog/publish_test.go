@@ -337,7 +337,7 @@ func TestPublish_ExistingImmutableIsSkipped(t *testing.T) {
 	f := newFakeGCS()
 	// A schema object already exists with the expected bytes: the publisher
 	// verifies it before treating the precondition failure as idempotent.
-	const name = "v1/schemas/catalog.v7.schema.json"
+	const name = "v1/schemas/catalog.v8.schema.json"
 	f.status[name] = http.StatusPreconditionFailed
 	existing, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(name)))
 	if err != nil {
@@ -374,7 +374,7 @@ func TestPublish_ExistingImmutableOnPrivateBucketRetriesWithCredentials(t *testi
 	dir := buildTree(t)
 	f := newFakeGCS()
 	f.privateReads = true
-	const name = "v1/schemas/catalog.v7.schema.json"
+	const name = "v1/schemas/catalog.v8.schema.json"
 	f.status[name] = http.StatusPreconditionFailed
 	existing, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(name)))
 	if err != nil {
@@ -408,7 +408,7 @@ func TestPublish_ExistingImmutableOnPrivateBucketRetriesWithCredentials(t *testi
 func TestPublish_ExistingImmutableWithDifferentBytesFails(t *testing.T) {
 	dir := buildTree(t)
 	f := newFakeGCS()
-	const name = "v1/schemas/catalog.v7.schema.json"
+	const name = "v1/schemas/catalog.v8.schema.json"
 	f.status[name] = http.StatusPreconditionFailed
 	f.objects[name] = []byte("different")
 	srv := f.server(t)
@@ -500,7 +500,7 @@ func TestPublish_ExistingImmutableTarballWithAnotherCompressionIsTheSameObject(t
 func TestPublish_ExistingImmutableThatCannotBeReadFails(t *testing.T) {
 	dir := buildTree(t)
 	f := newFakeGCS()
-	const name = "v1/schemas/catalog.v7.schema.json"
+	const name = "v1/schemas/catalog.v8.schema.json"
 	f.status[name] = http.StatusPreconditionFailed
 	srv := f.server(t)
 
@@ -518,7 +518,7 @@ func TestPublish_ExistingImmutableThatCannotBeReadFails(t *testing.T) {
 func TestPublish_OversizedExistingImmutableFails(t *testing.T) {
 	dir := buildTree(t)
 	f := newFakeGCS()
-	const name = "v1/schemas/catalog.v7.schema.json"
+	const name = "v1/schemas/catalog.v8.schema.json"
 	f.status[name] = http.StatusPreconditionFailed
 	expected, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(name)))
 	if err != nil {
@@ -771,7 +771,7 @@ func TestPublish_CheckFailsOnAnImmutableObjectStoredWithOtherBytes(t *testing.T)
 	f := publishedRegistry(t, dir)
 	// The schema was edited without a new SchemaArtifactVersion: the registry
 	// already serves other bytes at the path this tree would publish.
-	const name = "v1/schemas/action.v7.schema.json"
+	const name = "v1/schemas/action.v8.schema.json"
 	if _, ok := f.objects[name]; !ok {
 		t.Fatalf("fixture tree carries no %s", name)
 	}

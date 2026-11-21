@@ -31,9 +31,9 @@ func TestPackVerify_NonLowRiskVerifyActionIsNeverRun(t *testing.T) {
 	}
 }
 
-// The shipped iperf3 pack names iperf3.version, a read tiered medium, as its
-// verify action. It is skipped with that explanation rather than probed.
-func TestPackVerify_ShippedIperf3VersionIsSkipped(t *testing.T) {
+// The shipped iperf3 pack's verify action only prints the local version, so
+// it is low risk and the risk gate lets the probe through.
+func TestPackVerify_ShippedIperf3VersionIsNotSkippedForRisk(t *testing.T) {
 	withFlags(t)
 	withJSONOut(t, false)
 	dir := t.TempDir()
@@ -43,12 +43,9 @@ func TestPackVerify_ShippedIperf3VersionIsSkipped(t *testing.T) {
 	}
 	flagConfig = writeMinimalConfig(t, dir, packDir)
 
-	out, err := runPackVerify(t, "iperf3")
-	if err != nil {
-		t.Fatalf("pack verify iperf3: %v\n%s", err, out)
-	}
-	if !strings.Contains(out, "skipped") || !strings.Contains(out, "iperf3.version") ||
-		!strings.Contains(out, "medium risk") {
-		t.Fatalf("want iperf3.version skipped as medium risk:\n%s", out)
+	// The probe itself may fail on a host without iperf3; only the gate matters.
+	out, _ := runPackVerify(t, "iperf3")
+	if !strings.Contains(out, "iperf3.version") || strings.Contains(out, "only a low-risk action runs") {
+		t.Fatalf("want iperf3.version past the risk gate:\n%s", out)
 	}
 }

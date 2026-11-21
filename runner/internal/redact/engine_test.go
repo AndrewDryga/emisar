@@ -27,7 +27,7 @@ func reRule(t *testing.T, name, pattern, repl string) Rule {
 }
 
 // Extend with empty extra returns the receiver unchanged (same
-// instance, no copy), when the receiver has rules (redact.go:22-24).
+// instance, no copy), when the receiver has rules.
 func TestEngine_ExtendEmptyExtraReturnsReceiver(t *testing.T) {
 	base := New([]Rule{litRule(t, "b", "B", "[b]")})
 	got := base.Extend(nil)
@@ -41,7 +41,7 @@ func TestEngine_ExtendEmptyExtraReturnsReceiver(t *testing.T) {
 }
 
 // Extend on a nil or empty receiver yields a fresh engine of the
-// extra rules (redact.go:19-21).
+// extra rules.
 func TestEngine_ExtendNilOrEmptyReceiver(t *testing.T) {
 	extra := []Rule{litRule(t, "x", "SECRET", "[x]")}
 
@@ -67,7 +67,7 @@ func TestEngine_ExtendNilOrEmptyReceiver(t *testing.T) {
 }
 
 // Apply reports per-rule hit counts only for rules that fired,
-// with the correct count, and omits rules that matched nothing (redact.go:45-55).
+// with the correct count, and omits rules that matched nothing.
 func TestEngine_ApplyHitsOnlyFiredRules(t *testing.T) {
 	e := New([]Rule{
 		litRule(t, "fires-twice", "AA", "_"),
@@ -86,7 +86,7 @@ func TestEngine_ApplyHitsOnlyFiredRules(t *testing.T) {
 }
 
 // the Hit.Type label is derived from which field the rule set:
-// "regex" for a regex rule, "literal" for a literal rule (redact.go:48-51).
+// "regex" for a regex rule, "literal" for a literal rule.
 func TestEngine_HitTypeLabel(t *testing.T) {
 	e := New([]Rule{
 		reRule(t, "r", "secret", "[r]"),
@@ -109,7 +109,7 @@ func TestEngine_HitTypeLabel(t *testing.T) {
 }
 
 // MergeHits sums counts by rule name across multiple streams
-// (e.g. stdout + stderr) and preserves first-seen order (redact.go:61-80).
+// (e.g. stdout + stderr) and preserves first-seen order.
 func TestMergeHits_SumsByNamePreservingOrder(t *testing.T) {
 	stdout := []Hit{
 		{Name: "bearer", Type: "regex", Count: 2},
@@ -137,7 +137,7 @@ func TestMergeHits_SumsByNamePreservingOrder(t *testing.T) {
 
 // declaration order is the contract: a broad rule that rewrites a
 // token earlier in the list changes whether a later, narrower rule can match.
-// This documents that ordering is intentional and load-bearing (redact.go:38-39).
+// This documents that ordering is intentional and load-bearing.
 func TestEngine_OrderSensitivityIsIntentional(t *testing.T) {
 	broad := litRule(t, "broad", "secret-value", "[MASKED]")
 	narrow := reRule(t, "narrow", `secret-value`, "[NARROW]")

@@ -233,7 +233,7 @@ func runUpdate(t *testing.T, dest, registry string, extraArgs ...string) (string
 }
 
 // A pack whose installed hash equals the registry's is reported "up to date"
-// and left untouched (packupdate.go:98-103) — update never rewrites bytes that
+// and left untouched — update never rewrites bytes that
 // already match, so a reload isn't forced for nothing.
 func TestPackUpdate_UpToDateSkipped(t *testing.T) {
 	dest := t.TempDir()
@@ -255,7 +255,7 @@ func TestPackUpdate_UpToDateSkipped(t *testing.T) {
 }
 
 // A locally-authored pack absent from the registry index is left as-is, not
-// treated as an error (packupdate.go:91-96) — update only manages packs the
+// treated as an error — update only manages packs the
 // registry knows about, so a private pack survives an update run.
 func TestPackUpdate_NotInRegistryLeftAsIs(t *testing.T) {
 	dest := t.TempDir()
@@ -335,7 +335,7 @@ func TestPackUpdate_InvalidLocalPackFailsAndStaysUntouched(t *testing.T) {
 }
 
 // `pack update --dry-run` reports the available move (vX → vY) but touches
-// nothing on disk (packupdate.go:105-109), and leaves no staging dir behind.
+// nothing on disk, and leaves no staging dir behind.
 // The installed hash differs from the index's, so a real run would update — the
 // dry run must stop short of any filesystem change.
 func TestPackUpdate_DryRunTouchesNothing(t *testing.T) {
@@ -465,7 +465,7 @@ func TestPackUpdate_TypoReportedNotInstalledAndFails(t *testing.T) {
 }
 
 // With an empty packs dir, update prints "No packs installed in <dir>" and
-// exits cleanly (packupdate.go:129-132) — there's nothing to do and that's not
+// exits cleanly — there's nothing to do and that's not
 // an error.
 func TestPackUpdate_NoPacksInstalled(t *testing.T) {
 	dest := t.TempDir()
@@ -483,7 +483,7 @@ func TestPackUpdate_NoPacksInstalled(t *testing.T) {
 // When one pack updates and another fails (the registry serves a tarball whose
 // hash doesn't match its index entry), update tallies the result and returns a
 // non-zero error so a CI/automation caller sees the partial failure
-// (packupdate.go:148-150) — the good pack still swaps in, the bad one is left
+// — the good pack still swaps in, the bad one is left
 // intact.
 func TestPackUpdate_PartialFailureNonZeroExit(t *testing.T) {
 	dest := t.TempDir()

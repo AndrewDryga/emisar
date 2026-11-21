@@ -173,11 +173,18 @@ func Build(reg *packs.Registry, opts BuildOptions) (*Catalog, error) {
 		if !ok {
 			return nil, fmt.Errorf("catalog: no content hash for pack %q", p.ID)
 		}
-		// Every catalog version must be dot-numeric so the portal's retirement
-		// compare (fail-closed on junk) has well-formed input — this artifact
-		// is ours, so fail the build rather than ship an uncomparable version.
+		// Every catalog version must be MAJOR.MINOR.PATCH because the portal
+		// parses it with SemVer and fails the whole document on anything else
+		// — this artifact is ours, so fail the build rather than ship it.
 		if _, err := parseVersion(p.Version); err != nil {
 			return nil, fmt.Errorf("catalog: pack %q: %w", p.ID, err)
+		}
+		// The loader accepts a dot-namespaced id for local installs, but a
+		// pack_ref cannot carry one, so the portal refuses that pack when a
+		// runner advertises it. Say so before publishing, not after.
+		if strings.Contains(p.ID, ".") {
+			return nil, fmt.Errorf("catalog: pack %q: a dot-namespaced id cannot be published; "+
+				"the portal addresses packs as [a-z][a-z0-9_-]*", p.ID)
 		}
 		actions := actionsByPack[p.ID]
 		if actions == nil {
@@ -320,10 +327,9 @@ func packHistory(current, prev *Pack, base string) ([]PreviousVersion, error) {
 	return history, nil
 }
 
-// compareVersion compares two dot-separated non-negative integer versions
-// (1.2.3), padding the shorter with zeros. It returns -1/0/+1, or an error if
-// either side is not dot-numeric — the retirement machinery must never guess
-// an ordering for an unparseable version.
+// compareVersion compares two MAJOR.MINOR.PATCH versions numerically. It
+// returns -1/0/+1, or an error if either side does not parse — the retirement
+// machinery must never guess an ordering for an unparseable version.
 func compareVersion(a, b string) (int, error) {
 	pa, err := parseVersion(a)
 	if err != nil {
@@ -333,20 +339,9 @@ func compareVersion(a, b string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	n := len(pa)
-	if len(pb) > n {
-		n = len(pb)
-	}
-	for i := 0; i < n; i++ {
-		var x, y int
-		if i < len(pa) {
-			x = pa[i]
-		}
-		if i < len(pb) {
-			y = pb[i]
-		}
-		if x != y {
-			if x < y {
+	for i := range pa {
+		if pa[i] != pb[i] {
+			if pa[i] < pb[i] {
 				return -1, nil
 			}
 			return 1, nil
@@ -355,16 +350,18 @@ func compareVersion(a, b string) (int, error) {
 	return 0, nil
 }
 
+// parseVersion accepts what the portal's SemVer parse accepts for a release
+// without a suffix: three non-negative integers, no sign, no leading zero.
 func parseVersion(v string) ([]int, error) {
-	if v == "" {
-		return nil, fmt.Errorf("empty version")
-	}
 	parts := strings.Split(v, ".")
+	if len(parts) != 3 {
+		return nil, fmt.Errorf("invalid version %q: a published version is exactly MAJOR.MINOR.PATCH", v)
+	}
 	out := make([]int, len(parts))
 	for i, p := range parts {
 		n, err := strconv.Atoi(p)
-		if err != nil || n < 0 {
-			return nil, fmt.Errorf("invalid version %q: component %q is not a non-negative integer", v, p)
+		if err != nil || n < 0 || p != strconv.Itoa(n) {
+			return nil, fmt.Errorf("invalid version %q: component %q is not a non-negative integer without a sign or leading zero", v, p)
 		}
 		out[i] = n
 	}

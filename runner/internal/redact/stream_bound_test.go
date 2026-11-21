@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// the soundness gate (strings.HasPrefix, stream.go:96-100) must
+// the soundness gate (strings.HasPrefix) must
 // HOLD a segment rather than emit it when a newline-boundary cut would split a
 // match that has already closed further along. Here the hold (256 B) exceeds
 // the PEM block (~125 B), and committed filler before it makes the block's
@@ -50,7 +50,7 @@ func TestStreamRedactor_SoundnessGateHoldsSplitMatch(t *testing.T) {
 }
 
 // the commit cut is always taken just after the last newline in
-// the committable region (indexAfterLastNewline, stream.go:88,110-122). With no
+// the committable region (indexAfterLastNewline). With no
 // newline in that region nothing is emitted; once a newline lands inside it, the
 // prefix up to and including that newline is released.
 func TestStreamRedactor_CutsOnlyOnNewlineBoundary(t *testing.T) {

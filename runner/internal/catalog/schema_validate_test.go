@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/santhosh-tekuri/jsonschema/v6"
+	"go.yaml.in/yaml/v3"
 )
 
 // minimalCatalog is the smallest document the published schema accepts. Tests
@@ -79,6 +82,20 @@ func TestValidateCatalogDocument_RejectsWhatTheShallowPredicateAccepted(t *testi
 			wantErr: "version",
 		},
 		{
+			name: "a pack version that is not MAJOR.MINOR.PATCH",
+			mutate: func(m map[string]any) {
+				m["packs"].([]any)[0].(map[string]any)["version"] = "1.2"
+			},
+			wantErr: "version",
+		},
+		{
+			name: "a retirement floor with a leading zero",
+			mutate: func(m map[string]any) {
+				m["packs"].([]any)[0].(map[string]any)["retired_below"] = "0.03.0"
+			},
+			wantErr: "retired_below",
+		},
+		{
 			name:    "an unknown top-level key",
 			mutate:  func(m map[string]any) { m["totally_unexpected"] = true },
 			wantErr: "totally_unexpected",
@@ -146,5 +163,68 @@ func TestValidateCatalogDocument_RejectsHistoryWithoutItsContentHash(t *testing.
 func TestValidateCatalogDocument_RejectsNonJSON(t *testing.T) {
 	if err := ValidateCatalogDocument([]byte("not json")); err == nil {
 		t.Fatal("expected a parse error")
+	}
+}
+
+// The published catalog has to accept every descriptor the loader accepts. A
+// side effect of 513 to 1024 characters used to load and build, then fail the
+// next publish's `--previous` validation against the 512-character schema.
+func TestValidateCatalogDocument_AcceptsTheLoadersLongestSideEffect(t *testing.T) {
+	root := t.TempDir()
+	long := strings.Repeat("a", 1024)
+	writePack(t, root, "solo", map[string]string{
+		"pack.yaml":      packYAML("solo", "1.0.0", "requires:\n  binaries: [solo-bin]\n"),
+		"actions/a.yaml": strings.Replace(execAction("solo"), "side_effects: [none]", "side_effects: ["+long+"]", 1),
+	})
+	cat, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, RepoURL: testRepoURL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateCatalogDocument(encode(t, cat)); err != nil {
+		t.Fatalf("a side effect the loader accepts must validate: %v", err)
+	}
+}
+
+// The authoring schema is what an editor checks an action against, so every
+// field the loader refuses to do without has to be required there too.
+func TestActionSchemaRequiresWhatTheLoaderRequires(t *testing.T) {
+	var schemaDoc any
+	if err := json.Unmarshal(actionSchema, &schemaDoc); err != nil {
+		t.Fatal(err)
+	}
+	compiler := jsonschema.NewCompiler()
+	if err := compiler.AddResource("action.schema.json", schemaDoc); err != nil {
+		t.Fatal(err)
+	}
+	schema, err := compiler.Compile("action.schema.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	action := func() map[string]any {
+		var parsed map[string]any
+		if err := yaml.Unmarshal([]byte(execAction("solo")), &parsed); err != nil {
+			t.Fatal(err)
+		}
+		var doc map[string]any
+		if err := json.Unmarshal(encode(t, parsed), &doc); err != nil {
+			t.Fatal(err)
+		}
+		return doc
+	}
+	if err := schema.Validate(action()); err != nil {
+		t.Fatalf("a loadable action should validate: %v", err)
+	}
+	for name, remove := range map[string]func(map[string]any){
+		"side_effects":            func(a map[string]any) { delete(a, "side_effects") },
+		"output":                  func(a map[string]any) { delete(a, "output") },
+		"execution.timeout":       func(a map[string]any) { delete(a["execution"].(map[string]any), "timeout") },
+		"output.max_stdout_bytes": func(a map[string]any) { delete(a["output"].(map[string]any), "max_stdout_bytes") },
+		"output.max_stderr_bytes": func(a map[string]any) { a["output"].(map[string]any)["max_stderr_bytes"] = 0 },
+	} {
+		doc := action()
+		remove(doc)
+		if err := schema.Validate(doc); err == nil {
+			t.Errorf("the schema accepted an action without a valid %s, which the loader refuses", name)
+		}
 	}
 }

@@ -75,7 +75,7 @@ func TestDefaultRules_EmisarCredentialPrefixes(t *testing.T) {
 // a PEM private-key block is masked as a whole via the
 // non-greedy [\s\S]*? rule, on a single whole-buffer Apply (the streaming path
 // is covered separately in stream_test.go). Both the generic PRIVATE KEY rule
-// (rules.go:159) and the PGP block rule (rules.go:165) are exercised.
+// and the PGP block rule are exercised.
 func TestDefaultRules_PEMAndPGPPrivateKeyBlock(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -117,7 +117,7 @@ func TestDefaultRules_PEMAndPGPPrivateKeyBlock(t *testing.T) {
 // URL inline credentials and both Cookie and Set-Cookie headers
 // are masked. The existing common-secrets test covers url-credentials and
 // Set-Cookie; this adds the plain "Cookie:" request header (the cookie-header
-// rule matches both directions, rules.go:177) and asserts the URL scheme/host
+// rule matches both directions) and asserts the URL scheme/host
 // survive so only the secret is removed.
 func TestDefaultRules_URLCredentialsAndCookieHeaders(t *testing.T) {
 	t.Run("url credentials masked, scheme and host preserved", func(t *testing.T) {
@@ -160,7 +160,7 @@ func TestDefaultRules_URLCredentialsAndCookieHeaders(t *testing.T) {
 // the generic secret-assignment and json-secret-field rules mask
 // the value, match the field name case-insensitively, and tolerate the
 // (?:[A-Za-z0-9]+[._-])* / (?:[._-][A-Za-z0-9]+)* affixes around the core
-// secret word (rules.go:59-60,181-190).
+// secret word.
 func TestDefaultRules_SecretFieldAndAssignment(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -206,7 +206,7 @@ func TestCompileRule_MissingName(t *testing.T) {
 }
 
 // a regex rule without a Pattern, and a literal rule without a
-// Literal, are each rejected at compile (rules.go:31,43).
+// Literal, are each rejected at compile.
 func TestCompileRule_MissingPatternOrLiteral(t *testing.T) {
 	if _, err := CompileRule(actionspec.RedactionRule{Name: "r", Type: "regex"}); err == nil {
 		t.Fatal("expected compile error for regex rule without pattern")
@@ -216,7 +216,7 @@ func TestCompileRule_MissingPatternOrLiteral(t *testing.T) {
 	}
 }
 
-// an unknown rule Type is rejected at compile (rules.go:52).
+// an unknown rule Type is rejected at compile.
 func TestCompileRule_UnknownType(t *testing.T) {
 	if _, err := CompileRule(actionspec.RedactionRule{Name: "r", Type: "glob", Pattern: "x"}); err == nil {
 		t.Fatal("expected compile error for unknown rule type")
@@ -241,7 +241,7 @@ func TestDefaultRules_NovelSecretShapePassesThrough(t *testing.T) {
 }
 
 // a rule with an empty Replacement defaults to [REDACTED] for
-// both regex and literal rules (rules.go:38,47).
+// both regex and literal rules.
 func TestCompileRule_EmptyReplacementDefaults(t *testing.T) {
 	reRule, err := CompileRule(actionspec.RedactionRule{Name: "re", Type: "regex", Pattern: "[0-9]+"})
 	if err != nil {

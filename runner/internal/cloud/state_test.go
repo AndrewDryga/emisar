@@ -442,6 +442,27 @@ func TestRunnerState_WireBudget(t *testing.T) {
 		}
 	})
 
+	// The portal refuses a frame whose header plus payload passes 4 MiB, so
+	// the last payload byte the runner sends must leave room for the header.
+	t.Run("payload boundary leaves room for the frame header", func(t *testing.T) {
+		sized := func(payload int) RunnerStateMsg {
+			msg := RunnerStateMsg{Envelope: Envelope{Type: MsgRunnerState, ProtocolVersion: ProtocolVersion}}
+			msg.Labels = map[string]string{"pad": ""}
+			base, err := json.Marshal(msg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			msg.Labels["pad"] = strings.Repeat("x", payload-len(base))
+			return msg
+		}
+		if err := validateRunnerStateSize(sized(maxRunnerStateBytes - 14)); err != nil {
+			t.Fatalf("a payload that fits with its header was rejected: %v", err)
+		}
+		if err := validateRunnerStateSize(sized(maxRunnerStateBytes - 13)); err == nil {
+			t.Fatal("a payload whose frame passes 4 MiB with its 14-byte header was accepted")
+		}
+	})
+
 	t.Run("checked-in catalog fits", func(t *testing.T) {
 		root, err := filepath.Abs(filepath.Join("..", "..", "..", "packs"))
 		if err != nil {

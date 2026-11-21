@@ -580,12 +580,28 @@ func TestBuild_RetiredBelowGuards(t *testing.T) {
 	})
 }
 
+// The loader takes these for a local install; the portal refuses each one in
+// a published catalog, so the build names it first.
 func TestBuild_UnparseableVersionFailsBuild(t *testing.T) {
+	for _, version := range []string{"1.2.x", "1.2", "1.2.3.4", "01.2.3"} {
+		root := t.TempDir()
+		writeSolo(t, root, version)
+		_, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, RepoURL: testRepoURL})
+		if err == nil || !strings.Contains(err.Error(), version) {
+			t.Errorf("version %q: expected unparseable-version build error, got %v", version, err)
+		}
+	}
+}
+
+func TestBuild_DotNamespacedIDFailsBuild(t *testing.T) {
 	root := t.TempDir()
-	writeSolo(t, root, "1.2.x")
+	writePack(t, root, "acme.solo", map[string]string{
+		"pack.yaml":      packYAML("acme.solo", "1.0.0", "requires:\n  binaries: [solo-bin]\n"),
+		"actions/a.yaml": execAction("acme.solo"),
+	})
 	_, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, RepoURL: testRepoURL})
-	if err == nil || !strings.Contains(err.Error(), "1.2.x") {
-		t.Fatalf("expected unparseable-version build error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "dot-namespaced") {
+		t.Fatalf("expected a dot-namespaced id build error, got %v", err)
 	}
 }
 
@@ -614,11 +630,16 @@ func TestCompareVersion(t *testing.T) {
 		{"1.0.0", "1.0.1", -1, false},
 		{"1.0.1", "1.0.0", 1, false},
 		{"1.2.3", "1.2.3", 0, false},
-		{"1.2", "1.2.0", 0, false},    // shorter padded with zeros
-		{"2.0", "1.9.9", 1, false},    // major dominates
+		{"2.0.0", "1.9.9", 1, false},  // major dominates
 		{"1.10.0", "1.9.0", 1, false}, // numeric, not lexical
 		{"1.0.x", "1.0.0", 0, true},
 		{"1.0.0", "", 0, true},
+		// The portal parses catalog versions as SemVer and fails the whole
+		// document on any of these, so the build must refuse them too.
+		{"1.2", "1.2.0", 0, true},
+		{"1.2.3.4", "1.2.3", 0, true},
+		{"01.2.3", "1.2.3", 0, true},
+		{"+1.2.3", "1.2.3", 0, true},
 	}
 	for _, tc := range cases {
 		got, err := compareVersion(tc.a, tc.b)

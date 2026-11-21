@@ -14,7 +14,14 @@ import (
 	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
 )
 
-const maxRunnerStateBytes = 4 << 20
+// maxRunnerStateBytes is the portal's inbound frame limit. The portal counts
+// the frame header inside it, and a masked client frame this large carries a
+// 14-byte header (2 bytes, a 64-bit length, a 4-byte mask), so the payload
+// budget is the limit minus that header.
+const (
+	maxRunnerStateBytes   = 4 << 20
+	clientFrameHeaderSize = 14
+)
 
 // maxDegradedReasonBytes bounds one degraded pack's load-failure reason on
 // the wire — the full detail stays in the host log and doctor.
@@ -125,10 +132,10 @@ func validateRunnerStateSize(msg RunnerStateMsg) error {
 	if err != nil {
 		return fmt.Errorf("encode runner_state: %w", err)
 	}
-	if len(encoded) > maxRunnerStateBytes {
+	if len(encoded) > maxRunnerStateBytes-clientFrameHeaderSize {
 		return fmt.Errorf(
 			"runner_state is %d bytes; maximum is %d bytes: reduce installed packs",
-			len(encoded), maxRunnerStateBytes,
+			len(encoded), maxRunnerStateBytes-clientFrameHeaderSize,
 		)
 	}
 	return nil

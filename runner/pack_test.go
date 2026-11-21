@@ -145,7 +145,7 @@ func TestCopyTree_NormalizesModesForServiceUser(t *testing.T) {
 
 // `pack install --hash`: a matching hash installs, a mismatch aborts with
 // nothing copied. The --hash flag pins the install to the exact bytes the
-// portal advertised (pack.go:223-229): the pack is loaded and content-hashed,
+// portal advertised: the pack is loaded and content-hashed,
 // and if --hash is given the install must abort unless it matches — so a
 // tampered or wrong copy is rejected before any file lands in the packs dir.
 // Driven through the real `pack install` command with a local source and an
@@ -189,8 +189,8 @@ func TestPackInstall_HashGate(t *testing.T) {
 }
 
 // `pack uninstall` refuses a directory that has no pack.yaml ("not a pack"),
-// so a misconfigured packs dir can't make it RemoveAll an unrelated tree
-// (pack.go:362-367). The id passes the safe-segment guard and the target
+// so a misconfigured packs dir can't make it RemoveAll an unrelated tree.
+// The id passes the safe-segment guard and the target
 // exists and is a directory, but without a pack.yaml the command bails out
 // and leaves the directory and its contents untouched.
 func TestPackUninstall_RefusesNonPackDir(t *testing.T) {
@@ -224,7 +224,7 @@ func TestPackUninstall_RefusesNonPackDir(t *testing.T) {
 }
 
 // `pack install ./local-dir`: a local path is used as-is (no fetch),
-// validated, and copied to <dest>/<id> (pack.go:280-311 resolvePackSource →
+// validated, and copied to <dest>/<id> (resolvePackSource →
 // LoadOne → copyTree). The whole install gate runs without a registry or
 // network. Output is captured because install prints the info summary to the
 // real os.Stdout.
@@ -403,7 +403,7 @@ func TestReplacePackTree_RecoversInterruptedBackupBeforeRefusingOverwrite(t *tes
 }
 
 // `pack install` with neither --dest nor a resolvable config errors rather than
-// silently choosing a default packs dir (pack.go:235-244) — installing into the
+// silently choosing a default packs dir — installing into the
 // wrong place silently is worse than asking. The pack still validates (a local
 // source), so the failure is specifically about an unresolved destination.
 func TestPackInstall_NoDestNoConfigErrors(t *testing.T) {
@@ -452,7 +452,7 @@ func TestPackHelpExamplesOmitDefaultDest(t *testing.T) {
 }
 
 // `pack uninstall <id>` RemoveAll's the installed pack dir and prints the
-// reload reminder (pack.go:369-374). The pack has a pack.yaml so it clears the
+// reload reminder. The pack has a pack.yaml so it clears the
 // not-a-pack guard, and the safe-segment guard, so the happy path runs to the
 // removal.
 func TestPackUninstall_RemovesAndReminds(t *testing.T) {
@@ -519,7 +519,7 @@ func TestPackUninstall_RemovesStaleBackupSoReinstallIsFresh(t *testing.T) {
 }
 
 // Uninstalling an id that isn't present reports "is not installed" rather than
-// failing opaquely (pack.go:351-356) — the operator learns the pack was already
+// failing opaquely — the operator learns the pack was already
 // gone (or mistyped), not that something broke.
 func TestPackUninstall_NotInstalled(t *testing.T) {
 	dest := t.TempDir()
@@ -537,7 +537,7 @@ func TestPackUninstall_NotInstalled(t *testing.T) {
 }
 
 // A plain file (not a directory) where the pack dir would be is refused as "not
-// a pack directory" (pack.go:358-360) — uninstall only ever RemoveAll's a real
+// a pack directory" — uninstall only ever RemoveAll's a real
 // pack directory, never an arbitrary file at that path.
 func TestPackUninstall_FileAtPathRefused(t *testing.T) {
 	dest := t.TempDir()
@@ -562,8 +562,8 @@ func TestPackUninstall_FileAtPathRefused(t *testing.T) {
 }
 
 // `pack uninstall` with neither --dest nor a resolvable config errors — the
-// destination is resolved exactly like install, with no silent default
-// (pack.go:339-348). The safe-name guard passes first, so the failure is
+// destination is resolved exactly like install, with no silent default.
+// The safe-name guard passes first, so the failure is
 // specifically the unresolved dest.
 func TestPackUninstall_NoDestNoConfigErrors(t *testing.T) {
 	withFlags(t)
