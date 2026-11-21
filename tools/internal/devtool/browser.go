@@ -130,7 +130,7 @@ type shotCommand struct {
 	group  string
 }
 
-const shotUsage = "usage: ./run shot <path> --label <name> [--task ID] [--group NAME] [--shot NAME|--select CSS|--heading TEXT|--class-contains a,b] [--climb SEL] [--click SEL | --fill '#ID=VALUE']... [--width N] [--settle MS] [<path> --label <name> [options]]..."
+const shotUsage = "usage: ./run shot <path> --label <name> [--task ID] [--group NAME] [--shot NAME|--select CSS|--heading TEXT|--class-contains a,b] [--climb SEL] [--click SEL | --fill '#ID=VALUE' | --key Escape|Enter|Tab]... [--width N] [--settle MS] [<path> --label <name> [options]]..."
 
 func parseShot(args []string) (shotCommand, error) {
 	command := shotCommand{}
@@ -203,6 +203,13 @@ func parseShotGroup(path string, args []string) (devbrowser.ShotOptions, string,
 			return fmt.Errorf("fill requires #ID=VALUE (an ID selector, not arbitrary CSS)")
 		}
 		options.Steps = append(options.Steps, devbrowser.Step{Fill: &devbrowser.FieldFill{Selector: selector, Value: text}})
+		return nil
+	})
+	flags.Func("key", "", func(value string) error {
+		if value != "Escape" && value != "Enter" && value != "Tab" {
+			return fmt.Errorf("key must be Escape, Enter, or Tab")
+		}
+		options.Steps = append(options.Steps, devbrowser.Step{Key: value})
 		return nil
 	})
 	flags.Int64Var(&options.Width, "width", 1440, "")

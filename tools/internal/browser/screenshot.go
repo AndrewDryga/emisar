@@ -13,6 +13,7 @@ import (
 	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
+	"github.com/chromedp/chromedp/kb"
 )
 
 type Anchor struct {
@@ -36,11 +37,16 @@ type ShotOptions struct {
 	Anchor *Anchor
 }
 
-// Step is one interaction before the capture: a click, or a fill.
+// Step is one interaction before the capture: a click, a fill, or a key press.
 type Step struct {
 	Click string
 	Fill  *FieldFill
+	// Key is pressed on whatever holds focus, e.g. "Escape" to close a dialog.
+	Key string
 }
+
+// stepKeys are the keys a shot may press, by the name the flag takes.
+var stepKeys = map[string]string{"Escape": kb.Escape, "Enter": kb.Enter, "Tab": kb.Tab}
 
 // FieldFill replaces an input's value and notifies its form.
 type FieldFill struct {
@@ -143,6 +149,9 @@ const stepTargetScript = `(function(selector){const el=[...document.querySelecto
 const fillScript = `(function(field){const input=[...document.querySelectorAll(field.Selector)].find(n=>n.checkVisibility());input.focus();input.value=field.Value;input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));input.blur();})`
 
 func (s *Session) runStep(step Step) error {
+	if step.Key != "" {
+		return chromedp.Do(s.Context, chromedp.KeyEvent(stepKeys[step.Key]))
+	}
 	selector := step.Click
 	if step.Fill != nil {
 		selector = step.Fill.Selector
