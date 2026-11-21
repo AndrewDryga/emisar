@@ -463,6 +463,7 @@ func TestPlanValidationRejectsFalseCoverage(t *testing.T) {
 		},
 		"example.sensitive_read": {ID: "example.sensitive_read", Risk: "medium", SideEffects: []string{"Read-only, but exposes secrets."}},
 		"example.mutate":         {ID: "example.mutate", Risk: "high"},
+		"example.close":          {ID: "example.close", Risk: "critical", SideEffects: []string{"Index becomes read-only AND unsearchable."}},
 	}
 	tests := []struct {
 		name string
@@ -478,6 +479,9 @@ func TestPlanValidationRejectsFalseCoverage(t *testing.T) {
 		}}, "duplicates"},
 		{"mutation without probe", Plan{Services: []string{"fixture"}, Versions: testVersions(), Cases: []Case{
 			{Action: "example.mutate", Expect: Expectation{StdoutContains: []string{"changed"}}, Cleanup: []Step{{Argv: []string{"true"}}}},
+		}}, "state probe"},
+		{"read-only result without probe", Plan{Services: []string{"fixture"}, Versions: testVersions(), Cases: []Case{
+			{Action: "example.close", Expect: Expectation{StdoutContains: []string{"closed"}}, Cleanup: []Step{{Argv: []string{"true"}}}},
 		}}, "state probe"},
 		{"root without reason", Plan{Services: []string{"fixture"}, Versions: testVersions(), Runner: Runner{User: "root"}, Cases: []Case{
 			{Action: "example.read", Expect: Expectation{StdoutContains: []string{"ok"}}},

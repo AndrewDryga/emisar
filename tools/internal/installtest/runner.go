@@ -2278,9 +2278,10 @@ printf 'needs_configuration=%s\n' "${needs_configuration}"
 // runner.group. The rewrite used to match every `group:` line at any indent,
 // so a runner label named group (EMISAR_RUNNER_LABEL_GROUP) silently took the
 // group's value, and a config without runner.group got its label rewritten.
+// A re-run accepts the same group characters as a fresh install.
 func runnerReinstallGroupRewrite(h *harness) error {
 	cases := []struct {
-		name, config, want, output string
+		name, config, want, output, group string
 	}{
 		{
 			name: "installer layout",
@@ -2304,6 +2305,20 @@ func runnerReinstallGroupRewrite(h *harness) error {
 			want:   "runner:\n  labels:\n    group: payments\n",
 			output: "has no 'group:' line",
 		},
+		{
+			name:   "group a fresh install accepts",
+			config: "runner:\n  group: \"old\"\n",
+			want:   "runner:\n  group: \"prod/web@iad\"\n",
+			output: "set runner.group=prod/web@iad",
+			group:  "prod/web@iad",
+		},
+		{
+			name:   "unsupported group",
+			config: "runner:\n  group: \"old\"\n",
+			want:   "runner:\n  group: \"old\"\n",
+			output: "has unexpected characters; not editing",
+			group:  "prod web",
+		},
 	}
 	for index, tc := range cases {
 		etc := h.path("reinstall-group", strconv.Itoa(index))
@@ -2317,7 +2332,11 @@ func runnerReinstallGroupRewrite(h *harness) error {
 		if err := writeFile(filepath.Join(etc, "runner.env"), "EMISAR_ENROLLMENT_KEY=emkey-enroll-x\n", 0o600); err != nil {
 			return err
 		}
-		output, err := runReinstallConfig(h, etc, map[string]string{"EMISAR_GROUP": "web-02"})
+		group := tc.group
+		if group == "" {
+			group = "web-02"
+		}
+		output, err := runReinstallConfig(h, etc, map[string]string{"EMISAR_GROUP": group})
 		if err != nil {
 			return fmt.Errorf("%s: %w", tc.name, err)
 		}

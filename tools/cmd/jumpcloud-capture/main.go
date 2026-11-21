@@ -68,7 +68,8 @@ func readEnv(path string) (map[string]string, error) {
 		return nil, err
 	}
 	// Defaulted once so every later read is total: a shot must show the product's
-	// own host, never the tunnel a certification run happened to use.
+	// own host, never the tunnel a certification run happened to use. A bare
+	// host; an https:// prefix is stripped, so okta-capture's URL form works too.
 	if env["EMISAR_DOCS_HOST"] == "" {
 		env["EMISAR_DOCS_HOST"] = "emisar.dev"
 	}

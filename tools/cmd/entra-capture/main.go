@@ -131,7 +131,7 @@ func run(env map[string]string, outDir string, headless bool, opts options) erro
 	if err := capture.Screenshot(ctx, outDir, "en-01-signed-in"); err != nil {
 		return err
 	}
-	return appRegistrationFlow(ctx, env, outDir, opts.formOnly, opts.create, opts.credentialsOut)
+	return appRegistrationFlow(ctx, frames, env, outDir, opts.formOnly, opts.create, opts.credentialsOut)
 }
 
 // signIn walks Microsoft's sign-in sequence. Every screen lives in ONE DOM that
@@ -261,13 +261,13 @@ func submitTOTP(ctx context.Context, env map[string]string) error {
 // appRegistrationFlow captures the sign-in half of the Entra walkthrough: the
 // registration form with emisar's redirect URI, then the client secret. This is
 // the half that works on a free tenant — provisioning needs P1.
-func appRegistrationFlow(ctx context.Context, env map[string]string, outDir string, formOnly, create bool, credentialsOut string) error {
+func appRegistrationFlow(ctx context.Context, frames *frameContexts, env map[string]string, outDir string, formOnly, create bool, credentialsOut string) error {
 	// Registering again would mint yet another duplicate — seven accumulated before
 	// the list blade's failure to render made them visible. With a client id in
 	// hand, go straight to the saved app.
 	if env["ENTRA_CLIENT_ID"] != "" && !formOnly {
 		fmt.Println("  app already registered — skipping the create form")
-		return openRegisteredApp(ctx, env, outDir)
+		return openRegisteredApp(ctx, frames, env, outDir)
 	}
 	// Pre-create refusal: the App registrations list blade does not render here,
 	// so the rig cannot auto-check for an existing emisar app. Rather than mint a
@@ -325,14 +325,14 @@ func appRegistrationFlow(ctx context.Context, env map[string]string, outDir stri
 	if err := chromedp.Do(ctx, chromedp.Sleep(20*time.Second)); err != nil {
 		return err
 	}
-	return captureNewAppOverview(ctx, env, outDir, credentialsOut)
+	return captureNewAppOverview(ctx, frames, env, outDir, credentialsOut)
 }
 
 // captureNewAppOverview finishes a fresh registration. Entra lands on the new
 // app's Overview blade after Register, so the client id is read straight off it
 // and persisted — without this the run always failed at "ENTRA_CLIENT_ID is
 // empty", leaving an unrecorded registration behind.
-func captureNewAppOverview(ctx context.Context, env map[string]string, outDir, credentialsOut string) error {
+func captureNewAppOverview(ctx context.Context, frames *frameContexts, env map[string]string, outDir, credentialsOut string) error {
 	dismissOverlays(ctx)
 	if err := capture.RequireText(ctx, "Application (client) ID", 90*time.Second); err != nil {
 		_ = capture.Screenshot(ctx, outDir, "en-05-overview-failed")
@@ -354,6 +354,9 @@ func captureNewAppOverview(ctx context.Context, env map[string]string, outDir, c
 		fmt.Printf("  wrote client id to %s\n", credentialsOut)
 	}
 	if err := capture.Highlight(ctx, "Application (client) ID", highlightSettle); err != nil {
+		return err
+	}
+	if err := maskTenant(ctx, frames, false); err != nil {
 		return err
 	}
 	return capture.Screenshot(ctx, outDir, "en-05-app-overview")
@@ -477,13 +480,13 @@ func highlightRegistrationGroup(ctx context.Context) error {
 	return chromedp.Do(ctx, chromedp.Sleep(highlightSettle))
 }
 
-// openRegisteredApp captures the saved app's overview.
-func openRegisteredApp(ctx context.Context, env map[string]string, outDir string) error {
+// openRegisteredApp captures the saved app's overview. It opens the first
+// "emisar" row in App registrations, so it confirms the opened overview carries
+// ENTRA_CLIENT_ID before saving a shot: a duplicate registration with the same
+// name must not stand in for the saved app.
+func openRegisteredApp(ctx context.Context, frames *frameContexts, env map[string]string, outDir string) error {
 	dismissOverlays(ctx)
 
-	// Reach the saved app by its OWN blade. The App registrations LIST never
-	// renders — it comes up as a blank shell headless or headful — but a
-	// per-app blade addressed by client id does.
 	if env["ENTRA_CLIENT_ID"] == "" {
 		return fmt.Errorf("ENTRA_CLIENT_ID is empty — register the app first")
 	}
@@ -503,7 +506,18 @@ func openRegisteredApp(ctx context.Context, env map[string]string, outDir string
 		_ = capture.Screenshot(ctx, outDir, "en-05-overview-failed")
 		return fmt.Errorf("app overview never rendered: %w", err)
 	}
+	clientID, err := readClientID(ctx)
+	if err != nil {
+		_ = capture.Screenshot(ctx, outDir, "en-05-overview-failed")
+		return err
+	}
+	if clientID != env["ENTRA_CLIENT_ID"] {
+		return fmt.Errorf("opened app %s, not the saved ENTRA_CLIENT_ID %s — remove the duplicate emisar registration or run -flow app", clientID, env["ENTRA_CLIENT_ID"])
+	}
 	if err := capture.Highlight(ctx, "Application (client) ID", highlightSettle); err != nil {
+		return err
+	}
+	if err := maskTenant(ctx, frames, false); err != nil {
 		return err
 	}
 	return capture.Screenshot(ctx, outDir, "en-05-app-overview")

@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -422,16 +423,27 @@ func runPublishedRunbook(runbookRef, group string, deadline time.Time) {
 	logf("published runbook reached succeeded with one stage and three successful items")
 }
 
+// e2eTimeout reads E2E_TIMEOUT as whole seconds (default 120); anything else
+// is refused rather than silently replaced by the default.
+func e2eTimeout(value string) (time.Duration, error) {
+	if value == "" {
+		return 120 * time.Second, nil
+	}
+	seconds, err := strconv.Atoi(value)
+	if err != nil || seconds <= 0 {
+		return 0, fmt.Errorf("E2E_TIMEOUT=%q must be a positive whole number of seconds", value)
+	}
+	return time.Duration(seconds) * time.Second, nil
+}
+
 func main() {
 	group := envOr("SIGNED_GROUP", "signed-iad")
 	action := envOr("SIGNED_ACTION", "linux.uptime")
 	runbookGroup := envOr("RUNBOOK_GROUP", "edge-web")
 	runbookRef := envOr("RUNBOOK_REF", "morning-edge-readiness@1")
-	timeout := 120 * time.Second
-	if v := os.Getenv("E2E_TIMEOUT"); v != "" {
-		if d, err := time.ParseDuration(v + "s"); err == nil {
-			timeout = d
-		}
+	timeout, err := e2eTimeout(os.Getenv("E2E_TIMEOUT"))
+	if err != nil {
+		fail("%v", err)
 	}
 	deadline := time.Now().Add(timeout)
 

@@ -132,7 +132,9 @@ Flags:
   --packs LIST       Comma/space-separated packs to install up front, e.g.
                      --packs redis,postgres. Installs exactly these — no
                      host detection, no prompt — from the bundle if present,
-                     else the registry. An empty LIST installs no new packs.
+                     else the registry, replacing an installed copy whatever
+                     its version (newer ones come from `emisar pack update`).
+                     An empty LIST installs no new packs.
                      For unattended provisioning.
   --help             This message.
 
@@ -578,9 +580,10 @@ ExecReload=/bin/kill -HUP \$MAINPID
 Restart=on-failure
 RestartSec=5s
 
-# Cancel grace: longer than the longest action's cancel_grace so
-# systemd doesn't SIGKILL us mid-cleanup. 7 minutes covers the
-# bundled cassandra.nodetool_repair (5m).
+# Cancel grace: 7 minutes covers the common 5m action cancel_grace so
+# systemd doesn't SIGKILL us mid-cleanup. A few packs declare 10m
+# (cassandra decommission/rebuild/removenode); a service stop cuts
+# those short.
 TimeoutStopSec=7m
 KillMode=mixed
 KillSignal=SIGTERM
@@ -1234,8 +1237,8 @@ drop_config_skeleton() {
     # honor it by rewriting only the runner.group line; nothing else is
     # touched. EMISAR_URL still applies only on a fresh install; an explicitly
     # supplied enrollment key is handled separately below.
-    if [ -n "${EMISAR_GROUP:-}" ] && \
-       printf '%s' "${EMISAR_GROUP}" | grep -qE '^[A-Za-z0-9._-]+$'; then
+    # The same character set a fresh install accepts.
+    if [ -n "${EMISAR_GROUP:-}" ] && safe_config_value "${EMISAR_GROUP}"; then
       # Only the runner block's own group key: a label named `group` sits one
       # level deeper under runner.labels and is the operator's, not ours.
       local cfg_staged_group

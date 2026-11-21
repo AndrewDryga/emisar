@@ -1019,7 +1019,10 @@ func validateVersions(versions []Version) error {
 
 func (action actionDefinition) mutates() bool {
 	for _, effect := range action.SideEffects {
-		if strings.Contains(strings.ToLower(effect), "read-only") {
+		// "Index becomes read-only" describes the state a mutation leaves behind,
+		// not a read.
+		effect = strings.ToLower(effect)
+		if strings.Contains(effect, "read-only") && !strings.Contains(effect, "becomes read-only") {
 			return false
 		}
 	}

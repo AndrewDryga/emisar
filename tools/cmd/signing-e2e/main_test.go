@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestDecodeBridgeResult(t *testing.T) {
@@ -216,5 +217,20 @@ func TestValidateSuccessfulExecutionRejectsPartialSuccess(t *testing.T) {
 
 	if err := validateSuccessfulExecution(execution, "morning-edge-readiness@1", 3); err == nil {
 		t.Fatal("validateSuccessfulExecution() error = nil, want failed item rejection")
+	}
+}
+
+func TestE2ETimeoutIsWholeSecondsAndRejectsOtherValues(t *testing.T) {
+	t.Parallel()
+
+	for value, want := range map[string]time.Duration{"": 120 * time.Second, "300": 300 * time.Second} {
+		if got, err := e2eTimeout(value); err != nil || got != want {
+			t.Errorf("e2eTimeout(%q) = %v, %v; want %v", value, got, err, want)
+		}
+	}
+	for _, value := range []string{"2m", "0", "-5", "soon"} {
+		if _, err := e2eTimeout(value); err == nil {
+			t.Errorf("e2eTimeout(%q) accepted an invalid value", value)
+		}
 	}
 }

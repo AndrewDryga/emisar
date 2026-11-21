@@ -126,7 +126,9 @@ func readEnv(path string) (map[string]string, error) {
 		return nil, err
 	}
 	// Defaulted once so every later read is total: a shot must show the product's
-	// own host, never the tunnel a certification run happened to use.
+	// own host, never the tunnel a certification run happened to use. This rig
+	// prefixes it to paths, so it is a URL with its scheme (https://emisar.dev),
+	// unlike jumpcloud-capture, which takes a bare host.
 	if env["EMISAR_DOCS_HOST"] == "" {
 		env["EMISAR_DOCS_HOST"] = "https://emisar.dev"
 	}
@@ -257,6 +259,8 @@ func auditTenant(ctx context.Context, env map[string]string, remove bool) error 
 	orgURL := env["OKTA_ORG_URL"]
 
 	var apps []oktaApp
+	// One page each: oktaAPIGet does not follow Okta's Link rel="next", so a
+	// full page is reported as a possibly incomplete listing below.
 	if apiErr, err := oktaAPIGet(ctx, client, orgURL, token, "/api/v1/apps?limit=200", &apps); err != nil {
 		return err
 	} else if apiErr != "" {
@@ -313,6 +317,9 @@ func auditTenant(ctx context.Context, env map[string]string, remove bool) error 
 		fmt.Printf("  %-40s %s\n", apiToken.Name, apiToken.ID)
 	}
 	fmt.Println("--- anything spared that this rig created is a filter gap, not a clean tenant ---")
+	if len(apps) >= 200 || len(users) >= 200 {
+		fmt.Println("--- INCOMPLETE: apps or users filled the 200-row page; later pages were not read, so this is not every object ---")
+	}
 
 	if !remove {
 		return nil
