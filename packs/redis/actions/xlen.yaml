@@ -3,7 +3,7 @@ id: redis.xlen
 title: XLEN
 kind: script
 risk: low
-description: Count entries in a stream.
+description: Count entries in a stream. Reads logical database 0 only.
 side_effects:
   - One XLEN command.
   - Read-only.

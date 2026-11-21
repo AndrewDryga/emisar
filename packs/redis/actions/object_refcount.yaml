@@ -7,6 +7,7 @@ description: >
   Show the reference count for a value. Shared integers report INT_MAX;
   every other value reports 1. Use to confirm the shared-integer
   optimization is hitting (or not).
+  Reads logical database 0 only.
 side_effects:
   - One OBJECT REFCOUNT command.
   - Read-only metadata.

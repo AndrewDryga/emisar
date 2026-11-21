@@ -6,6 +6,7 @@ risk: low
 description: >
   Show seconds until the key expires. -2 means missing, -1 means no
   expiry set. Use before any expiry-related troubleshooting.
+  Reads logical database 0 only.
 side_effects:
   - One TTL command.
   - Read-only metadata.

@@ -40,7 +40,7 @@ defmodule Emisar.Catalog.PublishedRegistryTest do
     # Redis shares a CLI guard across actions; Cassandra has per-action scripts.
     test "content_hash matches the Go runner byte-for-byte (golden values)" do
       assert PublishedRegistry.get("redis").content_hash ==
-               "sha256:1122f9b2885690ef2fd2f1953c42ffee1c345b22b3707faeddbb585b5b4e0194"
+               "sha256:e7f32a4fd628bb1edcbb8b7fe34429b0edea7d43ce654207f6b9b64d4fe7724c"
 
       assert PublishedRegistry.get("cassandra").content_hash ==
                "sha256:8d25f0fb3baecc579a1f054d56333905d363ba48b0a052d8db00f300f3a79780"

@@ -6,6 +6,7 @@ risk: low
 description: >
   Show one stream's length, last-generated-id, groups, first/last entry.
   Use to confirm producers are still appending.
+  Reads logical database 0 only.
 side_effects:
   - One XINFO STREAM command.
   - Read-only.

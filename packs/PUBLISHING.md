@@ -200,22 +200,20 @@ retired_below: 0.2.4   # 0.2.3 and earlier are now retired
 ```
 
 ```bash
-# 2. Build against the live catalog (--previous enforces the monotonic floor:
-#    the build refuses to LOWER or DROP an already-published retired_below) and
-#    publish. Old tarballs stay installable — retirement blocks dispatch, not
-#    installation.
-curl -fsS https://registry.emisar.dev/v1/catalog.json -o ./current-catalog.json
-packctl catalog build --packs ./packs --out ./dist/packs \
-  --repo-url https://github.com/andrewdryga/emisar --previous ./current-catalog.json
-packctl catalog publish --dir ./dist/packs --bucket emisar-pack-registry
+# 2. Rebuild against the live catalog and regenerate the BUNDLED catalog in the
+#    SAME commit as the pack edit. `pack sync` fetches the live catalog, builds
+#    with --previous (which enforces the monotonic floor: the build refuses to
+#    LOWER or DROP an already-published retired_below), copies the result to
+#    portal/apps/emisar/priv/packs/catalog.json (the portal's boot seed, so a
+#    fresh VM carries the floor before its first refresh), and runs the focused
+#    catalog tests. Old tarballs stay installable — retirement blocks dispatch,
+#    not installation.
+./run pack sync redis --fix
 
-# 3. Regenerate the BUNDLED catalog in the SAME commit as the pack edit — it is
-#    the portal's boot seed, so a fresh VM carries the floor before its first
-#    refresh:
-cp ./dist/packs/v1/catalog.json ./portal/apps/emisar/priv/packs/catalog.json
-#    then from portal/apps/emisar/:
-#      mix test test/emisar/catalog/pack_baseline_test.exs \
-#        test/emisar/catalog/published_registry/cache_test.exs
+# 3. Commit and push. CD's packs-publish job publishes the floor (see "When CD
+#    publishes"). If a retirement cannot wait for CD, the release owner may
+#    publish the tree that sync built by hand first (see "Publish"), then commit
+#    and push that same tree.
 
 # 4. Verify in a test account after the next refresh (no deploy needed): a
 #    runner pinned to the retired version now blocks with `pack_retired` at

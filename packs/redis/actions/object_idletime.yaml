@@ -6,6 +6,7 @@ risk: low
 description: >
   Show seconds since the key was last accessed. Requires an LRU
   maxmemory-policy. Use to identify cold keys for manual eviction.
+  Reads logical database 0 only.
 side_effects:
   - One OBJECT IDLETIME command.
   - Read-only metadata; does not bump LRU age.

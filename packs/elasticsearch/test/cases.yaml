@@ -63,6 +63,17 @@ cases:
       stdout_contains: ['"count":1']
     cleanup:
       - argv: [/bin/sh, -c, 'curl -fsS -u "$ELASTIC_USER:$ELASTIC_PASSWORD" -X DELETE "$ELASTIC_URL/packtest" >/dev/null']
+  # Elasticsearch's own error names the cause; the rest of its envelope
+  # (resource.type, index_uuid) stays out of the result.
+  - name: es.index-count-missing-index-names-the-provider-error
+    action: es.index_count
+    args: {index: packtest-missing}
+    expect:
+      status: failure
+      exit: [22]
+      reason_contains: [process exited with code 22]
+      stderr_contains: ["elasticsearch type: index_not_found_exception", "elasticsearch reason: no such index [packtest-missing]"]
+      stderr_not_contains: [index_or_alias, index_uuid]
   - action: es.index_mapping
     args: {index: packtest}
     arrange:

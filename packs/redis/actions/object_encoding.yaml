@@ -7,6 +7,7 @@ description: >
   Show the internal encoding of one value (ziplist, hashtable, intset,
   listpack, quicklist, embstr, raw, skiplist). Use to confirm a
   structure is in its compact form before tuning size limits.
+  Reads logical database 0 only.
 side_effects:
   - One OBJECT ENCODING command.
   - Read-only metadata.

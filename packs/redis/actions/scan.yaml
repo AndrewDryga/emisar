@@ -7,6 +7,7 @@ description: >
   Show one SCAN page. Returns next-cursor + up to COUNT keys matching
   MATCH. Safe for prod — never blocks. Use to enumerate a hot
   namespace without KEYS.
+  Reads logical database 0 only.
 side_effects:
   - One SCAN command.
   - Read-only metadata; values are not fetched.

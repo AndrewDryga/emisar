@@ -7,6 +7,7 @@ description: >
   Show the LFU access-frequency counter for the key. Requires an LFU
   maxmemory-policy. Use to compare access patterns across a
   candidate eviction set.
+  Reads logical database 0 only.
 side_effects:
   - One OBJECT FREQ command.
   - Read-only metadata; does not bump the frequency counter.

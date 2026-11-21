@@ -36,12 +36,33 @@ auth_header() {
   fi
 }
 
+# Elasticsearch answers a rejection with {"error":{"root_cause":[{"type",
+# "reason"}],...},"status":N}. Name its first type and reason on stderr, each
+# capped at 512 bytes, and nothing else from the envelope. A body without them
+# (a proxy's HTML page) adds nothing beyond curl's own status line.
+report_error() {
+  local body="$1" field value
+  for field in type reason; do
+    if [[ $body =~ \"$field\"[[:space:]]*:[[:space:]]*\"(([^\"\\]|\\.){0,512}) ]]; then
+      value="${BASH_REMATCH[1]}"
+      printf 'elasticsearch %s: %s\n' "$field" "$value" >&2
+    fi
+  done
+}
+
 # $1 method, $2 path (already assembled by a subcommand from its own arguments).
+# --fail-with-body keeps the provider's error so report_error can name it; the
+# body is held until the status is known, so a rejection never reaches stdout.
 request() {
-  local method="$1" path="$2"
-  auth_header | curl -q --globoff --proto '=http,https' -fsS \
+  local method="$1" path="$2" body status=0
+  body=$(auth_header | curl -q --globoff --proto '=http,https' --fail-with-body -sS \
     --connect-timeout 10 --max-time 3600 --max-filesize 8388608 \
-    -H @- -X "$method" "$api$path"
+    -H @- -X "$method" "$api$path") || status=$?
+  if [[ $status -ne 0 ]]; then
+    report_error "$body"
+    exit "$status"
+  fi
+  printf '%s\n' "$body"
 }
 
 # An index, repository, or snapshot name reaches this script as a positional
