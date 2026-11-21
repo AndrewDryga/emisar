@@ -22,10 +22,11 @@ import (
 // onto the runState. It does NOT call conn.Send directly; the sender
 // loop is responsible for delivery.
 //
-// Trust gate: if the cloud supplied PackRef, re-hash the action's pack from disk
-// and refuse to execute on a different immutable ref. Also
-// signal a re-advertisement so cloud sees the new hash and flips the
-// pack to pending in the trust UI.
+// Trust gate: re-hash the action's pack from disk on every dispatch and refuse
+// to execute when it differs from the cloud's ExpectedPackHash (and, when the
+// cloud supplied PackRef, from that immutable ref). Also signal a
+// re-advertisement so cloud sees the new hash and flips the pack to pending in
+// the trust UI.
 func (c *Client) handleRun(ctx context.Context, s *runState, m RunActionMsg) {
 	// A panic in one dispatch must not crash the runner — that would kill every
 	// other in-flight action and the session. Recover, log it, and degrade to a

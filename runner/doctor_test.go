@@ -486,6 +486,13 @@ func TestCheckCloud(t *testing.T) {
 		}
 	})
 
+	t.Run("unset url names the missing key", func(t *testing.T) {
+		got := checkCloud(context.Background(), &config.Config{}, &http.Client{Timeout: time.Second})
+		if got.status != checkFail || !strings.Contains(got.detail, "cloud.url is not set") {
+			t.Fatalf("got %v %q, want fail naming cloud.url", got.status, got.detail)
+		}
+	})
+
 	t.Run("unreachable fails", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 		host := hostOf(srv.URL)

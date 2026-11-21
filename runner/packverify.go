@@ -143,7 +143,7 @@ the same — read the detail before concluding the pack is misconfigured.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringArrayVar(&argList, "arg", nil, "argument for the verify action as key=value (may repeat; single pack only)")
+	cmd.Flags().StringArrayVar(&argList, "arg", nil, "argument for the verify action as key=value (may repeat; single pack only); JSON-quote to force a string, e.g. --arg 'project=\"123\"'")
 	return cmd
 }
 

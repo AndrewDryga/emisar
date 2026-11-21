@@ -45,9 +45,10 @@ func TestMain(m *testing.M) {
 
 // runCLI re-execs this test binary so the child runs main() with the given args
 // + extra env. It returns stdout, stderr, and the process exit code. The
-// environment is minimal — the sentinel plus an empty EMISAR_CONFIG so a real
-// /etc/emisar/config.yaml (or a developer's $EMISAR_CONFIG) can't perturb the
-// boot-fatal assertions — plus whatever the caller passes.
+// environment is minimal — the sentinel plus an empty EMISAR_CONFIG so a
+// developer's $EMISAR_CONFIG, HOME, or XDG dirs can't perturb the boot-fatal
+// assertions — plus whatever the caller passes. It cannot hide
+// /etc/emisar/config.yaml; see skipIfSystemConfig.
 func runCLI(t *testing.T, args []string, env map[string]string) (stdout, stderr string, exitCode int) {
 	t.Helper()
 	cmd := exec.Command(os.Args[0], args...)
@@ -559,6 +560,9 @@ func TestCLI_ReadCommandBootFailureExitsOne(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			if c.name == "action list, no config anywhere" {
+				skipIfSystemConfig(t)
+			}
 			stdout, stderr, code := runCLI(t, c.args, nil)
 			if code != 1 {
 				t.Errorf("exit = %d, want 1; stderr=%q", code, stderr)

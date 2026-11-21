@@ -30,6 +30,8 @@ type versionInfo struct {
 	OS      string `json:"os"`
 	Arch    string `json:"arch"`
 	Commit  string `json:"commit,omitempty"`
+	// BuiltAt is the commit time of Commit (Go's vcs.time), not the time
+	// the binary was linked.
 	BuiltAt string `json:"built_at,omitempty"`
 	Dirty   *bool  `json:"dirty,omitempty"`
 }
@@ -41,7 +43,10 @@ func versionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
 		Short: "Print the runner version and build info",
-		Args:  cobra.NoArgs,
+		Long: "Print the runner version and build info.\n\n" +
+			"commit, built_at, and dirty come from the git checkout the binary was\n" +
+			"built from; built_at is that commit's timestamp, not the link time.",
+		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			info := gatherVersionInfo()
 			if flagJSONOut {

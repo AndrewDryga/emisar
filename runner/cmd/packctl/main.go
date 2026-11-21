@@ -22,7 +22,8 @@ import (
 // it is set. It lives on the root's persistent flags; commands read this global.
 var flagJSONOut bool
 
-// Version is overridden via -ldflags at build time.
+// Version stays "dev" for the repository and documented builds, which pass no
+// linker flags; `-ldflags "-X main.Version=..."` overrides it.
 var Version = "dev"
 
 func main() {

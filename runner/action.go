@@ -105,9 +105,10 @@ func actionRunCmd() *cobra.Command {
 				Args:     argMap,
 				Reason:   reason,
 			}
-			// A negative or zero --timeout used to fall through to the action's
-			// default and exit 0, so `--timeout=-5s` looked accepted and ran with
-			// a limit the operator never chose. Say so instead.
+			// A negative --timeout used to fall through to the action's default
+			// and exit 0, so `--timeout=-5s` looked accepted and ran with a limit
+			// the operator never chose. Say so instead. Zero (the flag default)
+			// selects the action's default timeout.
 			if timeout < 0 {
 				return usageError{fmt.Errorf("--timeout must be positive (got %s)", timeout)}
 			}
@@ -143,9 +144,9 @@ func actionRunCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringArrayVar(&argList, "arg", nil, "argument as key=value (may repeat)")
+	cmd.Flags().StringArrayVar(&argList, "arg", nil, "argument as key=value (may repeat); JSON-quote to force a string, e.g. --arg 'id=\"101\"'")
 	cmd.Flags().StringVar(&reason, "reason", "", "free-text reason recorded on the event")
-	cmd.Flags().DurationVar(&timeout, "timeout", 0, "override timeout (clamped to action min/max)")
+	cmd.Flags().DurationVar(&timeout, "timeout", 0, "override timeout (clamped to action min/max; 0 uses the action default)")
 	cmd.Flags().BoolVar(&stream, "stream", false, "stream live output to stderr; stdout keeps the result JSON")
 	return cmd
 }

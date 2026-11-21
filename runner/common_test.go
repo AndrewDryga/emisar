@@ -167,14 +167,24 @@ func writePack(t *testing.T, root, id string) string {
 	return root
 }
 
+// skipIfSystemConfig skips a test that needs discovery to find nothing on a
+// host where the runner is installed: /etc/emisar/config.yaml always wins.
+func skipIfSystemConfig(t *testing.T) {
+	t.Helper()
+	if isRegularFile("/etc/emisar/config.yaml") {
+		t.Skip("/etc/emisar/config.yaml exists on this host; discovery cannot find nothing")
+	}
+}
+
 // withFlags saves and restores the package-global CLI flags boot() reads, so a
 // test can set them without leaking into other tests.
 func withFlags(t *testing.T) {
 	t.Helper()
 	origConfig, origPacks := flagConfig, flagPacksDir
 	t.Cleanup(func() { flagConfig, flagPacksDir = origConfig, origPacks })
-	// Auto-discovery must not pick up a real /etc/emisar/config.yaml on the dev
-	// box; force resolution through the explicit flag/env each test sets.
+	// Clear a developer's $EMISAR_CONFIG so resolution goes through the
+	// explicit flag/env each test sets. This cannot hide /etc/emisar/config.yaml;
+	// tests that need no config anywhere call skipIfSystemConfig.
 	t.Setenv("EMISAR_CONFIG", "")
 }
 
@@ -232,11 +242,13 @@ func TestIsRegularFile(t *testing.T) {
 // and no well-known file, resolution is a hard error that names where it
 // looked — before boot touches anything.
 func TestResolveConfigPath_NoConfigAnywhere(t *testing.T) {
+	skipIfSystemConfig(t)
 	withFlags(t)
 	flagConfig = ""
-	// Point HOME at an empty dir so the per-user well-known path doesn't exist;
-	// the /etc path won't exist on a clean checkout either.
+	// Point HOME and XDG_CONFIG_HOME at empty dirs so no per-user well-known
+	// path exists.
 	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
 	_, err := resolveConfigPath()
 	if err == nil {

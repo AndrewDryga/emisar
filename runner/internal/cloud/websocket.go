@@ -64,8 +64,9 @@ type WebsocketDialer struct {
 	// whitespace.
 	ExternalID string
 
-	// HTTPClient is used for /runner/register; defaults to a 10s-timeout
-	// client. Tests can inject a stub.
+	// HTTPClient is used for /runner/register, the token refresh, and the
+	// websocket upgrade; defaults to a 10s-timeout client. Tests can inject a
+	// stub.
 	HTTPClient *http.Client
 
 	// Logger; defaults to slog.Default().
@@ -382,7 +383,8 @@ func (d *WebsocketDialer) maybeRefreshToken(ctx context.Context, current runnerT
 	// degrades softly — an undecodable response keeps the current token — but a
 	// runner that stops refreshing eventually runs one out.
 	decoder := json.NewDecoder(bytes.NewReader(raw))
-	if err := decoder.Decode(&parsed); err != nil || strings.TrimSpace(parsed.Token) == "" {
+	if err := decoder.Decode(&parsed); err != nil || !validRunnerToken(parsed.Token) ||
+		!errors.Is(decoder.Decode(&struct{}{}), io.EOF) {
 		d.logger().Debug("cloud.token_refresh_skipped", "detail", "malformed refresh response")
 		return current
 	}
@@ -600,12 +602,18 @@ func (d *WebsocketDialer) register(ctx context.Context) (runnerToken, error) {
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 		return runnerToken{}, errors.New("cloud: register response has trailing JSON")
 	}
-	if parsed.Token == "" || parsed.Token != strings.TrimSpace(parsed.Token) ||
-		!utf8.ValidString(parsed.Token) || len(parsed.Token) > maxRunnerTokenBytes {
+	if !validRunnerToken(parsed.Token) {
 		return runnerToken{}, errors.New("cloud: register returned an invalid token")
 	}
 
 	return runnerToken{Raw: parsed.Token, RefreshAfter: parsed.RefreshAfter}, nil
+}
+
+// validRunnerToken is the shape check register and refresh both apply before
+// a portal-issued token replaces the cached credential.
+func validRunnerToken(token string) bool {
+	return token != "" && token == strings.TrimSpace(token) &&
+		utf8.ValidString(token) && len(token) <= maxRunnerTokenBytes
 }
 
 // -- URL derivation --------------------------------------------------

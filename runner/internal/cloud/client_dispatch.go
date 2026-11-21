@@ -350,8 +350,9 @@ const (
 
 // refuseUndecodableDispatch journals — and, when the message carries a usable
 // correlation id, answers — a dispatch rejected before it could become a
-// RunActionMsg: an unreadable envelope, an oversized frame, duplicate or
-// aliased keys, an invalid request_id. Those rejections never reach startRun,
+// RunActionMsg: an unreadable envelope, duplicate or aliased keys, an invalid
+// request_id. (An oversized frame never gets here on the real transport: the
+// websocket read limit closes the session first, with nothing journaled.) Those rejections never reach startRun,
 // so no other path records them, and this is precisely the class a compromised
 // control plane produces: without an entry the tamper-evident journal says the
 // attempt never happened, and the portal sees only a dispatch timeout with no
@@ -405,8 +406,8 @@ func withLocalAudit(result ActionResultMsg, eventID string) ActionResultMsg {
 }
 
 // enqueueTransient creates a finished runState containing exactly one
-// message (a cached result or a synthetic error). The sender picks it
-// up on its next tick.
+// message (a cached result or a synthetic error) and wakes the sender to
+// deliver it.
 func (c *Client) enqueueTransient(requestID string, msg any) bool {
 	c.mu.Lock()
 	enqueued := c.enqueueTransientLocked(requestID, msg)

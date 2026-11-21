@@ -289,7 +289,9 @@ func printTrustBlock(name, caPEM string) {
 	fmt.Print("   signing:\n")
 	fmt.Print("     enforce_signatures: true\n")
 	fmt.Print("     trusted_cas:\n")
-	fmt.Printf("       - name: %s\n", name)
+	// Quoted: a free-text CA name such as "Acme: prod CA" or "#1" is not a
+	// valid plain YAML scalar. A Go-quoted string is a YAML double-quoted one.
+	fmt.Printf("       - name: %q\n", name)
 	fmt.Print("         pem: |\n")
 	for _, line := range strings.Split(strings.TrimRight(caPEM, "\n"), "\n") {
 		fmt.Printf("           %s\n", line)

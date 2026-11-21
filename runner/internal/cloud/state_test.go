@@ -193,8 +193,13 @@ func TestStateBuilder_AdvertisesDegradedPacks(t *testing.T) {
 func TestBoundDegradedReason_CutsOnRuneBoundary(t *testing.T) {
 	long := strings.Repeat("é", maxDegradedReasonBytes) // 2 bytes per rune
 	bounded := boundDegradedReason(long)
-	if len(bounded) > maxDegradedReasonBytes+len("…") {
+	if len(bounded) > maxDegradedReasonBytes {
 		t.Fatalf("bounded reason is %d bytes", len(bounded))
+	}
+	// ASCII cuts at the exact byte budget; the marker must still fit in it.
+	ascii := boundDegradedReason(strings.Repeat("x", 2*maxDegradedReasonBytes))
+	if len(ascii) > maxDegradedReasonBytes || !strings.HasSuffix(ascii, "…") {
+		t.Fatalf("ascii reason is %d bytes, suffix ok=%v", len(ascii), strings.HasSuffix(ascii, "…"))
 	}
 	if !strings.HasSuffix(bounded, "…") || strings.Contains(bounded, "�") {
 		t.Fatalf("bounded reason is not a clean truncation: %q", bounded[:32])

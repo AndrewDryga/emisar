@@ -452,7 +452,8 @@ type ActionStartedMsg struct {
 	Envelope
 }
 
-// ActionProgressMsg streams a line of action output. seq increases
+// ActionProgressMsg streams a chunk of action output: one or more lines,
+// merged while the socket lags. seq counts messages, not lines, and increases
 // monotonically per request_id so cloud can detect drops.
 type ActionProgressMsg struct {
 	Envelope

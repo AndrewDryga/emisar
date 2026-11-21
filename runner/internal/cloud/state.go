@@ -24,8 +24,9 @@ func boundDegradedReason(reason string) string {
 	if len(reason) <= maxDegradedReasonBytes {
 		return reason
 	}
-	// Cut on a rune boundary so a truncated reason stays valid UTF-8 JSON.
-	cut := maxDegradedReasonBytes
+	// Cut on a rune boundary so a truncated reason stays valid UTF-8 JSON, and
+	// leave room for the marker: the portal keeps only the first 500 bytes.
+	cut := maxDegradedReasonBytes - len("…")
 	for cut > 0 && !utf8.RuneStart(reason[cut]) {
 		cut--
 	}

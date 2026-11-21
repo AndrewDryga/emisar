@@ -745,10 +745,10 @@ func TestWebsocketDialer401OnUpgradeDropsCachedToken(t *testing.T) {
 	dir := t.TempDir()
 	tokenPath := filepath.Join(dir, "token.json")
 
-	cached, _ := json.Marshal(map[string]string{
-		"token": "stale-token",
-	})
-	_ = os.WriteFile(tokenPath, cached, 0o600)
+	cached, _ := json.Marshal(cachedToken("stale-token"))
+	if err := os.WriteFile(tokenPath, cached, 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	d := &WebsocketDialer{
 		URL:           srv.URL,
@@ -947,6 +947,17 @@ func TestMaybeRefreshTokenNeverBlocksAConnect(t *testing.T) {
 		}},
 		{"empty token", func(w http.ResponseWriter, _ *http.Request) {
 			_, _ = w.Write([]byte(`{"token":"   "}`))
+		}},
+		// The same token shape check register applies: a padded, oversized, or
+		// doubled response must not overwrite the cached credential.
+		{"padded token", func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(`{"token":"rnrtok-next\n"}`))
+		}},
+		{"oversized token", func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(`{"token":"` + repeated("x", maxRunnerTokenBytes+1) + `"}`))
+		}},
+		{"trailing JSON", func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(`{"token":"rnrtok-next"}{"token":"rnrtok-other"}`))
 		}},
 		{"oversized body", func(w http.ResponseWriter, _ *http.Request) {
 			_, _ = w.Write([]byte(`{"token":"` + repeated("x", maxRegistrationResponseBytes+64) + `"}`))

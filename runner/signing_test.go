@@ -17,6 +17,7 @@ import (
 	"github.com/andrewdryga/emisar/runner/internal/attest"
 	"github.com/andrewdryga/emisar/runner/internal/config"
 	"github.com/andrewdryga/emisar/runner/internal/signing"
+	"go.yaml.in/yaml/v3"
 )
 
 func TestGenerateSigningKey(t *testing.T) {
@@ -237,6 +238,27 @@ func TestSigningNewCACmd_JSONShape(t *testing.T) {
 	}
 }
 
+// A free-text CA name with YAML syntax in it must still print a block that
+// parses back to the same name.
+func TestPrintTrustBlock_QuotesCAName(t *testing.T) {
+	for _, name := range []string{"Acme: prod CA", "#1", `say "hi"`} {
+		out := captureStdout(t, func() { printTrustBlock(name, "PEM\n") })
+		var doc struct {
+			Signing struct {
+				TrustedCAs []struct {
+					Name string `yaml:"name"`
+				} `yaml:"trusted_cas"`
+			} `yaml:"signing"`
+		}
+		if err := yaml.Unmarshal([]byte(out), &doc); err != nil {
+			t.Fatalf("name %q: printed block is not YAML: %v\n%s", name, err, out)
+		}
+		if cas := doc.Signing.TrustedCAs; len(cas) != 1 || cas[0].Name != name {
+			t.Fatalf("name %q: parsed %+v\n%s", name, cas, out)
+		}
+	}
+}
+
 func TestSigningNewCACmd_HumanOutput(t *testing.T) {
 	withJSONOut(t, false)
 	cmd := signingNewCACmd()
@@ -249,7 +271,7 @@ func TestSigningNewCACmd_HumanOutput(t *testing.T) {
 		t.Fatalf("signing new-ca: %v", runErr)
 	}
 	for _, want := range []string{
-		"enforce_signatures: true", "trusted_cas:", "name: ca-prod", "pem: |",
+		"enforce_signatures: true", "trusted_cas:", `name: "ca-prod"`, "pem: |",
 		"BEGIN CERTIFICATE", "OFFLINE", "emisar signing new-cert", "--ca-key-file", "--ca-cert",
 	} {
 		if !strings.Contains(out, want) {

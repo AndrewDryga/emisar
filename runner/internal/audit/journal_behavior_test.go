@@ -119,7 +119,9 @@ func TestJournal_CoercesTimeToUTC(t *testing.T) {
 	}
 }
 
-func TestJournal_ConcurrentRecordsSerialized(t *testing.T) {
+// Concurrent Records each land exactly once with their own EventID. memSink
+// guards its own slice, so this does not prove the journal mutex is held.
+func TestJournal_ConcurrentRecordsAllPreserved(t *testing.T) {
 	const n = 50
 	gate := make(chan struct{})
 	sink := &memSink{writeWait: func() { <-gate }}
@@ -135,20 +137,16 @@ func TestJournal_ConcurrentRecordsSerialized(t *testing.T) {
 			}
 		}()
 	}
-	// Release all writers; the journal mutex must still serialize them so the
-	// sink's append is never concurrent.
 	close(gate)
 	wg.Wait()
 
 	if got := len(sink.recorded()); got != n {
 		t.Fatalf("expected %d events recorded exactly once, got %d", n, got)
 	}
-	// Every assigned EventID must be unique — proves no two Records raced into
-	// the same stamping.
 	seen := make(map[string]bool, n)
 	for _, ev := range sink.recorded() {
 		if seen[ev.EventID] {
-			t.Fatalf("duplicate EventID %q — records were not serialized", ev.EventID)
+			t.Fatalf("duplicate EventID %q", ev.EventID)
 		}
 		seen[ev.EventID] = true
 	}

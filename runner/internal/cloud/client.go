@@ -415,9 +415,9 @@ func (c *Client) runSession(parent context.Context) (bool, error) {
 		"requeued_results", requeuedResults,
 	)
 
-	// Drain any queued messages from runs that survived a previous
-	// disconnect. The sender loop does this on its tick, but kick a
-	// drain right away so cloud sees a fast catch-up.
+	// Queued messages from runs that survived a previous disconnect go out
+	// right away: senderLoop drains once as soon as it starts, so cloud sees
+	// a fast catch-up.
 	startSessionLoop := func(loop func()) {
 		sessionWG.Add(1)
 		go func() {

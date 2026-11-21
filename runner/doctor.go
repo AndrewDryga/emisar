@@ -453,6 +453,11 @@ func checkPackVerify(ctx context.Context) checkResult {
 // proves reachability, an https probe proves TLS, and the Date header surfaces
 // a skewed host clock.
 func checkCloud(ctx context.Context, cfg *config.Config, client *http.Client) checkResult {
+	// The loader permits an empty cloud.url for local-only CLI use; still a
+	// failure here, but say what is missing rather than "unsupported scheme".
+	if cfg.Cloud.URL == "" {
+		return checkResult{"cloud", checkFail, "cloud.url is not set; `emisar connect` needs it"}
+	}
 	shutdown, shutdownErr := cloud.ReadRecentTerminalShutdown(
 		cloud.TerminalShutdownStatePath(cfg.Paths.DataDir), time.Now().UTC(),
 	)
