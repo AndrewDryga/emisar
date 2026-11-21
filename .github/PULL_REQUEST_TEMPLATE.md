@@ -16,6 +16,7 @@ Describe the change and why it is needed.
 
 - [ ] I have read `LICENSE.md`.
 - [ ] I have read `CONTRIBUTING.md`.
+- [ ] I have read and agree to the [Contributor License Agreement](CLA.md).
 - [ ] I have the right to submit this contribution.
 - [ ] This contribution does not include confidential information.
 - [ ] This contribution does not include secrets, credentials, private keys, tokens, or production data.

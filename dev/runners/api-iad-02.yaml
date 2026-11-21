@@ -25,8 +25,8 @@ cloud:
 paths:
   data_dir: "/var/lib/emisar"
   # App/API host: deep systemd introspection + the linux-core basics. The
-  # mounted systemctl/journalctl shims (dev/runner-fixtures) give these
-  # believable output without a real systemd inside the container.
+  # mounted systemctl shim (dev/runner-fixtures) simulates only `status` and
+  # `restart`, so most systemd-deep actions fail here; journalctl is stubbed too.
   packs:
     - "/opt/emisar/packs/linux-core"
     - "/opt/emisar/packs/systemd-deep"

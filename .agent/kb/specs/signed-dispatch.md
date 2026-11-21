@@ -73,16 +73,17 @@ operator's signing key. So:
    change the action, pack, args, reason, operation, origin, or target set without
    invalidating the signature, cannot alter the CA-signed certificate, and has
    no key to mint either.
-3. The runner verifies all of the following: the certificate is signed by a CA it trusts;
-   the certificate is inside its validity window; this runner's identity suffix,
-   derived from its local external ID, occurs exactly once in the signed target
-   set; the signed
-   portal origin, action, immutable pack bytes, exact arguments, reason, and
-   operation match the delivered dispatch; the certificate's **scope** matches
-   this runner's own group/labels; the attestation is inside the freshness
-   window; the attestation signature verifies under the **leaf key the
-   certificate vouches for**; the nonce has not been seen. Only then does it run.
-   Anything else is refused.
+3. The runner checks, in this order: the claim format and its literal
+   `run_action` tool; the signed portal origin, action, pack ref, exact
+   arguments, reason, and operation match the delivered dispatch; this runner's
+   identity suffix, derived from its local external ID, occurs exactly once in
+   the signed target set; the nonce is well formed; the certificate chains to a
+   CA it trusts, fits the profile, and is inside its validity window; the
+   certificate's **scope** matches this runner's own group/labels; the
+   attestation is inside the freshness window; the attestation signature
+   verifies under the **leaf key the certificate vouches for**; the nonce has
+   not been seen. After this signature gate, the trust gate re-hashes the
+   immutable pack bytes on disk. Only then does it run. Anything else is refused.
 
 The v5 signature binds the **exact runner set** with refs shaped as
 `name~first32hex(sha256(external_id))`. The runner independently verifies the
@@ -309,8 +310,11 @@ overall threat model.
 
 ## Troubleshooting a refusal
 
-A refused dispatch comes back as a **failed** run whose error message names the
-cause. The runner's refusal codes:
+A refused dispatch comes back as a **refused** run whose error message explains
+the cause in a sentence (`refused: <detail>`). The code below appears in the
+runner's `cloud.signature_refused` log and its local audit
+(`signature refused: <code>`). Only `dispatch_undecodable` arrives as a
+**failed** run. The runner's refusal codes:
 
 | Code | Meaning | Fix |
 | --- | --- | --- |

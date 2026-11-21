@@ -20,8 +20,7 @@ name: CI
 #     cd.yml; pull-request code cannot reach them.
 #   * `actions/checkout` always runs with `persist-credentials: false`.
 #   * Every action — first-party included — is pinned to a full commit SHA
-#     (the version tag rides along as a comment); an org-level setting
-#     enforces this repo-wide.
+#     (the version tag rides along as a comment).
 #   * External tools (terraform, tflint, actionlint) are installed at a
 #     pinned version AND checksum-verified before use; Go tools are
 #     version-pinned `go install`s.
@@ -633,11 +632,11 @@ jobs:
           # The runner and MCP gates exercise their public installers. The token
           # avoids anonymous GitHub API limits without entering curl argv.
           EMISAR_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # gh reads GH_TOKEN. Without it the installers' Sigstore provenance
-          # check has no authenticated verifier and degrades to a warning, so CI
-          # would only ever exercise the skip branch — the branch a broken
-          # signer pin hides in, since failing to check looks like nothing to
-          # check. Read-only, and the harness asserts which branch ran.
+          # gh reads GH_TOKEN for the installers' `gh attestation verify`; a
+          # failed verification stops the install. The harness accepts either
+          # reported outcome: verified, or not checked because gh is absent, so
+          # which branch CI exercises depends on the runner image shipping gh.
+          # Read-only.
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           target="${{ matrix.module }}"

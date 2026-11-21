@@ -279,10 +279,11 @@ volumes:
 ```
 
 * `bin/systemctl` and `bin/journalctl` are bash stubs that print
-  realistic-looking output for the units the `linux-core` actions can
-  target (cassandra, nginx, postgresql, docker). The container has no
-  systemd; without these the actions error with "no such file or
-  directory" and the demo looks broken.
+  realistic-looking output for cassandra, nginx, postgresql, and docker.
+  The systemctl stub simulates only `status` and `restart` (what the seeds
+  use); any other verb exits with an "unsupported command" error. The
+  container has no systemd; without these the actions error with "no such
+  file or directory" and the demo looks broken.
 * `var-log/*` holds sample `syslog`, `auth.log`, and `nginx/access.log`
   files so `linux.tail_log` and `linux.grep_log` have content to read.
 

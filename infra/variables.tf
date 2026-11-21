@@ -499,7 +499,7 @@ variable "billing_account_id" {
 
 variable "monthly_budget_amount" {
   type        = number
-  description = "Monthly spend threshold for the budget's alert tiers, in the billing account's currency. A workspace variable because the number is a spend-posture tell and this repository is public. Only read when billing_account_id is set."
+  description = "Monthly spend threshold for the budget's alert tiers, in USD (the budget's fixed currency_code). A workspace variable because the number is a spend-posture tell and this repository is public. Only read when billing_account_id is set."
   sensitive   = true
   default     = 0
 

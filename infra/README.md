@@ -127,10 +127,13 @@ remain under `/var/lib/emisar-admin-runner` while the boot-recreatable binary
 lives on executable tmpfs. Cloud-init also writes the unlisted
 `infra/packs/emisar-admin` pack directly from the Terraform module.
 
-The verified release bundle seeds a fixed host operations set on first boot:
-`linux-core`, `debugging`, `systemd-deep`, `cloud-init`, `docker`, `nic`,
-`time-sync`, and `elixir-beam`. A runner-only bridge maps the three BEAM
-toolchain checks to fixed, read-only RPC expressions in the colocated portal
+First boot seeds `linux-core`, `debugging`, `systemd-deep`, `cloud-init`,
+`docker`, `nic`, `time-sync`, and `elixir-beam` from the verified release bundle
+only where the bundle carries them (today `linux-core`, `debugging`,
+`systemd-deep`, and `docker`). The rest, and any bundled copy that differs from
+`pack-pins.txt`, come from the registry through the pinned exact-version/hash
+loop, so first boot does need the registry. A runner-only bridge maps the three
+BEAM toolchain checks to fixed, read-only RPC expressions in the colocated portal
 release and rejects every other invocation. The combined `firewall` pack is
 excluded because COS has no `nft` CLI, so its complete dependency contract cannot
 be met. Service startup checks the remaining packs' declared host dependencies
@@ -181,7 +184,9 @@ auth token distinct from the portal's `sentry_dsn`; it rotates the same way.
 ### Native diagnostic utilities
 
 COS receives a separate, extraction-only Linux amd64 bundle at
-`/run/emisar-admin-runner/diagnostics`. Its private ELF loader, Python imports
+`/run/emisar-admin-runner/diagnostics`. The admin runner therefore requires an
+x86_64 host: `install-diagnostics.sh` runs before the runner download and exits
+on any other architecture, so start.sh's arm64 runner branch is never reached. Its private ELF loader, Python imports
 and NTPsec `libntpc` stay together. Sysstat is rebuilt from signed Debian source
 with `sadc` fixed to that executable `/run` location; qualification samples
 `sar` without a distribution or previous collector that could mask a broken

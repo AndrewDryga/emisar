@@ -667,13 +667,12 @@ identifiers are filters, never fuzzy search terms.
       "summary": "Returns node status, ownership, token, and rack information.",
       "risk": "low",
       "side_effects": [],
-      "matched_fields": ["action_id", "title", "runner.hostname"],
+      "matched_fields": ["action_id", "title"],
       "next": {
         "tool": "get_action",
         "arguments": {
           "action_id": "cassandra.nodetool_status",
-          "pack_ref": "cassandra@1.4.0/sha256:7a65c099fe1d3c8d2b250d211d4792ec1e3919b87f49ffb998ee6e4366b4b6fe",
-          "target": "dbcas103"
+          "pack_ref": "cassandra@1.4.0/sha256:7a65c099fe1d3c8d2b250d211d4792ec1e3919b87f49ffb998ee6e4366b4b6fe"
         }
       }
     }
@@ -691,12 +690,14 @@ candidate's own `next` continues to `get_action` for that exact action.
 Search returns candidates; it never selects or executes. Ranking lanes are:
 
 1. Exact action ID.
-2. Action-ID prefix and segment matches.
-3. Exact title and reviewed pack-authored `search_terms`.
-4. Weighted title, argument names/descriptions, summary, description, and side
-   effects.
-5. Trigram similarity as a lower-weight union with lexical results, so a weak
-   lexical hit cannot suppress typo recovery.
+2. Action-ID prefix.
+3. Exact title, then an exact reviewed pack-authored `search_terms` entry.
+4. Rarity-weighted query tokens (stop words dropped, generic synonym groups,
+   word-prefix matches) over the action ID, title, summary, and `search_terms`,
+   with concept-coverage promotion so each concept of a multi-part query keeps
+   its best answer near the top.
+5. Jaro similarity to the action ID, then the title, only when no token
+   matched (typo recovery).
 6. Stable `(action_id, pack_ref)` tie-breaker.
 
 A candidate must enter an exact lane or clear the committed minimum relevance
@@ -707,7 +708,8 @@ pass both held-out recall and no-action precision gates below.
 
 Runner rows are grouped before ranking so deployment count cannot boost a
 candidate. Availability and risk do not reorder semantic relevance.
-`matched_fields` explains inclusion; there is no fabricated confidence score.
+`matched_fields` names which of `action_id`, `title`, `summary`, and
+`search_terms` matched; there is no fabricated confidence score.
 
 Exact visible filters that find only unavailable observations return
 `action_unavailable` with a directed `list_packs` or `list_runners` follow-up.

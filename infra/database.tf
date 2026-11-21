@@ -128,9 +128,11 @@ resource "google_sql_user" "pgaudit_owner" {
   }
 }
 
-# Terraform can create the Cloud SQL IAM principal, but PostgreSQL ownership is
-# bootstrapped explicitly first (README.md). Deferring creation until that role
-# exists avoids temporarily granting the application cloudsqlsuperuser.
+# Terraform can create the Cloud SQL IAM principal, but the emisar_owner role
+# must already exist; a PITR restore brings it with the database, and the
+# repository keeps no blank-database bootstrap procedure. Deferring creation
+# until that role exists avoids temporarily granting the application
+# cloudsqlsuperuser.
 resource "google_sql_user" "emisar_vm" {
   count          = var.database_owner_role_ready ? 1 : 0
   name           = trimsuffix(google_service_account.vm.email, ".gserviceaccount.com")

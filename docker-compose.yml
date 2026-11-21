@@ -258,9 +258,9 @@ services:
   # compose service name (runner-1/-2/-3) stays the docker-network alias.
   #
   # Fixture volumes are demo-only: realistic /var/log entries and stub
-  # systemctl / journalctl binaries so the linux-core + systemd-deep actions
-  # produce believable output inside this stack (no systemd, no real
-  # nginx/postgres logs). Everything in this runner setup is a development
+  # systemctl / journalctl binaries (no systemd, no real nginx/postgres logs).
+  # The systemctl stub simulates only `status` and `restart`; other verbs, so
+  # most systemd-deep actions, exit with an "unsupported command" error. Everything in this runner setup is a development
   # fixture under dev/.
   # Copy the demo runners' configs into a named volume so they are root-owned on
   # native Linux too. A direct bind mount inherits the HOST's uid — on CI that is
