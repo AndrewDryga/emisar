@@ -154,7 +154,7 @@ jobs:
           chmod +x "dist/${name}/install.sh"
           # Bundle only a SMALL curated default set so install.sh can set
           # up host-appropriate starter packs offline. The full catalog
-          # (~93 packs) is fetched on demand via `emisar pack install
+          # is fetched on demand via `emisar pack install
           # <name>` from the registry — we do NOT ship all of them.
           mkdir -p "dist/${name}/packs"
           while IFS= read -r pack; do
@@ -527,8 +527,8 @@ jobs:
           # `make_latest: legacy` — only this release is marked Latest
           # on GitHub if it's the newest by semver. The MCP bridge has
           # its own release stream (mcp-v*) and shouldn't compete for
-          # the Latest pointer; we keep the runner as Latest because
-          # that's what most install pipelines (`curl | bash`) hit.
+          # the Latest pointer; we keep the runner as Latest for people
+          # browsing releases. The installers do not read it.
           make_latest: legacy
           generate_release_notes: true
           # The digest is the immutable reference to the exact smoke-tested

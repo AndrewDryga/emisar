@@ -23,7 +23,7 @@ runs:
         go-version-file: ${{ inputs.module }}/go.mod
         cache: true
         # go.* not go.sum: the mcp module is stdlib-only and ships no go.sum (the
-        # runner gate asserts it never gains one), so ${module}/go.sum resolved to
+        # mcp gate asserts it never gains one), so ${module}/go.sum resolved to
         # nothing and setup-go failed the mcp verify job before the signed-tag
         # check ran. go.* matches go.mod in both modules and adds go.sum where it
         # exists (runner).
@@ -66,10 +66,12 @@ runs:
         # infrastructure timeout instead of a named wait.
         deadline=$((SECONDS + 900))
         while true; do
-          result=$(gh api \
+          # Every page: a commit that runs the full pack-behavior matrix has
+          # over 200 check runs, and the aggregate is not on the first page.
+          result=$(gh api --paginate --slurp \
             -H 'Accept: application/vnd.github+json' \
-            "repos/${GITHUB_REPOSITORY}/commits/$(git rev-parse HEAD)/check-runs?per_page=100" \
-            --jq '[.check_runs[] | select((.name == "Required - CI" or .name == "CI / Required - CI") and .app.id == 15368)] | sort_by(.id) | last | [(.status // "missing"), (.conclusion // "pending")] | @tsv')
+            "repos/${GITHUB_REPOSITORY}/commits/$(git rev-parse HEAD)/check-runs?per_page=100" |
+            jq -r '[.[].check_runs[] | select((.name == "Required - CI" or .name == "CI / Required - CI") and .app.id == 15368)] | sort_by(.id) | last | [(.status // "missing"), (.conclusion // "pending")] | @tsv')
           IFS=$'\t' read -r status conclusion <<< "$result"
 
           if [ "$status" = completed ]; then

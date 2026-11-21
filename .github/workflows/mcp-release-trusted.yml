@@ -220,7 +220,7 @@ jobs:
         # GitHub's attestation API rejects user-owned private repos
         # (free-tier feature gate). Skip on private; the step kicks
         # back in automatically once the repo is public. See
-        # runner-release.yml for the same guard + rationale.
+        # runner-release-trusted.yml for the same guard + rationale.
         if: ${{ !github.event.repository.private }}
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
         with:
@@ -400,9 +400,9 @@ jobs:
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
           name: "MCP Bridge v${{ steps.ver.outputs.version }}"
-          # NOT marked as latest — the runner owns the Latest pointer
-          # so `curl emisar.dev/install.sh | bash` always gets the
-          # runner install path, not the MCP bridge.
+          # NOT marked as latest: GitHub's Latest badge stays on the
+          # runner release. The installers do not read it; they
+          # resolve versions from latest.json or the tag prefix.
           make_latest: "false"
           generate_release_notes: true
           files: |
