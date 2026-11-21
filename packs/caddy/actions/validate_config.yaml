@@ -4,7 +4,7 @@ title: caddy validate --config <file>
 kind: exec
 risk: low
 description: Validate a Caddyfile or JSON config without loading it.
-side_effects: ["One forked process.", "Read-only."]
+side_effects: ["One forked process.", "Provisions the config's modules, which may create or open configured log files for writing; does not load the config into the running server."]
 search_terms:
   - syntax errors
 args:

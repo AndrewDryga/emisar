@@ -287,7 +287,7 @@ variables() {
       total_entries,
       variables: [.variables[]? | {
         key, description, is_encrypted,
-        value_bytes: ((.value // "") | length)
+        value_bytes: ((.value // "") | utf8bytelength)
       }]
     }'
 }

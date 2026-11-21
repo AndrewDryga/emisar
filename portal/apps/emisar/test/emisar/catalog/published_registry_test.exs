@@ -40,10 +40,10 @@ defmodule Emisar.Catalog.PublishedRegistryTest do
     # Redis shares a CLI guard across actions; Cassandra has per-action scripts.
     test "content_hash matches the Go runner byte-for-byte (golden values)" do
       assert PublishedRegistry.get("redis").content_hash ==
-               "sha256:dcff1e4fe64e796fe6122c958fe8ebae1a2e6c36c6a629de162b80dc4d6e4977"
+               "sha256:1122f9b2885690ef2fd2f1953c42ffee1c345b22b3707faeddbb585b5b4e0194"
 
       assert PublishedRegistry.get("cassandra").content_hash ==
-               "sha256:53dd09df689c84d207598ef9b94030dcc42c3d8ac0fcbc92426021e35132d60f"
+               "sha256:d10c15022780e34e9144ecf54a36b5ebd5f98fb505694d5396035fd208a52503"
     end
   end
 
@@ -144,10 +144,12 @@ defmodule Emisar.Catalog.PublishedRegistryTest do
       assert PublishedRegistry.tarball_url("redis", pack.version) == {:ok, pack.tarball_url}
     end
 
+    test "resolves a prior version the bundled catalog remembers" do
+      [prior | _] = PublishedRegistry.get("redis").previous_versions
+      assert PublishedRegistry.tarball_url("redis", prior.version) == {:ok, prior.tarball_url}
+    end
+
     test "is :error for a version the pack doesn't advertise" do
-      # No pack yet ships history in the bundled catalog, so any non-current
-      # version is unknown; the remembered-version branch is covered purely in
-      # Emisar.Catalog.PublishedRegistry.PackTest.
       assert PublishedRegistry.tarball_url("redis", "9.9.9") == :error
     end
 

@@ -10,7 +10,7 @@ description: >
 side_effects:
   - Every traced request writes rows to the system_traces keyspace, adding write load and disk use.
   - Values above about 0.01 are heavy on a busy node; 1 traces every request.
-  - Runtime-only — a restart returns the node to its cassandra.yaml value.
+  - Runtime-only — a restart returns the probability to 0.
 args:
   - name: probability
     type: number

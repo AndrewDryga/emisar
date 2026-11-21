@@ -12,7 +12,7 @@ execution:
     argv:
       - "-XAtq"
       - "-c"
-      - "SET LOCAL statement_timeout = '8s'; SET LOCAL lock_timeout = '5s'; SELECT pid, usename, application_name, state, backend_xmin, EXTRACT(EPOCH FROM (now()-xact_start))::int AS xact_age_sec, substring(query, 1, 300) AS query FROM pg_stat_activity WHERE backend_xmin IS NOT NULL ORDER BY backend_xmin::text::bigint ASC LIMIT 5;"
+      - "SET LOCAL statement_timeout = '8s'; SET LOCAL lock_timeout = '5s'; SELECT pid, usename, application_name, state, backend_xmin, EXTRACT(EPOCH FROM (now()-xact_start))::int AS xact_age_sec, substring(query, 1, 300) AS query FROM pg_stat_activity WHERE backend_xmin IS NOT NULL ORDER BY age(backend_xmin) DESC LIMIT 5;"
   timeout: 10s
 output:
   parser: text

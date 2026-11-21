@@ -83,7 +83,7 @@ setup:
   notes:
     - "Any SPARK_* variable you set must also be allowlisted in the runner's `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so a variable present on the host but not allowlisted is silently dropped and the action falls back to its local default."
     - "A driver UI serves exactly one application and stops existing when that application ends, so its port is reused by whatever runs next. Confirm the application id from spark.applications with source driver before acting on a job or stage."
-    - "The job and stage kill endpoints need spark.ui.killEnabled (true by default) and, where ACLs are on, a modify-permitted user. The master's kill endpoints need spark.ui.killEnabled on the master; worker decommissioning additionally needs spark.decommission.enabled."
+    - "The job and stage kill endpoints need spark.ui.killEnabled (true by default) and, where ACLs are on, a modify-permitted user. The master's kill endpoints need spark.ui.killEnabled on the master; worker decommissioning additionally needs spark.decommission.enabled and an allowed value of spark.master.ui.decommission.allow.mode."
     - "spark.environment returns the Spark configuration and runtime, with JVM system properties and the classpath dropped on the host. Spark's own spark.redaction.regex masks the property values it recognizes — a credential stored under a key that pattern does not match is still returned, which is why the action is high risk."
     - "Spark on YARN or Kubernetes: point `SPARK_UI_URL` at the driver's UI (through the YARN proxy or a port-forward) and `SPARK_HISTORY_URL` at the history server. The master and submission actions are standalone-only."
   verify: spark.master_state

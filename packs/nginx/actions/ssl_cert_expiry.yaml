@@ -3,7 +3,7 @@ id: nginx.ssl_cert_expiry
 title: TLS cert expiry for one vhost
 kind: exec
 risk: low
-description: Probe localhost:443 with SNI to read the cert expiry. Returns notBefore/notAfter and subject/issuer.
+description: Probe 127.0.0.1 at the given port (default 443) with SNI to read the cert expiry. Returns notBefore/notAfter and subject/issuer.
 side_effects:
   - One openssl s_client to localhost.
   - Read-only.

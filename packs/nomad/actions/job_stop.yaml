@@ -3,7 +3,7 @@ id: nomad.job_stop
 title: nomad job stop <id>
 kind: script
 risk: high
-description: 'Stop one job. All its allocations are stopped + GC''d. Use -purge to also remove from history.'
+description: 'Stop one job in the target namespace. All its allocations are stopped; Nomad garbage-collects them later. The job stays in history (this action does not purge).'
 side_effects:
   - All allocations of the job receive a shutdown signal.
   - Job marked dead in catalog.

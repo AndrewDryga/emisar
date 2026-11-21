@@ -2,7 +2,7 @@
 # Supplemental parser/failure transcripts, never the native socket proof.
 set -eu
 case "$*" in
-  '-tnpi state established'|'-H -tnpi state established'|'-H -tan') ;;
+  '-tnpi state established'|'-H -tnpi state established'|'-H -tan'|'-ant') ;;
   *) printf 'unexpected transcript ss arguments\n' >&2; exit 2 ;;
 esac
 case "${PACKTEST_SS_CASE:-ranking}" in

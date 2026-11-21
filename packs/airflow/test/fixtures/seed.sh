@@ -68,6 +68,8 @@ wait_for_dag "$fail_dag"
 log "creating pool, variable, and connection"
 airflow pools set packtest_pool 4 "Pack-test pool" >/dev/null
 airflow variables set packtest_variable "$PACKTEST_VARIABLE_VALUE" >/dev/null
+# Four characters, five UTF-8 bytes: value_bytes counts bytes.
+airflow variables set packtest_utf8_variable "café" >/dev/null
 airflow connections add packtest_conn \
 	--conn-type postgres \
 	--conn-host warehouse.packtest.invalid \

@@ -5,7 +5,9 @@ kind: script
 risk: low
 description: >
   List Airflow variable keys with their description, whether they are
-  encrypted, and how many bytes the value holds. Values never leave the runner
+  encrypted, and the UTF-8 byte size of the value the API returns (Airflow
+  may return a masked value for a sensitive key, so that size is the mask's,
+  not the stored secret's). Values never leave the runner
   — an Airflow variable routinely holds an API key or a DSN, and no redaction
   pattern can be trusted to catch every shape — so this answers "does this
   variable exist and is it set", never "what is it".

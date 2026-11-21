@@ -5,7 +5,8 @@ kind: exec
 risk: high
 description: >
   Trigger a workflow that supports workflow_dispatch in the named
-  repository. Pass ref + JSON inputs. Used for ad-hoc deploys, scripted
+  repository at the given ref. The action passes no workflow input values.
+  Used for ad-hoc deploys, scripted
   rollbacks, or manual release flows.
 side_effects:
   - Workflow run begins.

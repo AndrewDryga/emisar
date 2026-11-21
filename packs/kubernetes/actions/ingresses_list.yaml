@@ -3,7 +3,7 @@ id: kubernetes.ingresses_list
 title: List ingresses across all namespaces
 kind: exec
 risk: low
-description: '`kubectl get ingress -A` — ingress name, hosts, addresses, TLS hosts.'
+description: '`kubectl get ingress -A` — ingress name, class, hosts, addresses, and ports.'
 side_effects:
   - One kubectl get invocation.
   - Read-only.

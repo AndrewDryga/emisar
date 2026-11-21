@@ -8,7 +8,7 @@ description: >
   keyed on the request path without its query string so a credential in a
   URL never enters the table. Read-only.
 side_effects:
-  - Reads /var/log/nginx/access.log.
+  - Reads the nginx access log ($NGINX_ACCESS_LOG, or /var/log/nginx/access.log).
   - Read-only.
 args:
   - name: lines

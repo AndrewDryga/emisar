@@ -9,7 +9,7 @@ description: >
   Needs the log on disk — the official container image symlinks it to stdout,
   where the host's log collector owns it instead. Read-only.
 side_effects:
-  - Reads /var/log/nginx/access.log.
+  - Reads the nginx access log (log_path, $NGINX_ACCESS_LOG, or /var/log/nginx/access.log).
   - Read-only.
 args:
   - name: lines

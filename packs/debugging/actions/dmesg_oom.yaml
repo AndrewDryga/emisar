@@ -8,11 +8,12 @@ kind: script
 risk: low
 
 description: >
-  Filter dmesg for OOM-killer events. Returns the kernel log lines
-  showing process id, name, RSS, and OOM score for every killed
-  process. The "why did mysqld vanish?" answer. Falls back to
-  `journalctl -k` when dmesg is not permitted (needs CAP_SYSLOG / root,
-  or journal read access via systemd-journal / adm). Read-only.
+  Filter dmesg for OOM-killer events and return the last 30 matching
+  kernel log lines, which show process id, name, RSS, and OOM score for
+  the most recent kills. The "why did mysqld vanish?" answer. Falls back
+  to `journalctl -k` when dmesg is not permitted (needs CAP_SYSLOG / root,
+  or journal read access via systemd-journal / adm); the fallback searches
+  the latest 10,000 kernel messages. Read-only.
 
 side_effects:
   - One dmesg (or journalctl -k) invocation.

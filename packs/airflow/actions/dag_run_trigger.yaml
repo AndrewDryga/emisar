@@ -11,7 +11,7 @@ description: >
 side_effects:
   - Creates a DAG run and executes the DAG's tasks with their real side effects.
   - Consumes pool, queue, and executor capacity shared with every other DAG.
-  - Runs even when the DAG is paused.
+  - On a paused DAG the run is created queued and waits until the DAG is unpaused; the trigger does not change pause state.
 search_terms:
   - trigger dag
   - run the dag now

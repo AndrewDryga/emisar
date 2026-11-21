@@ -51,6 +51,13 @@ cases:
     args: {zone: example.test}
     expect:
       stdout_contains: ["2026072301"]
+  - name: bind.zone_serial-unknown-zone-fails
+    action: bind.zone_serial
+    args: {zone: missing.test}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [no SOA serial for missing.test]
   - action: bind.rndc_reload
     args: {zone: example.test}
     expect:

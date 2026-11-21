@@ -14,6 +14,17 @@ defaults:
     stdout_not_contains: [packtest-canary-traefik-metrics-password-710a, packtest-canary-traefik-error-secret-6f8d]
     stderr_not_contains: [packtest-canary-traefik-metrics-password-710a, packtest-canary-traefik-error-secret-6f8d]
 cases:
+  # A resolver with no certificates yet, empty or null, is an empty success,
+  # not a blank "expires <unreadable>" row.
+  - name: traefik.acme_cert_expiry-empty-store
+    action: traefik.acme_cert_expiry
+    args: {acme_path: /letsencrypt/acme-empty.json}
+    expect:
+      stdout_not_contains: [expires]
+    probes:
+      - argv: [jq, -r, 'keys | join(",")', /letsencrypt/acme-empty.json]
+        expect:
+          stdout_contains: ["letsencrypt,staging"]
   - name: traefik.metrics-busy-scrape-is-bounded
     action: traefik.metrics
     env: {TRAEFIK_METRICS_URL: "http://traefik-metrics-response:8080/large"}

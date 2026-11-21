@@ -3,7 +3,7 @@ id: vault.leases_count
 title: vault list sys/leases/lookup/<prefix>
 kind: exec
 risk: low
-description: Count of active leases under one mount prefix.
+description: List the immediate keys (lease IDs or sub-prefixes) under one sys/leases/lookup prefix; it does not count leases in deeper prefixes.
 side_effects:
   - One sys/leases/lookup request.
   - Read-only.

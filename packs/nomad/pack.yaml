@@ -62,6 +62,10 @@ setup:
       description: >
         Path to a CA certificate for verifying an https:// server signed
         by a private CA. Must be readable by the runner user.
+    - name: NOMAD_CAPATH
+      description: >
+        Directory of PEM CA certificates, used when `NOMAD_CACERT` is unset.
+        Must be readable by the runner user.
     - name: NOMAD_CLIENT_CERT
       description: >
         Path to a client certificate for mTLS-enabled servers (pair with

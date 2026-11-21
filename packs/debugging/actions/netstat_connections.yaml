@@ -1,7 +1,7 @@
 schema_version: 1
 
 id: debugging.netstat_connections
-title: Established connection summary
+title: TCP connections by state and peer
 kind: exec
 risk: low
 
@@ -35,7 +35,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "ss -ant | awk 'NR>1 {print $1, $5}' | sed 's/:[0-9]*$//' | sort | uniq -c | sort -nr | head -n {{ args.limit }}"
+      # Read ss in full first, so a failed ss fails the action instead of
+      # reaching the pipeline as an empty inventory.
+      - "out=$(ss -ant) || exit $?; printf '%s\\n' \"$out\" | awk 'NR>1 {print $1, $5}' | sed 's/:[0-9]*$//' | sort | uniq -c | sort -nr | head -n {{ args.limit }}"
   timeout: 15s
 
 output:

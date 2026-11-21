@@ -121,6 +121,16 @@ cases:
       stderr_contains: [ss cannot read socket inventory]
       stdout_not_contains: [total_retrans, 127.0.0.1]
 
+  - name: debugging.netstat-connections-source-failure-is-not-empty-success
+    action: debugging.netstat_connections
+    env: *ss_env
+    arrange:
+      - argv: [test, -x, /opt/packtest-socket-transcript/ss]
+    expect:
+      status: failure
+      exit: [13]
+      stderr_contains: [ss cannot read socket inventory]
+
   - name: debugging.tcp-retrans-zero-is-successful-without-ownership
     action: debugging.tcp_retrans_top
     env: {<<: *ss_env, PACKTEST_SS_CASE: zero}

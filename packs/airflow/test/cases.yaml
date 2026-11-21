@@ -234,7 +234,7 @@ cases:
 
   - action: airflow.variables
     expect:
-      stdout_contains: [packtest_variable, '"value_bytes":37']
+      stdout_contains: [packtest_variable, '"value_bytes":37', packtest_utf8_variable, '"value_bytes":5}']
 
   # The seeded packtest_pipeline run updates one asset from its load task.
   - action: airflow.assets

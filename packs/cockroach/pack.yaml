@@ -10,7 +10,7 @@ description: >
   sessions / transactions, contention & locks, jobs, statement statistics,
   table sizes, and cluster settings — plus a few gated operators (cancel a
   query / session / job, pause / resume a job, decommission / recommission a
-  node). Reads are SQL against crdb_internal / SHOW statements; mutators use
+  node, change a cluster setting). Reads are SQL against crdb_internal / SHOW statements; mutators use
   SQL or `cockroach node`.
 vendor: emisar
 homepage: https://emisar.dev/packs/cockroach

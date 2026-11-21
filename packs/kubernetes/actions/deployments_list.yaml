@@ -3,7 +3,7 @@ id: kubernetes.deployments_list
 title: List deployments
 kind: exec
 risk: low
-description: '`kubectl get deploy -A` — replica counts (desired/current/available), age, image references.'
+description: '`kubectl get deploy -A` — ready, up-to-date, and available replica counts and age.'
 side_effects:
   - One kubectl get invocation.
   - Read-only.

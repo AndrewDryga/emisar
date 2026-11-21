@@ -249,6 +249,17 @@ cases:
   - action: postgres.largest_tables_full
     expect:
       stdout_contains: [public.orders]
+  # A backend holding a snapshot open is listed by the oldest-xmin read.
+  - action: postgres.backend_holding_xmin
+    arrange:
+      - argv: ["/bin/sh", "-c", "nohup sh -c 'export PGAPPNAME=packtest-xmin-holder; { printf \"BEGIN ISOLATION LEVEL REPEATABLE READ; SELECT 1;\\n\"; sleep 120; } | psql -XAt' >/tmp/packtest-xmin-holder.log 2>&1 &"]
+      - argv: [psql, -XAt, -c, "SELECT 'xmin-held' FROM pg_stat_activity WHERE application_name = 'packtest-xmin-holder' AND backend_xmin IS NOT NULL"]
+        expect:
+          stdout_contains: [xmin-held]
+        retry_for: 10s
+        retry_every: 250ms
+    expect:
+      stdout_contains: [packtest-xmin-holder]
   - action: postgres.last_vacuum_per_table
     expect:
       stdout_contains: [public.orders]

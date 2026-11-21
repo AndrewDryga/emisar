@@ -3,8 +3,9 @@ id: zookeeper
 name: ZooKeeper operations
 version: 0.1.12
 description: >
-  Cluster + 4lw command + watch + session introspection. Read-only. Set
-  ZK_SERVERS env var (host:port,host:port,…). All four-letter words need
+  Cluster + 4lw command + watch + session introspection. Read-only. Each
+  action targets one node by its required server argument (host:port).
+  All four-letter words need
   to be in zoo.cfg's `4lw.commands.whitelist`.
 vendor: emisar
 homepage: https://emisar.dev/packs/zookeeper
@@ -32,7 +33,7 @@ setup:
     by a required server argument (host:port) and probes it with a
     four-letter word over a plain nc TCP connection.
   notes:
-    - "Targeting is per-call, not via env: pass server=host:port to every action (the ZK_SERVERS list in the description is operator shorthand, not read by any action)."
+    - "Targeting is per-call, not via env: pass server=host:port to every action."
     - "The 4lw commands (srvr, stat, conf, cons, wchs, ruok, mntr, envi) only work if each is in the node's zoo.cfg 4lw.commands.whitelist."
     - The runner host must have plain TCP reach to the client port (default 2181); 4lw is unauthenticated, so restrict it at the network layer.
   verify: zk.ruok

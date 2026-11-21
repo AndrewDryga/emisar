@@ -1,7 +1,7 @@
 schema_version: 1
 
 id: redis.latency
-title: LATENCY LATEST + HISTORY
+title: Show latest latency events
 kind: script
 risk: low
 

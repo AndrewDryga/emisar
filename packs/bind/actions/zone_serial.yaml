@@ -17,7 +17,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "soa=$(dig @127.0.0.1 \"$1\" SOA +short) || exit 1; printf '%s\\n' \"$soa\" | awk '{print $3}'"
+      # dig exits 0 on an answer with no SOA (an unknown, refused, or failed
+      # zone), so the serial itself is checked before it is reported.
+      - "soa=$(dig @127.0.0.1 \"$1\" SOA +short) || exit 1; serial=$(printf '%s\\n' \"$soa\" | awk 'NR==1 {print $3}'); case $serial in ''|*[!0-9]*) echo \"no SOA serial for $1 from 127.0.0.1\" >&2; exit 1 ;; esac; printf '%s\\n' \"$serial\""
       - "emisar"
       - "{{ args.zone }}"
   timeout: 15s

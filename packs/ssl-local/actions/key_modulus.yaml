@@ -9,7 +9,11 @@ kind: exec
 # it are authored once above this pack's cert_text action.
 risk: low
 description: >
-  Show the hash of the RSA private key's modulus. Compare to the modulus hash of a cert (via `openssl x509 -modulus`) to confirm key + cert match. NEVER prints the key itself.
+  Show the SHA-256 of the RSA private key's `Modulus=...` line, hashed
+  without a trailing newline. The key matches a certificate when this
+  equals the output of
+  `printf '%s' "$(openssl x509 -in cert.pem -noout -modulus)" | sha256sum`.
+  Never prints the key itself.
 side_effects:
   - One file read.
   - Read-only — only the modulus hash is emitted; the key material is not returned.

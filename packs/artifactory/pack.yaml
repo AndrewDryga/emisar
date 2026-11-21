@@ -42,7 +42,11 @@ setup:
         local platform router.
       example: https://mycompany.jfrog.io
     - name: ARTIFACTORY_TOKEN
-      description: Access token sent as the Bearer credential.
+      description: >
+        Access token sent as the Bearer credential. Mint one under the JFrog
+        Platform's Access Tokens administration or with the JFrog CLI
+        (`jf access-token-create`) for an identity holding the permissions the
+        notes below describe.
     - name: ARTIFACTORY_USER
       description: User for Basic authentication. Takes precedence over `ARTIFACTORY_TOKEN`.
       example: admin

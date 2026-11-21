@@ -3,7 +3,7 @@ id: fs.find_by_name
 title: find -name <glob> under <path>
 kind: exec
 risk: low
-description: Find files matching one shell glob under one path. Capped at 1000 results.
+description: Find files matching one shell glob under one path. The traversal stops at the 60s timeout, and output past 512 KiB is dropped.
 side_effects:
   - One file-system traversal.
   - Read-only.

@@ -7,7 +7,7 @@ description: Stop accepting writes, flush memtables, persist commit log position
 side_effects:
   - Node stops accepting writes immediately.
   - All memtables flushed.
-  - Native + Thrift transports closed.
+  - Native transport closed.
   - Only restart restores the node.
 search_terms:
   - safe shutdown

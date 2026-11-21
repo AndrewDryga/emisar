@@ -31,7 +31,7 @@ args:
     type: string
     required: false
     default: ""
-    description: Nomad namespace to target. Empty (default) = the default namespace; "*" = all namespaces.
+    description: Nomad namespace to target. Empty (default) sends no namespace parameter with the request; "*" = all namespaces.
     validation:
       pattern: "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}|\\*)?$"
 execution:

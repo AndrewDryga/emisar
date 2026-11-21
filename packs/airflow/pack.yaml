@@ -55,7 +55,7 @@ setup:
     - name: AIRFLOW_API_VERSION
       default: v2
       description: >
-        API family: `v1` for Airflow 2.10.4, `v2` for Airflow 3.3.0.
+        API family: `v1` for Airflow 2, `v2` for Airflow 3.
         Selection is explicit; authentication failures never trigger a fallback.
     - name: AIRFLOW_API_TOKEN
       required: false

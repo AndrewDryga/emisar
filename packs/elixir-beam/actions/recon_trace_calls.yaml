@@ -54,7 +54,7 @@ args:
     type: string
     required: false
     default: all
-    description: Which processes recon_trace should target. Keep the default `all` to catch processes spawned during the window (servers handle each request in a fresh process); `existing` restricts to processes already alive when tracing starts.
+    description: Which processes recon_trace should target. Keep the default `all` to catch processes spawned during the window (servers handle each request in a fresh process); `existing` restricts to processes already alive when tracing starts; `new` restricts to processes spawned after tracing starts.
     validation:
       enum:
         - existing

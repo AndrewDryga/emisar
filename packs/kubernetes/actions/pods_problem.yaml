@@ -4,7 +4,7 @@ title: Pods NOT in Running/Succeeded
 kind: exec
 risk: low
 description: >
-  Filter pods to only those NOT in Running or Succeeded phase — Pending, Failed, CrashLoopBackOff, ImagePullBackOff, etc. The fastest "what's broken right now?" query. Read-only.
+  Filter pods to only those NOT in Running or Succeeded phase — Pending (including image pull failures), Failed, Unknown. A pod with crash-looping or unready containers can still be in Running phase and is not listed. Read-only.
 side_effects:
   - One kubectl get invocation.
   - Read-only.

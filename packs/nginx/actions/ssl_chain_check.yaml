@@ -4,9 +4,10 @@ title: TLS chain dump for one vhost
 kind: exec
 risk: low
 description: >
-  Probe localhost:443 with SNI and dump the certificate chain it presents. Use
-  to confirm the intermediate cert is being served. Only the chain is
-  returned, never the session details openssl prints after it.
+  Probe 127.0.0.1 at the given port (default 443) with SNI and dump the
+  certificate chain it presents. Use to confirm the intermediate cert is
+  being served. Only the chain is returned, never the session details
+  openssl prints after it.
 side_effects:
   - One openssl s_client to localhost.
   - Read-only.

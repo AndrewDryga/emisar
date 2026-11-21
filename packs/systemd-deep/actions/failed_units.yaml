@@ -3,7 +3,7 @@ id: systemd.failed_units
 title: Failed systemd units
 kind: exec
 risk: low
-description: '`systemctl --failed` — every unit not in `active` state with its last failure reason. The fast "what is broken on this host?" check.'
+description: '`systemctl --failed` — list units in the failed state with their load, active, and sub state and description. The fast "what is broken on this host?" check.'
 side_effects:
   - One systemctl invocation.
   - Read-only.

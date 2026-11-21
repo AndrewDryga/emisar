@@ -4,8 +4,10 @@ title: journalctl -u cloud-init -n <lines>
 kind: exec
 risk: medium
 description: >
-  Tail systemd journal entries for the four cloud-init units (cloud-init,
-  cloud-init-local, cloud-config, cloud-final). Use when boot failed
+  Tail systemd journal entries for the cloud-init units (cloud-init-local,
+  cloud-init, cloud-config, cloud-final, plus cloud-init-network and
+  cloud-init-main on releases since the network-stage rename; a unit the host
+  does not have adds nothing). Use when boot failed
   before /var/log/cloud-init.log was even written.
 side_effects:
   - Reads the systemd journal.
@@ -31,6 +33,10 @@ execution:
       - "cloud-config"
       - "-u"
       - "cloud-final"
+      - "-u"
+      - "cloud-init-network"
+      - "-u"
+      - "cloud-init-main"
       - "-n"
       - "{{ args.lines }}"
       - "--no-pager"

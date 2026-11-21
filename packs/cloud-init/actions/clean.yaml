@@ -4,7 +4,7 @@ title: cloud-init clean
 kind: exec
 risk: critical
 description: >
-  Wipe ALL cloud-init state — /var/lib/cloud/, logs, instance-id,
+  Wipe ALL cloud-init state — /var/lib/cloud/, instance-id,
   module-run records. NEXT BOOT cloud-init treats the host as a
   brand-new instance and re-runs every module from scratch.
   Combine with a reboot to genuinely re-bootstrap the host.

@@ -12,7 +12,7 @@ description: >
   chosen column is not a number is skipped, so a column that lands on the
   referer, user agent or client address prints nothing. Read-only.
 side_effects:
-  - Reads /var/log/nginx/access.log.
+  - Reads the nginx access log ($NGINX_ACCESS_LOG, or /var/log/nginx/access.log).
   - Read-only.
 args:
   - name: lines

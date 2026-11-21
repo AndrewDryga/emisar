@@ -12,7 +12,7 @@ execution:
     argv:
       - "-XAtq"
       - "-c"
-      - "SET LOCAL statement_timeout = '13s'; SET LOCAL lock_timeout = '5s'; SELECT schemaname || '.' || relname AS table, last_vacuum, last_autovacuum, last_analyze, last_autoanalyze, n_live_tup, n_dead_tup FROM pg_stat_user_tables ORDER BY COALESCE(last_autovacuum, last_vacuum) ASC NULLS FIRST LIMIT 50;"
+      - "SET LOCAL statement_timeout = '13s'; SET LOCAL lock_timeout = '5s'; SELECT schemaname || '.' || relname AS table, last_vacuum, last_autovacuum, last_analyze, last_autoanalyze, n_live_tup, n_dead_tup FROM pg_stat_user_tables ORDER BY GREATEST(last_autovacuum, last_vacuum) ASC NULLS FIRST LIMIT 50;"
   timeout: 15s
 output:
   parser: text

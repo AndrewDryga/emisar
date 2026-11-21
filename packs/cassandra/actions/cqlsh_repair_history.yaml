@@ -4,9 +4,11 @@ title: cqlsh -e "SELECT * FROM system_distributed.repair_history"
 kind: exec
 risk: low
 description: >
-  List recent repair sessions the cluster recorded — keyspace, table,
-  coordinator, start and finish time, and status. Shows what repaired and what
-  failed, which cassandra.nodetool_repair's own output does not survive.
+  List a limited sample of the repair sessions the cluster recorded —
+  keyspace, table, coordinator, start and finish time, and status. The query
+  has no time filter or global date order, so the rows are not necessarily the
+  newest sessions. Shows what repaired and what failed, which
+  cassandra.nodetool_repair's own output does not survive.
 side_effects: ["One CQL query.", "Read-only.", "A range scan of a cluster-wide table, bounded by the row limit."]
 args:
   - name: limit

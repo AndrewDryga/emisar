@@ -4,7 +4,7 @@ title: nomad deployment list
 kind: script
 risk: low
 description: >
-  List all deployments cluster-wide with their job, status, and description —
+  List deployments in the target namespace with their job, status, and description —
   the "what is rolling out right now" read. Use nomad.deployment_status for
   one deployment's full canary/health detail, or nomad.job_deployments for one
   job's history.

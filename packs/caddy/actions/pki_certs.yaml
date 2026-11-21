@@ -1,9 +1,9 @@
 schema_version: 1
 id: caddy.pki_certs
-title: GET /pki/ca/<id>/certificates
+title: Show one PKI CA's certificate chain
 kind: exec
 risk: low
-description: List certificates managed by Caddy's internal PKI.
+description: Show the root and intermediate certificate chain of one Caddy internal PKI CA (default `local`) with GET /pki/ca/<id>/certificates. Leaf certificates the CA issued are not listed.
 side_effects: ["One admin GET.", "Read-only."]
 args:
   - name: ca

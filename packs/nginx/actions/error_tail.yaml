@@ -6,12 +6,13 @@ kind: exec
 risk: medium
 
 description: >
-  Return the last N lines from /var/log/nginx/error.log. Use to spot
+  Return the last N lines of the nginx error log (log_path, else
+  $NGINX_ERROR_LOG, else /var/log/nginx/error.log). Use to spot
   upstream connect failures, SSL handshake errors, or worker crashes
   immediately after a reload. Read-only.
 
 side_effects:
-  - Reads /var/log/nginx/error.log.
+  - Reads the nginx error log (log_path, $NGINX_ERROR_LOG, or /var/log/nginx/error.log).
   - Read-only.
 
 args:

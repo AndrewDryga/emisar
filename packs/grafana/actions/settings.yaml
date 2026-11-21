@@ -5,7 +5,8 @@ kind: script
 risk: high
 description: >
   Show server settings (auth, smtp, database paths). Requires a Grafana
-  server-admin token; an org-admin token gets 403 here. Grafana masks the
+  server-admin user's Basic credentials (`GRAFANA_USER`/`GRAFANA_PASSWORD`);
+  service-account tokens are not accepted here. Grafana masks the
   credentials it recognizes and returns the rest as configured, so treat the
   response as secret-bearing.
 side_effects: ["One API call.", "Read-only, but the response carries whatever credentials Grafana did not mask."]

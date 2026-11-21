@@ -3,7 +3,7 @@ id: cassandra.cqlsh_list_roles
 title: cqlsh -e "LIST ROLES"
 kind: exec
 risk: low
-description: List all roles + their grants (requires CassandraAuthorizer/Authenticator).
+description: List all roles with their superuser, login, and options columns (requires CassandraAuthorizer/Authenticator). Grants come from cassandra.cqlsh_list_permissions.
 side_effects: ["One CQL query.", "Read-only."]
 args: []
 execution:

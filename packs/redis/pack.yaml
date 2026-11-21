@@ -17,11 +17,11 @@ description: >
   replicas, sentinels, get-master-addr, ckquorum, is-master-down,
   Sentinel INFO) and operators (failover, reset), persistence (lastsave,
   bgsave, bgrewriteaof, memory purge/doctor), streams + pub/sub
-  introspection, script cache flush, and tier-critical actions
-  (flush_db, flushall, swapdb, shutdown_nosave). Sentinel actions target
-  the Sentinel on port 26379; all others default to 127.0.0.1:6379.
-  Authenticates via REDISCLI_AUTH / REDIS_* env vars on the runner host
-  — never via per-call credentials.
+  introspection, script cache flush, swapdb (high), and tier-critical
+  actions (flush_db, flushall, shutdown_nosave, cluster_failover,
+  replicaof). Sentinel actions target the Sentinel on port 26379; all
+  others default to 127.0.0.1:6379. Authenticates via REDISCLI_AUTH on
+  the runner host — never via per-call credentials.
 vendor: emisar
 homepage: https://emisar.dev/packs/redis
 
@@ -53,7 +53,7 @@ setup:
     - Host and port are not configurable through this pack's env — ordinary actions use redis-cli's 127.0.0.1:6379 default, while Sentinel actions set only port 26379 and keep the same local host.
     - Sentinel must accept the same `REDISCLI_AUTH` password as the ordinary Redis service; every Sentinel action uses that shared runner credential on local port 26379.
     - "`REDISCLI_AUTH` supplies only the password; for an ACL-enabled server with a non-default username, set requirepass-style access or run the runner as a user whose default ACL covers these commands."
-    - Critical mutators (flush_db, flushall, swapdb, shutdown_nosave) and config writes need an ACL/user permitted to run them.
+    - Critical mutators (flush_db, flushall, shutdown_nosave, cluster_failover, replicaof), swapdb, and config writes need an ACL/user permitted to run them.
   verify: redis.info
 
 actions:
@@ -123,7 +123,7 @@ actions:
   - actions/bgrewriteaof.yaml
   - actions/memory_purge.yaml
   - actions/script_flush.yaml
-  # Critical mutators
+  # Destructive keyspace and process mutators (swapdb is high; the rest critical)
   - actions/flush_db.yaml
   - actions/flushall.yaml
   - actions/swapdb.yaml

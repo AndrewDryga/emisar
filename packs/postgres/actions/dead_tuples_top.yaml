@@ -1,9 +1,9 @@
 schema_version: 1
 id: postgres.dead_tuples_top
-title: Top tables by dead-tuple ratio
+title: Top tables by dead tuples
 kind: exec
 risk: low
-description: 'List tables where n_dead_tup / (n_live_tup + n_dead_tup) is high. Bloat suspects.'
+description: 'List tables with the most dead tuples (n_dead_tup), with each table''s dead-tuple percentage. Bloat suspects.'
 side_effects: ["One SELECT.", "Read-only."]
 search_terms:
   - table bloat

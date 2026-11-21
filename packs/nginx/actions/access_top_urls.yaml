@@ -14,7 +14,7 @@ description: >
   Read-only.
 
 side_effects:
-  - Reads /var/log/nginx/access.log.
+  - Reads the nginx access log (log_path, $NGINX_ACCESS_LOG, or /var/log/nginx/access.log).
   - Read-only.
 
 args:

@@ -3,7 +3,7 @@ id: nomad.eval_list
 title: nomad eval list
 kind: script
 risk: low
-description: List all recent evaluations across the cluster.
+description: List recent evaluations in the target namespace.
 side_effects: ["One API call.", "Read-only."]
 args:
   - name: namespace

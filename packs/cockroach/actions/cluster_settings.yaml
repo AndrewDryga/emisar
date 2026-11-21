@@ -6,7 +6,8 @@ risk: medium
 description: >
   Show all cluster settings with their current value, type, and description
   (SHOW CLUSTER SETTINGS). Use to confirm a setting's value during an
-  investigation. Read-only — this pack does not change settings. Credential
+  investigation. This action is read-only; cockroach.set_cluster_setting is
+  the separate action that changes a setting. Credential
   values are masked in the output; the setting name stays visible so you can
   see it is set.
 side_effects:
