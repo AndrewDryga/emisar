@@ -26,6 +26,10 @@ defmodule Emisar.Catalog.Jobs.PackVersionRetention do
   @accounts_per_page 100
   @runner_actions_batch_size 1_000
 
+  # A deleted runner's rows are management authority for the versions it
+  # advertised, so they outlive even the shortest audit retention.
+  @min_deleted_runner_days 90
+
   @impl Emisar.Jobs.Executors.GloballyUnique
   def execute(config) do
     batch_opts = Keyword.take(config, [:batch_size])
@@ -67,7 +71,9 @@ defmodule Emisar.Catalog.Jobs.PackVersionRetention do
   end
 
   defp prune_deleted_runner_actions(%Accounts.Account{id: account_id}, batch_opts) do
-    retention_days = Billing.account_audit_retention_days(account_id)
+    retention_days =
+      max(Billing.account_audit_retention_days(account_id), @min_deleted_runner_days)
+
     cutoff = DateTime.add(DateTime.utc_now(), -retention_days * 86_400, :second)
     batch_size = Keyword.get(batch_opts, :batch_size, @runner_actions_batch_size)
 

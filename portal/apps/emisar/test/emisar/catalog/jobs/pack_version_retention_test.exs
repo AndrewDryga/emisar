@@ -239,11 +239,13 @@ defmodule Emisar.Catalog.Jobs.PackVersionRetentionTest do
   end
 
   describe "deleted runners' catalog rows" do
-    test "prunes the rows of a runner deleted past audit retention, with cleanup off" do
+    test "prunes the rows of a runner deleted past the 90-day floor, with cleanup off" do
       account = Fixtures.Accounts.create_account()
       assert Runners.inactive_retention_hours(account) == {:error, :retention_disabled}
       assert Catalog.pack_retention_days(account) == {:error, :retention_disabled}
-      days = Billing.account_audit_retention_days(account.id)
+      # The free plan keeps audit history for 7 days; the rows still last 90.
+      assert Billing.account_audit_retention_days(account.id) < 90
+      days = 90
       long_deleted = deleted_runner_action(account, days + 1)
       recently_deleted = deleted_runner_action(account, days - 1)
       live = Fixtures.Runners.create_runner(account_id: account.id)
@@ -258,8 +260,8 @@ defmodule Emisar.Catalog.Jobs.PackVersionRetentionTest do
 
     test "leaves another account's rows and is a no-op the second time, in bounded batches" do
       account = Fixtures.Accounts.create_account()
-      other = Fixtures.Accounts.create_account(plan: "team")
-      days = Billing.account_audit_retention_days(account.id)
+      other = Fixtures.Accounts.create_account(plan: "enterprise")
+      days = 90
       assert Billing.account_audit_retention_days(other.id) > days + 1
 
       runner = Fixtures.Runners.create_runner(account_id: account.id)
