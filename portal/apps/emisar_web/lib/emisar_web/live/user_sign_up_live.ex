@@ -7,7 +7,7 @@ defmodule EmisarWeb.UserSignUpLive do
   this browser.
   """
   use EmisarWeb, :live_view
-  alias Emisar.Accounts
+  alias Emisar.{Accounts, Billing}
   alias EmisarWeb.{BillingIntent, LiveForm}
 
   # The landing page's CTA collects a work email and GETs here with it; carry it
@@ -28,7 +28,7 @@ defmodule EmisarWeb.UserSignUpLive do
     ~H"""
     <.auth_layout title="Create your workspace">
       <p :if={is_nil(@billing_choice)} class="mb-6 text-sm text-zinc-400">
-        Free plan: 3 runners, 7-day audit retention, 1 seat. No credit card.
+        Free plan: {free_plan_facts()}. No credit card.
       </p>
       <.selected_plan :if={@billing_choice} cycle={@billing_choice.cycle} class="mb-6">
         Create your workspace and verify your email. Review the price before you pay.
@@ -136,5 +136,11 @@ defmodule EmisarWeb.UserSignUpLive do
       {:ok, choice} -> {token, choice}
       {:error, :invalid} -> {nil, nil}
     end
+  end
+
+  # The Free plan's shared feature labels, the copy Billing owns.
+  defp free_plan_facts do
+    features = Billing.plans()["free"].features
+    Enum.map_join([:runners, :audit_retention, :members], ", ", &Keyword.fetch!(features, &1))
   end
 end

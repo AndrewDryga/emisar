@@ -119,13 +119,12 @@ defmodule Emisar.Catalog.ConsoleProjection do
     end)
   end
 
-  # Mirrors `observe_packs/3`'s `info["version"] || "unknown"` so an
+  # Mirrors `observe_packs/3`, which pins only a string version, so an
   # advertisement resolves to the very row that pin created; anything else is
   # reported as malformed, never silently dropped.
   def advertised_pack_ref({pack_id, info}) when is_binary(pack_id) and is_map(info) do
     case Map.get(info, "version") do
       version when is_binary(version) -> {:ok, {pack_id, version}}
-      nil -> {:ok, {pack_id, "unknown"}}
       _malformed -> :error
     end
   end
@@ -443,8 +442,8 @@ defmodule Emisar.Catalog.ConsoleProjection do
     end
   end
 
-  def availability_reason(:available),
-    do: "Available; policy and approval are checked when starting a run."
+  # The packs tooltip states once that policy and approval are checked at run start.
+  def availability_reason(:available), do: "Available."
 
   def availability_reason(:admission_denied), do: "Local admission denies this action."
   def availability_reason(:executable_missing), do: "Primary executable is missing."

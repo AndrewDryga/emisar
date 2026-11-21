@@ -389,7 +389,12 @@ the response without its terminating chunk rather than as a clean file.
 parameter and field names. Query parameters are `since` (ISO 8601 inclusive
 lower bound), `cursor` (opaque resume point, wins over `since`),
 `event_type` (repeatable as `event_type[]=` or comma-separated), and `limit` (default 100,
-cap 1000). Any non-empty page returns `X-Next-Cursor`; a full page also
+cap 1000). Events are ordered by the ID of the database transaction that wrote
+them, then by event ID, and a page serves only events whose transactions are
+below the oldest still-open transaction, so an event that commits late cannot
+land behind a cursor already issued. The cursor encodes that position; it is
+meaningful only within one database cluster, so a restore to a new instance
+resumes with `since`. Any non-empty page returns `X-Next-Cursor`; a full page also
 returns `Link: <…>; rel="next"`; an empty page returns neither. Each exported
 event today carries the 15 top-level fields `id`, `occurred_at`,
 `account_id`, `event_type`, `actor_kind`, `actor_id`, `actor_label`,

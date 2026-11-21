@@ -1723,6 +1723,34 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       refute Repo.exists?(Release)
     end
 
+    test "a title-only edit to a live runbook saves in place with no unpublished change", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      arrange_current_action(account, user)
+
+      published =
+        [
+          account_id: account.id,
+          created_by_membership_id: user.id,
+          title: "Fleet health",
+          slug: "fleet-health",
+          definition: canonical_definition(valid_draft())
+        ]
+        |> Fixtures.Runbooks.create_runbook()
+        |> Fixtures.Runbooks.publish_runbook()
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{published.id}/edit")
+      change(lv, valid_draft(title: "Fleet health check"))
+
+      destination = ~p"/app/#{account}/runbooks"
+      assert {:error, {:live_redirect, %{to: ^destination}}} = render_click(lv, "save", %{})
+
+      assert %Runbook{title: "Fleet health check", draft_definition: nil, live_version: 1} =
+               Repo.one!(Runbook)
+    end
+
     test "an edit to a live runbook saves as its unpublished change", %{
       conn: conn,
       user: user,

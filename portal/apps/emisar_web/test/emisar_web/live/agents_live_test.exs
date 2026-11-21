@@ -1499,6 +1499,22 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~ "NeverBot"
     end
 
+    test "the activity line says it counts one page once the keys span several", %{conn: conn} do
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
+      {:ok, _raw, _key} = ApiKeys.create_key(%{name: "PageBot"}, subject)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents")
+      refute has_element?(lv, "#agents-posture-page-scope")
+
+      for index <- 2..21 do
+        {:ok, _raw, _key} = ApiKeys.create_key(%{name: "PageBot#{index}"}, subject)
+      end
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents")
+      assert has_element?(lv, "#agents-posture-page-scope", "on this page")
+    end
+
     for key_count <- [1, 8] do
       test "a tick polls #{key_count} visible keys once without per-row authorization reads", %{
         conn: conn

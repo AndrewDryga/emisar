@@ -83,12 +83,8 @@ if config_env() == :prod do
   # Google Cloud's structured payload recognizes severity, request context,
   # source locations, traces, and Error Reporting events. The project ID is
   # injected by the GCE instance template as EMISAR_CLUSTER_PROJECT.
-  # EMISAR_CLUSTER_PROJECT only. The three GOOGLE_*/GCLOUD_* spellings that used
-  # to precede it are auto-injected by Cloud Run and App Engine, which this is
-  # not — it runs on GCE instances whose template sets EMISAR_CLUSTER_PROJECT
-  # (infra/runtime/portal/start.sh). Nothing ever set them, so they were three
-  # ways to be surprised by an inherited value rather than three ways to
-  # configure it.
+  # Read EMISAR_CLUSTER_PROJECT only; the GCE instance template sets it
+  # (infra/runtime/portal/start.sh).
   gcp_project_id = env.("EMISAR_CLUSTER_PROJECT")
 
   # Keep application metadata queryable, but never serialize the request and

@@ -386,7 +386,7 @@ defmodule Emisar.Catalog do
 
   defp pack_observation(account_id, {pack_id, %{"hash" => advertised} = info}, now)
        when is_binary(advertised) and advertised != "" do
-    version = info["version"] || "unknown"
+    version = info["version"]
     verdict = baseline_verdict(pack_id, version, advertised)
     candidate_id = Repo.generate_id()
 
@@ -433,8 +433,18 @@ defmodule Emisar.Catalog do
         version: version
       }
     else
-      # Malformed advertisement (oversized/bad field) — skip this pack,
-      # keep the rest of the batch.
+      # Malformed or unaddressable advertisement (a dotted id, a version that is
+      # not dot-numeric, an oversized field): refuse it here, keep the rest of
+      # the batch, and say why. Stored, it would be trustable on /app/packs yet
+      # have no pack_ref, so it could never be discovered or dispatched.
+      Logger.warning(
+        "Catalog: runner advertised pack #{inspect(String.slice(pack_id, 0, 128))} " <>
+          "that Emisar cannot address, so it is not ingested: " <>
+          Enum.map_join(changeset.errors, "; ", fn {field, {message, _}} ->
+            "#{field} #{message}"
+          end)
+      )
+
       nil
     end
   end

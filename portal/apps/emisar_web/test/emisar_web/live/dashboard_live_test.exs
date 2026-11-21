@@ -948,6 +948,22 @@ defmodule EmisarWeb.DashboardLiveTest do
       refute html =~ "One runner slot left"
     end
 
+    test "a disabled runner is not counted as offline in the runners pillar", %{
+      conn: conn,
+      account: account
+    } do
+      connected = Fixtures.Runners.create_runner(account_id: account.id)
+      first_run(account, connected)
+
+      Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      |> Fixtures.Runners.disable_runner()
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
+      assert html =~ "None offline"
+      refute html =~ "1 offline"
+      refute html =~ "All runners offline"
+    end
+
     test "disabling an offline runner frees its plan slot on the open dashboard", %{
       conn: conn,
       owner: owner,

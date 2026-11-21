@@ -309,7 +309,6 @@ defmodule EmisarWeb.RunnerSocket do
   @reason_limit 240
 
   defp format_reason(:normal), do: "normal"
-  defp format_reason({:shutdown, r}), do: truncate_reason("shutdown:#{inspect(r)}")
   defp format_reason(other), do: truncate_reason(inspect(other))
 
   defp truncate_reason(s) when byte_size(s) <= @reason_limit, do: s

@@ -12,8 +12,6 @@ defmodule EmisarWeb.MarketingTest do
     # :noindex pipeline (router.ex), so each must (a) carry the strict CSP
     # header with a nonce on script-src and (b) stay indexable — the exact
     # opposite of the 404/ErrorHTML page, which DOES emit a robots noindex.
-    # One loop closes the "Security: Indexable + CSP" row on MKT-001…025
-    # and the legal pages MKT-034…036.
     #
     for route <- @routes do
       test "GET #{route} carries the CSP header with a script-src nonce", %{conn: conn} do
@@ -171,6 +169,15 @@ defmodule EmisarWeb.MarketingTest do
     signed_out = conn |> delete(~p"/sign_out") |> recycle() |> get(~p"/") |> html_response(200)
     refute signed_out =~ ~s(href="/app")
     assert signed_out =~ "Sign in"
+  end
+
+  test "legal and guide pages keep the Dashboard link for a signed-in reader", %{conn: conn} do
+    {conn, _owner, _account} = register_and_log_in(conn)
+
+    for path <- [~p"/terms", ~p"/guides/how-emisar-works"] do
+      html = conn |> get(path) |> html_response(200)
+      assert html =~ ~s(href="/app"), path
+    end
   end
 
   test "pricing page mentions the three tiers", %{conn: conn} do
@@ -2718,6 +2725,12 @@ defmodule EmisarWeb.MarketingTest do
       assert with_emisar |> LazyHTML.query(~s([data-demo-tab="server"])) |> Enum.empty?()
       assert LazyHTML.text(with_emisar) =~ ~s(emisar · linux.systemctl_restart(unit: "api")
       refute LazyHTML.text(with_emisar) =~ "Pasted text"
+
+      # The restart is high-risk, so it waits for a person before it runs.
+      assert LazyHTML.text(with_emisar) =~
+               "pending approval — linux.systemctl_restart is high-risk"
+
+      assert with_emisar |> LazyHTML.query(~s([data-kind="cc-approved"])) |> Enum.any?()
 
       # Teams: the shadow copy-paste loop next to one governed path.
       assert LazyHTML.text(document) =~ "One place to govern AI access to production"

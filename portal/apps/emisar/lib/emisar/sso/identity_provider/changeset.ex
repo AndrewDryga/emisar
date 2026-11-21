@@ -117,7 +117,7 @@ defmodule Emisar.SSO.IdentityProvider.Changeset do
   end
 
   # The issuer is the discovery base + the iss we exact-match the ID token
-  # against — it must be an https URL with a host (R2/H3, no plaintext OIDC), and
+  # against — it must be an https URL with a host (no plaintext OIDC), and
   # not a private/loopback/metadata target (the login fetch is an SSRF surface;
   # `IssuerUrl` is the same guard the "Check issuer" action runs).
   defp validate_issuer(changeset) do

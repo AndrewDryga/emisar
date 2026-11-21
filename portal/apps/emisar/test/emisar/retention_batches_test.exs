@@ -263,8 +263,8 @@ defmodule Emisar.RetentionBatchesTest do
     test "each manual batch rechecks management authority and preserves earlier receipts", %{
       account: account
     } do
-      first = stale_version(account, "first", "v1")
-      second = stale_version(account, "second", "v1")
+      first = stale_version(account, "first", "1.0")
+      second = stale_version(account, "second", "1.0")
       membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
       subject = Fixtures.Subjects.subject_for(membership)
       id = {__MODULE__, self(), make_ref()}
@@ -299,7 +299,7 @@ defmodule Emisar.RetentionBatchesTest do
       # lexical 10 precedes 2, and version 2 appears under both pack IDs.
       removed = [
         stale_version(account, "b", "2.0.0"),
-        stale_version(account, "a", "unknown"),
+        stale_version(account, "a", "9.0.0"),
         stale_version(account, "a", "3.0.0")
       ]
 
@@ -335,14 +335,14 @@ defmodule Emisar.RetentionBatchesTest do
     test "advances past a protected page, deletes exact pairs with one action statement per batch",
          %{account: account} do
       live = Fixtures.Runners.create_runner(account_id: account.id)
-      protected = for index <- 1..2, do: stale_version(account, "protected#{index}", "v")
+      protected = for index <- 1..2, do: stale_version(account, "protected#{index}", "1.0")
 
       Fixtures.Runners.advertise_packs(
         live,
         Map.new(protected, &{&1.pack_id, %{"version" => &1.version}})
       )
 
-      removed = for index <- 1..3, do: stale_version(account, "remove#{index}", "v")
+      removed = for index <- 1..3, do: stale_version(account, "remove#{index}", "1.0")
       actions = for version <- removed, do: action(live, version)
 
       cross_pair =
@@ -350,11 +350,11 @@ defmodule Emisar.RetentionBatchesTest do
           runner: live,
           action_id: "keep.cross",
           pack_id: "remove1",
-          pack_version: "other"
+          pack_version: "2.0"
         )
 
       other_account = Fixtures.Accounts.create_account()
-      other_pin = stale_version(other_account, "remove1", "v")
+      other_pin = stale_version(other_account, "remove1", "1.0")
       observe_queries(account.id)
 
       assert Catalog.delete_unseen_pack_versions(account.id, 30, nil, batch_size: 2) == {:ok, 3}
@@ -378,13 +378,13 @@ defmodule Emisar.RetentionBatchesTest do
 
     test "manual scan advances through an entirely out-of-scope page and uses the pending hash",
          %{account: account} do
-      hidden = for index <- 1..2, do: stale_version(account, "hidden#{index}", "v")
+      hidden = for index <- 1..2, do: stale_version(account, "hidden#{index}", "1.0")
 
       visible =
         Fixtures.Catalog.create_observed_pack_version(
           account_id: account.id,
           pack_id: "visible",
-          version: "v",
+          version: "1.0",
           hash: "old",
           pending_hash: "new"
         )
@@ -393,7 +393,7 @@ defmodule Emisar.RetentionBatchesTest do
       runner = offline_runner(account, group: "db")
 
       Fixtures.Runners.advertise_packs(runner, %{
-        "visible" => %{"version" => "v", "hash" => visible.pending_hash}
+        "visible" => %{"version" => "1.0", "hash" => visible.pending_hash}
       })
 
       subject = scoped_subject(account, [runner.id])
@@ -410,7 +410,7 @@ defmodule Emisar.RetentionBatchesTest do
       account: account,
       subject: subject
     } do
-      version = stale_version(account, "rollback", "v")
+      version = stale_version(account, "rollback", "1.0")
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       action = action(runner, version)
       subject = %{subject | context: %Emisar.RequestContext{request_id: %{invalid: true}}}
@@ -425,7 +425,7 @@ defmodule Emisar.RetentionBatchesTest do
 
     test "a later batch failure preserves earlier pins/actions removal and retries only the remainder",
          %{account: account} do
-      [first, second] = for index <- 1..2, do: stale_version(account, "retry#{index}", "v")
+      [first, second] = for index <- 1..2, do: stale_version(account, "retry#{index}", "1.0")
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       first_action = action(runner, first)
       second_action = action(runner, second)
@@ -478,12 +478,17 @@ defmodule Emisar.RetentionBatchesTest do
           version: "0.0.1"
         )
 
+      # Ingestion no longer accepts this version; a row from before that can remain.
       malformed =
-        Fixtures.Catalog.create_trusted_pack_version(
+        Repo.insert!(%Catalog.PackVersion{
           account_id: account.id,
           pack_id: pack_id,
-          version: "unknown"
-        )
+          version: "unknown",
+          hash: Fixtures.Catalog.pack_hash("malformed"),
+          trust_state: :trusted,
+          first_seen_at: DateTime.utc_now(),
+          last_seen_at: DateTime.utc_now()
+        })
 
       assert Catalog.delete_unadvertised_retired_pack_versions(account.id, batch_size: 1) ==
                {:ok, 2}

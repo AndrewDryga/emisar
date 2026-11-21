@@ -423,10 +423,10 @@ defmodule EmisarWeb.ApprovalsLive do
     do: "Standing grants disabled. Every approval is now single-use."
 
   defp grants_disabled_flash(1),
-    do: "Standing grants disabled and 1 active grant revoked. Every approval is now single-use."
+    do: "Standing grants disabled and 1 grant revoked. Every approval is now single-use."
 
   defp grants_disabled_flash(n) do
-    "Standing grants disabled and #{n} active grants revoked. Every approval is now single-use."
+    "Standing grants disabled and #{n} grants revoked. Every approval is now single-use."
   end
 
   defp grant_cap_partially_revoked_flash(revoked_count) do

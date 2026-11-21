@@ -584,22 +584,33 @@ defmodule Emisar.Audit.Event.Query do
   def ordered_by_recent(queryable \\ all()),
     do: order_by(queryable, [events: e], desc: e.occurred_at)
 
-  # Stable forward order for SIEM export — `(occurred_at, id)` ascending
-  # so consumers can poll with a cursor without ever skipping or
-  # re-reading rows. UUID v7 ids are time-sortable, which keeps the
-  # tie-break identical to the time order for same-microsecond inserts.
+  # Stable forward order for SIEM export: the writing transaction's ID, then
+  # id. Only meaningful together with `committed_for_export/1`, which keeps a
+  # still-open writer's rows (and every later transaction's) out of the page.
   def ordered_for_export(queryable \\ all()),
-    do: order_by(queryable, [events: e], asc: e.occurred_at, asc: e.id)
+    do: order_by(queryable, [events: e], asc: e.txid, asc: e.id)
 
-  # Cursor for the export endpoint — accepts the (occurred_at, id) of
-  # the last row the consumer has already received and returns rows
-  # STRICTLY AFTER that point. Composite-keyset semantics: skip exact
-  # ties on the timestamp by also comparing id.
-  def occurred_strictly_after(queryable, %DateTime{} = ts, id) when is_binary(id) do
+  # Rows whose writing transaction is below the snapshot's xmin: every such
+  # transaction has finished, so no row can still commit behind a cursor issued
+  # from this page. The reader's own writes are already in its view; that branch
+  # is empty for the export endpoint's standalone read and covers the test
+  # sandbox, where every row belongs to the wrapping transaction.
+  def committed_for_export(queryable \\ all()) do
     where(
       queryable,
       [events: e],
-      e.occurred_at > ^ts or (e.occurred_at == ^ts and e.id > ^id)
+      e.txid < fragment("pg_snapshot_xmin(pg_current_snapshot())") or
+        e.txid == fragment("pg_current_xact_id_if_assigned()")
+    )
+  end
+
+  # Cursor for the export endpoint: the `(txid, id)` of the last row the
+  # consumer received; returns rows STRICTLY AFTER that point.
+  def exported_after(queryable, txid, id) when is_integer(txid) and is_binary(id) do
+    where(
+      queryable,
+      [events: e],
+      e.txid > ^txid or (e.txid == ^txid and e.id > ^id)
     )
   end
 

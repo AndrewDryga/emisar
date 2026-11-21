@@ -595,12 +595,21 @@ defmodule Emisar.Admin do
   @doc "Execute one action from the trusted, colocated private admin pack."
   def execute("emisar.admin." <> _ = action_id, encoded_args)
       when is_list(encoded_args) and length(encoded_args) <= 4 do
-    with {:ok, args} <- decode_args(encoded_args) do
+    with {:ok, args} <- decode_args(encoded_args),
+         :ok <- ensure_reason(args) do
       dispatch(action_id, args)
     end
   end
 
   def execute(_action_id, _encoded_args), do: {:error, :invalid_admin_request}
+
+  # Every privileged action that takes a reason requires a real one; the pack
+  # bounds its length.
+  defp ensure_reason(%{"reason" => reason}) do
+    if String.trim(reason) == "", do: {:error, :invalid_reason}, else: :ok
+  end
+
+  defp ensure_reason(_args), do: :ok
 
   defp decode_args(encoded_args) do
     Enum.reduce_while(encoded_args, {:ok, %{}}, fn encoded, {:ok, args} ->
@@ -654,9 +663,7 @@ defmodule Emisar.Admin do
          "emisar.admin.support.set_slack_channel",
          %{"url" => url, "reason" => reason} = args
        ) do
-    with true <-
-           (String.trim(reason) != "" and byte_size(reason) <= 500) ||
-             {:error, :invalid_reason},
+    with true <- byte_size(reason) <= 500 || {:error, :invalid_reason},
          {:ok, account} <- fetch_account(args),
          {:ok, account} <- Accounts.put_support_slack_url(account.id, url) do
       {:ok, account_result(account)}

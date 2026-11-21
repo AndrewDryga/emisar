@@ -1,13 +1,11 @@
 defmodule Emisar.Catalog.PackVersion.Changeset do
   use Emisar, :changeset
-  alias Emisar.Catalog.PackVersion
+  alias Emisar.Catalog.{MCPProjection, PackVersion}
 
   @insert_fields ~w(account_id pack_id version hash pending_hash trust_state
                     trusted_manifest first_seen_at last_seen_at)a
   @max_pack_id_length 128
-  @pack_id_format ~r/\A[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)*\z/
   @max_pack_version_length 64
-  @pack_version_format ~r/\A[A-Za-z0-9][A-Za-z0-9.+-]*\z/
   @max_pack_hash_length 71
   @pack_hash_format ~r/\Asha256:[0-9a-f]{64}\z/
 
@@ -17,9 +15,13 @@ defmodule Emisar.Catalog.PackVersion.Changeset do
     |> cast(attrs, @insert_fields)
     |> validate_required([:account_id, :pack_id, :version, :first_seen_at, :last_seen_at])
     |> validate_length(:pack_id, max: @max_pack_id_length)
-    |> validate_format(:pack_id, @pack_id_format)
+    |> validate_format(:pack_id, MCPProjection.pack_id_format(),
+      message: "must be lowercase letters, digits, - or _, starting with a letter, with no dots"
+    )
     |> validate_length(:version, max: @max_pack_version_length)
-    |> validate_format(:version, @pack_version_format)
+    |> validate_format(:version, MCPProjection.pack_version_format(),
+      message: "must be dot-numeric, such as 1.2.0, optionally with a SemVer suffix"
+    )
     |> validate_hashes()
     |> unique_constraint([:account_id, :pack_id, :version])
   end

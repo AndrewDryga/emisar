@@ -404,7 +404,7 @@ defmodule EmisarWeb.BillingLive do
          put_flash(
            socket,
            :error,
-           "This account already has a subscription. Contact support to change plans."
+           "This workspace already has a subscription. Contact support to change plans."
          )}
 
       {:error, reason} ->
@@ -637,10 +637,10 @@ defmodule EmisarWeb.BillingLive do
     "We're confirming that an earlier subscription was cancelled. Try again shortly, or contact support if this continues."
   end
 
-  defp checkout_error(:account_closed), do: "This account is closed. Checkout is unavailable."
+  defp checkout_error(:account_closed), do: "This workspace is closed. Checkout is unavailable."
 
   defp checkout_error(:checkout_unavailable),
-    do: "Checkout is unavailable for this account. Contact support for help."
+    do: "Checkout is unavailable for this workspace. Contact support for help."
 
   defp checkout_error(_reason),
     do: "Couldn't start checkout. Try again, or contact support if this continues."

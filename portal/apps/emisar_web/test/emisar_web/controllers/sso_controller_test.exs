@@ -1013,7 +1013,7 @@ defmodule EmisarWeb.SSOControllerTest do
     exported
   end
 
-  describe "an invitation's continue-with-SSO step (review revision 3)" do
+  describe "an invitation's continue-with-SSO step" do
     test "the code proves the inbox; the workspace's page continues at its IdP and the proof rides no URL or page",
          %{conn: conn} do
       fixture = proved_sso_invitation(conn)

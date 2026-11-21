@@ -30,6 +30,9 @@ defmodule Emisar.Audit.Event do
     field :mfa, :boolean
     field :user_identity_id, Ecto.UUID
     field :payload, :map, default: %{}
+    # The writing transaction's ID (`xid8`), assigned by the database default.
+    # The SIEM export orders by it so a late commit cannot land behind a cursor.
+    field :txid, :integer, writable: :never, read_after_writes: true
     field :inserted_at, :utc_datetime_usec, autogenerate: {DateTime, :utc_now, []}
 
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]

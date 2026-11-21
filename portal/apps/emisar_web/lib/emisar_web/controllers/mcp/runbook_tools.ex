@@ -383,7 +383,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
     error("execution_failed", "The runbook could not be started.")
   end
 
-  @doc "Builds the fixed execution projection used by execute, wait, and recovery."
+  @doc "Builds the fixed execution projection `execute_runbook` returns."
   def execution_payload(conn, execution_id) when is_binary(execution_id) do
     subject = conn.assigns.current_subject
 
@@ -398,15 +398,6 @@ defmodule EmisarWeb.MCP.RunbookTools do
   def project_execution(%{execution: execution, runbook: runbook} = result, %Subject{} = subject) do
     projection = Runbooks.execution_projection(result)
 
-    project_execution(execution, runbook, projection, subject, [])
-  end
-
-  @doc false
-  def project_execution(
-        %{execution: execution, runbook: runbook},
-        projection,
-        %Subject{} = subject
-      ) do
     project_execution(execution, runbook, projection, subject, [])
   end
 

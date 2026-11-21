@@ -236,10 +236,14 @@
         follows only HTTPS redirects and rejects a cleartext downgrade. Allowlist both hosts.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        These commands look packs up by name, and the public emisar origin serves those
-        lookups. A static tree built with <code>packctl</code>
-        has a different layout. Install from its exact immutable tarball URL instead of passing
-        that host to <code>--registry</code>. Running your own registry is covered in <.link
+        A first install by name and <code>pack diff --to</code>
+        use the public emisar origin's download routes. A static tree built with
+        <code>packctl</code>
+        has a different layout, so install from its exact immutable tarball URL instead. Once a
+        pack is installed, <code>pack update</code>
+        and <code>pack diff</code>
+        without <code>--to</code>
+        accept that static host through <code>--registry</code>. Running your own registry is covered in <.link
           navigate={~p"/docs/pack-registry"}
           class="text-brand-400 hover:text-brand-300"
         >Host your own registry</.link>.

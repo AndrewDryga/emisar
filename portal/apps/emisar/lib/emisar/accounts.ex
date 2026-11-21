@@ -3272,7 +3272,7 @@ defmodule Emisar.Accounts do
   end
 
   # Directory sync can never grant owner — owner stays a deliberate human
-  # assignment (decision 7). The group→role mapping changeset already excludes
+  # assignment. The group→role mapping changeset already excludes
   # it; this is the write-path backstop.
   defp ensure_sync_role_assignable(:owner), do: {:error, :owner_not_assignable}
   defp ensure_sync_role_assignable(_role), do: :ok

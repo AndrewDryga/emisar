@@ -1,7 +1,7 @@
 defmodule EmisarWeb.SCIMControllerTest do
   @moduledoc """
   The inbound SCIM 2.0 surface (`/scim/v2`) — the directory-sync lifecycle an
-  IdP pushes. Covers the §4 web cases: cross-account token isolation, the 401
+  IdP pushes. Covers cross-account token isolation, the 401
   SCIM-error gate, provision + idempotent reconcile, the `active:false` and
   DELETE retirement, the last-active-owner lockout,
   read + filter, and a discovery endpoint behind auth.

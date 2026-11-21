@@ -341,7 +341,7 @@ defmodule EmisarWeb.WorkspaceSessionsTest do
     end
   end
 
-  describe "the browser id (review revision 6)" do
+  describe "the browser id" do
     test "is minted when a sign-in starts and kept through every renewal until sign-out", %{
       conn: conn
     } do
@@ -398,7 +398,7 @@ defmodule EmisarWeb.WorkspaceSessionsTest do
     end
   end
 
-  describe "a connected LiveView (review revision 7)" do
+  describe "a connected LiveView" do
     setup %{conn: conn} do
       {conn, owner, account} = register_and_log_in(conn)
       token = session_token(conn, account)

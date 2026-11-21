@@ -132,7 +132,7 @@ defmodule Emisar.Catalog.Jobs.PackVersionRetentionTest do
         Fixtures.Catalog.create_trusted_pack_version(
           account_id: account.id,
           pack_id: "stale#{index}",
-          version: "v"
+          version: "1.0"
         )
         |> Fixtures.Catalog.backdate_pack_version_last_seen(
           DateTime.add(DateTime.utc_now(), -40 * 86_400, :second)

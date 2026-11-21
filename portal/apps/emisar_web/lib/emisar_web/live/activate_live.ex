@@ -326,7 +326,7 @@ defmodule EmisarWeb.ActivateLive do
                 type="text"
                 label="Approval code"
                 label_variant={:eyebrow}
-                placeholder="FKZQ-2418"
+                placeholder="FKZQ-2489"
                 autocomplete="off"
               />
               <p :if={@lookup_error} class="mt-2 text-sm leading-relaxed text-rose-400">

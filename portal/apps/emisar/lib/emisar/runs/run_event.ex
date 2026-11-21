@@ -1,8 +1,9 @@
 defmodule Emisar.Runs.RunEvent do
   @moduledoc """
-  A streamed event for an action run: a progress chunk, a state
-  transition note, a cancellation, an error envelope. Insertion is
-  append-only; `seq` is dense within (run_id).
+  A streamed progress chunk for an action run, written by the runner
+  socket's `action_progress` handler. Insertion is append-only; `seq`
+  orders chunks within (run_id) and can have gaps where the runner dropped
+  output. The other `kind` values are allowed by the enum but not written.
   """
   use Emisar, :schema
 

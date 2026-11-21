@@ -58,13 +58,7 @@ defmodule Emisar.Runbooks.Scheduler.Settlement do
       {:ok, item}
     end)
     |> Multi.run(:attempt, fn repo, _changes ->
-      attempt =
-        Runs.ActionRun.Query.all()
-        |> Runs.ActionRun.Query.by_id(run.id)
-        |> Runs.ActionRun.Query.lock_for_update()
-        |> repo.one()
-
-      {:ok, attempt}
+      {:ok, Runs.lock_run_for_settlement(repo, run.id)}
     end)
     |> Multi.merge(&compose_settlement(&1, run, outcome))
     |> Repo.commit_multi(after_commit: &after_item_settlement_committed/1)

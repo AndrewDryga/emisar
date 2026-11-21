@@ -734,12 +734,17 @@ defmodule EmisarWeb.RunbookEditorLive do
         {:noreply, put_flash(socket, :error, "Fix the runbook details before saving.")}
 
       true ->
-        attrs = %{
-          "title" => socket.assigns.draft["title"],
-          "slug" => socket.assigns.draft["slug"],
-          "description" => socket.assigns.draft["description"],
-          "draft_definition" => definition
-        }
+        attrs =
+          put_draft_definition(
+            %{
+              "title" => socket.assigns.draft["title"],
+              "slug" => socket.assigns.draft["slug"],
+              "description" => socket.assigns.draft["description"]
+            },
+            socket.assigns.runbook,
+            definition,
+            publish?
+          )
 
         case persist(socket, attrs, publish?) do
           {:ok, runbook} ->
@@ -764,6 +769,15 @@ defmodule EmisarWeb.RunbookEditorLive do
         end
     end
   end
+
+  # A live runbook with no unpublished change keeps it that way when only its
+  # metadata changed: sending the unchanged live definition back would open a
+  # draft identical to the release. Publishing still sends it.
+  defp put_draft_definition(attrs, %{draft_definition: nil, definition: live}, live, false),
+    do: attrs
+
+  defp put_draft_definition(attrs, _runbook, definition, _publish?),
+    do: Map.put(attrs, "draft_definition", definition)
 
   defp persist(%{assigns: %{runbook: nil}} = socket, attrs, publish?) do
     with {:ok, runbook} <- Runbooks.create_runbook(attrs, socket.assigns.current_subject) do

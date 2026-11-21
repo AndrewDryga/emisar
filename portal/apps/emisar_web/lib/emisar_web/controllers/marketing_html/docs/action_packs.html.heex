@@ -209,9 +209,9 @@ examples:
 
       <.docs_h2 id="pack-trust">Pack trust</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Every pack is content-addressed: a SHA-256 hash over all its files. The control
-        plane pins the exact hash the account trusts, and the runner recomputes it and
-        refuses to load files that do not match. A hash carried by the published catalog is
+        Every pack is content-addressed: a SHA-256 hash over pack.yaml, every declared action file,
+        and every script those actions run. The control plane pins the exact hash the account
+        trusts, and the runner recomputes it and refuses to load files that do not match. A hash carried by the published catalog is
         trusted automatically. Any other hash, such as one from a pack you wrote or a
         hand-edited tree, waits for an administrator before dispatch. The hash protects
         content integrity. It does not verify the publisher's identity.

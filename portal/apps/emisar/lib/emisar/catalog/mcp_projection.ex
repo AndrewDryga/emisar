@@ -124,6 +124,15 @@ defmodule Emisar.Catalog.MCPProjection do
   @spec runner_ref(Runners.Runner.t()) :: {:ok, String.t()} | {:error, :invalid_runner}
   def runner_ref(%Runners.Runner{} = runner), do: Runners.public_ref(runner)
 
+  @doc """
+  The pack id shape a `pack_ref` can carry. Ingestion validates with this same
+  pattern, so a pack the catalog stores is always addressable.
+  """
+  def pack_id_format, do: @pack_id_format
+
+  @doc "The pack version shape a `pack_ref` can carry; see `pack_id_format/0`."
+  def pack_version_format, do: @pack_version_format
+
   @doc "Canonical exact pack reference, or an error for an unrepresentable advertisement."
   @spec pack_ref(String.t(), String.t(), String.t()) ::
           {:ok, String.t()} | {:error, :invalid_pack_ref}

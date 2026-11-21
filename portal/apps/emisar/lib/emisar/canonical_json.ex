@@ -4,11 +4,10 @@ defmodule Emisar.CanonicalJSON do
 
   Two identity digests are computed this way — the action-contract hash a client
   compares to decide `target_contract_changed`, and a runbook's `definition_hash`
-  — and `.agent/kb/specs/compatibility.md` freezes both at 1.0. They were
-  computed by byte-identical private copies of the same three steps in two
-  modules, which is the worst place for this repo's paired-path drift: a peer
-  compares the two values, so any divergence in ordering shows up as a false
-  "contract changed" rather than as a failing test.
+  — and `.agent/kb/specs/compatibility.md` freezes both at 1.0. They share
+  this one implementation because a peer compares the values: any divergence
+  in ordering would show up as a false "contract changed" rather than as a
+  failing test.
 
   Encoding is deterministic through key order alone: maps are sorted by key and
   emitted as `Jason.OrderedObject`, lists keep their order (position is meaning),

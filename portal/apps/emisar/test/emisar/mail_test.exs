@@ -621,6 +621,8 @@ defmodule Emisar.MailTest do
         assert email.text_body =~ ~s("token": "[REDACTED]")
         refute email.text_body =~ "secret-value"
         assert email.text_body =~ "0 of 1"
+        assert email.text_body =~ "Operator"
+        refute email.text_body =~ "Portal"
         refute email.text_body =~ "decide_approval"
         assert email.text_body =~ "/app/#{account.slug}/approvals/req-id-123"
         refute email.text_body =~ "/app/approvals/req-id-123"

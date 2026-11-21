@@ -2808,7 +2808,7 @@ defmodule Emisar.SSO do
 
   defp email_explicitly_unverified?(claims), do: claims["email_verified"] in [false, "false"]
 
-  # H1: Google's `hd` is an issuer-owned tenant boundary. Other OIDC providers
+  # Google's `hd` is an issuer-owned tenant boundary. Other OIDC providers
   # do not define it, so only an explicitly verified email can prove their
   # domain. Raw email remains display context and never grants membership.
   defp ensure_email_domain_allowed(%IdentityProvider{allowed_email_domain: nil}, _claims), do: :ok
@@ -3002,7 +3002,7 @@ defmodule Emisar.SSO do
          role_mappings,
          runner_access_mappings
        ) do
-    # #3: an identity in NO mapped group resets to the provider `default_role`
+    # An identity in NO mapped group resets to the provider `default_role`
     # (least-privilege — removing a user from their last privileged group in the
     # directory demotes them here), rather than keeping a stale elevated role.
     #
@@ -3030,7 +3030,7 @@ defmodule Emisar.SSO do
     end
   end
 
-  # #14: a DirectoryGroupMember always belongs to its user_identity's provider,
+  # A DirectoryGroupMember always belongs to its user_identity's provider,
   # so no in-app provider filter is needed.
   defp identity_group_ids(%UserIdentity{} = identity) do
     DirectoryGroupMember.Query.not_deleted()
@@ -3258,7 +3258,7 @@ defmodule Emisar.SSO do
   @doc """
   Create a group→role mapping for a provider. `manage_sso` + enterprise; the
   provider must be in the subject's account. The changeset rejects `:owner` —
-  sync can never grant owner (decision 7). Existing synced group members are
+  sync can never grant owner. Existing synced group members are
   reconciled after the mapping commits. `{:ok, mapping}`.
   """
   def create_group_mapping(%IdentityProvider{} = provider, attrs, %Subject{} = subject) do
@@ -3798,7 +3798,7 @@ defmodule Emisar.SSO do
   that matched a live Member binds the captured identity to that Member; any
   other provisions a new Member at the provider's
   `default_role`. `manage_sso` + Team or Enterprise; account-scoped. Binds the
-  captured `sub` (never email — H1). Rebinding a Member's existing identity to
+  captured `sub` (never email). Rebinding a Member's existing identity to
   another identifier ends the sessions signed in through the old one and
   disconnects their sockets after commit.
   `{:ok, %{membership: member, identity: identity}}`.

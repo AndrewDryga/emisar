@@ -1744,8 +1744,8 @@ defmodule Emisar.RunsTest do
     test "allow policy returns {:ok, :running, run} and delivers to runner" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
-      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      Fixtures.Policies.create_policy(account_id: account.id)
       subject = owner_subject_for(account)
 
       Emisar.Runners.subscribe_runner_transport(runner)
@@ -1775,7 +1775,7 @@ defmodule Emisar.RunsTest do
           output_schema: %{"type" => "object"}
         )
 
-      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      Fixtures.Policies.create_policy(account_id: account.id)
       subject = owner_subject_for(account)
 
       assert {:ok, :running, %ActionRun{structured_output_expected: true} = run} =
@@ -1790,8 +1790,8 @@ defmodule Emisar.RunsTest do
       # permission gate must reject before any runner/policy lookup.
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
-      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      Fixtures.Policies.create_policy(account_id: account.id)
       viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
       subject = Fixtures.Subjects.subject_for(viewer)
@@ -1805,8 +1805,8 @@ defmodule Emisar.RunsTest do
       # plus a permissive policy means the api-key subject dispatches.
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
-      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      Fixtures.Policies.create_policy(account_id: account.id)
 
       {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
       subject = Emisar.Auth.Subject.for_api_key(key, account)
@@ -1818,8 +1818,8 @@ defmodule Emisar.RunsTest do
     test "a stale subject cannot dispatch after its account is disabled" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
-      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      Fixtures.Policies.create_policy(account_id: account.id)
       subject = owner_subject_for(account)
 
       assert {:ok, _account} =
@@ -1839,8 +1839,8 @@ defmodule Emisar.RunsTest do
     test "an MCP subject cannot attribute a dispatch to another API key" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
-      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      Fixtures.Policies.create_policy(account_id: account.id)
 
       {_raw, authentic_key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
       {_raw, forged_key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
@@ -1855,7 +1855,7 @@ defmodule Emisar.RunsTest do
     test "audits only the policy decision + terminal outcome, decision first" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
       policy = Fixtures.Policies.create_policy(account_id: account.id)
       subject = owner_subject_for(account)
 
@@ -1900,8 +1900,8 @@ defmodule Emisar.RunsTest do
     test "stamps the dispatcher's ip/ua on the run and its terminal audit event (no runner bleed)" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
-      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      Fixtures.Policies.create_policy(account_id: account.id)
       membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       # An api_key/LLM dispatch from a host: the dispatcher's request context.
@@ -1939,8 +1939,8 @@ defmodule Emisar.RunsTest do
     test "snapshots self-reported MCP client metadata onto the run and its terminal audit event" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
-      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      Fixtures.Policies.create_policy(account_id: account.id)
       membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       metadata = %{"asset_tag" => "LT-4417", "device_id" => "d-99"}
@@ -1969,8 +1969,8 @@ defmodule Emisar.RunsTest do
     test "a run with no client metadata stores an empty map and omits it from the audit payload" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
-      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      Fixtures.Policies.create_policy(account_id: account.id)
       subject = owner_subject_for(account)
 
       {:ok, :running, run} = Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
@@ -1991,8 +1991,8 @@ defmodule Emisar.RunsTest do
     test "client metadata does not change the policy decision (never an authz input)" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
-      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      Fixtures.Policies.create_policy(account_id: account.id)
       membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       # A key an over-strict design might have treated as "managed/compliant";
@@ -2046,7 +2046,7 @@ defmodule Emisar.RunsTest do
       {:ok, [pack_version], _} = Emisar.Catalog.list_pack_versions(subject)
       assert {:ok, _} = Emisar.Catalog.trust_pack_version(pack_version.id, subject)
 
-      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      Fixtures.Policies.create_policy(account_id: account.id)
 
       Emisar.Runners.subscribe_runner_transport(runner)
 
@@ -2063,7 +2063,7 @@ defmodule Emisar.RunsTest do
     test "rejects dispatch when the action is not advertised by the runner" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      Fixtures.Policies.create_policy(account_id: account.id)
       subject = owner_subject_for(account)
 
       assert Runs.dispatch_run(
@@ -2098,7 +2098,7 @@ defmodule Emisar.RunsTest do
           missing_executable: "uptime"
         )
 
-      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      Fixtures.Policies.create_policy(account_id: account.id)
       subject = owner_subject_for(account)
 
       assert Runs.dispatch_run(base_attrs(account.id, runner.id), subject) ==
@@ -2128,7 +2128,7 @@ defmodule Emisar.RunsTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       # Catalog says high risk.
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "high")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "high")
 
       # Policy: require approval for high.
       _ =
@@ -2158,7 +2158,7 @@ defmodule Emisar.RunsTest do
     test "require_approval policy stores the run as pending, creates a request, + audits the gating" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Catalog.create_action(runner: runner)
+      Fixtures.Catalog.create_action(runner: runner)
 
       policy =
         Fixtures.Policies.create_policy(
@@ -2220,7 +2220,7 @@ defmodule Emisar.RunsTest do
     test "corrupt approval settings block a gated dispatch before any row is created" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Catalog.create_action(runner: runner)
+      Fixtures.Catalog.create_action(runner: runner)
 
       policy =
         Fixtures.Policies.create_policy(
@@ -2268,7 +2268,7 @@ defmodule Emisar.RunsTest do
     test "policy with no matching allow rule denies and records the attempt for audit" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Catalog.create_action(runner: runner)
+      Fixtures.Catalog.create_action(runner: runner)
 
       # Policy only allows cassandra.* actions; the dispatched
       # `linux.uptime` doesn't match, so it falls through to the
@@ -2326,7 +2326,7 @@ defmodule Emisar.RunsTest do
     test "a 200-character rule name denies the dispatch and keeps its denial receipt" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Catalog.create_action(runner: runner, risk: "critical")
+      Fixtures.Catalog.create_action(runner: runner, risk: "critical")
       name = String.duplicate("d", 200)
 
       _ =
@@ -2367,7 +2367,7 @@ defmodule Emisar.RunsTest do
     test "stamps policy_version on the dispatched run so audit can correlate vN edits" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
       policy = Fixtures.Policies.create_policy(account_id: account.id)
       subject = owner_subject_for(account)
 
@@ -2384,10 +2384,10 @@ defmodule Emisar.RunsTest do
     test "resolves a runner-scoped override, replacing the account allow" do
       account = Fixtures.Accounts.create_account()
       owner = owner_subject_for(account)
-      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      Fixtures.Policies.create_policy(account_id: account.id)
 
       runner = Fixtures.Runners.create_runner(account_id: account.id, group: "db")
-      _ = Fixtures.Catalog.create_action(runner: runner)
+      Fixtures.Catalog.create_action(runner: runner)
 
       {:ok, _} = Emisar.Policies.save_scoped_rules(deny_all_rules(), :runner, runner.id, owner)
 
@@ -2401,12 +2401,12 @@ defmodule Emisar.RunsTest do
     test "resolves a group-scoped override; other groups keep the account default" do
       account = Fixtures.Accounts.create_account()
       owner = owner_subject_for(account)
-      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      Fixtures.Policies.create_policy(account_id: account.id)
 
       db_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "db")
       web_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
-      _ = Fixtures.Catalog.create_action(runner: db_runner)
-      _ = Fixtures.Catalog.create_action(runner: web_runner)
+      Fixtures.Catalog.create_action(runner: db_runner)
+      Fixtures.Catalog.create_action(runner: web_runner)
 
       {:ok, _} = Emisar.Policies.save_scoped_rules(deny_all_rules(), :group, "db", owner)
 
@@ -2421,10 +2421,10 @@ defmodule Emisar.RunsTest do
 
     test "an enforcing runner refuses an unsigned (portal-originated) dispatch" do
       account = Fixtures.Accounts.create_account()
-      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      Fixtures.Policies.create_policy(account_id: account.id)
       subject = owner_subject_for(account)
       runner = Fixtures.Runners.create_runner(account_id: account.id, enforce_signatures: true)
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
 
       assert Runs.dispatch_run(base_attrs(account.id, runner.id), subject) ==
                {:error, :runner_requires_attestation}
@@ -2438,10 +2438,10 @@ defmodule Emisar.RunsTest do
     # direct dispatch refuses the envelope AND the carrier alike.
     test "no caller-supplied attestation satisfies signature-required dispatch" do
       account = Fixtures.Accounts.create_account()
-      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      Fixtures.Policies.create_policy(account_id: account.id)
       subject = owner_subject_for(account)
       runner = Fixtures.Runners.create_runner(account_id: account.id, enforce_signatures: true)
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
 
       signed = Fixtures.Runs.signed_attestation()
 
@@ -2456,10 +2456,10 @@ defmodule Emisar.RunsTest do
 
     test "canonical runner options survive the DB and wire round-trip" do
       account = Fixtures.Accounts.create_account()
-      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      Fixtures.Policies.create_policy(account_id: account.id)
       subject = owner_subject_for(account)
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
 
       opts = %{
         "timeout_ms" => 5_000,
@@ -2482,10 +2482,10 @@ defmodule Emisar.RunsTest do
       # a value (int↔float, key order, nesting), the signature would fail. Prove
       # the relay is lossless for mixed scalar / array / nested types.
       account = Fixtures.Accounts.create_account()
-      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      Fixtures.Policies.create_policy(account_id: account.id)
       subject = owner_subject_for(account)
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
 
       rich_args = %{
         "container" => "web",
@@ -2509,10 +2509,10 @@ defmodule Emisar.RunsTest do
 
     test "a portal-originated run carries no attestation on the wire" do
       account = Fixtures.Accounts.create_account()
-      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      Fixtures.Policies.create_policy(account_id: account.id)
       subject = owner_subject_for(account)
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
 
       Emisar.Runners.subscribe_runner_transport(runner)
 
@@ -2523,7 +2523,7 @@ defmodule Emisar.RunsTest do
 
     test "the refusal records a dispatch_blocked_requires_attestation audit row" do
       account = Fixtures.Accounts.create_account()
-      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      Fixtures.Policies.create_policy(account_id: account.id)
       subject = owner_subject_for(account)
 
       subject = %{
@@ -2536,7 +2536,7 @@ defmodule Emisar.RunsTest do
       }
 
       runner = Fixtures.Runners.create_runner(account_id: account.id, enforce_signatures: true)
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
 
       forged_execution_id = Ecto.UUID.generate()
 
@@ -2612,7 +2612,7 @@ defmodule Emisar.RunsTest do
         |> Fixtures.Subjects.subject_for()
 
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
       [version] = Fixtures.Catalog.list_pack_versions(account.id)
       assert {:ok, _version} = Catalog.revoke_pack_version_trust(version.id, subject)
       membership = Repo.reload!(subject.actor)
@@ -2637,8 +2637,8 @@ defmodule Emisar.RunsTest do
       # never leave a trace.
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
-      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      Fixtures.Policies.create_policy(account_id: account.id)
       subject = owner_subject_for(account)
 
       Emisar.Runs.subscribe_account_runs(account.id)
@@ -3615,8 +3615,8 @@ defmodule Emisar.RunsTest do
     setup do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
-      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      Fixtures.Policies.create_policy(account_id: account.id)
       %{account: account, runner: runner}
     end
 
@@ -3969,7 +3969,7 @@ defmodule Emisar.RunsTest do
       account: account,
       runner: runner
     } do
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
 
       {:ok, run} =
         Runs.create_run(%{
@@ -4072,8 +4072,8 @@ defmodule Emisar.RunsTest do
     setup do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
-      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      Fixtures.Policies.create_policy(account_id: account.id)
 
       # The runner advertises signing enforcement + a 1h freshness window.
       {:ok, runner} =
@@ -4197,7 +4197,7 @@ defmodule Emisar.RunsTest do
   describe "RunDispatchTimeout sweep" do
     setup do
       account = Fixtures.Accounts.create_account()
-      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      Fixtures.Policies.create_policy(account_id: account.id)
       subject = owner_subject_for(account)
       %{account: account, subject: subject}
     end
@@ -4208,7 +4208,7 @@ defmodule Emisar.RunsTest do
     } do
       # connected?: false → never tracked in presence → offline.
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
-      _ = Fixtures.Catalog.create_action(runner: runner)
+      Fixtures.Catalog.create_action(runner: runner)
 
       {:ok, :running, run} =
         Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
@@ -4235,7 +4235,7 @@ defmodule Emisar.RunsTest do
     } do
       # connected?: true → tracked in presence from this process → online.
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
-      _ = Fixtures.Catalog.create_action(runner: runner)
+      Fixtures.Catalog.create_action(runner: runner)
 
       {:ok, :running, run} =
         Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
@@ -4642,10 +4642,10 @@ defmodule Emisar.RunsTest do
 
   describe "list_runs_for_runbook_execution/2" do
     test "returns an execution's runs in dispatch (oldest-first) order, scoped to the account" do
-      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, _subject} = Fixtures.Subjects.owner_subject()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
-      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      Fixtures.Policies.create_policy(account_id: account.id)
 
       execution_id = Ecto.UUID.generate()
 
@@ -4663,7 +4663,6 @@ defmodule Emisar.RunsTest do
 
       runs = Runs.list_runs_for_runbook_execution(account.id, execution_id)
       assert Enum.map(runs, & &1.id) == [first.id, second.id]
-      _ = subject
 
       # Another account asking for the same execution id sees nothing.
       other_account = Fixtures.Accounts.create_account()
@@ -4707,7 +4706,7 @@ defmodule Emisar.RunsTest do
       account: account,
       runner: runner
     } do
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
       Emisar.Runners.subscribe_runner_transport(runner)
 
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
@@ -4812,7 +4811,7 @@ defmodule Emisar.RunsTest do
   describe "redeliver_to_runner/1" do
     test "a pack drifting to pending after an earlier send withholds redelivery and leaves the run to settle" do
       {_owner, owner_account, subject} = Fixtures.Subjects.owner_subject()
-      _ = Fixtures.Policies.create_policy(account_id: owner_account.id)
+      Fixtures.Policies.create_policy(account_id: owner_account.id)
       {runner, pack_version} = observe_pending_pack(owner_account, subject)
 
       # Operator trusts the pack → a run dispatches normally and goes :sent.
@@ -4876,7 +4875,7 @@ defmodule Emisar.RunsTest do
 
     test "refuses redelivery after trust moves away from the snapshotted hash" do
       {_owner, account, subject} = Fixtures.Subjects.owner_subject()
-      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      Fixtures.Policies.create_policy(account_id: account.id)
       {runner, pack_version} = observe_pending_pack(account, subject)
 
       Emisar.Runners.subscribe_runner_transport(runner)
@@ -5001,11 +5000,11 @@ defmodule Emisar.RunsTest do
       account: account,
       runner: runner
     } do
-      _ = Fixtures.Catalog.create_action(runner: runner)
+      Fixtures.Catalog.create_action(runner: runner)
       member = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       subject = Fixtures.Subjects.subject_for(member)
-      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      Fixtures.Policies.create_policy(account_id: account.id)
 
       {:ok, :running, run} =
         Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
@@ -5103,7 +5102,7 @@ defmodule Emisar.RunsTest do
       account: account,
       runner: runner
     } do
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
       member = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       subject = Fixtures.Subjects.subject_for(member)
@@ -5296,9 +5295,9 @@ defmodule Emisar.RunsTest do
     test "transitions to :error with the provided message + finished_at" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Catalog.create_action(runner: runner)
+      Fixtures.Catalog.create_action(runner: runner)
       subject = owner_subject_for(account)
-      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      Fixtures.Policies.create_policy(account_id: account.id)
 
       {:ok, :running, run} =
         Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
@@ -5575,7 +5574,7 @@ defmodule Emisar.RunsTest do
       # The valid production path pending → sent → running → success, each
       # transition stamping its own timestamp. The terminal flip is the only
       # one that's final.
-      _ = Fixtures.Catalog.create_action(runner: runner)
+      Fixtures.Catalog.create_action(runner: runner)
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
       assert run.status == :pending
 
@@ -5926,6 +5925,26 @@ defmodule Emisar.RunsTest do
 
     test "raises when the run is missing (a broken FK invariant, not a caller state)" do
       assert_raise Ecto.NoResultsError, fn -> Runs.fetch_run!(Ecto.UUID.generate()) end
+    end
+  end
+
+  describe "lock_run_for_settlement/2" do
+    test "returns the locked run inside the caller's transaction, nil when it is gone" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      assert {:ok, %{locked: %ActionRun{id: id}, missing: nil}} =
+               Ecto.Multi.new()
+               |> Ecto.Multi.run(:locked, fn repo, _changes ->
+                 {:ok, Runs.lock_run_for_settlement(repo, run.id)}
+               end)
+               |> Ecto.Multi.run(:missing, fn repo, _changes ->
+                 {:ok, Runs.lock_run_for_settlement(repo, Ecto.UUID.generate())}
+               end)
+               |> Repo.transaction()
+
+      assert id == run.id
     end
   end
 
@@ -7045,7 +7064,7 @@ defmodule Emisar.RunsTest do
     test "the subscriber receives that run's transitions and progress chunks" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Catalog.create_action(runner: runner)
+      Fixtures.Catalog.create_action(runner: runner)
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
 
       assert Runs.subscribe_run(run.account_id, run.id) == :ok
@@ -7074,7 +7093,7 @@ defmodule Emisar.RunsTest do
     test "after unsubscribing, the caller stops receiving that run's updates" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Catalog.create_action(runner: runner)
+      Fixtures.Catalog.create_action(runner: runner)
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
 
       :ok = Runs.subscribe_run(run.account_id, run.id)

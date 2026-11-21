@@ -36,13 +36,13 @@ defmodule Emisar.MixProject do
 
   defp deps do
     [
+      # BEAM clustering on GCP MIGs, where there is no single DNS name for the
+      # instances. See Emisar.Cluster.GCE.
+      {:libcluster, "~> 3.5"},
       # Phoenix glue. `phoenix` is here (not just in emisar_web) for
       # `Phoenix.Presence` — connection tracking is a domain concern
       # (workers + context reads need it), so the tracker lives in the
       # domain app. Same dep already resolved for emisar_web.
-      # BEAM clustering on GCP MIGs, where there is no single DNS name for the
-      # instances. See Emisar.Cluster.GCE.
-      {:libcluster, "~> 3.5"},
       {:phoenix, "~> 1.8"},
       {:phoenix_pubsub, "~> 2.2"},
 
@@ -69,11 +69,7 @@ defmodule Emisar.MixProject do
       # Security WG); wrapped behind `Emisar.SSO.OIDC` (IL-19). Brings
       # `jose` (JWT/JWKS) transitively. Its adapter otherwise enables httpc's
       # detached Retry-After/redirect work, which can outlive our request cap —
-      # `Emisar.SSO.OIDC.BoundedHTTPAdapter` is what bounds that now. (This used
-      # to cite an "exact-version compile patch"; that patch is gone, and the
-      # requirement was never exact-version anyway — mix.exs is the first thing
-      # a dependency audit reads, and it was sending the reader after a deleted
-      # integrity check.)
+      # `Emisar.SSO.OIDC.BoundedHTTPAdapter` bounds that.
       # /security-deps-audit cleared 2026-06-15.
       {:oidcc, "~> 3.8"},
       # Pure-Elixir QR encoder — used to render scannable TOTP QRs

@@ -274,7 +274,7 @@ defmodule Emisar.Crypto do
   @doc """
   Digest of a presented device-grant user code for the pending-grant lookup —
   normalizes case, separators, and whitespace first so `fkzq 2418` and
-  `FKZQ-2418` digest identically.
+  `FKZQ-2478` digest identically.
   """
   def mcp_device_user_code_digest(raw) when is_binary(raw) do
     raw

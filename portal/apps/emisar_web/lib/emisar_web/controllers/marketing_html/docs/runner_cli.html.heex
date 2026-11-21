@@ -71,9 +71,13 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <.docs_inline_code>--packs-dir &lt;dir&gt;</.docs_inline_code>:
-            extra pack search directories, overriding the config's
+            pack directories to use instead of the config's
             <.docs_inline_code>paths.packs</.docs_inline_code>
-            (repeatable). Lets a read command work without a full config.
+            (repeatable). Without <.docs_inline_code>--dest</.docs_inline_code>,
+            <.docs_inline_code>pack install</.docs_inline_code>
+            writes into the first directory and
+            <.docs_inline_code>pack uninstall</.docs_inline_code>
+            removes the named pack beneath it. Lets a read command work without a full config.
           </span>
         </li>
         <li class="flex items-start gap-2.5">

@@ -43,10 +43,10 @@ defmodule Emisar.ApprovalsTest do
     {account, run}
   end
 
-  defp operator_subject(account) do
-    operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+  defp admin_subject(account) do
+    admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
 
-    Fixtures.Subjects.subject_for(operator)
+    Fixtures.Subjects.subject_for(admin)
   end
 
   # A frozen execution plan carrying exactly the risk tiers under test — `nil`
@@ -210,7 +210,7 @@ defmodule Emisar.ApprovalsTest do
   describe "fetch_approval_review/2" do
     setup do
       {account, run} = run_fixture()
-      subject = operator_subject(account)
+      subject = admin_subject(account)
       {:ok, request} = Approvals.create_request(run, "Review this action")
       %{account: account, run: run, subject: subject, request: Repo.reload!(request)}
     end
@@ -522,8 +522,8 @@ defmodule Emisar.ApprovalsTest do
 
   # -- Configurable approval gate (GitHub-style) -----------------------
 
-  # A fresh operator (owner) in the account, distinct from any other.
-  defp distinct_operator(account), do: distinct_member(account, :owner)
+  # A fresh owner in the account, distinct from any other.
+  defp distinct_owner(account), do: distinct_member(account, :owner)
 
   # One run's receipt out of the page projection the run summaries call.
   defp project_review(run, subject) do
@@ -838,7 +838,7 @@ defmodule Emisar.ApprovalsTest do
     test "only returns pending requests" do
       {account, run1} = run_fixture()
       {_, run2} = run_fixture(account: account)
-      subject = operator_subject(account)
+      subject = admin_subject(account)
 
       {:ok, req_pending} = Approvals.create_request(run1, nil)
       {:ok, req_to_deny} = Approvals.create_request(run2, nil)
@@ -851,7 +851,7 @@ defmodule Emisar.ApprovalsTest do
 
     test "a multi-page walk returns pending requests oldest-first, once each" do
       {account, _} = run_fixture()
-      subject = operator_subject(account)
+      subject = admin_subject(account)
 
       # Created oldest-first; the queue lists oldest-first. A cursor that
       # disagreed with the ORDER BY (the bug: ASC pipeline vs DESC cursor)
@@ -903,7 +903,7 @@ defmodule Emisar.ApprovalsTest do
 
       subject =
         account
-        |> operator_subject()
+        |> admin_subject()
         |> subject_with_runner_access(database_access)
 
       assert {:ok, shared, %{count: 2}} = Approvals.list_pending_approval_requests(subject)
@@ -1044,7 +1044,7 @@ defmodule Emisar.ApprovalsTest do
 
     test "missing or malformed frozen approval targets fail closed" do
       {account, run} = run_fixture()
-      subject = operator_subject(account)
+      subject = admin_subject(account)
       {:ok, request} = Approvals.create_request(run, nil)
 
       {1, _} =
@@ -1076,7 +1076,7 @@ defmodule Emisar.ApprovalsTest do
       {account, run1} = run_fixture()
       {_, run2} = run_fixture(account: account)
       {_, run3} = run_fixture(account: account)
-      subject = operator_subject(account)
+      subject = admin_subject(account)
 
       {:ok, _} = Approvals.create_request(run1, nil)
       {:ok, _} = Approvals.create_request(run2, nil)
@@ -1088,7 +1088,7 @@ defmodule Emisar.ApprovalsTest do
 
     test "returns 0 when there are no pending requests" do
       {account, _} = run_fixture()
-      assert Approvals.count_pending_approval_requests(operator_subject(account)) == 0
+      assert Approvals.count_pending_approval_requests(admin_subject(account)) == 0
     end
 
     test "is scoped to the subject's account (cross-account isolation)" do
@@ -1097,8 +1097,8 @@ defmodule Emisar.ApprovalsTest do
       {:ok, _} = Approvals.create_request(run_a, nil)
 
       # Account B has zero requests; the helper must not leak A's count.
-      assert Approvals.count_pending_approval_requests(operator_subject(account_a)) == 1
-      assert Approvals.count_pending_approval_requests(operator_subject(account_b)) == 0
+      assert Approvals.count_pending_approval_requests(admin_subject(account_a)) == 1
+      assert Approvals.count_pending_approval_requests(admin_subject(account_b)) == 0
     end
 
     test "returns 0 without raising when the subject lacks view permission" do
@@ -1236,7 +1236,7 @@ defmodule Emisar.ApprovalsTest do
     test "lists pending requests with no filter, narrows by status, scopes to the account" do
       {account, run} = run_fixture()
       {:ok, request} = Approvals.create_request(run, "x")
-      subject = operator_subject(account)
+      subject = admin_subject(account)
 
       # No :status filter — the pending request is returned.
       assert {:ok, requests, _meta} = Approvals.list_approval_requests_for_account(subject)
@@ -1252,7 +1252,7 @@ defmodule Emisar.ApprovalsTest do
       {other_account, _run} = run_fixture()
 
       assert {:ok, theirs, _meta} =
-               Approvals.list_approval_requests_for_account(operator_subject(other_account))
+               Approvals.list_approval_requests_for_account(admin_subject(other_account))
 
       refute Enum.any?(theirs, &(&1.id == request.id))
     end
@@ -1260,7 +1260,7 @@ defmodule Emisar.ApprovalsTest do
     test "filters by status (a decided request shows under :denied, not :pending)" do
       {account, run} = run_fixture()
       {:ok, request} = Approvals.create_request(run, "x")
-      subject = operator_subject(account)
+      subject = admin_subject(account)
       {:ok, _} = Approvals.deny_request(request, subject, "no")
 
       assert {:ok, [%Request{status: :denied}], _} =
@@ -1275,13 +1275,13 @@ defmodule Emisar.ApprovalsTest do
     test "returns the request inside the subject's account; cross-account is :not_found" do
       {account, run} = run_fixture()
       {:ok, request} = Approvals.create_request(run, "x")
-      subject = operator_subject(account)
+      subject = admin_subject(account)
 
       assert {:ok, %Request{id: id}} = Approvals.fetch_approval_request_by_id(request.id, subject)
       assert id == request.id
 
       {other_account, _run} = run_fixture()
-      other_subject = operator_subject(other_account)
+      other_subject = admin_subject(other_account)
 
       assert Approvals.fetch_approval_request_by_id(request.id, other_subject) ==
                {:error, :not_found}
@@ -1293,12 +1293,12 @@ defmodule Emisar.ApprovalsTest do
   describe "list_requests_for_runbook_executions/2" do
     test "returns only visible requests for the bounded execution set" do
       account = Fixtures.Accounts.create_account()
-      subject = operator_subject(account)
+      subject = admin_subject(account)
 
       assert Approvals.list_requests_for_runbook_executions([], subject) == {:ok, []}
 
       other_account = Fixtures.Accounts.create_account()
-      other_subject = operator_subject(other_account)
+      other_subject = admin_subject(other_account)
       assert Approvals.list_requests_for_runbook_executions([], other_subject) == {:ok, []}
     end
   end
@@ -1309,7 +1309,7 @@ defmodule Emisar.ApprovalsTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       {_account, run} = run_fixture(account: account, runner: runner)
       Fixtures.Catalog.create_action(runner: runner, risk: "high")
-      subject = operator_subject(account)
+      subject = admin_subject(account)
 
       {:ok, request} = Approvals.create_request(run, nil)
 
@@ -1366,7 +1366,7 @@ defmodule Emisar.ApprovalsTest do
 
       subject =
         account
-        |> operator_subject()
+        |> admin_subject()
         |> subject_with_runner_access(database_access)
 
       assert Approvals.risk_by_request_ids([db_request.id, web_request.id], subject) ==
@@ -1380,7 +1380,7 @@ defmodule Emisar.ApprovalsTest do
 
       ids = [request_a.id, Ecto.UUID.generate(), "not-a-uuid"]
 
-      assert Approvals.risk_by_request_ids(ids, operator_subject(account_b)) == {:ok, %{}}
+      assert Approvals.risk_by_request_ids(ids, admin_subject(account_b)) == {:ok, %{}}
     end
 
     test "denies a subject without view permission, including for an empty list" do
@@ -1397,7 +1397,7 @@ defmodule Emisar.ApprovalsTest do
   describe "fetch_request_for_visible_run/2" do
     test "lets an API client read only the approval attached to its visible account run" do
       {account, run} = run_fixture()
-      owner = operator_subject(account)
+      owner = admin_subject(account)
 
       {:ok, request} =
         Approvals.create_request(run, "review required")
@@ -1480,7 +1480,7 @@ defmodule Emisar.ApprovalsTest do
     # nothing another account decided leaks.
     test "an API client reads its gated run's votes, tally, labels and vote reasons" do
       %{account: account, request: request, run: run} = gated_request(min_approvals: 2)
-      owner = operator_subject(account)
+      owner = admin_subject(account)
       {:ok, _raw, key} = Emisar.ApiKeys.create_key(%{name: "slack bridge"}, owner)
       subject = Emisar.Auth.Subject.for_api_key(key, account)
 
@@ -1538,7 +1538,7 @@ defmodule Emisar.ApprovalsTest do
 
     test "an override is reported only from its audit receipt and mints no vote" do
       %{account: account, request: request, run: run} = gated_request(min_approvals: 3)
-      subject = operator_subject(account)
+      subject = admin_subject(account)
       reviewer = named_reviewer(account, "Jane Doe")
       admin = named_reviewer(account, "Alex Admin")
 
@@ -1579,7 +1579,7 @@ defmodule Emisar.ApprovalsTest do
     # request nobody decided.
     test "a request decided without vote rows lists the decision its own record holds" do
       %{account: account, request: request, run: run} = gated_request()
-      subject = operator_subject(account)
+      subject = admin_subject(account)
 
       approved = Fixtures.Approvals.approve_request(request, nil, "Validated on staging.")
 
@@ -1616,7 +1616,7 @@ defmodule Emisar.ApprovalsTest do
     # path wins outright.
     test "a quorum request with no vote rows never mints a vote from its final columns" do
       %{account: account, request: request, run: run} = gated_request(min_approvals: 2)
-      subject = operator_subject(account)
+      subject = admin_subject(account)
       reviewer = named_reviewer(account, "Jane Doe")
 
       Fixtures.Approvals.approve_request(request, reviewer.membership_id, "Released by hand.")
@@ -1628,7 +1628,7 @@ defmodule Emisar.ApprovalsTest do
       assert review.override == nil
 
       %{account: account, request: request, run: run} = gated_request(min_approvals: 2)
-      subject = operator_subject(account)
+      subject = admin_subject(account)
       admin = named_reviewer(account, "Alex Admin")
 
       assert {:ok, {%Request{status: :approved}, %ActionRun{}}} =
@@ -1648,7 +1648,7 @@ defmodule Emisar.ApprovalsTest do
 
     test "a single-approver override never becomes a vote after retention prunes its receipt" do
       %{account: account, request: request, run: run} = gated_request()
-      subject = operator_subject(account)
+      subject = admin_subject(account)
       admin = named_reviewer(account, "Alex Admin")
 
       assert {:ok, {%Request{status: :approved, overridden: true}, %ActionRun{}}} =
@@ -1668,7 +1668,7 @@ defmodule Emisar.ApprovalsTest do
 
     test "an old override writer leaves a new request unclassified after its receipt is pruned" do
       %{account: account, request: request, run: run} = gated_request()
-      subject = operator_subject(account)
+      subject = admin_subject(account)
       reviewer = named_reviewer(account, "Alex Admin")
 
       assert request.overridden == nil
@@ -1689,7 +1689,7 @@ defmodule Emisar.ApprovalsTest do
 
     test "a pending request past its deadline reads expired and keeps the earlier vote" do
       %{account: account, request: request, run: run} = provable_gated_request(min_approvals: 2)
-      subject = operator_subject(account)
+      subject = admin_subject(account)
       reviewer = named_reviewer(account, "Jane Doe")
 
       assert {:ok, _} = Approvals.approve_request(request, reviewer, nil)
@@ -1742,7 +1742,7 @@ defmodule Emisar.ApprovalsTest do
       %{account: account, action: action, runner: runner, request: request, run: run} =
         provable_gated_request(min_approvals: 1)
 
-      subject = operator_subject(account)
+      subject = admin_subject(account)
       approver = named_reviewer(account, "Dana Reviewer")
       Emisar.Runners.subscribe_runner_transport(runner)
 
@@ -1773,7 +1773,7 @@ defmodule Emisar.ApprovalsTest do
     # never queue behind, or briefly block, an in-flight dispatch or trust write.
     test "a page of pending gated runs costs a fixed query count and takes no row lock" do
       %{account: account, runner: runner, run: first} = provable_gated_request(min_approvals: 2)
-      subject = operator_subject(account)
+      subject = admin_subject(account)
 
       rest =
         for path <- ["/srv/beta", "/srv/gamma"], do: provable_gated_run(account, runner, path)
@@ -1818,7 +1818,7 @@ defmodule Emisar.ApprovalsTest do
     # that can only ever produce an empty map.
     test "a page with no gated run answers empty without touching the database" do
       {account, ungated} = run_fixture(status: :pending)
-      subject = operator_subject(account)
+      subject = admin_subject(account)
 
       test_pid = self()
       handler = {__MODULE__, test_pid, make_ref()}
@@ -1856,7 +1856,7 @@ defmodule Emisar.ApprovalsTest do
     # the one truncation would otherwise drop.
     test "a history past the bound keeps the deciding vote and counts what it left" do
       %{account: account, request: request, run: run} = gated_request(min_approvals: 25)
-      subject = operator_subject(account)
+      subject = admin_subject(account)
 
       for index <- 1..21 do
         reviewer = named_reviewer(account, "Reviewer #{index}")
@@ -1902,7 +1902,7 @@ defmodule Emisar.ApprovalsTest do
     # client cannot read at all.
     test "maximal multi-byte notes shorten the vote history and are counted as omitted" do
       %{account: account, request: request, run: run} = gated_request(min_approvals: 25)
-      subject = operator_subject(account)
+      subject = admin_subject(account)
 
       # Legal at the input ceiling — 2,000 graphemes — and 6,000 bytes.
       note = String.duplicate("界", 2_000)
@@ -1945,7 +1945,7 @@ defmodule Emisar.ApprovalsTest do
     # rewritten to fit a wire budget; only the projection is bounded.
     test "the bounded projection leaves the stored decision note whole" do
       %{account: account, request: request, run: run} = gated_request(min_approvals: 25)
-      subject = operator_subject(account)
+      subject = admin_subject(account)
       note = String.duplicate("界", 2_000)
       reviewer = named_reviewer(account, "Reviewer 1")
       request_id = request.id
@@ -1969,7 +1969,7 @@ defmodule Emisar.ApprovalsTest do
     # it for room would leave a released run with no account of what released it.
     test "an override's maximal reason is bounded and flagged, never dropped for room" do
       %{account: account, request: request, run: run} = gated_request(min_approvals: 25)
-      subject = operator_subject(account)
+      subject = admin_subject(account)
       note = String.duplicate("界", 2_000)
 
       for index <- 1..20 do
@@ -2005,7 +2005,7 @@ defmodule Emisar.ApprovalsTest do
     # shortened.
     test "a justification past its ceiling in encoded bytes is cut and flagged, a fitting one is not" do
       {account, run} = run_fixture()
-      subject = operator_subject(account)
+      subject = admin_subject(account)
 
       # 1500 graphemes of a three-byte CJK character: 4500 bytes.
       cjk = String.duplicate("日", 1_500)
@@ -2032,7 +2032,7 @@ defmodule Emisar.ApprovalsTest do
       assert byte_size(Jason.encode!(quotes)) - 2 == 3_000
 
       {account, run} = run_fixture()
-      subject = operator_subject(account)
+      subject = admin_subject(account)
       assert {:ok, request} = Approvals.create_request(run, quotes)
       assert {:ok, review} = project_review(run, subject)
 
@@ -2043,7 +2043,7 @@ defmodule Emisar.ApprovalsTest do
       assert Repo.reload!(request).reason == quotes
 
       {account, run} = run_fixture()
-      subject = operator_subject(account)
+      subject = admin_subject(account)
       assert {:ok, _request} = Approvals.create_request(run, "needs review")
       assert {:ok, review} = project_review(run, subject)
 
@@ -2053,7 +2053,7 @@ defmodule Emisar.ApprovalsTest do
 
     test "is not_found without a request or across accounts and unauthorized without view_runs" do
       {account, ungated} = run_fixture()
-      subject = operator_subject(account)
+      subject = admin_subject(account)
 
       assert project_review(ungated, subject) == {:error, :not_found}
 
@@ -2128,8 +2128,8 @@ defmodule Emisar.ApprovalsTest do
       account: account,
       request: request
     } do
-      a = distinct_operator(account)
-      b = distinct_operator(account)
+      a = distinct_owner(account)
+      b = distinct_owner(account)
 
       {:ok, _} = Approvals.approve_request(request, a, "lgtm-1")
       {:ok, _} = Approvals.deny_request(request, b, "changed my mind")
@@ -2174,8 +2174,8 @@ defmodule Emisar.ApprovalsTest do
       account: account,
       request: request
     } do
-      a = distinct_operator(account)
-      b = distinct_operator(account)
+      a = distinct_owner(account)
+      b = distinct_owner(account)
 
       assert Approvals.approved_count_for_request(request, a) === {:ok, 0}
 
@@ -3086,7 +3086,7 @@ defmodule Emisar.ApprovalsTest do
 
     setup do
       {account, run} = run_fixture()
-      subject = operator_subject(account)
+      subject = admin_subject(account)
       %{account: account, run: run, subject: subject}
     end
 
@@ -3121,7 +3121,7 @@ defmodule Emisar.ApprovalsTest do
       subject: subject
     } do
       {:ok, request} = Approvals.create_request(run, "needs approve")
-      other_subject = operator_subject(Fixtures.Accounts.create_account())
+      other_subject = admin_subject(Fixtures.Accounts.create_account())
 
       assert Approvals.approve_request(request, other_subject, "lgtm") ==
                {:error, :not_found}
@@ -3268,7 +3268,7 @@ defmodule Emisar.ApprovalsTest do
         Accounts.peek_membership_profile_by_id(account.id, run.initiating_membership_id)
 
       Fixtures.Memberships.suspend_membership(membership)
-      decider = operator_subject(account)
+      decider = admin_subject(account)
 
       assert Approvals.approve_request(request, decider, "reviewed") ==
                {:error, :initiator_no_longer_authorized}
@@ -3359,7 +3359,7 @@ defmodule Emisar.ApprovalsTest do
       {:ok, request_a} = Approvals.create_request(run_a, "needs approve")
 
       account_b = Fixtures.Accounts.create_account()
-      subject_b = operator_subject(account_b)
+      subject_b = admin_subject(account_b)
       forged_request = %{request_a | account_id: account_b.id}
 
       assert Approvals.approve_request(forged_request, subject_b, "forged") ==
@@ -3373,8 +3373,8 @@ defmodule Emisar.ApprovalsTest do
     test "the second operator's decision loses with :already_decided" do
       {account, run} = run_fixture()
       {:ok, request} = Approvals.create_request(run, "x")
-      first = operator_subject(account)
-      second = operator_subject(account)
+      first = admin_subject(account)
+      second = admin_subject(account)
 
       assert {:ok, _} = Approvals.deny_request(request, first, "no")
       assert Approvals.approve_request(request, second) == {:error, :already_decided}
@@ -3436,7 +3436,7 @@ defmodule Emisar.ApprovalsTest do
       # cover. The run still dispatches; only the grant is absent.
       {account, run} = run_fixture()
       assert run.api_key_id == nil
-      subject = operator_subject(account)
+      subject = admin_subject(account)
       {:ok, request} = Approvals.create_request(run, "x")
 
       assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
@@ -3903,7 +3903,7 @@ defmodule Emisar.ApprovalsTest do
   describe "approve_request — min_approvals threshold" do
     test "expiry after a partial vote does not claim that no decision was made" do
       %{account: account, request: request, run: run} = gated_request(min_approvals: 2)
-      operator = distinct_operator(account)
+      operator = distinct_owner(account)
 
       assert {:ok, {%Request{status: :pending}, :pending}} =
                Approvals.approve_request(request, operator, "first review complete")
@@ -3922,8 +3922,8 @@ defmodule Emisar.ApprovalsTest do
 
     test "min_approvals: 2 — first approve records pending (no dispatch), second distinct operator finalizes + dispatches" do
       %{account: account, request: request, run: run} = gated_request(min_approvals: 2)
-      a = distinct_operator(account)
-      b = distinct_operator(account)
+      a = distinct_owner(account)
+      b = distinct_owner(account)
 
       # First approve: recorded, sub-threshold — run NOT sent.
       assert {:ok, {%Request{status: :pending}, :pending}} =
@@ -3944,7 +3944,7 @@ defmodule Emisar.ApprovalsTest do
 
     test "min_approvals defaults to 1 — a single approve finalizes + dispatches (today's behavior)" do
       %{account: account, request: request} = gated_request()
-      operator = distinct_operator(account)
+      operator = distinct_owner(account)
 
       assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
                Approvals.approve_request(request, operator, "ok")
@@ -3954,7 +3954,7 @@ defmodule Emisar.ApprovalsTest do
 
     test "ABUSE: a single operator approving twice counts once — second is :already_decided, not dispatched" do
       %{account: account, request: request} = gated_request(min_approvals: 2)
-      operator = distinct_operator(account)
+      operator = distinct_owner(account)
 
       assert {:ok, {%Request{status: :pending}, :pending}} =
                Approvals.approve_request(request, operator, "first")
@@ -3994,7 +3994,7 @@ defmodule Emisar.ApprovalsTest do
         requester_subject: requester_subject
       } = gated_request(min_approvals: 3, requester_role: :operator)
 
-      first = distinct_operator(account)
+      first = distinct_owner(account)
 
       assert {:ok, {%Request{status: :pending}, :pending}} =
                Approvals.approve_request(request, first, "reviewed")
@@ -4068,7 +4068,7 @@ defmodule Emisar.ApprovalsTest do
 
     test "an owner who already cast an ordinary vote can still waive the remaining vote" do
       %{account: account, request: request} = gated_request(min_approvals: 2)
-      owner = distinct_operator(account)
+      owner = distinct_owner(account)
 
       assert {:ok, {%Request{status: :pending}, :pending}} =
                Approvals.approve_request(request, owner, "first review")
@@ -4163,7 +4163,7 @@ defmodule Emisar.ApprovalsTest do
     test "an owner in another account cannot discover or override the request" do
       %{request: request} = gated_request(min_approvals: 2)
       other_account = Fixtures.Accounts.create_account()
-      other_owner = distinct_operator(other_account)
+      other_owner = distinct_owner(other_account)
 
       assert Approvals.override_request(request, "wrong account", other_owner) ==
                {:error, :not_found}
@@ -4173,7 +4173,7 @@ defmodule Emisar.ApprovalsTest do
 
     test "a required override reason is trimmed and bounded before any write" do
       %{account: account, request: request} = gated_request(min_approvals: 2)
-      owner = distinct_operator(account)
+      owner = distinct_owner(account)
 
       assert Approvals.override_request(request, nil, owner) ==
                {:error, :override_reason_required}
@@ -4232,7 +4232,7 @@ defmodule Emisar.ApprovalsTest do
 
     test "override preserves expiry and trusted-action checks" do
       %{account: account, request: expired_request} = gated_request(min_approvals: 2)
-      owner = distinct_operator(account)
+      owner = distinct_owner(account)
       past = DateTime.add(DateTime.utc_now(), -60, :second)
 
       Fixtures.Approvals.set_request_expiry(expired_request, past)
@@ -4243,7 +4243,7 @@ defmodule Emisar.ApprovalsTest do
       %{account: trust_account, runner: runner, request: untrusted_request} =
         gated_request(min_approvals: 2)
 
-      trust_owner = distinct_operator(trust_account)
+      trust_owner = distinct_owner(trust_account)
       Fixtures.Catalog.delete_actions_for_runner(runner.id)
 
       assert Approvals.override_request(untrusted_request, "contract vanished", trust_owner) ==
@@ -4329,7 +4329,7 @@ defmodule Emisar.ApprovalsTest do
         gated_request(min_approvals: 1, allow_self_approval: false)
 
       # Sanity: the requester is set and someone else is approving.
-      other = distinct_operator(account)
+      other = distinct_owner(account)
       refute other.actor.id == requester_id
 
       assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
@@ -4388,8 +4388,8 @@ defmodule Emisar.ApprovalsTest do
       assert Approvals.approve_request(request, requester, "self") ==
                {:error, :self_approval_forbidden}
 
-      a = distinct_operator(account)
-      b = distinct_operator(account)
+      a = distinct_owner(account)
+      b = distinct_owner(account)
 
       assert {:ok, {%Request{status: :pending}, :pending}} =
                Approvals.approve_request(request, a, "lgtm-1")
@@ -4430,7 +4430,7 @@ defmodule Emisar.ApprovalsTest do
         request |> Ecto.Changeset.change(requested_by_membership_id: nil) |> Repo.update!()
 
       assert {:ok, {%Request{status: :pending}, :pending}} =
-               Approvals.approve_request(request, distinct_operator(account), "lgtm-1")
+               Approvals.approve_request(request, distinct_owner(account), "lgtm-1")
 
       assert approved_count(request.id) == 1
     end
@@ -4480,7 +4480,7 @@ defmodule Emisar.ApprovalsTest do
       refute_receive {:cloud_to_runner, _generation, _}, 100
 
       # A DIFFERENT operator can approve.
-      other = distinct_operator(account)
+      other = distinct_owner(account)
 
       assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
                Approvals.approve_request(request, other, "ok")
@@ -4499,7 +4499,7 @@ defmodule Emisar.ApprovalsTest do
       assert approved_count(request.id) == 0
 
       assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
-               Approvals.approve_request(request, distinct_operator(account), "ok")
+               Approvals.approve_request(request, distinct_owner(account), "ok")
 
       assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}
     end
@@ -4552,7 +4552,7 @@ defmodule Emisar.ApprovalsTest do
       {:ok, request} =
         Approvals.create_request(run, "needs review")
 
-      operator = distinct_operator(account)
+      operator = distinct_owner(account)
 
       assert Approvals.approve_request(request, operator, "ok") == {:error, :pack_untrusted}
 
@@ -4568,7 +4568,7 @@ defmodule Emisar.ApprovalsTest do
     test "approving a packless run whose advertised action disappeared fails closed" do
       %{account: account, runner: runner, run: run, request: request} = gated_request()
       Fixtures.Catalog.delete_actions_for_runner(runner.id)
-      operator = distinct_operator(account)
+      operator = distinct_owner(account)
 
       assert Approvals.approve_request(request, operator, "ok") == {:error, :action_not_found}
 
@@ -4616,8 +4616,8 @@ defmodule Emisar.ApprovalsTest do
 
       # A later policy edit to min 1 must NOT move this in-flight request's bar
       # — it snapshots the value, not the live policy.
-      a = distinct_operator(account)
-      b = distinct_operator(account)
+      a = distinct_owner(account)
+      b = distinct_owner(account)
 
       assert {:ok, {%Request{status: :pending}, :pending}} =
                Approvals.approve_request(request, a, "one")
@@ -4709,7 +4709,7 @@ defmodule Emisar.ApprovalsTest do
 
     setup do
       {account, run} = run_fixture()
-      subject = operator_subject(account)
+      subject = admin_subject(account)
       %{account: account, run: run, subject: subject}
     end
 
@@ -4958,7 +4958,7 @@ defmodule Emisar.ApprovalsTest do
       {:ok, request} =
         Approvals.create_request(run, "needs review")
 
-      operator = distinct_operator(account)
+      operator = distinct_owner(account)
 
       # Deny needs no trust re-check — it finalizes denied and cancels the run.
       assert {:ok, {%Request{status: :denied}, %ActionRun{status: :cancelled}}} =
@@ -4970,9 +4970,9 @@ defmodule Emisar.ApprovalsTest do
 
     test "ABUSE: one deny finalizes DENIED and a later approve cannot override it" do
       %{account: account, request: request, run: run} = gated_request(min_approvals: 3)
-      a = distinct_operator(account)
-      b = distinct_operator(account)
-      c = distinct_operator(account)
+      a = distinct_owner(account)
+      b = distinct_owner(account)
+      c = distinct_owner(account)
 
       # A approves (1 of 3) — still pending.
       assert {:ok, {%Request{status: :pending}, :pending}} =
@@ -4992,8 +4992,8 @@ defmodule Emisar.ApprovalsTest do
 
     test "each vote logs approval.decision_recorded; only the release logs approval.approved" do
       %{account: account, request: request} = gated_request(min_approvals: 2)
-      a = distinct_operator(account)
-      b = distinct_operator(account)
+      a = distinct_owner(account)
+      b = distinct_owner(account)
 
       {:ok, _} = Approvals.approve_request(request, a, "one")
       {:ok, _} = Approvals.approve_request(request, b, "two")
@@ -5020,7 +5020,7 @@ defmodule Emisar.ApprovalsTest do
       run: run,
       request: request
     } do
-      owner = operator_subject(account)
+      owner = admin_subject(account)
 
       assert {:ok, %ActionRun{status: :cancelled}} =
                Runs.cancel_run(run, owner, "changed my mind")
@@ -5037,7 +5037,7 @@ defmodule Emisar.ApprovalsTest do
       request: request
     } do
       Fixtures.Catalog.delete_actions_for_runner(runner.id)
-      owner = operator_subject(account)
+      owner = admin_subject(account)
 
       assert {:ok, %ActionRun{status: :cancelled}} = Runs.cancel_run(run, owner, "stale request")
 
@@ -5053,8 +5053,8 @@ defmodule Emisar.ApprovalsTest do
       run: run,
       request: request
     } do
-      owner = operator_subject(account)
-      approver = distinct_operator(account)
+      owner = admin_subject(account)
+      approver = distinct_owner(account)
 
       {:ok, _} = Runs.cancel_run(run, owner, "cancel")
 
@@ -5144,7 +5144,7 @@ defmodule Emisar.ApprovalsTest do
     test "the subscriber receives the account's approval-feed broadcasts" do
       {account, run} = run_fixture()
       {:ok, request} = Approvals.create_request(run, "x")
-      subject = operator_subject(account)
+      subject = admin_subject(account)
 
       assert Approvals.subscribe_account_approvals(account.id) == :ok
 
@@ -5158,7 +5158,7 @@ defmodule Emisar.ApprovalsTest do
       {account_a, _run_a} = run_fixture()
       {account_b, run_b} = run_fixture()
       {:ok, request_b} = Approvals.create_request(run_b, "x")
-      subject_b = operator_subject(account_b)
+      subject_b = admin_subject(account_b)
 
       assert Approvals.subscribe_account_approvals(account_a.id) == :ok
 
@@ -5177,11 +5177,11 @@ defmodule Emisar.ApprovalsTest do
 
       restricted_subject =
         account
-        |> operator_subject()
+        |> admin_subject()
         |> subject_with_runner_access(database_access)
 
       assert Approvals.subscribe_account_approvals(account.id) == :ok
-      assert {:ok, _} = Approvals.deny_request(request, operator_subject(account), "no")
+      assert {:ok, _} = Approvals.deny_request(request, admin_subject(account), "no")
       assert_receive {:approval_updated, request_id}
       assert request_id == request.id
 
@@ -5203,7 +5203,7 @@ defmodule Emisar.ApprovalsTest do
       {:ok, other} =
         Approvals.create_request(other_run, "other")
 
-      subject = operator_subject(account)
+      subject = admin_subject(account)
       assert Approvals.subscribe_request(account.id, watched.id) == :ok
 
       assert {:ok, _} = Approvals.deny_request(other, subject, "no")
@@ -5222,7 +5222,7 @@ defmodule Emisar.ApprovalsTest do
       {:ok, request_a} = Approvals.create_request(run_a, "x")
 
       assert Approvals.subscribe_request(account_b.id, request_a.id) == :ok
-      assert {:ok, _} = Approvals.deny_request(request_a, operator_subject(account_a), "no")
+      assert {:ok, _} = Approvals.deny_request(request_a, admin_subject(account_a), "no")
       refute_receive {:approval_request_updated, _}, 100
     end
   end
@@ -6464,11 +6464,11 @@ defmodule Emisar.ApprovalsTest do
 
       insert_grant(account_a, key_a, action_id: "x", granted_by_membership_id: user_a.id)
 
-      subject_a = operator_subject(account_a)
+      subject_a = admin_subject(account_a)
       assert {:ok, [%Grant{}], _} = Approvals.list_grants_for_account(subject_a)
 
       # A second account's owner sees none of A's grants.
-      subject_b = operator_subject(Fixtures.Accounts.create_account())
+      subject_b = admin_subject(Fixtures.Accounts.create_account())
       assert {:ok, [], _} = Approvals.list_grants_for_account(subject_b)
     end
 
@@ -6512,7 +6512,7 @@ defmodule Emisar.ApprovalsTest do
 
       subject =
         account
-        |> operator_subject()
+        |> admin_subject()
         |> subject_with_runner_access(database_access)
 
       assert {:ok, grants, %{count: 4}} = Approvals.list_grants_for_account(subject)
@@ -6559,7 +6559,7 @@ defmodule Emisar.ApprovalsTest do
         })
 
       {:ok, request} = Approvals.create_request(run, "x")
-      subject = operator_subject(account)
+      subject = admin_subject(account)
 
       {:ok, grant} =
         Approvals.create_grant(
@@ -6583,7 +6583,7 @@ defmodule Emisar.ApprovalsTest do
       assert id == grant.id
 
       {other_account, _} = run_fixture()
-      other_subject = operator_subject(other_account)
+      other_subject = admin_subject(other_account)
       assert Approvals.fetch_grant_by_id(grant.id, other_subject) == {:error, :not_found}
 
       # A malformed id is :not_found, never a crash.
@@ -6695,7 +6695,7 @@ defmodule Emisar.ApprovalsTest do
 
     test "transitions pending requests past expires_at to expired + cancels the run" do
       {account, run} = run_fixture()
-      subject = operator_subject(account)
+      subject = admin_subject(account)
       {:ok, request} = Approvals.create_request(run, "x")
 
       # Move the request's expiry into the past.
@@ -6755,7 +6755,7 @@ defmodule Emisar.ApprovalsTest do
 
     test "expiry stays pending-only even with sub-threshold decision rows recorded" do
       %{account: account, request: request, run: run} = gated_request(min_approvals: 2)
-      a = distinct_operator(account)
+      a = distinct_owner(account)
 
       # One sub-threshold approve — a decision row exists, request still pending.
       {:ok, {%Request{status: :pending}, :pending}} = Approvals.approve_request(request, a, "one")

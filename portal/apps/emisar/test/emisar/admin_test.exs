@@ -1239,6 +1239,13 @@ defmodule Emisar.AdminTest do
     test "complimentary plans use the existing subscription posture" do
       account = Fixtures.Accounts.create_account()
 
+      assert Admin.execute(
+               "emisar.admin.plan.grant",
+               ["account=#{account.slug}", "plan=team", "reason=   "]
+             ) == {:error, :invalid_reason}
+
+      assert {:ok, %{plan: "free"}} = Billing.support_plan(account)
+
       assert {:ok, %{plan: "team", source: "complimentary"}} =
                Admin.execute(
                  "emisar.admin.plan.grant",

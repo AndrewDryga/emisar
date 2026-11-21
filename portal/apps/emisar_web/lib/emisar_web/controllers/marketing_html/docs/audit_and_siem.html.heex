@@ -92,7 +92,9 @@
       <.docs_h2 id="exporting">2. Pull events with a cursor</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <.docs_inline_code>GET /api/audit</.docs_inline_code>
-        serves NDJSON: one event per line, in forward keyset order by <.docs_inline_code>occurred_at</.docs_inline_code>, then ID.
+        serves NDJSON: one event per line, in the order the events were written, oldest first.
+        An event appears once the change that recorded it has committed, so a late commit is never
+        skipped by a cursor you already hold.
       </p>
       <.docs_callout kind={:note} title="Pull audit events into your SIEM">
         Configure your SIEM's cursor-aware HTTP input, a log agent, or the script below to poll

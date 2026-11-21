@@ -15,7 +15,7 @@ defmodule EmisarWeb.PacksRegistry do
   # Curated display grouping for the /packs registry — {label, anchor_slug,
   # [pack ids]} in display order. Presentation metadata only; the catalog
   # itself stays the data source. A pack not listed here falls into a
-  # trailing "Other" group (see grouped/0), so a newly-published pack still
+  # trailing "Other" group (see grouped/1), so a newly-published pack still
   # appears — move it into a category when you add it.
   @pack_categories [
     {"Databases & datastores", "databases",
@@ -74,11 +74,30 @@ defmodule EmisarWeb.PacksRegistry do
   @spec source_url(Catalog.PublishedRegistry.Pack.t()) :: String.t()
   def source_url(%Catalog.PublishedRegistry.Pack{source_url: url}), do: url
 
-  @doc "Repo source URL for a single action YAML inside a pack."
+  # Packs whose action files are not named after the unqualified action id
+  # (gcp.dns_zones lives in gcp-dns/actions/zones.yaml). The catalog carries no
+  # file path, so their actions link to the actions directory instead of a
+  # guessed file. A test walks the packs tree to keep this list exact.
+  @directory_linked_packs ~w(gcp-billing gcp-cloudsql gcp-dns gcp-storage)
+
+  @doc false
+  def directory_linked_packs, do: @directory_linked_packs
+
+  @doc """
+  Repo source URL for a single action YAML inside a pack, or the pack's actions
+  directory when its file names do not follow the action ids.
+  """
   @spec action_source_url(
           Catalog.PublishedRegistry.Pack.t(),
           Catalog.PublishedRegistry.Action.t()
         ) :: String.t()
+  def action_source_url(
+        %Catalog.PublishedRegistry.Pack{id: pack_id, source_url: source_url},
+        _action
+      )
+      when pack_id in @directory_linked_packs,
+      do: "#{source_url}/actions"
+
   def action_source_url(
         %Catalog.PublishedRegistry.Pack{source_url: source_url},
         %Catalog.PublishedRegistry.Action{id: action_id}

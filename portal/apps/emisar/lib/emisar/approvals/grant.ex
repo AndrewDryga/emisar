@@ -13,8 +13,9 @@ defmodule Emisar.Approvals.Grant do
     * `action_id` always matches exactly.
     * `pack_ref` always matches exactly, binding the approval to the trusted
       action bytes the operator approved.
-    * `runner_id` matches the runner, OR is `nil` which means "any
-      runner advertising the action".
+    * `runner_id` matches the runner exactly. Approval minting always binds
+      the approved run's runner; matching still treats a stored `nil` as any
+      runner.
     * `args_sha256` matches the dispatched args' SHA-256, OR is `nil`
       which means "any args for this action".
     * `expires_at` is always set by approval minting (`:once` mints no

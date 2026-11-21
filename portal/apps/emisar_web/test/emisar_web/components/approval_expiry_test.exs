@@ -38,7 +38,7 @@ defmodule EmisarWeb.Components.ApprovalExpiryTest do
   end
 
   test "the on-expiry consequence reaches touch and keyboard, not hover alone" do
-    # What happens at the deadline — the requester's run is auto-denied — is the
+    # What happens at the deadline — the request expires and the run won't start — is the
     # fact an approver triages by, so it rides the shared accessible tooltip
     # rather than a `title` a phone can never surface. The row id stays with the
     # <time>; the bubble derives its own so the two can't collide.
@@ -59,7 +59,7 @@ defmodule EmisarWeb.Components.ApprovalExpiryTest do
     assert html =~ "group-focus-within/tooltip:opacity-100"
     assert html =~ ~s(aria-describedby="expiry-req-7-consequence")
     assert html =~ ~s(id="expiry-req-7-consequence")
-    assert html =~ "If no one decides by then, the request is auto-denied"
+    assert html =~ "If no one decides by then, the request expires"
     assert html =~ ~r/<time[^>]*id="expiry-req-7"/
     refute html =~ "title="
   end

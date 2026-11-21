@@ -19,9 +19,8 @@ defmodule Emisar.Runners.Token.Changeset do
   def create(runner_id, issued_via_key_id, prefix, hash, opts \\ [])
       when is_binary(runner_id) do
     now = DateTime.utc_now()
-    # nil keeps the historical never-expires behaviour. Callers that mint a
-    # rotatable token pass a lifetime; the ones that cannot yet (an offline
-    # bootstrap, a test fixture pinning old shape) simply do not.
+    # The production minter always passes a lifetime. Without one the token
+    # never expires, which only test fixtures rig.
     expires_at =
       case Keyword.get(opts, :lifetime_seconds) do
         seconds when is_integer(seconds) and seconds > 0 -> DateTime.add(now, seconds, :second)

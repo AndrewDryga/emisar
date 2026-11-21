@@ -149,7 +149,7 @@ A `2026-07-28` request declares its version per request in
 `Mcp-Name`, plain or base64-sentinel-wrapped, on `tools/call`); a missing or
 mismatched header is HTTP 400 with JSON-RPC `-32020`, an unsupported declared
 version is HTTP 400 with `-32022` naming the supported set, and a method the
-modern revision does not define (`initialize`, `ping`, unknown methods) is
+modern revision does not define (`ping`, unknown methods) is
 HTTP 404 with `-32601`. `server/discover` returns the supported versions,
 capabilities, and instructions. Modern results add `resultType: "complete"`
 and `_meta` serverInfo; `tools/list` and `server/discover` results also carry
@@ -1791,8 +1791,8 @@ advertisements, and are returned verbatim once the runbook is visible.
 
 ### `list_runbooks`
 
-Input accepts `query` (case-insensitive words matched against slug, title, and
-summary), `limit` (1 through 50, default 15), and cursor. The cursor is bound to
+Input accepts `query` (one keyword, matched case-insensitively as a substring of
+slug, title, or summary), `limit` (1 through 50, default 15), and cursor. The cursor is bound to
 `query`, the account, and the rotation-stable credential lineage, not `limit`,
 which is a per-call page ceiling a caller may change while paging. A
 legitimate successor key can resume the page; an unrelated key cannot. Results

@@ -1790,7 +1790,7 @@ defmodule Emisar.AuditTest do
 
     # The setup's subscription mint audits `subscription.changed`, so exact-list
     # assertions filter to the seeded type (the controller-test precedent).
-    test "returns ascending (occurred_at, id) so SIEMs can checkpoint", %{
+    test "returns ascending (txid, id) so SIEMs can checkpoint", %{
       account: account,
       subject: subject
     } do
@@ -1808,7 +1808,7 @@ defmodule Emisar.AuditTest do
 
       assert {:ok, [event_a, event_b]} =
                Audit.list_for_export(subject,
-                 after: {first.occurred_at, first.id},
+                 after: {first.txid, first.id},
                  event_types: ["user.signed_in"]
                )
 
@@ -1816,10 +1816,39 @@ defmodule Emisar.AuditTest do
       assert event_b.id == third.id
     end
 
+    test "an event stamped before an exported one but committed after it still follows the cursor",
+         %{account: account, subject: subject} do
+      # Audit.changeset/3 stamps occurred_at when the changeset is built, before
+      # the row is visible. Transaction 2 stamps later and commits first.
+      late = Audit.changeset(account.id, "user.signed_in", %{actor_kind: "user"})
+
+      {:ok, early_commit} =
+        Repo.transaction(fn ->
+          {:ok, event} =
+            Audit.record(Audit.changeset(account.id, "user.signed_in", %{actor_kind: "user"}))
+
+          event
+        end)
+
+      assert {:ok, [polled]} = Audit.list_for_export(subject, event_types: ["user.signed_in"])
+      assert polled.id == early_commit.id
+
+      {:ok, late_commit} = Repo.transaction(fn -> elem(Audit.record(late), 1) end)
+      assert DateTime.compare(late_commit.occurred_at, polled.occurred_at) == :lt
+
+      assert {:ok, [resumed]} =
+               Audit.list_for_export(subject,
+                 after: {polled.txid, polled.id},
+                 event_types: ["user.signed_in"]
+               )
+
+      assert resumed.id == late_commit.id
+    end
+
     test "a malformed :after cursor id returns no rows", %{account: account, subject: subject} do
       seed_export_events(account, 1)
 
-      assert Audit.list_for_export(subject, after: {DateTime.utc_now(), "not-a-uuid"}) ==
+      assert Audit.list_for_export(subject, after: {0, "not-a-uuid"}) ==
                {:ok, []}
     end
 
@@ -1830,7 +1859,11 @@ defmodule Emisar.AuditTest do
       [_first, second, _third] = seed_export_events(account, 3)
 
       assert {:ok, [only]} =
-               Audit.list_for_export(subject, since: second.occurred_at, limit: 1)
+               Audit.list_for_export(subject,
+                 since: second.occurred_at,
+                 limit: 1,
+                 event_types: ["user.signed_in"]
+               )
 
       assert only.id == second.id
     end

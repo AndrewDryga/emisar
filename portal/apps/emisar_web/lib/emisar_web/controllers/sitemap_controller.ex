@@ -50,9 +50,9 @@ defmodule EmisarWeb.SitemapController do
   end
 
   # The body is XML served as application/xml. Its paths are static routes,
-  # guide paths, and published pack ids, which the pack version changeset
-  # limits to lowercase letters, digits, dots, dashes, and underscores;
-  # nothing from the request reaches it.
+  # guide paths, and published pack ids from the public catalog document, which
+  # the Portal parses without an id format check, so each path is XML-escaped.
+  # Nothing from the request reaches it.
   # sobelow_skip ["XSS.SendResp"]
   def show(conn, _params) do
     # Static marketing routes + derived guide paths + a synthesized entry per
@@ -64,7 +64,7 @@ defmodule EmisarWeb.SitemapController do
       Enum.map_join(paths() ++ pack_paths, "\n", fn path ->
         """
           <url>
-            <loc>#{@base}#{path}</loc>
+            <loc>#{Plug.HTML.html_escape(@base <> path)}</loc>
             <changefreq>weekly</changefreq>
           </url>\
         """

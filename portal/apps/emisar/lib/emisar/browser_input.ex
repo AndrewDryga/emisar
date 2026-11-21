@@ -7,9 +7,6 @@ defmodule Emisar.BrowserInput do
   as `""` rather than absent, and `<input type="date">` emits `YYYY-MM-DD`
   (no time, no zone), which Ecto cannot cast to `:utc_datetime_usec`. Both key shapes are normalized so a browser map and an
   internal atom-keyed map mean the same thing.
-
-  This lived as byte-identical private blocks in the ApiKey and EnrollmentKey
-  changesets; a fix to one copy would have missed the other.
   """
 
   @doc """

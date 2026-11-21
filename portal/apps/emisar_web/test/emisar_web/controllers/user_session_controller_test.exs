@@ -586,7 +586,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
     end
   end
 
-  describe "the shared address budget (review revision 10)" do
+  describe "the shared address budget" do
     setup %{conn: conn} do
       Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
       # A client address of its own, so this test's per-IP windows are its own.

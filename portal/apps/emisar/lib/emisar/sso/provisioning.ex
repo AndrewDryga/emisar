@@ -28,7 +28,7 @@ defmodule Emisar.SSO.Provisioning do
   Internal — compose one current-provider pending-link upsert into SSO's
   transaction. The request records the one live Member whose workspace contact
   the trusted email names, so approval links the identity to that Member — never
-  an auto-merge (C1): the admin's approval is still the gate. The display email
+  an auto-merge: the admin's approval is still the gate. The display email
   is the raw value (it helps the admin recognize who is asking); approval binds
   the captured id.
   """
@@ -255,7 +255,7 @@ defmodule Emisar.SSO.Provisioning do
         {:ok, _membership} ->
           :ok
 
-        # #5: a refused/failed role change (e.g. :last_owner) must not vanish.
+        # A refused/failed role change (e.g. :last_owner) must not vanish.
         # The group push still succeeds (correct SCIM posture — the guard held
         # the role), but the skipped change is logged for the operator.
         other ->

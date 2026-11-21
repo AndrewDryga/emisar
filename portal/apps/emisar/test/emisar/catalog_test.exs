@@ -1061,6 +1061,44 @@ defmodule Emisar.CatalogTest do
       refute Map.has_key?(versions, "malformed-pack")
     end
 
+    test "a pack id or version no pack_ref can carry is refused at ingestion with its reason" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      payload =
+        state_payload(
+          packs: %{
+            "myorg.deploy" => %{"version" => "1.0.0", "hash" => "dotted"},
+            "lettered" => %{"version" => "v1.0.0", "hash" => "lettered"},
+            "plain" => %{"version" => "1.0.0", "hash" => "plain"}
+          },
+          actions: [
+            action("myorg.deploy.restart", pack_id: "myorg.deploy"),
+            action("lettered.restart", pack_id: "lettered"),
+            action("plain.restart", pack_id: "plain")
+          ]
+        )
+
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          assert {:ok, _} = Catalog.observe_state(runner, payload)
+        end)
+
+      assert account.id |> Fixtures.Catalog.list_pack_versions() |> Enum.map(& &1.pack_id) ==
+               ["plain"]
+
+      assert RunnerAction
+             |> Repo.all()
+             |> Enum.filter(&(&1.runner_id == runner.id))
+             |> Enum.map(& &1.action_id) ==
+               ["plain.restart"]
+
+      assert log =~ ~s(pack "myorg.deploy" that Emisar cannot address)
+      assert log =~ "pack_id must be lowercase letters, digits, - or _, starting with a letter"
+      assert log =~ ~s(pack "lettered" that Emisar cannot address)
+      assert log =~ "version must be dot-numeric"
+    end
+
     test "a malformed hash for a known pack is isolated from the rest of the state update" do
       runner = Fixtures.Runners.create_runner()
       account = Repo.preload(runner, :account).account
@@ -6694,20 +6732,22 @@ defmodule Emisar.CatalogTest do
       assert Enum.map(fact.advertising.runners, & &1.id) == [runner.id]
     end
 
-    test "a version advertised without a version field pins to the 'unknown' row", %{
+    test "a pack advertised without a version field is not pinned", %{
       account: account,
       subject: subject
     } do
       runner = Fixtures.Runners.create_runner(account_id: account.id, name: "vague")
 
-      {:ok, _runner} =
-        Catalog.observe_state(runner, state_payload(packs: %{"acme" => %{"hash" => "acme-hash"}}))
+      ExUnit.CaptureLog.capture_log(fn ->
+        {:ok, _runner} =
+          Catalog.observe_state(
+            runner,
+            state_payload(packs: %{"acme" => %{"hash" => "acme-hash"}})
+          )
+      end)
 
-      assert {:ok, projection} = Catalog.list_console_packs(%{}, subject)
-      fact = version_fact(projection, "acme", "unknown")
-
-      assert Enum.map(fact.advertising.runners, & &1.name) == ["vague"]
-      assert fact.advertising.coverage == :complete
+      assert Fixtures.Catalog.list_pack_versions(account.id) == []
+      assert {:ok, _projection} = Catalog.list_console_packs(%{}, subject)
     end
 
     test "a retired PENDING version wears the retired face", %{

@@ -70,9 +70,11 @@ defmodule Emisar.Audit do
   from a per-event builder rather than raw attrs (so the caller never
   hand-assembles them). Use an `Audit.Events.<event>` builder inside a
   `Multi.insert(:audit, …)` when the row must commit with a parent mutation;
-  use this only for standalone socket/presence events that have no transaction
-  to join (runner connect/disconnect). Like `log/3`, it does not
-  broadcast — presence already drives the live runner UI.
+  use this for standalone events with no parent mutation to join (staff
+  account views, billing requests, pack-trust observations, export receipts,
+  failed sign-ins) and for receipts written after a rolled-back attempt. Like
+  `log/3`, it does not broadcast: only `Repo.commit_multi` fans committed
+  events out, so an open audit page does not refresh for these rows.
   """
   def record(%Ecto.Changeset{} = event_changeset), do: Repo.insert(event_changeset)
 
@@ -631,9 +633,11 @@ defmodule Emisar.Audit do
 
   @doc """
   SIEM export — cursor-paginated forward sweep of every event the
-  subject can see, sorted ascending by `(occurred_at, id)`. This is the
-  deterministic shape SIEMs need: they checkpoint the last `(occurred_at,
-  id)` they've ingested and ask for everything strictly after.
+  subject can see, sorted ascending by `(txid, id)`: the ID of the
+  transaction that wrote the row, then the row ID. Only rows from finished
+  transactions are served, so an event that commits late can never land
+  behind a cursor already issued. SIEMs checkpoint the last `(txid, id)`
+  they've ingested and ask for everything strictly after.
 
   Why a separate function from `list_events/2`:
 
@@ -649,7 +653,7 @@ defmodule Emisar.Audit do
   Options:
 
     * `:since` — `%DateTime{}` lower bound for the first page (inclusive)
-    * `:after` — `{%DateTime{}, id}` cursor (strict `>`), takes precedence
+    * `:after` — `{txid, id}` cursor (strict `>`), takes precedence
       over `:since`
     * `:event_types` — list of event_type strings to include (empty list
       = all types)
@@ -668,6 +672,7 @@ defmodule Emisar.Audit do
 
       events =
         Event.Query.all()
+        |> Event.Query.committed_for_export()
         |> apply_export_cursor(opts)
         |> Event.Query.by_event_types(types)
         |> Event.Query.ordered_for_export()
@@ -750,9 +755,9 @@ defmodule Emisar.Audit do
 
   defp apply_export_cursor(query, opts) do
     case Keyword.get(opts, :after) do
-      {%DateTime{} = ts, id} when is_binary(id) ->
+      {txid, id} when is_integer(txid) and txid >= 0 and is_binary(id) ->
         if Repo.valid_uuid?(id),
-          do: Event.Query.occurred_strictly_after(query, ts, id),
+          do: Event.Query.exported_after(query, txid, id),
           else: Event.Query.none(query)
 
       _ ->

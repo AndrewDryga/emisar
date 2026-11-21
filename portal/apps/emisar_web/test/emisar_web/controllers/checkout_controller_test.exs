@@ -62,7 +62,7 @@ defmodule EmisarWeb.CheckoutControllerTest do
       assert html =~ ~s(href="/app/#{account_id}/settings/billing")
     end
 
-    test "a tampered, expired, other-checkout or unsigned return gets only the neutral links (review revision 11)",
+    test "a tampered, expired, other-checkout or unsigned return gets only the neutral links",
          %{conn: conn} do
       Emisar.Config.put_override(:emisar, :paddle_client_token, "live_tok_123")
       account_id = Ecto.UUID.generate()

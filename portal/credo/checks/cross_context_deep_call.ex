@@ -66,6 +66,21 @@ defmodule Emisar.Checks.CrossContextDeepCall do
      %{ctx | aliases: Map.put(ctx.aliases, alias_local(rest, opts, top), Atom.to_string(top))}}
   end
 
+  # alias Emisar.{Accounts, Runs.ActionRun} — each branch names its own context
+  # by its first segment.
+  defp walk({:alias, _, [{{:., _, [{:__aliases__, _, [:Emisar]}, :{}]}, _, branches}]} = ast, ctx) do
+    aliases =
+      Enum.reduce(branches, ctx.aliases, fn
+        {:__aliases__, _, [top | _] = parts}, acc ->
+          Map.put(acc, List.last(parts), Atom.to_string(top))
+
+        _, acc ->
+          acc
+      end)
+
+    {ast, %{ctx | aliases: aliases}}
+  end
+
   # alias Emisar.<Ctx>.{A, B} — each branch resolves to context <Ctx>.
   defp walk(
          {:alias, _, [{{:., _, [{:__aliases__, _, [:Emisar, top | _]}, :{}]}, _, branches}]} = ast,

@@ -11,7 +11,6 @@ defmodule Emisar.Auth.SubjectTest do
   alias Emisar.Auth.Subject
   alias Emisar.Fixtures
   alias Emisar.RequestContext
-  alias Emisar.Runners.Runner
 
   describe "human_membership_id/1" do
     test "uses the exact human seat, never a machine's owner or a system actor" do
@@ -304,12 +303,10 @@ defmodule Emisar.Auth.SubjectTest do
     test "classify each actor, with system/nil fallbacks for an actor-less subject" do
       user_subject = %Subject{actor: %Membership{id: "u1", email: "ops@example.test"}}
       key_subject = %Subject{actor: %ApiKey{id: "k1"}}
-      runner_subject = %Subject{actor: %Runner{id: "r1"}}
       actorless = %Subject{}
 
       assert Subject.actor_kind(user_subject) == "membership"
       assert Subject.actor_kind(key_subject) == "api_key"
-      assert Subject.actor_kind(runner_subject) == "runner"
       assert Subject.actor_kind(actorless) == "system"
 
       assert Subject.actor_id(user_subject) == "u1"

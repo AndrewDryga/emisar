@@ -226,7 +226,8 @@ defmodule EmisarWeb.DashboardLive do
     fleet_counts = %{
       total: length(runners),
       active: Enum.count(readiness, &(&1.connection.state != :disabled)),
-      online: length(online_runner_ids)
+      online: length(online_runner_ids),
+      offline: Enum.count(readiness, &(&1.connection.state == :offline))
     }
 
     socket
@@ -252,13 +253,14 @@ defmodule EmisarWeb.DashboardLive do
   end
 
   defp fleet_counts_or_zero({:ok, fleet}), do: fleet.counts
-  defp fleet_counts_or_zero(_error), do: %{total: 0, active: 0, online: 0}
+  defp fleet_counts_or_zero(_error), do: %{total: 0, active: 0, online: 0, offline: 0}
 
   defp assign_fleet_counts(socket, counts, read_ok?) do
     socket
     |> assign(:runners_total, counts.total)
     |> assign(:runners_active, counts.active)
     |> assign(:runners_connected, counts.online)
+    |> assign(:runners_offline, counts.offline)
     |> assign(:runners_error?, not read_ok?)
   end
 
@@ -388,6 +390,7 @@ defmodule EmisarWeb.DashboardLive do
         pending_packs_count={@shell_chrome.pending_packs_count}
         runners_total={@runners_total}
         runners_connected={@runners_connected}
+        runners_offline={@runners_offline}
         runners_error?={@runners_error?}
         actions_advertised?={@actions_advertised?}
         pending_approvals={@pending_approvals}
@@ -436,6 +439,7 @@ defmodule EmisarWeb.DashboardLive do
   #      read-only and never gate, so this surface earns space only when live.
   #   4. Recent runs — the activity proof, with a digest of the shown runs in its header.
   attr :runners_connected, :integer, required: true
+  attr :runners_offline, :integer, required: true
   attr :runners_total, :integer, required: true
   attr :runners_error?, :boolean, required: true
   attr :actions_advertised?, :boolean, required: true
@@ -492,6 +496,7 @@ defmodule EmisarWeb.DashboardLive do
       <.runners_pillar
         :if={@can_view_runners?}
         connected={@runners_connected}
+        offline={@runners_offline}
         total={@runners_total}
         read_failed?={@runners_error?}
         has_runner_access?={@has_runner_access?}
@@ -974,6 +979,7 @@ defmodule EmisarWeb.DashboardLive do
   end
 
   attr :connected, :integer, required: true
+  attr :offline, :integer, required: true
   attr :total, :integer, required: true
   attr :read_failed?, :boolean, required: true
   attr :has_runner_access?, :boolean, required: true
@@ -1038,13 +1044,13 @@ defmodule EmisarWeb.DashboardLive do
     <.pillar
       label="Runners"
       tone={runners_tone(@connected, @total)}
-      status_tone={runners_status_tone(@connected, @total)}
+      status_tone={runners_status_tone(@connected, @offline)}
       navigate={~p"/app/#{@current_account}/runners"}
     >
       <:value>
         {@connected}<span class="text-2xl text-zinc-400"> / {@total} connected</span>
       </:value>
-      <:status>{runners_status(@connected, @total)}</:status>
+      <:status>{runners_status(@connected, @offline, @total)}</:status>
     </.pillar>
     """
   end
@@ -1056,12 +1062,13 @@ defmodule EmisarWeb.DashboardLive do
   # stop — the posture line IS the whole offline alarm now (no banner). No " →"
   # in the string: the pillar appends the animated <.cta_arrow> for any attention
   # status.
-  defp runners_status(0, _total), do: "All runners offline"
-
-  defp runners_status(connected, total) when connected < total,
-    do: "#{total - connected} offline"
-
-  defp runners_status(_connected, _total), do: "All connected"
+  #
+  # Only runners that are really offline count: a pending or disabled runner is
+  # not an outage (the Runners page's own predicate).
+  defp runners_status(0, offline, _total) when offline > 0, do: "All runners offline"
+  defp runners_status(_connected, offline, _total) when offline > 0, do: "#{offline} offline"
+  defp runners_status(connected, _offline, connected), do: "All connected"
+  defp runners_status(_connected, _offline, _total), do: "None offline"
 
   # Tiles wear brand (healthy) or neutral — never amber: two amber tiles at
   # once read as an alarm wall and spend amber's attention value. The STATUS
@@ -1072,9 +1079,9 @@ defmodule EmisarWeb.DashboardLive do
   # ALL offline is a hard stop — nothing can dispatch — so the posture line goes
   # ROSE, not the amber a partial outage (some runners still up) gets. That rose
   # line IS the dashboard's whole offline alarm; no separate banner stacks on it.
-  defp runners_status_tone(0, _total), do: :rose
-  defp runners_status_tone(connected, total) when connected < total, do: :amber
-  defp runners_status_tone(_connected, _total), do: :neutral
+  defp runners_status_tone(0, offline) when offline > 0, do: :rose
+  defp runners_status_tone(_connected, offline) when offline > 0, do: :amber
+  defp runners_status_tone(_connected, _offline), do: :neutral
 
   attr :agents, :map, required: true
   attr :current_account, :map, required: true

@@ -151,16 +151,16 @@ config :logger, :console,
 # Overridable at boot via `STATUS_PAGE_URL` in runtime.exs.
 config :emisar_web, status_page_url: "https://status.emisar.dev"
 
-# Sentry — DSN is opt-in via `SENTRY_DSN` env var (wired in
-# `runtime.exs`). Leaving it unset disables uploads — the client
-# short-circuits before any HTTP call. The default is intentionally
-# nil so a fork / self-host can't accidentally ship errors to the
-# upstream project's Sentry bucket.
 # No Swoosh HTTP client in any environment by default: Logger/local adapters
 # need none, and Swoosh's default Hackney client is not a project dependency.
 # runtime.exs opts the Postmark adapter into Finch in production.
 config :swoosh, :api_client, false
 
+# Sentry — DSN is opt-in via `SENTRY_DSN` env var (wired in
+# `runtime.exs`). Leaving it unset disables uploads — the client
+# short-circuits before any HTTP call. The default is intentionally
+# nil so a fork / self-host can't accidentally ship errors to the
+# upstream project's Sentry bucket.
 config :sentry,
   dsn: nil,
   before_send: {EmisarWeb.Application, :scrub_sentry_event},
@@ -169,11 +169,14 @@ config :sentry,
   root_source_code_paths: [File.cwd!()],
   tags: %{app: "emisar"}
 
+# Keys whose values are redacted from structured log metadata.
+config :emisar,
+  log_redaction_keys: ~w[password token secret authorization api_key key_hash token_hash]
+
 # Mailer "From" address. Self-hosters override these with
 # `MAILER_FROM_EMAIL` / `MAILER_FROM_NAME` in `runtime.exs`. Defaults
 # match the emisar-hosted brand.
 config :emisar,
-  log_redaction_keys: ~w[password token secret authorization api_key key_hash token_hash],
   mailer_from_email: "no-reply@emisar.dev",
   mailer_from_name: "emisar"
 

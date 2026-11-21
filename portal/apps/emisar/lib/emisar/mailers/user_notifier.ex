@@ -815,9 +815,11 @@ defmodule Emisar.Mailers.UserNotifier do
   defp requester_approval_label(%{allow_self_approval: true}), do: "Yes"
   defp requester_approval_label(_request), do: nil
 
-  defp run_source_label(:mcp), do: "MCP"
+  # The console's labels (EmisarWeb.TimeHelpers.format_source/1).
+  defp run_source_label(:mcp), do: "AI agent"
   defp run_source_label(:runbook), do: "Runbook"
-  defp run_source_label(_source), do: "Portal"
+  defp run_source_label(:operator), do: "Operator"
+  defp run_source_label(_source), do: "Operator"
 
   defp approval_event_copy(%{kind: :vote} = event, count, quorum) do
     actor = one_line(Map.get(event, :actor_label) || "An approver")

@@ -1598,7 +1598,7 @@ defmodule EmisarWeb.DomainComponents do
   def approval_expiry(assigns) do
     ~H"""
     <%!-- The consequence rides the shared tooltip, not a hover-only title: the
-         approver who most needs "auto-denied at expiry" is the one triaging the
+         approver who most needs "expires and won't run" is the one triaging the
          queue on a phone. Its bubble id is derived from the row id the inner
          <.local_time> already owns, so the two never collide. --%>
     <.tooltip
@@ -1626,10 +1626,10 @@ defmodule EmisarWeb.DomainComponents do
   end
 
   defp expiry_meaning(true),
-    do: "Expired without a decision and was auto-denied. The action won't run."
+    do: "Expired without a decision. The action won't run."
 
   defp expiry_meaning(false),
-    do: "If no one decides by then, the request is auto-denied and the action won't run."
+    do: "If no one decides by then, the request expires and the action won't run."
 
   # Under two hours left → amber: an approval lapsing soon needs to stand out
   # in the queue. At or past the deadline (the sweeper hasn't cancelled it yet)

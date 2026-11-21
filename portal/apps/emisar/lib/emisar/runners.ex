@@ -2809,20 +2809,17 @@ defmodule Emisar.Runners do
   rotation, or nil for a token minted before rotation existed.
 
   The runner persists this and calls `/runner/token/refresh` once it has passed,
-  so an ordinary reconnect costs no extra round-trip. Nil is not "never" — the
-  client reads an absent value as "ask", which is how a pre-rotation token gets
-  its first expiring successor.
+  so an ordinary reconnect costs no extra round-trip. Nil is not "never": the
+  client reads an absent value as "ask", so a token without an expiry gets an
+  expiring successor.
   """
   def token_refresh_after(%Token{expires_at: nil}), do: nil
 
   def token_refresh_after(%Token{issued_at: issued_at}),
     do: DateTime.add(issued_at, @token_refresh_after_seconds, :second)
 
-  # A token with no expiry predates rotation, and is exactly the one that has to
-  # migrate onto an expiring credential — so it is due the moment it is asked
-  # about. This is only ever reached because the runner called refresh, so a
-  # client too old to refresh never gets a successor and cannot be stranded by
-  # a clock it does not know how to reset.
+  # A token with no expiry (none is minted now) is due the moment it is asked
+  # about, so a refresh moves it onto an expiring credential.
   defp token_refresh_due?(%Token{expires_at: nil}), do: true
 
   defp token_refresh_due?(%Token{issued_at: issued_at}) do
@@ -2947,9 +2944,7 @@ defmodule Emisar.Runners do
 
   defp ensure_runner_and_account_enabled(%Runner{}), do: {:error, :runner_disabled}
 
-  # A NULL expiry means never expires, and that is every token minted before
-  # rotation shipped — its client has no refresh path, so enforcement must
-  # leave it alone. Checked last, where the token would otherwise be accepted,
+  # A NULL expiry means never expires; none is minted now. Checked last, where the token would otherwise be accepted,
   # so a disabled runner or account keeps its own verdict and its own 403: a
   # 401 would tell the client to discard its token and re-register, which is
   # the wrong instruction for an identity an operator can simply re-enable.

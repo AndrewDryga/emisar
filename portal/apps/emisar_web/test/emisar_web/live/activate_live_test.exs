@@ -234,25 +234,25 @@ defmodule EmisarWeb.ActivateLiveTest do
     test "forwards into the current account's activate page, keeping the code", %{conn: conn} do
       {conn, _owner, account} = register_and_log_in(conn)
 
-      conn = get(conn, ~p"/activate?code=FKZQ-2418")
-      assert redirected_to(conn) == "/app/#{account.slug}/activate?code=FKZQ-2418"
+      conn = get(conn, ~p"/activate?code=FKZQ-2489")
+      assert redirected_to(conn) == "/app/#{account.slug}/activate?code=FKZQ-2489"
     end
 
     test "with several signed-in workspaces it asks which, keeping the code", %{conn: conn} do
       {conn, _owner_a, account_a} = register_and_log_in(conn, %{account: %{name: "Alpha Ops"}})
       {conn, _owner_b, account_b} = register_and_log_in(conn, %{account: %{name: "Bravo Ops"}})
 
-      html = conn |> get(~p"/activate?code=FKZQ-2418") |> html_response(200)
+      html = conn |> get(~p"/activate?code=FKZQ-2489") |> html_response(200)
 
       assert html =~ "Choose a workspace"
-      assert html =~ ~s(href="/app/#{account_a.slug}/activate?code=FKZQ-2418")
-      assert html =~ ~s(href="/app/#{account_b.slug}/activate?code=FKZQ-2418")
+      assert html =~ ~s(href="/app/#{account_a.slug}/activate?code=FKZQ-2489")
+      assert html =~ ~s(href="/app/#{account_b.slug}/activate?code=FKZQ-2489")
     end
 
     test "an anonymous visitor is sent to sign-in and returns with the code", %{conn: conn} do
-      conn = get(conn, ~p"/activate?code=FKZQ-2418")
+      conn = get(conn, ~p"/activate?code=FKZQ-2489")
       assert redirected_to(conn) == ~p"/sign_in"
-      assert get_session(conn, :user_return_to) == ~p"/activate?code=FKZQ-2418"
+      assert get_session(conn, :user_return_to) == ~p"/activate?code=FKZQ-2489"
     end
   end
 end

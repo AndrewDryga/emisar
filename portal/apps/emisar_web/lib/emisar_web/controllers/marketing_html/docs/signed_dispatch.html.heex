@@ -164,11 +164,11 @@ EMISAR_SIGNING_CERT=&lt;certificate chain from signing init&gt;</.docs_code>
           href={~p"/app/runners"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Runners</a>
-        shows the <strong class="text-zinc-200">Signed dispatch only</strong>
-        badge and the <strong class="text-zinc-200">signed-only</strong>
-        chip on the row, the Run button is disabled, a signed MCP call succeeds, and operator
-        and runbook dispatches are refused. If there is no badge, the runner still accepts
-        unsigned calls. Recheck the config and the restart.
+        shows a <strong class="text-zinc-200">Signed dispatch only</strong>
+        chip on the runner's row, the Run button is disabled, a signed MCP call succeeds, and
+        operator and runbook dispatches are refused. The fleet-wide badge appears only once every
+        active runner enforces signatures, so a canary shows just its row chip. If the row has no
+        chip, the runner still accepts unsigned calls. Recheck the config and the restart.
       </p>
 
       <.docs_h2 id="distributing-ca">Distributing the CA across a fleet</.docs_h2>
@@ -476,7 +476,8 @@ emisar://dispatch/v1?group=prod&amp;label.env=prod&amp;label.region=us</.docs_co
 
       <.docs_h2 id="troubleshooting">Troubleshooting a refusal</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        A refused dispatch comes back as a failed run whose error shows the cause:
+        A refused dispatch ends as a <.status_badge status={:refused} /> run whose error shows the
+        cause:
       </p>
       <div class="mt-5 overflow-x-auto rounded-xl border border-zinc-800">
         <table class="w-full min-w-[720px] text-left text-sm">

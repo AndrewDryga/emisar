@@ -391,6 +391,19 @@ defmodule Emisar.ContextBoundaryChecksTest do
       assert issue.message =~ "sibling context"
     end
 
+    test "resolves contexts named in a grouped alias" do
+      source = """
+      defmodule Emisar.Sprockets do
+        alias Emisar.{Accounts, Runs}
+
+        def peek(id), do: Runs.ActionRun.Query.by_id(id)
+        def name(account), do: Accounts.account_name(account)
+      end
+      """
+
+      assert triggers(deep_call(), source, @context) == ["ActionRun.Query"]
+    end
+
     test "allows a sibling's public API, the context's own Query, and Repo helpers" do
       source = """
       defmodule Emisar.Sprockets do

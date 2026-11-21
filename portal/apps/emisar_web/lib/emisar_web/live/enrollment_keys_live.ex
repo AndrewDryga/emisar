@@ -197,6 +197,11 @@ defmodule EmisarWeb.EnrollmentKeysLive do
       # form, with the operator's own params preserved for redisplay.
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign_form(socket, changeset)}
+
+      # The page's permission was judged on the held subject; a role removed
+      # since then is refused by the context's current read.
+      {:error, :unauthorized} ->
+        {:noreply, put_flash(socket, :error, "You don't have permission to do that.")}
     end
   end
 

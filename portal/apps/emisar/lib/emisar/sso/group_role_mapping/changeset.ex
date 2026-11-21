@@ -40,7 +40,7 @@ defmodule Emisar.SSO.GroupRoleMapping.Changeset do
   defp changeset(changeset) do
     changeset
     # Directory sync can never grant owner — owner stays a deliberate human
-    # assignment (decision 7). Defense in depth: the synced write path also
+    # assignment. Defense in depth: the synced write path also
     # refuses `:owner` under the row lock
     # (`Accounts.put_sync_membership_authorization/5` →
     # `ensure_sync_role_assignable/1`), but rejecting it here keeps an owner

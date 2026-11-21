@@ -73,14 +73,14 @@
         In the console, open <a
           href={~p"/app/runners/keys/new"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-        >Runners → Enrollment keys → New key</a>. Turn on <strong>Reusable</strong>
+        >Runners → Enrollment keys → New key</a>. Turn on <strong>Reusable key</strong>
         so every instance can enroll with the same one. You can set two optional limits on a shared key:
       </p>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <strong class="text-zinc-200">Max uses.</strong>
+            <strong class="text-zinc-200">Use limit.</strong>
             Cap the total number of runners the key can ever enroll. The cap still holds if the key leaks.
             A use is never given back when an instance terminates, so budget for every boot over the
             key's life, not the group's peak size.
@@ -89,7 +89,7 @@
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <strong class="text-zinc-200">Expiry.</strong>
+            <strong class="text-zinc-200">Expiration date.</strong>
             Set the date when the key stops enrolling runners, so a forgotten template cannot add
             runners forever.
           </span>
@@ -230,6 +230,12 @@ curl -fsSL https://emisar.dev/install.sh \
         <.docs_inline_code>--no-start</.docs_inline_code>
         and let the boot script start and enroll it.
       </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        GCP runs startup scripts on every boot, not only the first, so a reboot runs the installer
+        again and moves the runner to the latest release. To keep the fleet on one version, add
+        <.docs_inline_code>--version X.Y.Z</.docs_inline_code>
+        after <.docs_inline_code>bash -s --</.docs_inline_code>.
+      </p>
 
       <.docs_h2 id="identity">A new runner each boot</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -272,7 +278,7 @@ curl -fsSL https://emisar.dev/install.sh \
           href={~p"/app/runners"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Runners</a>,
-        an owner or admin sets <strong>Remove runners inactive for</strong>, and an hourly sweep
+        an owner or admin sets <strong>Remove runners offline for</strong>, and an hourly sweep
         removes runners past the window. It never removes a connected or disabled runner. The setting is
         off by default. Pick a window longer than an expected disconnect, such as a rolling
         deployment or a zone outage, but short enough to clear dead hosts quickly. A removed host that returns enrolls as a

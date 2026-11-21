@@ -540,8 +540,9 @@
         <p>
           Execution runs the live release. An older <code>slug@N</code>
           answers <code>not_live</code>
-          rather than silently running current content. An unpublished change never enters ordinary
-          discovery or default execution. Read it with <code>status: "draft"</code>, then pass the
+          rather than silently running current content. An unpublished change never runs by
+          default; <code>list_runbooks</code>
+          only shows that one is waiting. Read it with <code>status: "draft"</code>, then pass the
           slug to <code>execute_runbook</code>
           with <code>allow_draft: true</code>
           and the exact <code>definition_sha256</code>
@@ -594,7 +595,14 @@
         </div>
 
         <p>
-          These codes are the contract. When you have a symptom instead of a code (a client
+          These are the common codes. The full list is the error <code>code</code>
+          enum in the <a
+            href="https://github.com/andrewdryga/emisar/blob/main/portal/apps/emisar_web/priv/mcp/api-schemas.json"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >MCP API schema</a>.
+          When you have a symptom instead of a code (a client
           that cannot connect, an outdated bridge, a refused tool call), start from <.link navigate={
             ~p"/docs/connect-cli-agent" <> "#troubleshooting"
           }>troubleshooting</.link>, which routes back here once it identifies the problem.

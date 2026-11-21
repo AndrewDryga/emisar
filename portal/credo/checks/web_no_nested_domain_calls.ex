@@ -16,9 +16,10 @@ defmodule Emisar.Checks.WebNoNestedDomainCalls do
       `Catalog.PublishedRegistry.list()`, a deep `alias Emisar.Catalog.
       PublishedRegistry` (with or without `as:`), and grouped aliases all
       match — in ordinary code, in a function capture, and inside a literal
-      `~H` template, whose body the AST keeps as a STRING and which would
-      otherwise be the one place the boundary crosses unseen.
-      `EmisarWeb.*` is the web's own namespace and is never matched.
+      `~H` template, whose body the AST keeps as a STRING. Standalone `.heex`
+      files are outside Credo's reach (it reads only `.ex`/`.exs`), so this
+      check does not cover them. `EmisarWeb.*` is the web's own namespace and
+      is never matched.
 
       Carriers stay legal because they are data, not behavior: a struct
       literal or pattern (`%Accounts.RunnerAccess{mode: :none}` — not a remote

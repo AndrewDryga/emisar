@@ -48,8 +48,7 @@ defmodule EmisarWeb.MixProject do
       {:phoenix_html, "~> 4.4"},
       {:phoenix_live_reload, "~> 1.6", only: :dev},
       {:phoenix_live_view, "~> 1.2"},
-      # Phoenix.LiveViewTest's HTML parser. Floki was the previous one
-      # and is no longer used (LV 1.0+ uses LazyHTML exclusively).
+      # Phoenix.LiveViewTest's HTML parser (LiveView 1.0+ uses LazyHTML).
       {:lazy_html, ">= 0.1.0", only: :test},
       {:phoenix_live_dashboard, "~> 0.9.1"},
       {:ecto_psql_extras, "~> 0.8.8"},

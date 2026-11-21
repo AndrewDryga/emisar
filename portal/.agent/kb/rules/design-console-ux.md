@@ -171,9 +171,9 @@ Structural rules that ride along:
     action authority; never branch on a role name in the LiveView. Drop a
     control when zero values remain or its sole remaining value would select the reader's
     whole slice. The backend authorization remains authoritative for hand-edited URLs.
-- **Settings never embed in operational pages** without a PM decision — the current three
-  (2FA/SSO toggles on Team, grant cap on Approvals, SIEM tokens on Audit) are grandfathered
-  until that pass; do not add a fourth.
+- **Settings never embed in operational pages** without a PM decision — the current five
+  (2FA/SSO toggles on Team, grant cap on Approvals, SIEM tokens on Audit, automatic cleanup
+  on Runners and on Packs) are grandfathered until that pass; do not add a sixth.
 - **The console IA.** The nav has no Settings group: **Connect** holds Runners, AI agents
   and Service accounts; **Operate** holds Runs, Runbooks, Approvals and Audit log;
   **Control** holds Policy, Packs, **Team** and **Billing**. Team is the people + access

@@ -112,9 +112,10 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {action, "#{pack_id}@#{pack.version}/#{pack.content_hash}"}
   end
 
-  test "renders human decision evidence and states that whole-run approval happens once", %{
-    conn: conn
-  } do
+  test "renders human decision evidence and states that whole-run approval covers everything shown",
+       %{
+         conn: conn
+       } do
     {conn, owner, account} = register_and_log_in(conn)
     request = pending_execution_request(account, owner)
 

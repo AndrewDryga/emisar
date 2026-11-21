@@ -32,8 +32,10 @@ defmodule EmisarWeb.AuditExportController do
 
   Resource posture:
 
-    * Cursor-paginated `(occurred_at, id)` keyset — index-friendly,
-      O(log n) per page regardless of table size.
+    * Cursor-paginated `(txid, id)` keyset — the writing transaction's ID,
+      then the row ID — index-friendly, O(log n) per page regardless of table
+      size. Only rows from finished transactions are served, so a late commit
+      cannot land behind an issued cursor.
     * Hard cap on `limit` keeps a runaway client from issuing
       single-shot scans that would page the audit table out of buffer
       pool.
@@ -152,7 +154,7 @@ defmodule EmisarWeb.AuditExportController do
 
   defp parse_cursor_or_since(%{"cursor" => c}) when is_binary(c) and c != "" do
     case decode_cursor(c) do
-      {:ok, ts, id} -> {:ok, [after: {ts, id}]}
+      {:ok, txid, id} -> {:ok, [after: {txid, id}]}
       :error -> {:error, "cursor is malformed"}
     end
   end
@@ -168,22 +170,25 @@ defmodule EmisarWeb.AuditExportController do
 
   # -- Cursor encoding --------------------------------------------------
   #
-  # The cursor is "`<iso8601>|<uuid>`" base64url-encoded. Opaque to
+  # The cursor is "`<txid>|<uuid>`" base64url-encoded. Opaque to
   # consumers — they're meant to copy-paste the prior `next_cursor`
   # value, not construct one themselves. Keeping it opaque means we can
   # change the format later without breaking integrations.
 
-  defp encode_cursor(%DateTime{} = ts, id) when is_binary(id) do
-    raw = DateTime.to_iso8601(ts) <> "|" <> id
+  # `txid` is a Postgres `xid8`, an unsigned 64-bit integer.
+  @max_txid 18_446_744_073_709_551_615
+
+  defp encode_cursor(txid, id) when is_integer(txid) and is_binary(id) do
+    raw = Integer.to_string(txid) <> "|" <> id
     Base.url_encode64(raw, padding: false)
   end
 
   defp decode_cursor(encoded) when is_binary(encoded) do
     with {:ok, raw} <- Base.url_decode64(encoded, padding: false),
-         [ts_str, id] <- String.split(raw, "|", parts: 2),
-         {:ok, ts, _} <- DateTime.from_iso8601(ts_str),
+         [txid_str, id] <- String.split(raw, "|", parts: 2),
+         {txid, ""} when txid in 0..@max_txid <- Integer.parse(txid_str),
          {:ok, _} <- Ecto.UUID.cast(id) do
-      {:ok, ts, id}
+      {:ok, txid, id}
     else
       _ -> :error
     end
@@ -201,7 +206,7 @@ defmodule EmisarWeb.AuditExportController do
 
   defp maybe_put_next_cursor(conn, events, limit) do
     last = List.last(events)
-    cursor = encode_cursor(last.occurred_at, last.id)
+    cursor = encode_cursor(last.txid, last.id)
     conn = put_resp_header(conn, "x-next-cursor", cursor)
 
     if length(events) == limit do

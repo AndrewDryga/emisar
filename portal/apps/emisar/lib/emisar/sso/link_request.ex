@@ -3,8 +3,8 @@ defmodule Emisar.SSO.LinkRequest do
   A pending link request: an identity that signed in / was pushed through a
   connection and is waiting for an admin to approve their access. Captures the
   real `provider_identifier` (the OIDC `sub` / SCIM `externalId`) + the claims so
-  the admin recognizes the person; approving binds THAT id — never the email
-  (H1). When the captured email matches an EXISTING account member,
+  the admin recognizes the person; approving binds THAT id — never the email.
+  When the captured email matches an EXISTING account member,
   `matched_membership` records them so approval links the identity to that member
   instead of creating a duplicate. Hard-deleted on approve/dismiss (transient by
   design).

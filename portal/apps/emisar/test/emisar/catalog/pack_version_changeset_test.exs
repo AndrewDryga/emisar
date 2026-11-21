@@ -62,8 +62,14 @@ defmodule Emisar.Catalog.PackVersion.ChangesetTest do
 
       errors = attrs |> Changeset.insert() |> errors_on()
 
-      assert "has invalid format" in errors.pack_id
-      assert "has invalid format" in errors.version
+      assert errors.pack_id == [
+               "must be lowercase letters, digits, - or _, starting with a letter, with no dots"
+             ]
+
+      assert errors.version == [
+               "must be dot-numeric, such as 1.2.0, optionally with a SemVer suffix"
+             ]
+
       assert "has invalid format" in errors.hash
       assert "has invalid format" in errors.pending_hash
     end

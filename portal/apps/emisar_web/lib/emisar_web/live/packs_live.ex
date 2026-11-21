@@ -855,8 +855,10 @@ defmodule EmisarWeb.PacksLive do
   defp availability_tone(:unknown), do: :amber
 
   defp availability_tip(availability) do
-    Enum.map_join(availability.runners, "; ", &"#{&1.name}: #{&1.reason}") <>
-      " Policy and approval are checked when starting a run."
+    availability.runners
+    |> Enum.map(&"#{&1.name}: #{&1.reason}")
+    |> Enum.concat(["Policy and approval are checked when starting a run."])
+    |> Enum.join(" ")
   end
 
   attr :id, :string, required: true

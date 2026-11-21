@@ -1737,7 +1737,7 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "query": {"type": "string", "minLength": 1, "maxLength": 256},
+          "query": {"type": "string", "minLength": 1, "maxLength": 256, "description": "One keyword, matched case-insensitively as a substring of the slug, title, or summary."},
           "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 15},
           "cursor": {"$ref": "#/$defs/cursor"}
         }
@@ -1818,7 +1818,7 @@
               "ok": {"const": true},
               "runbook": {
                 "type": "object",
-                "x-maxEncodedUtf8Bytes": 73728,
+                "x-maxEncodedUtf8Bytes": 75072,
                 "oneOf": [
                   {
                     "type": "object",
@@ -1931,7 +1931,7 @@
       "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false},
       "inputSchema": {
         "type": "object",
-        "x-maxEncodedUtf8Bytes": 73728,
+        "x-maxEncodedUtf8Bytes": 75392,
         "required": ["title", "slug", "description", "definition"],
         "additionalProperties": false,
         "properties": {
@@ -1965,7 +1965,7 @@
       "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false},
       "inputSchema": {
         "type": "object",
-        "x-maxEncodedUtf8Bytes": 73728,
+        "x-maxEncodedUtf8Bytes": 75392,
         "required": ["slug", "definition_sha256", "title", "description", "definition"],
         "additionalProperties": false,
         "properties": {

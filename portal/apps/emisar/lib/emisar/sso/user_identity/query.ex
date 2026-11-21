@@ -215,7 +215,7 @@ defmodule Emisar.SSO.UserIdentity.Query do
   end
 
   # The SCIM `filter=externalId eq "x"` probe — the rendered externalId is
-  # `scim_external_id` falling back to `provider_identifier` (decision 4).
+  # `scim_external_id` falling back to `provider_identifier`.
   def by_external_id(queryable, external_id) do
     where(
       queryable,

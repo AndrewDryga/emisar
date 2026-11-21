@@ -327,6 +327,7 @@ defmodule EmisarWeb.AuditSummaryTest do
          [{"Group", "prod"}, {"Hostname", "host-1"}]},
         {"runner.disconnected", %{"reason" => "drain"},
          [{"Reason", "Connection ended unexpectedly."}]},
+        {"runner.disconnected", %{"reason" => ":remote"}, []},
         {"enrollment_key.created", %{"group" => "prod", "reusable" => true},
          [{"Use", "Reusable"}]},
         {"enrollment_key.created", %{"reusable" => false}, [{"Use", "Single-use"}]},

@@ -6,7 +6,7 @@ defmodule Emisar.Auth.Role do
   never role rank — there is deliberately no rank/`at_least?` here.
 
   Listed most-privileged first (the order the team UI renders). Actor-kind
-  roles that aren't account memberships (`:api_client`, `:runner`) live on
+  role that isn't an account membership (`:api_client`) lives on
   `Auth.Subject`, not here.
 
   `:billing_manager` is the one ORTHOGONAL role — the finance seat. It holds

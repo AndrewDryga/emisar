@@ -54,7 +54,7 @@ defmodule EmisarWeb.UserSignUpLiveTest do
   test "an invalid Team choice falls back to the ordinary Free sign-up", %{conn: conn} do
     {:ok, lv, html} = live(conn, ~p"/sign_up?billing_intent=forged")
 
-    assert html =~ "Free plan: 3 runners"
+    assert html =~ "Free plan: 3 runners, 7-day audit retention, 1 user. No credit card."
     refute html =~ "Selected plan"
     refute has_element?(lv, ~s(input[name="billing_intent"]))
   end

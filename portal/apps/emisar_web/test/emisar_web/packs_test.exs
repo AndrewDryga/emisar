@@ -343,6 +343,32 @@ defmodule EmisarWeb.PacksTest do
       url = EmisarWeb.PacksRegistry.action_source_url(pack, action)
       assert url =~ "linux-core/actions/disk_usage.yaml"
     end
+
+    test "every bundled action links to a file or directory that exists in the packs tree" do
+      packs_root = Path.expand("../../../../../packs", __DIR__)
+
+      for pack <- PublishedRegistry.list() do
+        paths =
+          Enum.map(pack.actions, fn action ->
+            pack
+            |> EmisarWeb.PacksRegistry.action_source_url(action)
+            |> String.replace_prefix(pack.source_url, Path.join(packs_root, pack.id))
+          end)
+
+        if pack.id in EmisarWeb.PacksRegistry.directory_linked_packs() do
+          assert paths |> Enum.uniq() |> Enum.all?(&File.dir?/1), pack.id
+          # Stays on the list only while a derived file name would really be wrong.
+          refute Enum.all?(pack.actions, fn action ->
+                   file = action.id |> String.split(".", parts: 2) |> List.last()
+                   File.exists?(Path.join([packs_root, pack.id, "actions", file <> ".yaml"]))
+                 end),
+                 pack.id
+        else
+          missing = Enum.reject(paths, &File.exists?/1)
+          assert missing == [], "#{pack.id}: #{inspect(missing)}"
+        end
+      end
+    end
   end
 
   describe "install_snippet/1" do

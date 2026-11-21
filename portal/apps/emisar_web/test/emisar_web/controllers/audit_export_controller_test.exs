@@ -4,8 +4,8 @@ defmodule EmisarWeb.AuditExportControllerTest do
   (`GET /api/audit`). Validates the contract every log shipper relies on:
 
     * NDJSON response — one event per line, `application/x-ndjson`
-    * Forward-ordered by `(occurred_at, id)` so a paging consumer
-      never skips or re-reads rows
+    * Forward-ordered by `(txid, id)` so a paging consumer never skips or
+      re-reads rows
     * Full page: both `X-Next-Cursor` (resume point) and `Link: rel="next"`
     * Tail (below-limit) page: `X-Next-Cursor` only — no `Link`, but still a
       resume point, so the short page's rows are never re-read
@@ -220,7 +220,7 @@ defmodule EmisarWeb.AuditExportControllerTest do
   defp event_type_query, do: Enum.map_join(@test_types, "&", &"event_type[]=#{&1}")
 
   describe "happy path" do
-    test "returns NDJSON ordered ascending by (occurred_at, id)", %{
+    test "returns NDJSON ordered ascending by (txid, id)", %{
       conn: conn,
       account: account,
       raw_key: raw
@@ -412,10 +412,24 @@ defmodule EmisarWeb.AuditExportControllerTest do
       conn: conn,
       raw_key: raw
     } do
-      cursor = Base.url_encode64("2026-01-01T00:00:00Z|not-a-uuid", padding: false)
+      cursor = Base.url_encode64("123|not-a-uuid", padding: false)
       conn = conn |> bearer(raw) |> get("/api/audit?cursor=#{cursor}")
 
       assert json_response(conn, 400)["message"] =~ "cursor"
+    end
+
+    test "a cursor outside the xid8 range or in the old timestamp form returns 400", %{
+      conn: conn,
+      raw_key: raw
+    } do
+      id = Ecto.UUID.generate()
+
+      for position <- ["18446744073709551616", "-1", "2026-01-01T00:00:00Z"] do
+        cursor = Base.url_encode64(position <> "|" <> id, padding: false)
+        response = conn |> bearer(raw) |> get("/api/audit?cursor=#{cursor}")
+
+        assert json_response(response, 400)["message"] =~ "cursor"
+      end
     end
 
     # a non-ISO8601 `since` is a 400 invalid_params, not a

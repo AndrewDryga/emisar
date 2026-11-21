@@ -486,11 +486,12 @@ what a runner's peer really accepts:
 
 | Item | Limit | Past it |
 | --- | ---: | --- |
-| Any inbound frame | 4 MiB | the transport closes the connection |
+| Any inbound frame | 4 MiB | the transport closes with 1009 |
+| No inbound frame at all (transport inactivity) | 60 s | the transport closes with 1002 |
 | `request_id` on `action_started`, `action_progress`, `action_result`, and any `error` that carries one | exactly `req_` + 22 base64url characters | close 1002 |
 | `error` frames per connection | 100 | close 1008 |
 | `runner_state` frames per connection | 100 | close 1008 |
-| Silence between heartbeats | 90 s | normal close 1000 |
+| No heartbeat or `runner_state` while other frames keep arriving (application heartbeat) | 90 s | normal close 1000 |
 | Progress rows per run | 50,000 | chunk refused; the run continues |
 | Progress bytes per run | 64 MiB | chunk refused; the run continues |
 | One `action_progress` payload | 256 KiB | frame rejected |
@@ -514,9 +515,10 @@ Close codes are the only verdict a runner gets, so the vocabulary is contract:
 
 | Code | Meaning |
 | ---: | --- |
-| 1002 | unsupported `protocol_version`, or a `request_id` outside the portal's shape |
+| 1002 | unsupported `protocol_version`, a `request_id` outside the portal's shape, or no inbound frame for 60 s |
 | 1008 | connection lease superseded, heartbeat lease expired, the identity connected from another process, or the error-frame or `runner_state` budget exhausted |
 | 1000 | normal close: heartbeat silence past 90 s, or the portal finishing a drain or shutdown |
+| 1009 | an inbound frame over 4 MiB |
 | 1011 | the portal could not establish connection ownership |
 | 1013 | this runner identity already has a live connection (typically a cloned data directory) |
 

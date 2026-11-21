@@ -19,9 +19,10 @@ defmodule Emisar.Runners.Token do
     field :token_hash, :binary, redact: true
     field :issued_at, :utc_datetime_usec
     field :last_used_at, :utc_datetime_usec
-    # NULL means never expires. Every token minted before rotation shipped is
-    # NULL and stays that way, so enforcement can never strand a runner that has
-    # no refresh path. See Runners.refresh_runner_token/1.
+    # Every minted token carries an expiry. NULL (never expires) is no longer
+    # produced: migration 20260919000000 gave the pre-rotation tokens one.
+    # Runners still reads a NULL as never-expiring. See
+    # Runners.refresh_runner_token/1.
     field :expires_at, :utc_datetime_usec
 
     belongs_to :runner, Emisar.Runners.Runner, where: [deleted_at: nil]

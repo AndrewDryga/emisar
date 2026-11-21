@@ -225,7 +225,7 @@ defmodule Emisar.SSO.SCIM do
   end
 
   # A re-POST of an existing identity RECONCILES it to the state the directory
-  # just asserted (#4/#10: some IdPs re-create rather than PATCH active:true).
+  # just asserted (some IdPs re-create rather than PATCH active:true).
   #
   # It reconciles to the POSTed `active`, and does NOT force the member active.
   # Forcing it meant a duplicate or replayed create carrying `active: false`
@@ -586,7 +586,7 @@ defmodule Emisar.SSO.SCIM do
         {:error, :identity_pending_approval}
 
       {:error, %Ecto.Changeset{} = changeset} ->
-        # #9: lost a concurrent first-provision race — the winner created the
+        # Lost a concurrent first-provision race — the winner created the
         # identity. Converge on it (the fetch-or-create race-safe shape) rather
         # than surfacing the unique-violation changeset. The re-call peek-hits.
         #
@@ -671,7 +671,7 @@ defmodule Emisar.SSO.SCIM do
   end
 
   # The externalId is stored as BOTH the binding `provider_identifier` and
-  # `scim_external_id` (decision 4) so an OIDC login by `sub` and SCIM by
+  # `scim_external_id` so an OIDC login by `sub` and SCIM by
   # `externalId` converge on the one `(provider, identifier)` identity.
   defp create_scim_identity(%IdentityProvider{} = provider, member, external_id, attrs) do
     identity_attrs = %{
@@ -1298,14 +1298,14 @@ defmodule Emisar.SSO.SCIM do
   # -- Directory sync (SCIM) — groups → roles (internal, provider-scoped) --
 
   # `:admin > :operator > :viewer`. `:owner` is deliberately absent — sync
-  # never grants owner (decision 7). `Auth.Role` has no rank by design, so the
+  # never grants owner. `Auth.Role` has no rank by design, so the
   # precedence the recompute needs lives here, narrowed to the sync-assignable
   # roles, most-privileged first.
   # Group-sync precedence when a member is in SEVERAL mapped groups — mirrors
   # Role.all()'s order. billing_manager (the orthogonal finance seat) outranks
   # the day-to-day roles: an explicit finance-group mapping is a deliberate
   # specialist assignment, but an admin mapping still wins. Never :owner
-  # (mappings can't mint owners — decision 7).
+  # (mappings can't mint owners).
 
   @doc """
   Internal — SCIM group create/reconcile (`POST /Groups`). A supplied
@@ -1817,7 +1817,7 @@ defmodule Emisar.SSO.SCIM do
     load_identities(provider, Enum.map(to_remove, & &1.user_identity_id))
   end
 
-  # #13: one insert_all / one update_all for the join-table rows, not a write
+  # One insert_all / one update_all for the join-table rows, not a write
   # per member. `to_add` are already-resolved provider identities + the group
   # is theirs, so the rows are valid by construction; on_conflict guards a
   # re-add race against the live-row partial unique.

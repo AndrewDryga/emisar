@@ -2,16 +2,15 @@ defmodule Emisar.Auth.Subject do
   @moduledoc """
   Authenticated caller carrier. Every public context function takes
   one to scope reads and authorize mutations. Built once at the
-  boundary (UserAuth plug / LiveView mount, MCP controller plug,
-  runner socket connect) and passed through unchanged.
+  boundary (UserAuth plug / LiveView mount, MCP controller plug) and
+  passed through unchanged.
 
   Fields:
 
     * `account` — the active `%Accounts.Account{}`
-    * `actor` — the `%Accounts.Membership{}` a person acts as, `%ApiKey{}`, or
-      `%Runner{}`
+    * `actor` — the `%Accounts.Membership{}` a person acts as, or `%ApiKey{}`
     * `role` — atom role identifier (`:owner | :admin | :billing_manager |
-      :operator | :viewer | :api_client | :runner`)
+      :operator | :viewer | :api_client`)
     * `permissions` — `MapSet.t()` of `{module, action}` tuples; the
       Authorizers build entries via `build/2`
     * `context` — the request's `%RequestContext{}` (IP address, user agent,
@@ -39,13 +38,12 @@ defmodule Emisar.Auth.Subject do
   alias Emisar.Auth.UserToken
 
   @type role ::
-          :owner | :admin | :billing_manager | :operator | :viewer | :api_client | :runner
+          :owner | :admin | :billing_manager | :operator | :viewer | :api_client
   @type permission :: {module(), atom()}
   @type auth_method :: :magic_link | :sso
   @type actor ::
           Emisar.Accounts.Membership.t()
           | Emisar.ApiKeys.ApiKey.t()
-          | Emisar.Runners.Runner.t()
 
   @type t :: %__MODULE__{
           account: Accounts.Account.t() | nil,
@@ -215,7 +213,6 @@ defmodule Emisar.Auth.Subject do
   """
   def actor_kind(%__MODULE__{actor: %Accounts.Membership{}}), do: "membership"
   def actor_kind(%__MODULE__{actor: %Emisar.ApiKeys.ApiKey{}}), do: "api_key"
-  def actor_kind(%__MODULE__{actor: %Emisar.Runners.Runner{}}), do: "runner"
   # Defensive fallback: an actor-less subject (anonymous bootstrap) is a system
   # actor rather than a FunctionClauseError downstream.
   def actor_kind(%__MODULE__{}), do: "system"

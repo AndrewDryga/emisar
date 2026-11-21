@@ -19,15 +19,8 @@ defmodule Emisar.Catalog.ConsoleProjectionTest do
                {:ok, {"nginx", "1.2.0"}}
     end
 
-    # Mirrors observe_packs/3's `info["version"] || "unknown"`, so an
-    # advertisement resolves to the very row that pin created. If the two
-    # spellings ever drift, the console stops finding rows it created.
-    test "a missing version resolves to the same \"unknown\" the pin writes" do
-      assert ConsoleProjection.advertised_pack_ref({"nginx", %{}}) ==
-               {:ok, {"nginx", "unknown"}}
-    end
-
-    test "a non-string version is an error, never coerced" do
+    test "a missing or non-string version is an error, never coerced" do
+      assert ConsoleProjection.advertised_pack_ref({"nginx", %{}}) == :error
       assert ConsoleProjection.advertised_pack_ref({"nginx", %{"version" => 12}}) == :error
       assert ConsoleProjection.advertised_pack_ref({"nginx", %{"version" => %{}}}) == :error
     end

@@ -14,7 +14,7 @@ defmodule Emisar.SSO.UserIdentity do
   the current OIDC binding; `provisioned_via` records the row's origin (OIDC JIT
   login, SCIM directory sync, or an admin approving a `:manual` link request).
   For a SCIM identity, `scim_external_id` is the IdP's `externalId` (equal to
-  `provider_identifier` when identifier-matching is configured — decision 4)
+  `provider_identifier` when identifier-matching is configured)
   and `scim_active` is its SCIM lifecycle state, distinct from the membership's
   `disabled_at`. SCIM `DELETE /Users` sets `scim_deleted_at` and retires the
   independent OIDC binding: the wire resource disappears while the shared row,

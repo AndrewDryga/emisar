@@ -1294,6 +1294,14 @@ defmodule EmisarWeb.AgentsLive do
               <.status_dot tone={:neutral} size={:sm} />
               <span class="tabular-nums text-zinc-400">{@never_used_count} never used</span>
             </span>
+            <%!-- The counts come from the listed page, so say so once there is more than one. --%>
+            <span
+              :if={@metadata.next_page_cursor || @metadata.previous_page_cursor}
+              id="agents-posture-page-scope"
+              class="text-zinc-500"
+            >
+              on this page
+            </span>
           </div>
           <LiveTable.live_table
             layout={:cards}

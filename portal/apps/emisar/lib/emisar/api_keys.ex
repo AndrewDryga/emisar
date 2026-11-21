@@ -2130,8 +2130,8 @@ defmodule Emisar.ApiKeys do
     |> Multi.run(:evicted, fn _repo, %{grant: grant} ->
       evict_quick_ring_overflow(
         grant.account_id,
-        @quick_ring_cap,
-        @quick_eviction_grace_seconds,
+        quick_ring_cap(),
+        quick_eviction_grace_seconds(),
         DateTime.utc_now()
       )
     end)

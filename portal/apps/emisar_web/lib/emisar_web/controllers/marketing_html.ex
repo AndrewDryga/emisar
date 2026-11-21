@@ -628,11 +628,15 @@ defmodule EmisarWeb.MarketingHTML do
     {8, "llm", "cc-text",
      "api has run out of file descriptors, so it can't accept new connections. A restart clears that for now."},
     {9, "llm", "cc-tool", "emisar · linux.systemctl_restart(unit: \"api\")"},
-    {10, "llm", "cc-result", "succeeded · exit 0 · 1.2s"},
-    {11, "llm", "cc-tool", "emisar · linux.systemctl_status(unit: \"api\")"},
-    {12, "llm", "cc-result", "Active: active (running) since 14:03:40; 1s ago"},
-    {13, "llm", "cc-result-cont", "… +14 lines (ctrl+r to expand)"},
-    {14, "llm", "cc-text",
+    {10, "llm", "cc-pending",
+     "⏸ pending approval — linux.systemctl_restart is high-risk; a human approves in the portal"},
+    {11, "llm", "cc-spin-wait", "Waiting for approval"},
+    {12, "llm", "cc-approved", "✓ approved by you · one use · audit event recorded"},
+    {13, "llm", "cc-result", "succeeded · exit 0 · 1.2s"},
+    {14, "llm", "cc-tool", "emisar · linux.systemctl_status(unit: \"api\")"},
+    {15, "llm", "cc-result", "Active: active (running) since 14:03:40; 1s ago"},
+    {16, "llm", "cc-result-cont", "… +14 lines (ctrl+r to expand)"},
+    {17, "llm", "cc-text",
      "api is back up. The leak will come back, so the code still needs a fix."}
   ]
 
@@ -900,6 +904,7 @@ defmodule EmisarWeb.MarketingHTML do
     end
   end
 
+  attr :signed_in?, :boolean, default: false
   attr :title, :string, required: true
   attr :updated, :string, required: true
   attr :summary, :string, default: nil
@@ -920,7 +925,7 @@ defmodule EmisarWeb.MarketingHTML do
   def legal_page(assigns) do
     ~H"""
     <div class="bg-zinc-950 text-zinc-100">
-      <.marketing_nav current={:legal} />
+      <.marketing_nav signed_in?={@signed_in?} current={:legal} />
 
       <header class="border-b border-zinc-900">
         <div class="mx-auto max-w-5xl px-6 py-16 sm:py-20 lg:px-8">
@@ -973,6 +978,7 @@ defmodule EmisarWeb.MarketingHTML do
     """
   end
 
+  attr :signed_in?, :boolean, default: false
   attr :title, :string, required: true
   attr :dek, :string, required: true, doc: "the standfirst / sub-headline"
   attr :date, :string, required: true
@@ -989,7 +995,7 @@ defmodule EmisarWeb.MarketingHTML do
   def guide_page(assigns) do
     ~H"""
     <div class="bg-zinc-950 text-zinc-100">
-      <.marketing_nav current={:guides} />
+      <.marketing_nav signed_in?={@signed_in?} current={:guides} />
 
       <header class="border-b border-zinc-900 bg-[#07080a]">
         <div class="mx-auto max-w-3xl px-6 py-16 sm:py-20 lg:px-8">

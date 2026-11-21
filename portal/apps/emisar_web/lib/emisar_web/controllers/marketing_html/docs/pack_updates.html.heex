@@ -355,8 +355,8 @@
 
       <.docs_h2 id="troubleshooting">Troubleshooting</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Four different states look the same from the catalog: the action you wanted is not
-        offered. You can tell them apart on the host and on the Packs page:
+        Four different states look the same from the catalog: the action you wanted cannot
+        run. You can tell them apart on the host and on the Packs page:
       </p>
       <div class="mt-5 overflow-x-auto rounded-xl border border-zinc-800">
         <table class="w-full min-w-[720px] text-left text-sm">
@@ -410,15 +410,17 @@
             </tr>
             <tr>
               <td class="px-4 py-3 align-top font-semibold text-zinc-100">
-                One action is gone from a healthy pack
+                One action's Run button is disabled on the runner's page
               </td>
               <td class="px-4 py-3 align-top leading-6">
                 Its program is not found on the service's <.docs_inline_code>PATH</.docs_inline_code>, or a local
-                admission rule hides it. A rule in the host's config always wins.
+                admission rule denies it. The button's tooltip says which: the tool isn't installed, or
+                the action is denied by the runner's local admission policy. A rule in the host's config
+                always wins.
               </td>
               <td class="px-4 py-3 align-top leading-6">
-                Install the missing binary or fix the service's <.docs_inline_code>PATH</.docs_inline_code>. The runner
-                refreshes on its own.
+                For a missing tool, install the binary or fix the service's <.docs_inline_code>PATH</.docs_inline_code>. The runner
+                refreshes on its own. A denied action stays denied until the host's admission rule changes.
               </td>
             </tr>
           </tbody>

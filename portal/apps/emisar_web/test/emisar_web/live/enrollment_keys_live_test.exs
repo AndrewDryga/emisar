@@ -337,6 +337,21 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     assert is_nil(by_desc["one-shot-key"].max_uses)
   end
 
+  test "a role removed after the page loaded is refused with a flash, not a crash", %{conn: conn} do
+    {conn, owner, account} = register_and_log_in(conn)
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys/new")
+
+    Fixtures.Memberships.force_role(owner, "viewer")
+
+    html =
+      lv
+      |> form("#enrollment_key_form", %{"enrollment_key" => %{"description" => "late-key"}})
+      |> render_submit()
+
+    assert html =~ "You don&#39;t have permission to do that."
+    assert Emisar.Repo.aggregate(Emisar.Runners.EnrollmentKey, :count) == 0
+  end
+
   test "create form shows validation errors inline on the field, not in a flash", %{conn: conn} do
     {conn, _owner, account} = register_and_log_in(conn)
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys/new")

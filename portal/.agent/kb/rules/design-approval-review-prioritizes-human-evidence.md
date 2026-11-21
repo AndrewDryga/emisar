@@ -16,7 +16,7 @@ stays persisted and available through audit or canonical detail, but it does
 not occupy the primary decision scan.
 
 Approval copy states the prompt boundary explicitly. When one approval covers a
-whole frozen operation, say that no later approval prompt will occur. Describe
+whole frozen operation, say that it covers every action and target runner shown. Describe
 policy, access, trust, or availability rechecks as conditions that can stop
 dispatch, not as gates that may ask the operator again.
 
@@ -37,8 +37,8 @@ the first step in a sequence of prompts.
 
 - `caddy.reload_config · high`, `on edge-fra-01`, followed by
   `file /etc/caddy/Caddyfile`.
-- "Approve once to release every action shown here. This execution will not ask
-  for another approval."
+- "Approval covers all actions and target runners shown here." followed by
+  "Policy, access, and pack trust are checked again before actions run."
 - A later dispatch-time policy denial is described as stopping the execution.
 
 ## Bad
@@ -52,7 +52,8 @@ the first step in a sequence of prompts.
 
 LiveView tests assert that frozen visible arguments and human runner names are
 rendered, machine hashes are absent from approval/runbook decision surfaces,
-and whole-run approval copy explicitly rules out another prompt. Screenshot
+and whole-run approval copy states that it covers every action and target
+runner shown. Screenshot
 review covers the pending approval and execution detail.
 
 Sweep approval, confirmation, preflight, and execution-summary surfaces for

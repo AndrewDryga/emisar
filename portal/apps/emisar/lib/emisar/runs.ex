@@ -4076,6 +4076,17 @@ defmodule Emisar.Runs do
   end
 
   @doc """
+  Internal — runbook item settlement: lock one run row inside the caller's
+  transaction (`repo`) and return it, or `nil` when it is gone.
+  """
+  def lock_run_for_settlement(repo, run_id) when is_binary(run_id) do
+    ActionRun.Query.all()
+    |> ActionRun.Query.by_id(run_id)
+    |> ActionRun.Query.lock_for_update()
+    |> repo.one()
+  end
+
+  @doc """
   Internal — `Approvals.finalize_approved`: lock the gated run inside the
   approval transaction and confirm it's STILL `:pending_approval`. A cancel or
   expiry between parking and the approval makes it non-dispatchable, so the

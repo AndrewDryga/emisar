@@ -11,9 +11,11 @@ defmodule EmisarWeb.MCPRPCController do
     * `ping`              — `{}` (legacy revisions)
     * `tools/list`        — the fixed tool catalog compiled from the normative
                             MCP schema registry
-    * `tools/call`        — dispatch a run; result is `{content, isError}`
-                            in MCP content-block shape
-    * `notifications/*`   — silently dropped (per JSON-RPC notifications)
+    * `tools/call`        — route to one of the MCP tools; result is
+                            `{content, isError}` plus `structuredContent`
+    * `notifications/*`   — no reply; `notifications/cancelled` cancels the
+                            caller's in-flight request, and a notification
+                            method sent as a request is `-32601`
 
   Anything else → JSON-RPC `-32601 method not found`. Parse errors →
   `-32700`. Auth failures → JSON-RPC `-32001 unauthorized`.
@@ -60,8 +62,9 @@ defmodule EmisarWeb.MCPRPCController do
   @latest_legacy_protocol_version "2025-11-25"
   @legacy_protocol_versions [@latest_legacy_protocol_version, "2025-06-18"]
   @supported_protocol_versions [@modern_protocol_version | @legacy_protocol_versions]
-  # The modern revision removed `initialize` and `ping`; a 2026-07-28 request
-  # for anything outside this set is `-32601` with HTTP 404 per its transport.
+  # The modern revision removed `initialize` and `ping`. `initialize` is served
+  # before this check and always negotiates a legacy revision; any other
+  # 2026-07-28 request outside this set is `-32601` with HTTP 404.
   @modern_methods ~w(server/discover tools/list tools/call)
   @server_name "emisar"
   @operation_id ~r/\Aop_[0-7][0-9A-HJKMNP-TV-Z]{25}\z/
