@@ -132,7 +132,9 @@ func validateStrictJSON(data []byte) error {
 	if parser.pos == len(data) {
 		return errors.New("protocol JSON is empty")
 	}
-	if err := parser.parseValue(0); err != nil {
+	// The root value is depth 1, as in the runner's jsonvalue, so both count
+	// every value toward the same cap.
+	if err := parser.parseValue(1); err != nil {
 		return err
 	}
 	parser.skipSpace()
