@@ -2,7 +2,7 @@ schema_version: 1
 
 id: php-fpm
 name: PHP-FPM
-version: 0.1.17
+version: 0.1.18
 # 0.1.13 and below rated fpm_status_full `low`, so per-worker request URIs —
 # live client request data, query strings included — carried a pure-read label.
 # 0.1.16 and below ran composer_show with plugins enabled, so under the root

@@ -657,6 +657,17 @@ cases:
         argv: [nodetool, listsnapshots]
         expect:
           stdout_contains: ["pre-scrub", "events"]
+  - action: cassandra.nodetool_verify
+    args: {keyspace: packtest, table: events}
+    arrange:
+      - argv: [nodetool, flush, packtest, events]
+    expect:
+      exit: [0]
+      stdout_not_contains: ["verify is disabled"]
+    probes:
+      - argv: [nodetool, tablestats, packtest.events]
+        expect:
+          stdout_contains: ["SSTable count"]
   - action: cassandra.nodetool_upgradesstables
     args: {keyspace: packtest, table: events, include_all: true}
     arrange:

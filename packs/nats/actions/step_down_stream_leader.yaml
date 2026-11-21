@@ -7,7 +7,7 @@ description: Request a replicated stream leader step-down. Briefly interrupt del
   elects a replacement. Return an acceptance acknowledgement; stream_info shows the resulting leader
   and replica catch-up.
 side_effects:
-- One governed JetStream change; limit updates first read the current configuration.
+- One governed JetStream change.
 args:
 - name: stream
   type: string

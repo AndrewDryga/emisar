@@ -3,7 +3,11 @@ id: phpfpm.error_log_tail
 title: tail FPM error_log
 kind: exec
 risk: medium
-description: Tail the FPM error log (last N lines).
+description: >
+  Tail the FPM error log (last N lines): master and pool messages, plus worker
+  output such as PHP warnings and fatal errors when `catch_workers_output` is
+  on. Returns raw log text, which can carry script paths, request values, and
+  application data.
 side_effects: ["One file read.", "Read-only."]
 args:
   - name: lines

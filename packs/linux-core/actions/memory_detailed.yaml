@@ -7,8 +7,9 @@ risk: low
 
 description: >
   Dump full /proc/meminfo. More detail than the `linux.memory` action
-  — surfaces hugepages, slab, dirty/writeback, page tables, KSM,
-  cgroup memcg. Read-only.
+  — host-wide fields such as hugepages, slab, dirty/writeback, and page
+  tables, as the kernel exposes them. No per-cgroup or KSM detail.
+  Read-only.
 
 side_effects:
   - One read of /proc/meminfo.

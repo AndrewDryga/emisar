@@ -3,7 +3,7 @@ id: rmq.list_consumers
 title: rabbitmqctl list_consumers
 kind: exec
 risk: low
-description: List all active consumers + their queue + ack-mode + prefetch.
+description: List the active consumers in the default vhost `/` + their queue + ack-mode + prefetch. Other vhosts are not shown; `rmq.list_vhosts` lists them.
 side_effects:
   - One CLI call.
   - Read-only.

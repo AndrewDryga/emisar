@@ -5,10 +5,9 @@ kind: script
 risk: high
 description: Create one stream with an explicit subject, storage, retention, capacities and replica
   count. No mirrors, sources, arbitrary metadata or raw configuration are accepted. This creates topology
-  and may begin retaining matching application publications; no message payload is returned. Terraform-managed
-  topology can be reconciled by its initializer.
+  and may begin retaining matching application publications; no message payload is returned.
 side_effects:
-- One governed JetStream change; limit updates first read the current configuration.
+- One governed JetStream change.
 args:
 - name: stream
   type: string

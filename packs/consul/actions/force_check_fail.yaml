@@ -3,7 +3,7 @@ id: consul.force_check_fail
 title: PUT /v1/agent/check/fail/<check_id>
 kind: script
 risk: high
-description: Force one check into CRITICAL state. Service discovery stops returning it.
+description: Force one TTL check into CRITICAL state; Consul rejects the update for any other check type. Service discovery stops returning it.
 side_effects:
   - Targeted check transitions to CRITICAL.
   - Discovery routes traffic away from the associated service.

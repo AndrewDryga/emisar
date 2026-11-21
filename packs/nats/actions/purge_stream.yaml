@@ -6,7 +6,7 @@ risk: critical
 description: Irreversibly purge all stored messages from one stream while retaining the stream and
   consumer definitions. Return the acknowledged purge count; no content is read.
 side_effects:
-- One governed JetStream change; limit updates first read the current configuration.
+- One governed JetStream change.
 args:
 - name: stream
   type: string

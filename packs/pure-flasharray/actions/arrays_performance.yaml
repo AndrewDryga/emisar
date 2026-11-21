@@ -27,8 +27,8 @@ args:
     required: false
     default: auto
     description: >
-      Interval between samples. auto picks one that keeps a window to a few dozen
-      samples; 1s is the array's finest and is array-wide only.
+      Interval between samples. auto gives 10-21 samples for windows up to 7d,
+      90 at 30d and 90d, and 365 at 1y; 1s is the array's finest and is array-wide only.
     validation:
       enum: [auto, 1s, 30s, 5m, 30m, 2h, 8h, 24h]
 execution:

@@ -117,7 +117,8 @@ cases:
     action: gcp.sql_query_insights
     args: {project: example-prod, instance: no-such-instance}
     expect:
-      stdout_contains: ['"series_count":0', query_insights_enabled]
+      stdout_contains: ['"series_count":0', settings.insightsConfig, gcp.sql_instance_describe]
+      stdout_not_contains: [query_insights_enabled]
   - name: gcp.sql_query_insights-rejects-http-endpoint
     action: gcp.sql_query_insights
     env:

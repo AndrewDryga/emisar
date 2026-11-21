@@ -2,16 +2,16 @@ schema_version: 1
 
 id: linux-core
 name: Linux core operations pack
-version: 0.5.4
+version: 0.5.5
 # 0.4.9 and below let journalctl_grep answer a truncated slice exactly like a
 # clean window, so "that error never appeared" was indistinguishable from
 # "we only searched the last 2,000 entries".
 retired_below: 0.4.10
 description: >
-  Read-only Linux diagnostics plus narrow service control. Disk, mem,
-  uptime, journalctl, log grep + tail, users/auth introspection, cron
-  audit, network state, kernel info, and systemctl control. The
-  front-line pack every Linux host gets.
+  Read-only Linux diagnostics plus narrow service control and a scheduled
+  host reboot. Disk, mem, uptime, journalctl, log grep + tail, users/auth
+  introspection, cron audit, network state, kernel info, systemctl
+  control, and linux.reboot_host. The front-line pack every Linux host gets.
 vendor: emisar
 homepage: https://emisar.dev/packs/linux-core
 

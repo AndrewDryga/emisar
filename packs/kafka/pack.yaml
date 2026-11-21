@@ -2,12 +2,13 @@ schema_version: 1
 
 id: kafka
 name: Kafka cluster operations
-version: 0.1.14
+version: 0.1.15
 description: >
   Topic introspection, consumer-group lag, broker config, ACLs, and narrow
   mutators (reset_offsets, alter_topic_retention, delete_consumer_group,
-  preferred_leader_election). Auth via KAFKA_BOOTSTRAP env var on the
-  runner host plus optional KAFKA_COMMAND_CONFIG (jaas / SASL / SSL).
+  preferred_leader_election). Connects to the brokers named by the
+  KAFKA_BOOTSTRAP env var on the runner host, over a listener that needs
+  no client SASL/TLS credentials.
 vendor: emisar
 homepage: https://emisar.dev/packs/kafka
 

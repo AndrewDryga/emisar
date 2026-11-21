@@ -52,6 +52,9 @@ cases:
     args: {node_id: 1}
     expect:
       stdout_contains: ["1", available]
+  - action: cockroach.replication_constraints
+    expect:
+      stdout_contains: [zone_id, violating_ranges]
   - action: cockroach.replication_stats
     expect:
       stdout_contains: [total, under_replicated, unavailable]

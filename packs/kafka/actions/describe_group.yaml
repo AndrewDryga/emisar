@@ -3,7 +3,7 @@ id: kafka.describe_group
 title: Describe consumer group
 kind: exec
 risk: low
-description: Show member list, partition assignment, host for one consumer group.
+description: Show the members of one consumer group with each member's consumer ID, host, client ID, and number of assigned partitions (not which partitions).
 side_effects:
   - One coordinator request.
   - Read-only.

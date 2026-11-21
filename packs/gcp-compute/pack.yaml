@@ -2,14 +2,15 @@ schema_version: 1
 
 id: gcp-compute
 name: Google Cloud Compute diagnostics and recovery
-version: 0.2.6
+version: 0.2.7
 description: >
   Google Cloud Compute diagnostics plus governed recovery mutations: VM
   paginated project-wide instance inventory and managed-instance-group reads, instance start/stop/reset/delete,
   and MIG resize. Load-balancer diagnostics live in the gcp-load-balancing
   pack. Every action names the target project and, where needed, zone or region explicitly
-  and uses fixed gcloud commands or bounded HTTPS reads; mutations return their operation without
-  waiting and are polled with gcp.operation_status.
+  and uses fixed gcloud commands or bounded HTTPS reads. Start and stop return their zonal operation
+  without waiting (poll it with gcp.operation_status); reset, delete, and MIG resize wait for the
+  provider to accept or finish the change (watch a resize converge with gcp.mig_health).
 vendor: emisar
 homepage: https://emisar.dev/packs/gcp-compute
 

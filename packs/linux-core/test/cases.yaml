@@ -337,3 +337,31 @@ cases:
         argv: [/bin/sh, -c, "journalctl -u cron -u crond -t CRON -t CROND --no-pager -n 20 > /tmp/packtest-cron-unit && ! grep -Fq packtest-cron-without-unit /tmp/packtest-cron-unit && ! grep -Fq packtest-crond-without-unit /tmp/packtest-cron-unit && echo outside-cron-unit"]
         expect:
           stdout_contains: [outside-cron-unit]
+
+  # The client container has no md devices, so the stub and device names
+  # below stand in for arrays. An earlier array's failure must survive a
+  # later success, and an md partition is not an array.
+  - name: linux.mdadm_status-keeps-an-earlier-array-failure
+    action: linux.mdadm_status
+    env:
+      PATH: /tmp/packtest-mdadm:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - |
+            mkdir -p /tmp/packtest-mdadm &&
+            printf '%s\n' '#!/bin/sh' 'case $2 in /dev/md0) echo packtest-md0-failed >&2; exit 3 ;; esac' 'echo "packtest-detail $2"' > /tmp/packtest-mdadm/mdadm &&
+            chmod 0755 /tmp/packtest-mdadm/mdadm &&
+            touch /dev/md0 /dev/md1 /dev/md1p1
+    expect:
+      status: failure
+      exit: [3]
+      stdout_contains: ["packtest-detail /dev/md1"]
+      stdout_not_contains: [/dev/md1p1, no arrays]
+      stderr_contains: [packtest-md0-failed]
+
+  - name: linux.mdadm_status-says-no-arrays
+    action: linux.mdadm_status
+    expect:
+      stdout_contains: [no arrays]

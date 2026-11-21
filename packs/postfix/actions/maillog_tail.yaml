@@ -3,7 +3,9 @@ id: postfix.maillog_tail
 title: tail mail.log
 kind: exec
 risk: medium
-description: Tail the last N lines of the mail log.
+description: >
+  Tail the last N lines of the mail log. Returns raw log lines, which name
+  senders, recipients, client hosts, and queue IDs.
 side_effects: ["One file read.", "Read-only."]
 args:
   - name: lines

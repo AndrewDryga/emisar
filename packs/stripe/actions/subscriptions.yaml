@@ -59,5 +59,6 @@ output:
   max_stdout_bytes: 65536
   max_stderr_bytes: 8192
 examples:
-  - title: Find subscriptions in a failing state
-    args: {}
+  - title: Find past-due subscriptions
+    args:
+      status: "past_due"

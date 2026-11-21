@@ -44,3 +44,20 @@ cases:
           stdout_contains: [ipmi-client-not-invoked]
     cleanup:
       - argv: [rm, -f, /tmp/packtest-ipmi-client-invoked]
+
+  - name: ipmi.chassis_status-rejects-missing-password-before-client
+    action: ipmi.chassis_status
+    args: {host: approved-bmc}
+    unset_env: [IPMI_PASSWORD]
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: [IPMI_USER and IPMI_PASSWORD]
+      stderr_not_contains: [PACKTEST_CLIENT_INVOKED]
+    probes:
+      - argv: [/bin/sh, -c, "test ! -e /tmp/packtest-ipmi-client-invoked && echo ipmi-client-not-invoked"]
+        expect:
+          stdout_contains: [ipmi-client-not-invoked]
+    cleanup:
+      - argv: [rm, -f, /tmp/packtest-ipmi-client-invoked]

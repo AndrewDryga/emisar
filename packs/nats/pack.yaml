@@ -1,7 +1,7 @@
 schema_version: 1
 id: nats
 name: NATS JetStream operations
-version: 0.1.0
+version: 0.1.1
 description: Inspect authenticated NATS connectivity and JetStream account, stream and consumer state,
   then govern narrow topology, retention, delivery, leadership and deletion operations. Fixed API
   subjects and typed bodies expose no arbitrary request, publication, subscription, message payload
@@ -67,12 +67,12 @@ setup:
     are eight seconds per RPC and 25 seconds for the connection check.
   - Full int64/uint64 counters and capacities use decimal strings in results and relevant arguments
     to preserve precision. Names use subject-safe ASCII letters, digits, underscores and hyphens up
-    to255bytes. Selected subjects and replica labels are bounded with explicit flags; descriptions,
+    to 255 bytes. Selected subjects and replica labels are bounded with explicit flags; descriptions,
     metadata and message bodies never leave the host.
   - Stream-limit changes, purge, stream deletion and consumer deletion are critical because they can
     irreversibly discard data. Deleting the last consumer of an interest-retention stream purges all
-    stored messages. The shipped default policy denies critical actions. Terraform-managed runtime
-    changes can be reconciled by the initializer; durable desired-state changes belong in Terraform.
+    stored messages. The shipped default policy denies critical actions. Where an infrastructure-as-code tool manages
+    this topology, it may later reconcile these runtime changes; deleted data is never recovered.
   - This remote-target pack has no automatic host detection or protected-host grant recipe. Server-level
     monitoring and system-account administration are outside its contract.
   verify: nats.account_info

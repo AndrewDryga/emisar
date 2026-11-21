@@ -4,7 +4,7 @@ title: Lock-wait graph
 kind: exec
 risk: medium
 description: >
-  Join performance_schema.data_lock_waits with data_locks to show who is blocking whom. Use before a kill_query — you want the blocker, not the victim. Rated medium because the output carries live query text (`trx_query`), which can include literal request values no redaction list can enumerate.
+  Join performance_schema.data_lock_waits with information_schema.innodb_trx (once for the waiter, once for the blocker) to show who is blocking whom. Needs MySQL 8.0 or later, which has data_lock_waits; tested on MySQL only, not MariaDB. Use before a kill_query — you want the blocker, not the victim. Rated medium because the output carries live query text (`trx_query`), which can include literal request values no redaction list can enumerate.
 side_effects:
   - One SELECT against performance_schema.
   - Read-only.

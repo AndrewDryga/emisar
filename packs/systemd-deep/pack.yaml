@@ -35,6 +35,7 @@ setup:
   host_access:
     - actions:
         - systemd.boot_errors
+        - systemd.journal_disk_usage
       requirement: Read the complete system journal.
       recipes:
         - name: Add the Emisar service user to systemd-journal

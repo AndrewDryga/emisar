@@ -3,6 +3,9 @@ schema_version: 1
 id: frr
 name: FRRouting (FRR)
 version: 0.1.8
+# 0.1.7 and earlier could create a missing BGP instance from a neighbor
+# shutdown; a pinned runner fails closed instead of running that mutation.
+retired_below: 0.1.8
 description: >
   Query the local FRRouting daemons via vtysh — BGP summary + neighbors,
   BFD peers, IP route summary, and interface state — plus one gated mutation:

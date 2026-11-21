@@ -2,7 +2,7 @@ schema_version: 1
 
 id: prometheus
 name: Prometheus operations
-version: 0.1.22
+version: 0.1.23
 # Older versions allowed low-risk range queries with unbounded evaluation cost,
 # and let the caller pick the admin mutators' base URL instead of `PROM_URL` —
 # a delete against the wrong server, and a POST at any host the model named.
@@ -43,7 +43,7 @@ setup:
     - "`PROM_URL` only reaches an action when the runner allowlists it in `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped and every action, read and admin alike, falls back to `http://127.0.0.1:9090`."
     - "No credentials are sent. If your Prometheus sits behind an auth proxy, expose it to the runner on a network path that does not require a header, or point `PROM_URL` at a trusted side door."
     - "Admin actions (reload_config, snapshot, clean_tombstones, delete_series) only work if Prometheus was started with --web.enable-admin-api and --web.enable-lifecycle."
-    - "Range queries are limited to 7 days and 10,081 outer evaluation timestamps per returned series, with a 30-second provider-side timeout. This preserves a full week at one-minute resolution; query cardinality, range-vector lookbacks, and subqueries can still add cost."
+    - "Range queries have no fixed span cap: the server's retention bounds the data available, and the action refuses a window and step that produce more than 10,081 evaluation timestamps per series (window / step + 1), before calling the server. Each query carries a 30-second provider-side timeout. A full week fits at one-minute resolution and thirty days at hourly; query cardinality, range-vector lookbacks, and subqueries can still add cost."
   verify: prom.build_info
 
 actions:

@@ -162,7 +162,8 @@ cases:
     expect:
       status: failure
       exit: [1]
-      stderr_contains: [BigQuery did not finish the query]
+      stderr_contains: [BigQuery did not finish the query, narrow days and retry]
+      stderr_not_contains: [max_scan_gb]
 
   # With neither export in the dataset, the failure has to name both tables it
   # looked for — otherwise an export nobody turned on reads like a bug in the

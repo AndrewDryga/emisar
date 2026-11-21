@@ -9,7 +9,7 @@ description: >
   Created, Severity (OK / Warning / Critical), Message, MessageId, and the
   sensor that raised it — the hardware-fault history (ECC, PSU, thermal,
   intrusion). Read-only. For a long log, page with the generic get action and
-  ?$skip=N, or filter with ?$filter=Severity eq 'Critical'.
+  ?$skip=N, or filter with ?$filter=Severity%20eq%20'Critical'.
 side_effects:
   - One read-only Redfish GET of the SEL entries collection.
   - Read-only.

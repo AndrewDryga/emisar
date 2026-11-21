@@ -67,4 +67,5 @@ output:
   max_stderr_bytes: 8192
 examples:
   - title: Find subscriptions in a failing state
-    args: {}
+    args:
+      status: "PAST_DUE"

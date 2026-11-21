@@ -62,7 +62,7 @@ args:
 - name: confirmation_period
   type: integer
   required: false
-  description: Minus one preserves the setting. Seconds; timeout may not exceed the check frequency.
+  description: Minus one preserves the setting. Seconds a failure must persist before Better Stack opens an incident.
   validation:
     min: -1
     max: 86400
@@ -70,7 +70,7 @@ args:
 - name: recovery_period
   type: integer
   required: false
-  description: Minus one preserves the setting. Seconds; timeout may not exceed the check frequency.
+  description: Minus one preserves the setting. Seconds the monitor must stay up before Better Stack resolves the incident.
   validation:
     min: -1
     max: 7200

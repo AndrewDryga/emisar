@@ -3,7 +3,7 @@ id: rmq.list_exchanges
 title: rabbitmqctl list_exchanges
 kind: exec
 risk: low
-description: List all exchanges with type + durability.
+description: List the exchanges in the default vhost `/` with type + durability. Other vhosts are not shown; `rmq.list_vhosts` lists them.
 side_effects:
   - One CLI call.
   - Read-only.

@@ -3,8 +3,8 @@ id: mc.stats_sizes
 title: stats sizes
 kind: exec
 risk: low
-description: 'Show a histogram of item sizes. Scans all items, so it can be slow on busy servers.'
-side_effects: ["Scans every item — high latency hit on busy servers.", "Read-only."]
+description: 'Show the histogram of item sizes. Needs memcached started with `-o track_sizes`; otherwise the reply is only `STAT sizes_status disabled`.'
+side_effects: ["One `stats sizes` request; with size tracking enabled it reads the live histogram without scanning items.", "Read-only."]
 args: []
 execution:
   command:

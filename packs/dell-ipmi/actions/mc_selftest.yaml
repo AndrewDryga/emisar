@@ -1,6 +1,6 @@
 schema_version: 1
 id: ipmi.mc_selftest
-title: Run BMC self-test
+title: Show BMC self-test result
 kind: script
 risk: low
 description: >

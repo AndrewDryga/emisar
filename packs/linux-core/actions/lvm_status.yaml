@@ -6,7 +6,8 @@ kind: exec
 risk: low
 
 description: >
-  Run `lvs && vgs && pvs` for a one-shot LVM topology snapshot.
+  Run `lvs`, `vgs`, and `pvs` in turn for a one-shot LVM topology
+  snapshot; the exit status is that of `pvs`.
   Logical volumes, volume groups, physical volumes — sizes, free
   space, attributes. Read-only. Needs LVM tools installed.
 

@@ -1,11 +1,11 @@
 schema_version: 1
 id: es.cluster_allocation_explain
-title: POST /_cluster/allocation/explain
+title: GET /_cluster/allocation/explain
 kind: script
 risk: low
 description: 'Explain why an unassigned shard hasn''t been placed. The canonical "why is my cluster yellow?" answer.'
 side_effects:
-  - One POST request.
+  - One GET request.
   - Read-only.
 args: []
 execution:

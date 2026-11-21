@@ -1,6 +1,7 @@
 # linux-core
 
-Safe, read-only Linux diagnostics plus narrow systemd unit control.
+Read-only Linux diagnostics plus narrow systemd unit control and a scheduled
+host reboot (`linux.reboot_host`).
 
 A representative sample below — run `emisar pack info linux-core` for the full,
 current list.

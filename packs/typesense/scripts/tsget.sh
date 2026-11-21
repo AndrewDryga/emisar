@@ -9,13 +9,15 @@
 # API key is read from $TYPESENSE_API_KEY and streamed to curl as the
 # X-TYPESENSE-API-KEY header over stdin (-H @-), so it never lands in argv, a
 # `ps` listing, or the audit log. $TYPESENSE_URL defaults to a local node.
+# --fail-with-body keeps an error's JSON body, such as an unhealthy node's
+# /health answer, while still failing the run.
 set -eu
 
 TYPESENSE_URL=${TYPESENSE_URL:-http://127.0.0.1:8108}
 path=$1
 shift
 if [ -n "${TYPESENSE_API_KEY:-}" ]; then
-	printf 'X-TYPESENSE-API-KEY: %s\n' "$TYPESENSE_API_KEY" | curl -q --globoff --proto '=http,https' -fsS -H @- "$@" "$TYPESENSE_URL$path"
+	printf 'X-TYPESENSE-API-KEY: %s\n' "$TYPESENSE_API_KEY" | curl -q --globoff --proto '=http,https' --fail-with-body -sS -H @- "$@" "$TYPESENSE_URL$path"
 else
-	curl -q --globoff --proto '=http,https' -fsS "$@" "$TYPESENSE_URL$path"
+	curl -q --globoff --proto '=http,https' --fail-with-body -sS "$@" "$TYPESENSE_URL$path"
 fi

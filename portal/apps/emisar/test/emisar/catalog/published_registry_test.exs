@@ -43,7 +43,7 @@ defmodule Emisar.Catalog.PublishedRegistryTest do
                "sha256:1122f9b2885690ef2fd2f1953c42ffee1c345b22b3707faeddbb585b5b4e0194"
 
       assert PublishedRegistry.get("cassandra").content_hash ==
-               "sha256:d10c15022780e34e9144ecf54a36b5ebd5f98fb505694d5396035fd208a52503"
+               "sha256:de0fe649e0abf604b7e3aab5b9749f0078d29114db47049c0dcee261ed3ebcdd"
     end
   end
 

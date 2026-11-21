@@ -2,7 +2,7 @@ schema_version: 1
 
 id: memcached
 name: Memcached cache server
-version: 0.1.9
+version: 0.1.10
 description: >
   Read-only memcached introspection via the `stats` ASCII protocol —
   general stats, slab usage, item counts, sizes. Plus FLUSH_ALL as a
@@ -38,7 +38,7 @@ setup:
       description: Target port.
       default: "11211"
   notes:
-    - "Any of `MEMCACHED_HOST` you set must also be allowlisted in the runner's `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
+    - "`MEMCACHED_HOST` and `MEMCACHED_PORT`, when set, must also be allowlisted in the runner's `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped and the action uses its default (`127.0.0.1` for the host, `11211` for the port)."
     - No authentication exists for this transport; reach a remote daemon only over a trusted network or tunnel.
     - flush_all is destructive — it invalidates every key and can stampede the origin on the next miss.
   verify: mc.stats

@@ -3,7 +3,7 @@ id: jvm.jstack_blocked
 title: jstack filtered to BLOCKED threads
 kind: exec
 risk: low
-description: Run jstack and filter output to threads in BLOCKED state plus their lock owners. Use to find deadlocks fast.
+description: Run jstack and filter output to threads in BLOCKED state, each with the stack showing the monitor it waits on. A lock owner appears only when it is itself BLOCKED, and jstack's deadlock report is not included; `jvm.jstack` returns the full dump.
 side_effects:
   - One jstack invocation.
   - Read-only.

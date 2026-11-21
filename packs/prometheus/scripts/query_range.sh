@@ -39,7 +39,7 @@ fi
 
 end=$(date -u +%s)
 start=$((end - window_seconds))
-curl -q --globoff --proto '=http,https' -fsS -G \
+curl -q --globoff --proto '=http,https' --fail-with-body -sS -G \
 	--data-urlencode "query=$query" \
 	--data-urlencode "start=$start" \
 	--data-urlencode "end=$end" \

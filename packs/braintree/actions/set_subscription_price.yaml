@@ -66,5 +66,5 @@ examples:
       currency: "USD"
       expected_updated_at: "2026-09-10T18:04:11Z"
       expected_price: "24.99"
-      price: "24.99"
+      price: "19.99"
       environment: "sandbox"

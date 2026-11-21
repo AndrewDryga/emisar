@@ -45,5 +45,6 @@ output:
   max_stdout_bytes: 65536
   max_stderr_bytes: 8192
 examples:
-  - title: List disputes that still need evidence
-    args: {}
+  - title: List open disputes
+    args:
+      status: "OPEN"

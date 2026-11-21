@@ -1,7 +1,7 @@
 schema_version: 1
 id: betterstack
 name: Better Stack uptime operations
-version: 0.1.0
+version: 0.1.1
 description: Inspect bounded monitor, incident, heartbeat and status-page state, aggregate availability
   and response-time metrics, and govern narrow monitor and incident lifecycle controls. Closed projections
   exclude hidden credentials, URLs and arbitrary content.

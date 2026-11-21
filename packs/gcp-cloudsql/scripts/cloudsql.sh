@@ -170,7 +170,7 @@ query_insights() {
       # An empty result is indistinguishable from a healthy idle window, so name
       # the other causes rather than letting it read as "no slow queries".
       if .series_count == 0 then
-        .note = "no Query Insights data for this instance in this window — check that query_insights_enabled is on, that the window is after it was enabled, and that the instance and database names are exact"
+        .note = "no Query Insights data for this instance in this window — check whether Query Insights is enabled in settings.insightsConfig returned by gcp.sql_instance_describe, that the window is after it was enabled, and that the instance and database names are exact"
       else . end
     ' "$tmp/series.jsonl"
 }

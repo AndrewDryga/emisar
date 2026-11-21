@@ -55,7 +55,7 @@ if [ "$allowed" != "true" ]; then
 	exit 1
 fi
 
-if [ -z "${IPMI_USER:-}" ]; then
+if [ -z "${IPMI_USER:-}" ] || [ -z "${IPMI_PASSWORD:-}" ]; then
 	echo "dell-ipmi: set IPMI_USER and IPMI_PASSWORD in the runner environment (and allowlist them in inherit_env)" >&2
 	exit 1
 fi

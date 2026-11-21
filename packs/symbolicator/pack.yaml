@@ -2,7 +2,7 @@ schema_version: 1
 
 id: symbolicator
 name: Symbolicator native symbolication
-version: 0.2.7
+version: 0.2.8
 # Older descriptors classify the vendor's metadata-writing dry run as low,
 # admitting cache mutations through a low-only policy or admission ceiling.
 retired_below: 0.2.6

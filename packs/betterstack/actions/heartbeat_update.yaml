@@ -21,7 +21,7 @@ args:
 - name: period
   type: integer
   required: false
-  description: Expected seconds between beats; less than one year, or -1 to preserve.
+  description: Expected seconds between beats; at least 30 and less than one year, or -1 to preserve.
   validation:
     min: -1
     max: 31535999

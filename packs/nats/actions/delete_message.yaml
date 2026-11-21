@@ -6,7 +6,7 @@ risk: high
 description: Irreversibly delete one explicit stream sequence without reading its content. Preserve
   all other messages; stream_info shows the new message count.
 side_effects:
-- One governed JetStream change; limit updates first read the current configuration.
+- One governed JetStream change.
 args:
 - name: stream
   type: string

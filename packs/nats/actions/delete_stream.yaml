@@ -4,9 +4,9 @@ title: Delete a JetStream stream
 kind: script
 risk: critical
 description: Irreversibly delete one stream, its stored messages and associated consumer topology.
-  Terraform-managed topology can be recreated by the initializer, but deleted data is not recovered.
+  Deleted data is not recovered.
 side_effects:
-- One governed JetStream change; limit updates first read the current configuration.
+- One governed JetStream change.
 args:
 - name: stream
   type: string

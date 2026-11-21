@@ -2,7 +2,7 @@ schema_version: 1
 
 id: snmp
 name: SNMP (net-snmp)
-version: 0.2.6
+version: 0.2.7
 # Older versions could send runner-held credentials to a caller-chosen target.
 retired_below: 0.2.4
 description: >
@@ -44,8 +44,9 @@ setup:
       required: false
       default: "2c"
       description: >
-        SNMP version — "1", "2c" (default), or "3". The table reads use
-        GETBULK, so they need 2c or 3. Prefer 3 (authPriv) on any untrusted
+        SNMP version — "1", "2c" (default), or "3". Only `snmp.get` works
+        over v1: every other action, including the `snmp.system` setup
+        verification, walks with GETBULK and needs 2c or 3. Prefer 3 (authPriv) on any untrusted
         path: v1/v2c send the community in cleartext on the wire.
     - name: SNMP_COMMUNITY
       required: false

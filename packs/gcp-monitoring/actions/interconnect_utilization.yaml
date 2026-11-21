@@ -8,7 +8,10 @@ description: >
   attachment, then calculate independent ingress and egress utilization
   ratios. The link is full duplex, so directions are never summed. The window
   reaches 730 days at a coarse alignment: window / alignment_seconds must fit
-  the 1000-point page each metric is read in.
+  the 1000-point page each metric is read in. A non-null entry in
+  next_page_cursors means the provider returned only part of that metric's
+  series, so the ratios cover partial data; the action has no argument to
+  follow those cursors.
 side_effects:
   - One gcloud token read and three read-only Monitoring API requests.
   - Writes public metric responses to mode-0600 temporary files and removes them before exit.

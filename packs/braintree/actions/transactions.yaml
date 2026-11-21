@@ -88,4 +88,5 @@ output:
   max_stderr_bytes: 8192
 examples:
   - title: Find transactions for a disputed order
-    args: {}
+    args:
+      order_id: "SO-48213"

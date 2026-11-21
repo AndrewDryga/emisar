@@ -3,7 +3,15 @@ id: cassandra.nodetool_verify
 title: nodetool verify [ks] [table]
 kind: exec
 risk: medium
-description: Verify SSTable checksums for one (or all) tables. Detects on-disk corruption.
+description: >
+  Verify SSTable checksums for one (or all) tables with `nodetool verify
+  --force` to detect on-disk corruption. The default verify checks SSTable
+  checksums, not each cell (`--extended-verify` does that). Cassandra 4.1
+  and later refuse verify unless `-f`/`--force` is passed (CASSANDRA-17017),
+  because of open caveats in CASSANDRA-9947 about how verify marks failed
+  SSTables. `--force` only overrides that refusal; this action never passes
+  `-r`/`--rsc` (mutate repair status) or `-d`/`--dfp` (invoke the disk
+  failure policy), so it leaves SSTables and the node unchanged.
 side_effects:
   - Reads every SSTable for the targeted scope.
   - IO-heavy; CPU light.
@@ -27,7 +35,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "if [ -n ''\"$1\"'' ]; then nodetool verify \"$2\" \"$1\"; elif [ -n ''\"$2\"'' ]; then nodetool verify \"$2\"; else nodetool verify; fi"
+      - "if [ -n ''\"$1\"'' ]; then nodetool verify --force \"$2\" \"$1\"; elif [ -n ''\"$2\"'' ]; then nodetool verify --force \"$2\"; else nodetool verify --force; fi"
       - "emisar"
       - "{{ args.table }}"
       - "{{ args.keyspace }}"

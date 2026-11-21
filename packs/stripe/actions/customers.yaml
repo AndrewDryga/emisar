@@ -54,4 +54,5 @@ output:
   max_stderr_bytes: 8192
 examples:
   - title: Find a customer by email
-    args: {}
+    args:
+      email: "jane@example.com"

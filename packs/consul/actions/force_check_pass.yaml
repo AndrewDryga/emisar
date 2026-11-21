@@ -7,7 +7,7 @@ description: Force one TTL check into the PASSING state; discovery resumes routi
 side_effects:
   - Targeted check transitions to PASSING.
   - Services watching this check may resume routing traffic.
-  - For non-TTL checks, the override is overwritten by the next actual run.
+  - TTL checks only; Consul rejects the update for any other check type.
 args:
   - name: check_id
     type: string

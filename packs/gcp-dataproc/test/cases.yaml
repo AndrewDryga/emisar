@@ -2743,7 +2743,7 @@ cases:
     argv: [curl, -fsS, --cacert, /packs/gcp-dataproc/test/fixtures/server.crt, https://gcp-api:8443/probe/state]
     expect:
       stdout_contains: ['insertTime >= \"2026-11-08T00:00:00Z\" AND insertTime <= \"2026-11-09T00:00:00Z\"']
-      stdout_not_contains: ['clusterName=']
+      stdout_not_contains: ['"clusterName": [']
 - name: gcp-dataproc.jobs_list-rejects-changed-cluster
   action: gcp-dataproc.jobs_list
   args: {<<: *retained-history-query, cluster_filter: different-cluster}

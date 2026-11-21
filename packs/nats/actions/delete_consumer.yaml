@@ -6,9 +6,9 @@ risk: critical
 description: Delete one consumer and its delivery/ack state. On interest-retention streams, remove
   messages for which that consumer was the final interest; deleting the last consumer purges all stored
   messages in the stream. Other retention policies retain messages according to their limits, and
-  recreation may redeliver them. Terraform-managed topology can be recreated by the initializer.
+  recreation may redeliver them.
 side_effects:
-- One governed JetStream change; limit updates first read the current configuration.
+- One governed JetStream change.
 args:
 - name: stream
   type: string

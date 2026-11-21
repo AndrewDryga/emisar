@@ -17,7 +17,7 @@ args:
   - name: matcher
     type: string
     required: true
-    description: Label matcher (URL-encoded if it contains special chars).
+    description: Raw series selector, e.g. `{__name__="bad_metric"}`; pass it unencoded, the action URL-encodes it.
     validation:
       pattern: "^[a-zA-Z0-9_={}\",.:!~=\\-/%* ]{1,512}$"
 execution:

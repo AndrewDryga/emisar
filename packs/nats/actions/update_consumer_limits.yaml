@@ -6,9 +6,9 @@ risk: high
 description: Update only selected maximum ack-pending, maximum delivery and ack-wait settings after
   privately reading current configuration. Preserve identity, filters, delivery settings, unknown
   fields and integer precision. At least one change is required. The API has no compare-and-swap guard;
-  concurrent edits can race. Terraform-managed definitions can be reconciled by the initializer.
+  concurrent edits can race.
 side_effects:
-- One governed JetStream change; limit updates first read the current configuration.
+- One governed JetStream change, made after privately reading the current configuration.
 args:
 - name: stream
   type: string

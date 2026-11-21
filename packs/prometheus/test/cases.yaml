@@ -47,6 +47,22 @@ cases:
     args: {query: up}
     expect:
       stdout_contains: ['"status":"success"', '"resultType":"vector"', '"job":"prometheus"']
+  # A bad expression is answered with HTTP 400 and a JSON error; the body
+  # must reach the operator instead of only curl's exit message.
+  - name: prom.query-instant-returns-the-parse-error
+    action: prom.query_instant
+    args: {query: "up{"}
+    expect:
+      status: failure
+      exit: [22]
+      stdout_contains: ['"status":"error"', '"errorType":"bad_data"', parse error]
+  - name: prom.query-range-returns-the-parse-error
+    action: prom.query_range
+    args: {query: "up{", window: 1h, step: 60s}
+    expect:
+      status: failure
+      exit: [22]
+      stdout_contains: ['"status":"error"', '"errorType":"bad_data"', parse error]
   - name: prom.query-range-normal-incident-window
     action: prom.query_range
     args: {query: up, window: 1h, step: 60s}

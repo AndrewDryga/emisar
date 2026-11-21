@@ -1,6 +1,6 @@
 schema_version: 1
 id: mysql.users_grants
-title: List users + grants summary
+title: List MySQL accounts
 kind: exec
 risk: low
 description: List user + host pairs from mysql.user. Doesn't dump grants (volume) — use for audit "who has accounts?"

@@ -13,7 +13,8 @@ defaults:
   expect:
     stdout_not_contains: [packtest-canary-idrac-password-9f27]
 cases:
-  # The three mutating actions. Each asserts the exact Redfish endpoint AND the
+  # The three POST mutating actions covered here (delete_job's DELETE has no
+  # case). Each asserts the exact Redfish endpoint AND the
   # argument the operator chose — the fixture echoes the body field back, so a
   # case proves the pack asked correctly rather than merely that it POSTed
   # something. A mock cannot prove a real BMC obeys; asking correctly is where a

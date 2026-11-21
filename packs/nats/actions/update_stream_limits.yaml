@@ -7,9 +7,9 @@ description: Update only selected stream byte, message and expiry limits after r
   configuration. Preserve all other fields and integer precision privately; never return the complete
   configuration. Lowering limits can immediately discard stored messages. At least one change is required.
   The API writes the full configuration without a compare-and-swap guard, so concurrent edits can
-  race. Terraform-managed limits can be reconciled by the initializer.
+  race.
 side_effects:
-- One governed JetStream change; limit updates first read the current configuration.
+- One governed JetStream change, made after privately reading the current configuration.
 args:
 - name: stream
   type: string

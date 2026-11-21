@@ -6,7 +6,7 @@ risk: high
 description: Request a replicated consumer leader step-down. Delivery may pause during election. Return
   acceptance; consumer_info shows the replacement leader and replica catch-up.
 side_effects:
-- One governed JetStream change; limit updates first read the current configuration.
+- One governed JetStream change.
 args:
 - name: stream
   type: string

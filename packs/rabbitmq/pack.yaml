@@ -2,13 +2,13 @@ schema_version: 1
 
 id: rabbitmq
 name: RabbitMQ operations
-version: 0.1.18
+version: 0.1.19
 retired_below: 0.1.9
 description: >
   Cluster, queue, exchange, binding, connection, channel, and consumer
-  inventory plus narrow operator actions (purge_queue, set_policy,
-  force_close_connection). Uses rabbitmqctl + rabbitmqadmin on the
-  runner host.
+  inventory plus narrow operator actions (purge_queue, close_connection,
+  sync_queue, stop_app/start_app). Uses rabbitmqctl and
+  rabbitmq-diagnostics on the runner host.
 vendor: emisar
 homepage: https://emisar.dev/packs/rabbitmq
 

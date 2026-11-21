@@ -26,10 +26,13 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      # `|| continue` (not `&& …`) so the no-array case — where the glob
-      # stays literal and `[ -e ]` is false — exits 0, while a real
-      # `mdadm --detail` failure on an actual array still surfaces non-zero.
-      - "cat /proc/mdstat; for md in /dev/md[0-9]*; do [ -e \"$md\" ] || continue; echo; mdadm --detail \"$md\"; done"
+      # Only whole arrays (/dev/md<digits>) are examined; partitions such as
+      # /dev/md126p1 and the literal glob of the no-array case are skipped,
+      # and the no-array case prints "no arrays" and exits 0. The first
+      # failing `mdadm --detail` sets the exit status while the remaining
+      # arrays are still shown. A host without the md driver has no
+      # /proc/mdstat; an unreadable one fails the run.
+      - "rc=0; found=0; [ ! -e /proc/mdstat ] || cat /proc/mdstat || rc=$?; for md in /dev/md[0-9]*; do case ${md#/dev/md} in *[!0-9]*) continue ;; esac; [ -e \"$md\" ] || continue; found=1; echo; mdadm --detail \"$md\" || { s=$?; [ \"$rc\" -ne 0 ] || rc=$s; }; done; [ \"$found\" = 1 ] || { echo; echo 'no arrays'; }; exit \"$rc\""
   timeout: 15s
 
 output:

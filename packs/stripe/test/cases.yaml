@@ -225,6 +225,9 @@ cases:
   expect:
     json:
       "/result/id": in_fixture
+      "/result/parent_subscription_details_subscription": sub_fixture
+    # The pinned API version carries the subscription only under parent.
+    stdout_not_contains: ['"subscription":null']
 - action: stripe.invoice_payment
   args:
     id: inpay_fixture

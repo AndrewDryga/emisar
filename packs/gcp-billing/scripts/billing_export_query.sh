@@ -209,7 +209,7 @@ fi
 # An incomplete job returns no rows. Reporting that as an empty result would read
 # as "nothing was spent", so it fails loudly instead.
 if [ "$(jq -r '.jobComplete // false' "$tmp/response.json")" != true ]; then
-  printf '%s\n' "BigQuery did not finish the query within the request timeout; narrow days or raise max_scan_gb" >&2
+  printf '%s\n' "BigQuery did not finish the query within the request timeout; narrow days and retry" >&2
   exit 1
 fi
 

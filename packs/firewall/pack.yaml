@@ -2,7 +2,7 @@ schema_version: 1
 
 id: firewall
 name: Firewall and netfilter
-version: 0.1.20
+version: 0.1.21
 description: >
   iptables, nftables, conntrack, and traffic-control inspection plus
   narrow operator actions for incident response (block IP, unblock IP,
@@ -16,6 +16,7 @@ requires:
     - linux
   binaries:
     - conntrack
+    - ip
     - iptables
     - jq
     - nft

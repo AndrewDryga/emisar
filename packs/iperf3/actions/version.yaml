@@ -2,7 +2,7 @@ schema_version: 1
 id: iperf3.version
 title: iperf3 version + build info
 kind: exec
-risk: medium
+risk: low
 description: >
   Show the installed iperf3 version and build info (cJSON / OpenSSL).
   Read-only local check with no network — use it to confirm the runner

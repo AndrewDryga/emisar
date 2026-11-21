@@ -58,7 +58,7 @@ setup:
   notes:
     - "Any of `VM_URL` / `VM_BEARER_TOKEN` you set must also be allowlisted in the runner's `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
     - "Single-node URL: http://<host>:8428/prometheus. Cluster (vmselect) reads: http://<vmselect>:8481/select/<accountID>/prometheus. Behind vmauth: use its base URL plus whatever route prefix maps to the backend."
-    - "Every action is a read-only GET — none write, delete, or mutate series. Range queries are limited to 7 days and 10,081 outer evaluation timestamps per returned series, with a 30-second provider-side timeout. This preserves a full week at one-minute resolution; query cardinality, range-vector lookbacks, and subqueries can still add cost."
+    - "Every action is a read-only GET — none write, delete, or mutate series. Range queries are limited by the server's retention and to 10,081 outer evaluation timestamps per returned series, with a 30-second provider-side timeout. That is a full week at one-minute resolution; query cardinality, range-vector lookbacks, and subqueries can still add cost."
     - "No token is sent unless `VM_BEARER_TOKEN` is set. For basic-auth fronts, embed credentials in `VM_URL` (http://user:pass@host); the URL reaches curl over stdin, never its arguments."
   verify: vm.labels
 

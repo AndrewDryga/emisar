@@ -6,7 +6,7 @@ risk: high
 description: Clear one consumer's pause deadline and verify the API reports paused=false. Delivery
   can resume; no message is pulled or acknowledged by this action.
 side_effects:
-- One governed JetStream change; limit updates first read the current configuration.
+- One governed JetStream change.
 args:
 - name: stream
   type: string

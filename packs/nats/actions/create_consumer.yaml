@@ -5,9 +5,9 @@ kind: script
 risk: high
 description: Create one named durable pull consumer with an explicit filter, explicit acknowledgements
   and bounded delivery settings. Never create a push-delivery subject or read a message. Use the server's
-  create-only consumer action. Terraform-managed definitions can be reconciled by the initializer.
+  create-only consumer action.
 side_effects:
-- One governed JetStream change; limit updates first read the current configuration.
+- One governed JetStream change.
 args:
 - name: stream
   type: string

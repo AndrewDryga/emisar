@@ -3,7 +3,7 @@ id: rmq.list_policies
 title: rabbitmqctl list_policies
 kind: exec
 risk: low
-description: List all set policies (HA, federation, shovel, etc).
+description: List the policies set in the default vhost `/` (federation, shovel, queue limits, etc). Other vhosts are not shown; `rmq.list_vhosts` lists them.
 side_effects:
   - One CLI call.
   - Read-only.

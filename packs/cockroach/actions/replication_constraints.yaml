@@ -16,7 +16,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SELECT zone_id, subzone_id, type, config, violating_ranges, violation_start FROM system.replication_constraint_stats WHERE violating_ranges > 0 ORDER BY violating_ranges DESC\""
+      - "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SET allow_unsafe_internals = true; SELECT zone_id, subzone_id, type, config, violating_ranges, violation_start FROM system.replication_constraint_stats WHERE violating_ranges > 0 ORDER BY violating_ranges DESC\""
   timeout: 20s
 output:
   parser: text

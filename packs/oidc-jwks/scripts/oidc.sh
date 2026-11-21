@@ -18,7 +18,8 @@ fetch_json() {
   local blocks metadata status content_type size
   local -a curl_args
 
-  blocks=$(((max_bytes + 511) / 512))
+  # Non-POSIX bash counts ulimit -f in 1024-byte units.
+  blocks=$(((max_bytes + 1023) / 1024))
   curl_args=(
     -q
     --silent

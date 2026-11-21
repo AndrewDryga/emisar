@@ -3,7 +3,7 @@ id: rmq.list_queues
 title: rabbitmqctl list_queues
 kind: exec
 risk: low
-description: 'List all queues with name, messages_ready, messages_unacknowledged, consumers, memory. The canonical "is anything backing up?" check.'
+description: 'List the queues in the default vhost `/` with name, messages_ready, messages_unacknowledged, consumers, memory; queues in other vhosts (`rmq.list_vhosts`) are not shown. The canonical "is anything backing up?" check.'
 side_effects:
   - One CLI call.
   - Read-only.

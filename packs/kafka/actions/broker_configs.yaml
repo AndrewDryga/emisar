@@ -3,7 +3,7 @@ id: kafka.broker_configs
 title: Broker configs
 kind: exec
 risk: low
-description: List all broker-level configs (dynamic + static + defaults).
+description: List the dynamic config overrides set for one broker (`kafka-configs.sh --describe` without `--all`); static and default values are not shown.
 side_effects:
   - One admin request.
   - Read-only.

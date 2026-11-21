@@ -4,7 +4,7 @@ title: Start a Java Flight Recording
 kind: exec
 risk: medium
 description: >
-  Start a 60-second Java Flight Recording named "emisar". JFR is low-overhead (~1%). Pair with `jvm.jfr_dump` to retrieve the recording, then `jvm.jfr_stop` to end it.
+  Start a Java Flight Recording named "emisar" that runs for `duration` seconds (default 60), then stops itself and writes /tmp/<pid>-emisar.jfr. JFR is low-overhead (~1%). While it runs, `jvm.jfr_dump` snapshots it and `jvm.jfr_stop` ends it early; after it finishes, neither finds the recording by name.
 side_effects:
   - Starts a JFR session in the JVM.
   - Writes profile data to /tmp/<pid>-emisar.jfr.

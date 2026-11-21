@@ -1,9 +1,9 @@
 schema_version: 1
 id: mongo.oplog_size
-title: Oplog size + window
+title: Oplog size and entry count
 kind: exec
 risk: low
-description: 'Show oplog size + first/last timestamps + estimated time window. The canonical "how far can a secondary fall behind?" check.'
+description: 'Show oplog collection size, configured maximum size, and entry count (`collStats` on `local.oplog.rs`). Returns no timestamps; the oplog time window ("how far can a secondary fall behind?") is `mongo.replication_info`.'
 side_effects:
   - Reads oplog metadata.
   - Read-only.

@@ -2,7 +2,7 @@ schema_version: 1
 
 id: apache-httpd
 name: Apache HTTPD operations
-version: 0.1.19
+version: 0.1.20
 # 0.1.16 and below tallied verbatim request URIs including their query strings,
 # so access_top_urls returned one-shot reset/callback tokens to the model at a
 # no-approval tier.
@@ -43,7 +43,7 @@ setup:
       description: Path to the Apache access log for the access_top_* actions.
       default: /var/log/apache2/access.log
   notes:
-    - "Any of `HTTPD_STATUS_URL` you set must also be allowlisted in the runner's `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
+    - "Any of `HTTPD_STATUS_URL`, `HTTPD_ERROR_LOG`, or `HTTPD_ACCESS_LOG` you set must also be allowlisted in the runner's `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
     - "On RHEL-family installs the logs live under `/var/log/httpd` — set `HTTPD_ERROR_LOG` / `HTTPD_ACCESS_LOG` accordingly."
   host_access:
     - actions:

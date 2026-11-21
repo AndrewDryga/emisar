@@ -5,11 +5,14 @@ kind: exec
 risk: high
 description: >
   Compact one collection on the connected node. Reclaims disk for
-  WiredTiger after large deletes. BLOCKS reads/writes on the
-  collection during compaction. Run during a low-traffic window;
-  prefer running on a secondary first.
+  WiredTiger after large deletes. Compaction does not block CRUD on the
+  collection on supported releases, but it is I/O heavy: its frequent
+  checkpoints can raise read latency and replication lag and delay
+  backups while it runs. The command is not replicated, and a replica
+  set primary refuses it (no `force` is passed), so run it on each
+  secondary in a low-traffic window.
 side_effects:
-  - Collection's reads/writes blocked until compaction finishes.
+  - Heavy disk I/O and checkpoints until compaction finishes; reads and writes keep working but may slow.
   - Disk usage drops.
   - Other collections unaffected.
 args:

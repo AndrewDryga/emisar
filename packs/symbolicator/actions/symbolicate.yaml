@@ -23,7 +23,11 @@ args:
       JSON object with `modules` (each with type, debug_id, code_file,
       image_addr, image_size) and `stacktraces` (each with `frames` carrying
       instruction_addr). An `options` object is optional. Any other key,
-      including `sources`, is dropped before the request is sent.
+      including `sources`, is dropped before the request is sent. A run
+      dispatched through Emisar carries at most 32 KiB for the whole
+      JSON-encoded arguments object, so a remote payload must fit in that
+      after JSON escaping; the 256 KiB bound applies only to a local
+      `emisar action run`.
     validation:
       max_length: 262144
 execution:
@@ -34,8 +38,8 @@ execution:
     # URL this host would then fetch, which is the one thing a symbolication
     # request must not be able to choose. Dropping it also means the answer
     # always comes from the operator's own sources. The payload arrives as a
-    # positional argument and the body reaches curl on stdin, so neither is
-    # ever part of the program text or the process arguments.
+    # positional argument, outside the shell program text. The rebuilt body
+    # reaches curl on stdin rather than curl's argv.
     argv:
       - "-c"
       - >-

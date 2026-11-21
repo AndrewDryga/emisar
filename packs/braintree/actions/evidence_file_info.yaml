@@ -4,7 +4,7 @@ title: Inspect an evidence file
 kind: script
 risk: low
 description: "Show the size, type, and SHA256 of one staged PDF, PNG, or JPEG without exposing file contents."
-side_effects: ["Reads selected billing information from Braintree."]
+side_effects: ["Reads one file from BRAINTREE_EVIDENCE_DIR on the runner; makes no Braintree request."]
 args:
   - name: file_name
     type: string

@@ -4,7 +4,7 @@ title: dig (DNS lookup)
 kind: exec
 risk: low
 description: >
-  `dig +short <type> <name> @<resolver>` — look up one DNS record. Type defaults to A; specify AAAA, MX, NS, TXT, CNAME, SRV. Resolver defaults to system default.
+  `dig +short <type> <name> @<resolver>` — look up one DNS record. Type defaults to A; specify AAAA, MX, NS, TXT, CNAME, SRV, PTR, SOA, or CAA. Resolver defaults to system default.
 side_effects:
   - One DNS query.
   - Read-only.

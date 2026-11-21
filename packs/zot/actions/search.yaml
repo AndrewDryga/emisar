@@ -8,7 +8,9 @@ description: >
   vulnerability summary, via the zot search GraphQL extension. This is how you
   get per-repo storage size + CVE summary — zot has no plain storage-usage
   endpoint, and garbage collection is not inspectable over HTTP. The GraphQL
-  query is read-only (a RepoListWithNewestImage read). Read-only.
+  query is read-only (a RepoListWithNewestImage read). Returns only the first
+  page: up to 50 repositories, most recently updated first, with no total
+  count, so a larger registry's inventory is incomplete. Read-only.
 side_effects:
   - One read-only HTTP POST to the zot /v2/_zot/ext/search GraphQL endpoint.
   - Read-only — the query only reads; it never pushes, deletes, or mutates.
@@ -31,5 +33,5 @@ output:
   max_stdout_bytes: 1048576
   max_stderr_bytes: 8192
 examples:
-  - title: Repo inventory with size and newest-image vuln summary
+  - title: Size and newest-image vuln summary for the 50 most recently updated repos
     args: {}

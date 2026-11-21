@@ -67,4 +67,6 @@ output:
   max_stderr_bytes: 8192
 examples:
   - title: List a customer's open invoices
-    args: {}
+    args:
+      customer: "cus_PqL30CZ6qsJmT1a"
+      status: "open"

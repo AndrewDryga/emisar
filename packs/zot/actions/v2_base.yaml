@@ -5,8 +5,9 @@ kind: script
 risk: low
 description: >
   Check the OCI distribution base endpoint. A 200 confirms the registry is up and
-  speaking the v2 API, and the response advertises the supported
-  distribution-spec version. Use as a reachability/version check.
+  speaking the v2 API. Reachability only: the action prints just the response
+  body, not the version header; `zot.mgmt` reports the distribution-spec
+  version (distSpecVersion).
 side_effects:
   - One read-only HTTP GET to the zot /v2/ endpoint.
   - Read-only — never pushes or deletes.
@@ -26,5 +27,5 @@ output:
   max_stdout_bytes: 65536
   max_stderr_bytes: 8192
 examples:
-  - title: Base/version check
+  - title: Reachability check
     args: {}

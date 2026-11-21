@@ -2,14 +2,16 @@ schema_version: 1
 id: rpm.dnf_reinstall
 title: dnf reinstall -y <package>
 kind: exec
-risk: medium
+risk: high
 description: >
   Reinstall one package to fix a corrupted on-disk state (missing
-  files, bad checksums). Same version, same config.
+  files, bad checksums). Same version, same config. Runs the
+  package's install scriptlets, which can restart its service, the
+  same consequence that makes install, upgrade, and remove high risk.
 side_effects:
   - Package files restored from the repo.
   - Marked config files (rpmnoreplace) preserved.
-  - Service may restart if scriptlets do that.
+  - Package scriptlets run as root and may restart the package's service.
 args:
   - name: package
     type: string

@@ -1,9 +1,9 @@
 schema_version: 1
 id: kafka.cluster_info
-title: Cluster metadata
+title: Check broker connectivity
 kind: exec
 risk: low
-description: Show broker IDs, controller, cluster ID. Read-only.
+description: Check that the bootstrap brokers answer, showing the first 50 lines of `kafka-broker-api-versions.sh` (broker address and ID, then the API versions it supports). It does not report the controller or cluster ID. Read-only.
 side_effects:
   - One metadata request.
   - Read-only.

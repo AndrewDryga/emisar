@@ -71,8 +71,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         self.reply(404, redfish_error("Resource not found"))
 
-    # The three risky actions are all POSTs, and the fixture had no do_POST at
-    # all — so nothing had ever exercised the URL, the method, the auth header,
+    # The three POST risky actions covered here (delete_job's DELETE is not),
+    # and the fixture had no do_POST at all — so nothing had ever exercised the URL, the method, the auth header,
     # or the JSON body any of them sends. A mock cannot prove a real BMC obeys,
     # but it proves the pack asks correctly, which is where a Redfish call
     # actually goes wrong.

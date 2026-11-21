@@ -28,6 +28,8 @@ cases:
       exit: [22]
       reason_contains: [process exited with code 22]
       stderr_contains: ["curl: (22)"]
+      # The provider's error body reaches the operator.
+      stdout_contains: [Forbidden]
   - action: typesense.stats
     arrange:
       - argv: [/bin/sh, -c, 'curl -fsS -H "X-TYPESENSE-API-KEY: $TYPESENSE_API_KEY" "$TYPESENSE_URL/health" >/dev/null']

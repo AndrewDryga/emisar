@@ -87,5 +87,7 @@ output:
   max_stdout_bytes: 65536
   max_stderr_bytes: 8192
 examples:
-  - title: List refunds issued this week
-    args: {}
+  - title: List refunds issued during the week of 7 September 2026
+    args:
+      created_from: "2026-09-07T00:00:00Z"
+      created_to: "2026-09-14T00:00:00Z"

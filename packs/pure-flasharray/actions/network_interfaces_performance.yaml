@@ -28,8 +28,9 @@ args:
     required: false
     default: auto
     description: >
-      Interval between samples. auto picks one that keeps a window to a dozen or
-      so samples per interface.
+      Interval between samples. auto gives 10-21 samples per interface for windows up
+      to 7d, 90 at 30d and 90d, and 365 at 1y, so 1y with auto needs a limit of
+      at least 365.
     validation:
       enum: [auto, 30s, 5m, 30m, 2h, 8h, 24h]
   - name: names

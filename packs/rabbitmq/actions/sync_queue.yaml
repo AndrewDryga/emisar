@@ -4,7 +4,9 @@ title: rabbitmqctl sync_queue
 kind: exec
 risk: medium
 description: >
-  Force a mirrored classic queue to sync with its master. Producers
+  Force a mirrored classic queue to sync with its master. Needs RabbitMQ
+  3.x with classic queue mirroring; RabbitMQ 4.0 removed mirroring, so
+  there is nothing to sync on 4.x. Producers
   and consumers continue to operate; the sync runs in the background.
   Use when an unsynced mirror is blocking a master failover.
 side_effects:
