@@ -2402,6 +2402,24 @@ defmodule Emisar.AuthTest do
     end
   end
 
+  describe "mfa_enrollment_proof_current?/2" do
+    test "holds only for a fresh proof of the subject's own Member" do
+      {owner, account, _subject} = Fixtures.Subjects.owner_subject()
+      session_token = Fixtures.Auth.create_session_token!(owner, :magic_link, nil)
+      subject = Fixtures.Subjects.subject_for(owner, session: session_token)
+
+      {:ok, proof} = Auth.verify_mfa_enrollment_code(issue_mfa_enrollment_code(subject), subject)
+      assert Auth.mfa_enrollment_proof_current?(proof, subject)
+
+      # Another Member of the same workspace cannot borrow it.
+      other = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+      refute Auth.mfa_enrollment_proof_current?(proof, Fixtures.Subjects.subject_for(other))
+
+      refute Auth.mfa_enrollment_proof_current?("forged", subject)
+      refute Auth.mfa_enrollment_proof_current?(nil, subject)
+    end
+  end
+
   describe "issue_mfa_enrollment_proof_for_sso/3" do
     setup do
       account = Fixtures.Accounts.create_account(plan: "team")

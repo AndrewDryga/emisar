@@ -177,11 +177,11 @@ defmodule EmisarWeb.DashboardLive do
     do: assign(socket, :team_security, team_security(socket.assigns.current_subject))
 
   defp refresh_agents(socket) do
-    api_keys_read = ApiKeys.list_api_keys_for_account(socket.assigns.current_subject)
+    posture_read = ApiKeys.summarize_agent_posture(socket.assigns.current_subject)
 
     socket
-    |> assign(:agents, agents_summary(list_or_empty(api_keys_read)))
-    |> put_setup_read(:api_keys, api_keys_read)
+    |> assign(:agents, agents_summary(posture_read))
+    |> put_setup_read(:api_keys, posture_read)
   end
 
   defp refresh_billing(socket) do
@@ -327,25 +327,22 @@ defmodule EmisarWeb.DashboardLive do
   defp read_ok?({:ok, _, _}), do: true
   defp read_ok?(_), do: false
 
-  # The LLM-agents pillar's live facts, from the same MCP-key list the agents
-  # page shows and the same domain reading of it. The pillar counts the keys an
-  # agent can still authenticate with (`live`), so an account left holding only
-  # revoked or expired credentials falls back to the connect invitation.
-  defp agents_summary(api_keys) do
-    now = DateTime.utc_now()
-
-    summary =
-      api_keys
-      |> Enum.map(&ApiKeys.key_facts(&1, now))
-      |> ApiKeys.summarize_key_facts()
-
+  # The LLM-agents pillar's live facts: the account-wide posture over every
+  # visible MCP key (never one list page), read the way the agents page reads
+  # its keys. The pillar counts the keys an agent can still authenticate with,
+  # so an account left holding only revoked or expired credentials falls back to
+  # the connect invitation. An unavailable read shows the same empty pillar.
+  defp agents_summary({:ok, posture}) do
     %{
-      total: summary.live,
-      connected: summary.connected,
-      active_today: summary.active_today,
-      last_call_at: summary.last_call_at
+      total: posture.live,
+      connected: posture.connected,
+      active_today: posture.active_today,
+      last_call_at: posture.last_call_at
     }
   end
+
+  defp agents_summary(_unavailable),
+    do: %{total: 0, connected: 0, active_today: 0, last_call_at: nil}
 
   # The team tile's facts, or :unavailable when the read fails — so it shows "—"
   # rather than a misleading "0 / 0" that reads as an empty team. Accounts owns

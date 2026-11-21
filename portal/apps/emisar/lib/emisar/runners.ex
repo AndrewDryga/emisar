@@ -2066,25 +2066,7 @@ defmodule Emisar.Runners do
 
   defp stale_heartbeat?(_invalid, _now), do: false
 
-  # Lease reclamation can briefly leave the old and new socket metas under one
-  # Presence key. Presence does not promise list order, so prefer the newest
-  # connection generation, then its newest heartbeat/online timestamp.
-  defp latest_connection_meta(metas) do
-    Enum.max_by(metas, fn meta ->
-      {
-        integer_meta(meta, :connection_generation),
-        integer_meta(meta, :last_heartbeat_at),
-        integer_meta(meta, :online_at)
-      }
-    end)
-  end
-
-  defp integer_meta(meta, key) do
-    case Map.get(meta, key) do
-      value when is_integer(value) -> value
-      _invalid -> -1
-    end
-  end
+  defp latest_connection_meta(metas), do: ConnectionChange.latest_meta(metas)
 
   # SQL counts what a row can answer; the rest is arithmetic over those. Among
   # active runners, signed-only is blocked and the unsigned remainder splits
@@ -2157,7 +2139,25 @@ defmodule Emisar.Runners do
   updates are separated from real connects and disconnects here; anything that
   isn't a presence diff yields the empty change.
   """
-  def normalize_connection_change(event), do: ConnectionChange.normalize(event)
+  #
+  # A leave names one socket, not the runner: lease takeover or a late replica
+  # leave can drop the old socket while the new one is still tracked. Every
+  # runner a diff names is therefore resolved against the account's current
+  # Presence before a subscriber projects it, so a single-runner page never
+  # shows a connected runner offline.
+  def normalize_connection_change(event) do
+    change = ConnectionChange.normalize(event)
+
+    case event do
+      %{topic: "presence:account:" <> _account_id = topic} ->
+        if ConnectionChange.names_runners?(change),
+          do: ConnectionChange.reconcile(change, Presence.list(topic)),
+          else: change
+
+      _other ->
+        change
+    end
+  end
 
   @doc "Whether a change contains a real connect or disconnect, not just refreshed metadata."
   def connection_topology_changed?(change), do: ConnectionChange.topology_changed?(change)
@@ -2211,16 +2211,7 @@ defmodule Emisar.Runners do
 
   defp put_connection_meta(runner, _absent), do: %{runner | online?: false}
 
-  defp unix_to_datetime(nil), do: nil
-
-  defp unix_to_datetime(unix) when is_integer(unix) do
-    case DateTime.from_unix(unix) do
-      {:ok, datetime} -> datetime
-      {:error, _reason} -> nil
-    end
-  end
-
-  defp unix_to_datetime(_invalid), do: nil
+  defp unix_to_datetime(unix), do: ConnectionChange.unix_to_datetime(unix)
 
   # -- Enrollment keys -------------------------------------------------------
 

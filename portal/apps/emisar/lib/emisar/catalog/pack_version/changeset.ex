@@ -59,7 +59,8 @@ defmodule Emisar.Catalog.PackVersion.Changeset do
       hash: pack_version.pending_hash,
       pending_hash: nil,
       trust_state: :trusted,
-      trusted_manifest: trusted_manifest
+      trusted_manifest: trusted_manifest,
+      trust_revoked_at: nil
     })
     |> validate_required([:hash])
     |> validate_hashes()
@@ -94,6 +95,18 @@ defmodule Emisar.Catalog.PackVersion.Changeset do
   end
 
   @doc """
+  Reject a new hash on a row whose recorded `hash` an operator revoked. The
+  row returns to `:rejected`: the revoked `hash` + `trusted_manifest` stay on
+  record and are never reinstated here. The refused `pending_hash` is
+  dropped so only an explicit Trust (`restore_trust/1`) re-adopts the
+  revoked bytes; a runner advertising the refused hash again re-opens the
+  review, as it does after a rejected drift on a trusted row.
+  """
+  def reject_revoked(%PackVersion{} = pack_version) do
+    change(pack_version, pending_hash: nil, trust_state: :rejected)
+  end
+
+  @doc """
   Reject a never-trusted pack (no prior `hash` to fall back to). Marks the row
   `:rejected` — the row PERSISTS so the `runner_actions` referencing this
   version resolve to an explicit untrusted decision and dispatch fails closed
@@ -117,6 +130,7 @@ defmodule Emisar.Catalog.PackVersion.Changeset do
     pack_version
     |> change(%{
       trust_state: :rejected,
+      trust_revoked_at: DateTime.utc_now(),
       retirement_overridden_at: nil,
       retirement_overridden_by_membership_id: nil
     })
@@ -129,7 +143,7 @@ defmodule Emisar.Catalog.PackVersion.Changeset do
   """
   def restore_trust(%PackVersion{} = pack_version) do
     pack_version
-    |> change(trust_state: :trusted)
+    |> change(trust_state: :trusted, trust_revoked_at: nil)
     |> validate_required([:hash])
   end
 

@@ -127,6 +127,14 @@ defmodule Emisar.Accounts.Membership.Changeset do
     |> put_access_the_role_carries()
   end
 
+  # The directory has no group snapshot to recompute from, so the pending
+  # marker is released onto the role and reach the member already holds.
+  def settle_directory_authorization(%Membership{} = membership, provider_id) do
+    membership
+    |> change()
+    |> put_directory_authorization(provider_id)
+  end
+
   def sync_runner_authorization(
         %Membership{} = membership,
         %RunnerAccess{} = access,

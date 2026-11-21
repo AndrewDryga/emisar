@@ -57,6 +57,31 @@ defmodule Emisar.Runbooks.SchedulerTest do
     assert Repo.reload!(execution(result.execution_id)).status == :succeeded
   end
 
+  test "an attempt carries a reason at the published limit verbatim", %{
+    account: account,
+    subject: subject,
+    runner: runner
+  } do
+    runbook =
+      published_runbook(
+        subject,
+        definition([stage("change", "sequential", 4, [step("inspect", runner.group)])])
+      )
+
+    limit = Runs.justification_limit!(:reason)
+    reason = String.duplicate("r", limit)
+
+    assert {:ok, result} = Runbooks.dispatch_runbook(runbook, reason, subject)
+    assert [attempt] = runs(account.id, result.execution_id)
+    assert attempt.reason == reason
+    assert attempt.runbook_step_id == "inspect"
+
+    assert {:error, %Ecto.Changeset{} = changeset} =
+             Runbooks.dispatch_runbook(runbook, reason <> "r", subject)
+
+    assert errors_on(changeset).reason != []
+  end
+
   test "parallel stages enforce a sliding max_parallel cap", %{
     account: account,
     subject: subject,
@@ -254,6 +279,46 @@ defmodule Emisar.Runbooks.SchedulerTest do
 
     assert Repo.reload!(item).status == :succeeded
     assert Repo.reload!(execution(result.execution_id)).status == :succeeded
+  end
+
+  test "a wait stranded by a halt leaves the recovery counts", %{
+    account: account,
+    subject: subject,
+    runner: runner
+  } do
+    runbook =
+      published_runbook(
+        subject,
+        definition([stage("wait", "sequential", 1, [waiting_step("observe", runner.group, [])])])
+      )
+
+    assert {:ok, result} = Runbooks.dispatch_runbook(runbook, "stranded wait", subject)
+    assert [first] = runs(account.id, result.execution_id)
+
+    assert {:ok, _first} =
+             Fixtures.Runs.finish(first, %{
+               "status" => "success",
+               "structured_output" => %{"ready" => false}
+             })
+
+    item = item(result.execution_id)
+    assert item.status == :waiting
+
+    item
+    |> Ecto.Changeset.change(next_attempt_at: DateTime.add(DateTime.utc_now(), -60, :second))
+    |> Repo.update!()
+
+    assert %{waiting: 1, overdue: 1} = Scheduler.Recovery.recovery_stats()
+
+    result.execution_id
+    |> execution()
+    |> Ecto.Changeset.change(status: :halted)
+    |> Repo.update!()
+
+    stats = Scheduler.Recovery.recovery_stats()
+    assert stats.waiting == 0
+    assert stats.overdue == 0
+    assert stats.recovery_lag_seconds == 0
   end
 
   test "waits stop at the attempt ceiling and never retry an action failure", %{

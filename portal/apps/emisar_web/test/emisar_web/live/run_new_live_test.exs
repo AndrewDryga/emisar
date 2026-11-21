@@ -583,6 +583,49 @@ defmodule EmisarWeb.RunNewLiveTest do
     assert html =~ "path: /var/log/auth.log"
   end
 
+  test "a sensitive arg is masked in its field and hidden in the confirm until revealed",
+       %{conn: conn} do
+    {conn, _owner, account} = register_and_log_in(conn)
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+    action =
+      Fixtures.Catalog.create_action(
+        runner: runner,
+        action_id: "cdn.purge_url",
+        risk: "high",
+        args_schema: %{
+          "args" => [
+            %{"name" => "url", "type" => "string", "required" => true, "sensitive" => true},
+            %{"name" => "zone", "type" => "string", "required" => true}
+          ]
+        }
+      )
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
+
+    assert has_element?(lv, ~s(input[name="args[url]"][type="password"][autocomplete="off"]))
+    assert has_element?(lv, ~s(input[name="args[zone]"][type="text"]))
+    assert has_element?(lv, "#dispatch_form", "· sensitive")
+
+    lv
+    |> form("#dispatch_form", %{
+      "args" => %{"url" => "https://cdn.test/private-token", "zone" => "edge"},
+      "reason" => "x"
+    })
+    |> render_change()
+
+    radius = lv |> element("#confirm-dispatch") |> render()
+    assert radius =~ "zone: edge"
+    assert radius =~ "url: (hidden)"
+
+    # The value is reachable only by opening the reveal deliberately.
+    assert has_element?(
+             lv,
+             "#confirm-dispatch-sensitive:not([open])",
+             "url: https://cdn.test/private-token"
+           )
+  end
+
   test "a low-risk action's dispatch button does not confirm", %{conn: conn} do
     {conn, _owner, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id)

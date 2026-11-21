@@ -86,6 +86,43 @@ defmodule Emisar.Runbooks.ExecutionApprovalTest do
              Approvals.list_pending_approval_requests(approver)
   end
 
+  test "a 200-character rule name survives the item and run policy snapshots", %{
+    account: account,
+    approver: approver,
+    runner: runner,
+    subject: subject
+  } do
+    name = String.duplicate("r", 200)
+    policy = Fixtures.Policies.create_policy(account_id: account.id)
+
+    rules =
+      Map.put(policy.rules, "overrides", [
+        %{"name" => name, "action" => "linux.*", "decision" => "require_approval"}
+      ])
+
+    _ = Fixtures.Policies.create_policy(account_id: account.id, rules: rules)
+    runbook = published_runbook(subject, required_definition(runner.group))
+
+    assert {:ok, result} = Runbooks.dispatch_runbook(runbook, "long rule name", subject)
+
+    reason = "The account policy rule “#{name}” requires approval for this high-risk action."
+    item = ExecutionItem.Query.by_execution_id(result.execution_id) |> Repo.one!()
+    assert item.policy_reason == reason
+    assert item.matched_rules == [name]
+
+    assert {:ok, [request], _metadata} = Approvals.list_pending_approval_requests(approver)
+
+    assert {:ok, {_approved, :runbook_execution}} =
+             Approvals.approve_request(request, approver, "change window confirmed")
+
+    assert [run] = Runs.list_runs_for_runbook_execution(account.id, result.execution_id)
+
+    assert run.policy_reason ==
+             reason <> " An approved runbook execution satisfied that requirement."
+
+    assert run.matched_rules == [name]
+  end
+
   test "reviewed older release survives publication through approval and execution", %{
     account: account,
     approver: approver,

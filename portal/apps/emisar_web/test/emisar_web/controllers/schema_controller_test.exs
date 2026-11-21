@@ -13,12 +13,29 @@ defmodule EmisarWeb.SchemaControllerTest do
       assert body == Runbooks.definition_schema()
     end
 
-    test "is cached as immutable — a new version ships at a new URL", %{conn: conn} do
-      conn = get(conn, ~p"/schemas/runbook-definition-v1.json")
+    test "is cached briefly and revalidated against its content ETag", %{conn: conn} do
+      first = get(conn, ~p"/schemas/runbook-definition-v1.json")
 
-      assert get_resp_header(conn, "cache-control") == [
-               "public, max-age=31536000, immutable"
+      assert get_resp_header(first, "cache-control") == [
+               "public, max-age=3600, must-revalidate"
              ]
+
+      assert [etag] = get_resp_header(first, "etag")
+
+      revalidated =
+        build_conn()
+        |> put_req_header("if-none-match", etag)
+        |> get(~p"/schemas/runbook-definition-v1.json")
+
+      assert revalidated.status == 304
+      assert revalidated.resp_body == ""
+
+      changed =
+        build_conn()
+        |> put_req_header("if-none-match", ~s("stale"))
+        |> get(~p"/schemas/runbook-definition-v1.json")
+
+      assert json_response(changed, 200) == Runbooks.definition_schema()
     end
   end
 end

@@ -3903,10 +3903,21 @@ defmodule Emisar.RunnersTest do
     test "returns nil for an expired key", %{subject: subject} do
       past = DateTime.utc_now() |> DateTime.add(-3600, :second) |> DateTime.truncate(:microsecond)
 
-      {:ok, raw, _key} =
-        Runners.create_enrollment_key(%{reusable: true, expires_at: past}, subject)
+      {:ok, raw, key} = Runners.create_enrollment_key(%{reusable: true}, subject)
+      Fixtures.Runners.set_enrollment_key_state(key, expires_at: past)
 
       refute Runners.peek_enrollment_key_by_secret(raw)
+    end
+
+    test "an expiry that is not in the future is refused and mints nothing", %{subject: subject} do
+      past = DateTime.add(DateTime.utc_now(), -60, :second)
+      before = Repo.aggregate(EnrollmentKey, :count)
+
+      assert {:error, changeset} =
+               Runners.create_enrollment_key(%{reusable: true, expires_at: past}, subject)
+
+      assert "must be in the future" in errors_on(changeset).expires_at
+      assert Repo.aggregate(EnrollmentKey, :count) == before
     end
 
     test "returns nil for a single-use key after first use", %{subject: subject} do

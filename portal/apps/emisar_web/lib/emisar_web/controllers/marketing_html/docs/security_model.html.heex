@@ -142,7 +142,8 @@
           The runner config supports <code>admission.allow</code>
           and <code>admission.deny</code>
           glob lists over action IDs. For example, use <code>cassandra.*</code>
-          or <code>*.repair</code>. A ceiling of <code>admission.max_risk: medium</code>
+          or <code>cassandra.nodetool_repair</code>. A ceiling of
+          <code>admission.max_risk: medium</code>
           blocks high-risk and critical actions, regardless of cloud policy. It is not a
           read-only mode: some medium-risk actions change state. Use an explicit action
           allowlist and host permissions when you need read-only access. The runner

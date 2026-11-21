@@ -50,6 +50,58 @@ defmodule Emisar.Runners.ConnectionChangeTest do
     end
   end
 
+  describe "normalize_connection_change/1 against live Presence" do
+    test "a superseded socket's leave keeps a still-tracked runner online, on its newest socket" do
+      account_id = Ecto.UUID.generate()
+      runner_id = Ecto.UUID.generate()
+      topic = Runners.Presence.topic(account_id)
+      heartbeat = 1_721_234_567
+      :ok = Emisar.PubSub.subscribe(topic)
+
+      new_socket =
+        start_supervised!(
+          {Task,
+           fn ->
+             {:ok, _ref} =
+               Runners.Presence.track(self(), topic, runner_id, %{
+                 connection_generation: 2,
+                 action_load: 1,
+                 last_heartbeat_at: heartbeat
+               })
+
+             receive do
+               :stop -> :ok
+             end
+           end}
+        )
+
+      assert_receive %{event: "presence_diff", payload: %{joins: %{^runner_id => _}}}, 1_000
+
+      leave = %{
+        topic: topic,
+        event: "presence_diff",
+        payload: %{joins: %{}, leaves: %{runner_id => metas(%{connection_generation: 1})}}
+      }
+
+      change = Runners.normalize_connection_change(leave)
+      refute Runners.connection_topology_changed?(change)
+      assert Runners.project_connection(:online, runner_id, change) == :online
+
+      runner = Runners.project_runner_connection(%Runners.Runner{id: runner_id}, change)
+      assert runner.online?
+      assert runner.action_load == 1
+      assert runner.last_heartbeat_at == DateTime.from_unix!(heartbeat)
+
+      # Once the last socket is gone too, the same leave is a real disconnect.
+      send(new_socket, :stop)
+      assert_receive %{event: "presence_diff", payload: %{leaves: %{^runner_id => _}}}, 1_000
+
+      change = Runners.normalize_connection_change(leave)
+      assert Runners.connection_topology_changed?(change)
+      assert Runners.project_connection(:online, runner_id, change) == :offline
+    end
+  end
+
   describe "connection_topology_changed?/1" do
     test "true for a join and for a leave" do
       joined = Runners.normalize_connection_change(presence_diff(%{"a" => metas(%{})}, %{}))

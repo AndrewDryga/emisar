@@ -787,9 +787,15 @@ defmodule Emisar.OAuth do
       not s256_code_challenge?(params["code_challenge"]) -> {:error, "invalid_request"}
       params["code_challenge_method"] not in [nil, "S256"] -> {:error, "invalid_request"}
       params["resource"] != PublicUrl.url("/api/mcp/rpc") -> {:error, "invalid_target"}
+      not optional_string?(params["scope"]) -> {:error, "invalid_request"}
+      not optional_string?(params["state"]) -> {:error, "invalid_request"}
       true -> :ok
     end
   end
+
+  # `scope[]=…` or `state[k]=…` decodes to a list or map: a malformed request,
+  # refused before anything reads or mints from it.
+  defp optional_string?(value), do: is_nil(value) or is_binary(value)
 
   # RFC 7636 §4.2 — an S256 challenge is the unpadded base64url encoding of a
   # 32-byte digest, so exactly 43 characters of that alphabet. Anything else is

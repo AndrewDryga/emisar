@@ -33,14 +33,12 @@ defmodule Emisar.Seeds.ActionRuns do
        "/dev/nvme0n1p2  1.8T  1.4T  316G  82% /var/lib/data\n"}
   ]
 
+  # The shape Caddy's admin API returns for GET /reverse_proxy/upstreams: active
+  # requests and remembered passive-check failures per upstream, no health flag.
   @caddy_upstreams_stdout [
     {"stdout",
-     Jason.encode!(%{
-       "upstreams" => [
-         %{"address" => "10.42.8.12:8443", "healthy" => true, "requests" => 1284},
-         %{"address" => "10.42.8.13:8443", "healthy" => true, "requests" => 1198}
-       ]
-     }) <> "\n"}
+     ~s([{"address":"10.42.8.12:8443","num_requests":3,"fails":0},) <>
+       ~s({"address":"10.42.8.13:8443","num_requests":2,"fails":0}]\n)}
   ]
 
   @caddy_access_stdout [

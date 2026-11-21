@@ -224,8 +224,8 @@ defmodule Emisar.Seeds.RunbookExecutions do
               item.output_plan,
               item.success_plan,
               %{
-                "structured_output" => %{"healthy" => true, "upstreams" => 2},
-                "stdout" => "{\"healthy\":true,\"upstreams\":2}\n",
+                "stdout" =>
+                  "[{\"address\":\"10.0.10.11:8080\",\"num_requests\":0,\"fails\":0},{\"address\":\"10.0.10.12:8080\",\"num_requests\":0,\"fails\":0}]\n",
                 "stderr" => ""
               }
             )
@@ -404,7 +404,10 @@ defmodule Emisar.Seeds.RunbookExecutions do
   end
 
   defp preview_chunks(%ExecutionItem{action_id: "caddy.reverse_proxy_upstreams"}) do
-    [{"stdout", "{\"healthy\":true,\"upstreams\":2}\n"}]
+    [
+      {"stdout",
+       "[{\"address\":\"10.0.10.11:8080\",\"num_requests\":0,\"fails\":0},{\"address\":\"10.0.10.12:8080\",\"num_requests\":0,\"fails\":0}]\n"}
+    ]
   end
 
   defp preview_chunks(%ExecutionItem{}) do
@@ -416,8 +419,9 @@ defmodule Emisar.Seeds.RunbookExecutions do
 
   defp executed_command(%ExecutionItem{action_id: "caddy.version"}), do: "caddy version"
 
-  defp executed_command(%ExecutionItem{action_id: "caddy.reverse_proxy_upstreams"}),
-    do: ~s(/bin/sh -c 'curl -fsS "${CADDY_ADMIN:-http://127.0.0.1:2019}/reverse_proxy/upstreams"')
+  defp executed_command(%ExecutionItem{action_id: "caddy.reverse_proxy_upstreams"}) do
+    ~s(/bin/sh -c 'curl -q -fsS --globoff --proto =http,https "${CADDY_ADMIN:-http://127.0.0.1:2019}/reverse_proxy/upstreams"')
+  end
 
   defp executed_command(%ExecutionItem{}), do: nil
 end

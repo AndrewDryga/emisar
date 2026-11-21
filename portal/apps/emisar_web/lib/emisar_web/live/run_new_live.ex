@@ -111,18 +111,27 @@ defmodule EmisarWeb.RunNewLive do
   # disable-with spinner. `risk` is an Ecto.Enum atom.
   defp dispatch_confirm_required?(%{risk: risk}), do: risk in [:high, :critical]
 
+  # A pack-declared sensitive arg is masked here as in its field; the operator
+  # who needs to check it opens `sensitive_arg_values/2` deliberately.
   defp args_blast_radius(args_schema, params) do
     lines =
       Enum.flat_map(args_schema, fn arg ->
         name = arg["name"]
 
-        case params[name] do
-          value when value in [nil, ""] -> []
-          value -> ["• #{name}: #{clip_arg(value)}"]
+        case {params[name], arg["sensitive"]} do
+          {value, _sensitive} when value in [nil, ""] -> []
+          {_value, true} -> ["• #{name}: (hidden)"]
+          {value, _sensitive} -> ["• #{name}: #{clip_arg(value)}"]
         end
       end)
 
     if lines == [], do: "", else: "Arguments:\n" <> Enum.join(lines, "\n")
+  end
+
+  defp sensitive_arg_values(args_schema, params) do
+    for %{"sensitive" => true, "name" => name} <- args_schema,
+        params[name] not in [nil, ""],
+        do: "• #{name}: #{clip_arg(params[name])}"
   end
 
   defp clip_arg(value) do
@@ -615,6 +624,18 @@ defmodule EmisarWeb.RunNewLive do
               >
                 {args_blast_radius(@args_schema, @form.params)}
               </span>
+              <details
+                :if={sensitive_arg_values(@args_schema, @form.params) != []}
+                id="confirm-dispatch-sensitive"
+                class="mt-2"
+              >
+                <summary class="cursor-pointer text-xs text-zinc-400 hover:text-zinc-200">
+                  Show sensitive values
+                </summary>
+                <span class="mt-1 block whitespace-pre-line">
+                  {Enum.join(sensitive_arg_values(@args_schema, @form.params), "\n")}
+                </span>
+              </details>
             </:body>
           </.confirm_dialog>
         </section>
@@ -635,8 +656,19 @@ defmodule EmisarWeb.RunNewLive do
     "duration" => {"text", "Use a duration such as 30s, 5m, or 2h."}
   }
 
-  defp input_type_for(_type, [_option | _rest]), do: {"select", nil}
-  defp input_type_for(type, []), do: Map.get(@input_type_for, type, {"text", nil})
+  defp input_type_for(_type, [_option | _rest], _sensitive?), do: {"select", nil}
+
+  # A sensitive free-form value is masked like the runbook form's sensitive
+  # inputs; selects and checkboxes stay as they are.
+  defp input_type_for(type, [], sensitive?) do
+    case Map.get(@input_type_for, type, {"text", nil}) do
+      {input_type, hint} when sensitive? and input_type in ["text", "number"] ->
+        {"password", hint}
+
+      control ->
+        control
+    end
+  end
 
   defp input_options(%{"type" => type}) when type in ["boolean", "string_array", "integer_array"],
     do: []
@@ -712,13 +744,15 @@ defmodule EmisarWeb.RunNewLive do
   defp arg_input(assigns) do
     type = assigns.arg["type"]
     options = input_options(assigns.arg)
-    {input_type, type_hint} = input_type_for(type, options)
+    sensitive? = assigns.arg["sensitive"] == true
+    {input_type, type_hint} = input_type_for(type, options, sensitive?)
 
     assigns =
       assign(assigns,
         input_type: input_type,
         options: options,
         prompt: input_prompt(input_type, options),
+        sensitive?: sensitive?,
         hint: if(input_type == "select", do: assigns.arg["description"], else: type_hint)
       )
 
@@ -736,8 +770,11 @@ defmodule EmisarWeb.RunNewLive do
         max={input_bound(@arg, "max")}
         maxlength={input_maxlength(@arg)}
         step={input_step(@arg)}
+        autocomplete={if(@sensitive?, do: "off")}
       />
-      <p :if={@hint} class="mt-1 text-xs text-zinc-400">{@hint}</p>
+      <p :if={@hint || @sensitive?} class="mt-1 text-xs text-zinc-400">
+        {@hint}<span :if={@sensitive?} class="text-amber-300"> · sensitive</span>
+      </p>
     </div>
     """
   end

@@ -4,6 +4,7 @@ defmodule Emisar.Billing.Checkouts do
   alias Emisar.{Accounts, Billing, Crypto, Repo}
   alias Emisar.Billing.{CheckoutIntent, PaddleClient, Subscription}
   alias Emisar.Billing.{SubscriptionRetirement, SubscriptionRetirements}
+  require Logger
 
   @terminal [:subscribed, :canceled, :failed]
   @commercial_fields ~w[plan billing_interval customer_id price_id quantity]a
@@ -153,7 +154,7 @@ defmodule Emisar.Billing.Checkouts do
          :ok <- verify_transaction(intent, transaction) do
       recover_transaction(intent, transaction)
     else
-      _failure -> pending(intent, :invalid_provider_data)
+      _failure -> unrecovered(intent, :invalid_provider_data)
     end
   end
 
@@ -170,7 +171,10 @@ defmodule Emisar.Billing.Checkouts do
          {:ok, intent} <- transition(intent, &CheckoutIntent.Changeset.subscribe/1) do
       {:ok, intent}
     else
-      _unresolved -> {:error, :payment_reconciling}
+      _unresolved ->
+        # Paid but not yet a subscription: the customer is charged without the plan.
+        report_unrecovered(intent, :payment_reconciling)
+        {:error, :payment_reconciling}
     end
   end
 
@@ -193,7 +197,7 @@ defmodule Emisar.Billing.Checkouts do
     end
   end
 
-  defp recover_transaction(intent, _transaction), do: pending(intent, :invalid_provider_data)
+  defp recover_transaction(intent, _transaction), do: unrecovered(intent, :invalid_provider_data)
 
   defp unpaid_disposition(intent) do
     with_intent(intent, fn repo, account, subscription, current ->
@@ -525,6 +529,21 @@ defmodule Emisar.Billing.Checkouts do
   defp pending(intent, category) do
     _recorded = transition(intent, &CheckoutIntent.Changeset.record_failure(&1, category))
     {:error, :checkout_pending}
+  end
+
+  # The same pending answer, for a transaction the provider will not prove: it
+  # cannot settle by waiting, so it is reported. A young or ambiguous create
+  # reservation stays a quiet `pending/2`.
+  defp unrecovered(intent, category) do
+    report_unrecovered(intent, category)
+    pending(intent, category)
+  end
+
+  defp report_unrecovered(intent, category) do
+    Logger.warning("billing.checkout_recovery_failed",
+      account_id: intent.account_id,
+      error: inspect(category)
+    )
   end
 
   defp with_intent(intent, fun) do

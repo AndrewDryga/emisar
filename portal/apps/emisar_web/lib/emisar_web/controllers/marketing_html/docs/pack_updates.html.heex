@@ -103,9 +103,11 @@
 <span class="text-zinc-500">$</span> sudo emisar pack diff redis --stat</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The diff covers the files behind the pack's content hash: <.docs_inline_code>pack.yaml</.docs_inline_code>, the action
-        declarations, and the scripts. The command fetches and verifies the new version
+        declarations, and the scripts. The command fetches and verifies the current version
         the same way an update does, and it does not write to the packs directory or reload the
-        runner.
+        runner. A
+        <.docs_inline_code>--to</.docs_inline_code>
+        comparison is not hash-verified, because the registry index lists only current versions.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Read the diff for the contract changes: a removed or renamed action, and any

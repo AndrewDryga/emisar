@@ -292,7 +292,7 @@ defmodule Emisar.AuditTest do
           reason: "Investigate availability"
         })
 
-      assert {:ok, failed} = Runs.mark_refused(run, "Required\u202E executable is missing")
+      assert {:ok, failed} = Runs.mark_errored(run, "Required\u202E executable is missing")
       payload = failed |> Audit.run_event_changeset() |> Ecto.Changeset.get_field(:payload)
 
       assert payload[:error_message] == "Required executable is missing"

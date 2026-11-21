@@ -74,6 +74,24 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
   def not_expired(queryable \\ all(), %DateTime{} = now),
     do: where(queryable, [api_keys: k], is_nil(k.expires_at) or k.expires_at > ^now)
 
+  @doc "Keys an agent can still authenticate with at `now` — `ApiKeys.key_usable?/2` in SQL."
+  def usable(queryable \\ not_deleted(), %DateTime{} = now) do
+    queryable
+    |> not_revoked()
+    |> not_expired(now)
+    |> where([api_keys: k], not is_nil(k.created_by_membership_id))
+  end
+
+  @doc "One aggregate row: usable count, how many ever called, called since `since`, last call."
+  def select_agent_posture(queryable, %DateTime{} = since) do
+    select(queryable, [api_keys: k], %{
+      live: count(k.id),
+      connected: filter(count(k.id), not is_nil(k.last_used_at)),
+      active_today: filter(count(k.id), k.last_used_at >= ^since),
+      last_call_at: max(k.last_used_at)
+    })
+  end
+
   def expiring(queryable \\ all()),
     do: where(queryable, [api_keys: k], not is_nil(k.expires_at))
 

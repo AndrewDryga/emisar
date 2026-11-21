@@ -42,6 +42,14 @@ defmodule Emisar.Runners.EnrollmentKey.Changeset do
     # A max_uses of 0 mints a key that's dead on arrival (uses_count 0 >= 0).
     |> validate_number(:max_uses, greater_than: 0)
     |> drop_max_uses_unless_reusable()
+    # Likewise an expiry at or before now: the key would already be expired.
+    |> validate_change(:expires_at, &future_expiry_error/2)
+  end
+
+  defp future_expiry_error(:expires_at, expires_at) do
+    if DateTime.compare(expires_at, DateTime.utc_now()) == :gt,
+      do: [],
+      else: [expires_at: "must be in the future"]
   end
 
   # A single-use key is spent on its first registration, so a cap on top of it

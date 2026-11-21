@@ -2323,6 +2323,47 @@ defmodule Emisar.RunsTest do
       refute Map.has_key?(denied_event.payload, "reason")
     end
 
+    test "a 200-character rule name denies the dispatch and keeps its denial receipt" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      _ = Fixtures.Catalog.create_action(runner: runner, risk: "critical")
+      name = String.duplicate("d", 200)
+
+      _ =
+        Fixtures.Policies.create_policy(
+          account_id: account.id,
+          rules: %{
+            "schema_version" => 2,
+            "defaults" => %{
+              "low" => "allow",
+              "medium" => "allow",
+              "high" => "allow",
+              "critical" => "allow"
+            },
+            "overrides" => [%{"name" => name, "action" => "linux.*", "decision" => "deny"}]
+          }
+        )
+
+      subject = owner_subject_for(account)
+      reason = "The account policy rule “#{name}” denies this critical-risk action."
+
+      assert {:error, :denied_by_policy, ^reason} =
+               Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
+
+      assert {:ok, [%{status: :denied} = denied_run], _meta} =
+               Runs.list_recent_runs(subject, limit: 50)
+
+      assert denied_run.policy_reason == reason
+      assert denied_run.matched_rules == [name]
+
+      assert {:ok, [denied_event], _metadata} =
+               Audit.list_events(subject, filter: [event_type: ["action_run.denied"]])
+
+      assert denied_event.payload["run_id"] == denied_run.id
+      assert denied_event.payload["policy_reason"] == reason
+      assert denied_event.payload["matched_rules"] == [name]
+    end
+
     test "stamps policy_version on the dispatched run so audit can correlate vN edits" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
@@ -4769,7 +4810,7 @@ defmodule Emisar.RunsTest do
   end
 
   describe "redeliver_to_runner/1" do
-    test "a pack drifting to pending after authorization is refused at send, not shipped hash-less" do
+    test "a pack drifting to pending after an earlier send withholds redelivery and leaves the run to settle" do
       {_owner, owner_account, subject} = Fixtures.Subjects.owner_subject()
       _ = Fixtures.Policies.create_policy(account_id: owner_account.id)
       {runner, pack_version} = observe_pending_pack(owner_account, subject)
@@ -4808,16 +4849,29 @@ defmodule Emisar.RunsTest do
           ]
         })
 
-      # Redelivery must NOT ship a hash-less envelope — it refuses the run.
+      # Redelivery must NOT ship a hash-less envelope. The first delivery may
+      # already have executed, so the run is not refused or offered for a
+      # re-dispatch: it stays :sent for runner evidence or the deadline.
+      Emisar.Runners.subscribe_runner_transport(runner)
       assert Runs.redeliver_to_runner(run) == {:error, :pack_untrusted}
-      assert Runs.peek_run_by_id(run.id).status == :refused
+      refute_receive {:cloud_to_runner, _generation, _payload}, 100
+
+      withheld = Runs.peek_run_by_id(run.id)
+      assert withheld.status == :sent
+      assert withheld.error_message == nil
       assert [blocked] = dispatch_rejections("dispatch_blocked_pack_untrusted")
       assert blocked.actor_id == subject.membership_id
       assert blocked.payload["run_id"] == run.id
       assert blocked.request_id == run.request_id
 
+      # Trust is rechecked on every attempt, never cached as a pass.
+      assert Runs.redeliver_to_runner(run) == {:error, :pack_untrusted}
+      refute_receive {:cloud_to_runner, _generation, _payload}, 100
+
+      # The runner reports the result of the first delivery; it settles the run.
+      assert {:ok, finished} = Fixtures.Runs.finish(withheld, %{"status" => "success"})
+      assert finished.status == :success
       assert Runs.redeliver_to_runner(run) == {:error, :not_dispatchable}
-      assert dispatch_rejections("dispatch_blocked_pack_untrusted") == [blocked]
     end
 
     test "refuses redelivery after trust moves away from the snapshotted hash" do
@@ -4868,8 +4922,28 @@ defmodule Emisar.RunsTest do
       {:ok, _} = Emisar.Catalog.trust_pack_version(drifted.id, subject)
 
       assert Runs.redeliver_to_runner(run) == {:error, :pack_untrusted}
-      assert Runs.peek_run_by_id(run.id).status == :refused
+      assert Runs.peek_run_by_id(run.id).status == :sent
       refute_receive {:cloud_to_runner, _generation, _payload}, 100
+    end
+
+    test "a sent run whose action the runner's admission now denies is not refused" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      action = Fixtures.Catalog.create_action(runner: runner, admission_allowed: true)
+      Emisar.Runners.subscribe_runner_transport(runner)
+
+      assert {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+      assert Runs.dispatch_to_runner(run) == :ok
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}
+
+      Fixtures.Catalog.set_admission_allowed(action, false)
+
+      assert Runs.redeliver_to_runner(run) == {:error, :action_denied_by_admission}
+      refute_receive {:cloud_to_runner, _generation, _payload}, 100
+
+      withheld = Runs.peek_run_by_id(run.id)
+      assert withheld.status == :sent
+      assert withheld.error_message == nil
     end
 
     # Observe a custom (no-baseline) pack + its action; the version lands
@@ -4901,20 +4975,6 @@ defmodule Emisar.RunsTest do
 
       {:ok, [pack_version], _} = Emisar.Catalog.list_pack_versions(subject)
       {runner, pack_version}
-    end
-  end
-
-  describe "mark_refused/2" do
-    test "transitions to :refused with the cause in error_message" do
-      account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
-
-      assert {:ok, %ActionRun{status: :refused, error_message: msg, finished_at: %DateTime{}}} =
-               Runs.mark_refused(run, "pack trust changed after this run was authorized")
-
-      assert msg =~ "pack trust changed"
-      assert ActionRun.terminal?(:refused)
     end
   end
 

@@ -89,9 +89,9 @@ defmodule Emisar.Catalog do
   # list into "no runner is on it".
   @console_advertising_runner_limit 100
 
-  # One runbook's execution items are capped at this same number, so a single
-  # compile always fits; a caller resolving several runbooks at once splits its
-  # requests into reads of this size.
+  # One read's request bound. A compile can need more than its logical item
+  # count (a `random_one` step asks about its whole pool), so callers dedupe
+  # their requests and split the rest into reads of this size.
   @max_candidate_requests 256
 
   @doc """
@@ -718,6 +718,11 @@ defmodule Emisar.Catalog do
       The refused bytes stay in `pending_hash`, so a runner re-advertising
       them is parked quietly (`judge_drift`) instead of re-opening the
       review; only a genuinely NEW hash flips it back to `:pending`.
+
+    * The row's recorded hash was REVOKED and a new hash re-opened the
+      review. Reject returns it to `:rejected`, keeping the revoked hash on
+      record but never trusted: dispatch stays closed until an operator
+      explicitly restores it with Trust.
   """
   def reject_pack_version(pack_version_id, %Subject{} = subject) do
     with {:ok, subject} <-
@@ -747,8 +752,13 @@ defmodule Emisar.Catalog do
 
   # Reject reverts to a previously-trusted hash when one exists, else marks
   # the never-trusted row `:rejected` (kept, not deleted — see the docstring).
+  # A revoked hash is recorded but was never trusted again, so its row
+  # returns to `:rejected`.
   defp reject_changeset(%PackVersion{hash: nil} = pack_version),
     do: PackVersion.Changeset.reject_untrusted(pack_version)
+
+  defp reject_changeset(%PackVersion{trust_revoked_at: %DateTime{}} = pack_version),
+    do: PackVersion.Changeset.reject_revoked(pack_version)
 
   defp reject_changeset(%PackVersion{} = pack_version),
     do: PackVersion.Changeset.reject(pack_version)

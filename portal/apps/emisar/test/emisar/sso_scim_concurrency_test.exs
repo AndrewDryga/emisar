@@ -610,6 +610,66 @@ defmodule Emisar.SSOSCIMConcurrencyTest do
     end)
   end
 
+  for operation <- [:deactivate, :delete] do
+    test "a SCIM #{operation} of a second owner takes the account row before the member row" do
+      operation = unquote(operation)
+
+      unboxed_scim(fn context ->
+        attrs = scim_attrs(context, "owner-#{operation}")
+
+        {:ok, %{identity: identity, membership: membership}} =
+          SSO.scim_provision_user(context.provider, attrs)
+
+        {1, _rows} =
+          Repo.update_all(from(m in Membership, where: m.id == ^membership.id),
+            set: [role: :owner, runner_access_mode: :all, pack_access_mode: :all]
+          )
+
+        parent = self()
+        account = account_blocker(context.account.id, parent)
+
+        try do
+          assert_receive {:account_locked, account_backend}, 5_000
+
+          deprovision =
+            unboxed_task(fn ->
+              send(parent, {:deprovision_backend, backend_pid()})
+              scim_deprovision(context.provider, identity.id, operation)
+            end)
+
+          try do
+            assert_receive {:deprovision_backend, deprovision_backend}, 5_000
+            await_blocked_by(deprovision_backend, account_backend)
+
+            # A manual owner change holds account -> member -> owner set. If the
+            # deprovision locked the member (and then the owner set) before the
+            # account, this probe could not take the member row now.
+            member = membership_blocker(membership, parent)
+            assert_receive {:membership_locked, _member_backend}, 5_000
+            send(member.pid, :release)
+            assert {:ok, %Membership{}} = Task.await(member, 30_000)
+
+            send(account.pid, :release)
+            assert {:ok, %Account{}} = Task.await(account, 30_000)
+
+            assert {:ok, %{membership: %Membership{disabled_at: %DateTime{}}}} =
+                     Task.await(deprovision, 30_000)
+          after
+            stop_tasks([deprovision])
+          end
+        after
+          send(account.pid, :release)
+          stop_tasks([account])
+        end
+      end)
+    end
+  end
+
+  defp scim_deprovision(provider, id, :deactivate),
+    do: SSO.scim_update_user(provider, id, %SCIMUserUpdate{active: false})
+
+  defp scim_deprovision(provider, id, :delete), do: SSO.scim_delete_user(provider, id)
+
   defp prepare_mutation(context, :create) do
     attrs = scim_attrs(context, "fresh")
 

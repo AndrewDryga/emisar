@@ -2858,11 +2858,11 @@ defmodule Emisar.Runs do
           # the state this claim tried, so a run another dispatcher has since
           # sent is never rewritten as refused.
           {:error, :initiator_no_longer_authorized} = error ->
-            transition_from(run, expected_status, :refused, %{
-              finished_at: DateTime.utc_now(),
-              error_message:
-                "the member who started this run lost access before it was sent, so it never ran — dispatch it again as a member with access"
-            })
+            refuse_unsent(
+              run,
+              expected_status,
+              "the member who started this run lost access before it was sent, so it never ran — dispatch it again as a member with access"
+            )
 
             error
 
@@ -2879,16 +2879,18 @@ defmodule Emisar.Runs do
         error
 
       {:error, :action_denied_by_admission} = error ->
-        mark_refused(
+        refuse_unsent(
           run,
+          expected_status,
           "the runner's local admission policy denies this action — review the host policy and dispatch again"
         )
 
         error
 
       {:error, :action_unavailable} = error ->
-        mark_refused(
+        refuse_unsent(
           run,
+          expected_status,
           "the runner reports that this action's primary executable is missing — install it, reload the runner, and dispatch again"
         )
 
@@ -2897,8 +2899,9 @@ defmodule Emisar.Runs do
       {:error, reason} ->
         # The exact pack snapshot is no longer trusted. Refuse instead of
         # silently upgrading the authorization decision to different bytes.
-        mark_refused(
+        refuse_unsent(
           run,
+          expected_status,
           "pack trust changed after this run was authorized — re-trust the pack in /app/packs and re-dispatch"
         )
 
@@ -3000,14 +3003,23 @@ defmodule Emisar.Runs do
      )}
   end
 
-  @doc """
-  Internal — terminally refuse a run the cloud will not deliver (a versioned
-  pack whose trusted hash is unavailable at send time). `:refused` + the
-  human-readable cause in `error_message`, the same terminal state the runner's
-  own pre-exec refusals map to.
-  """
-  def mark_refused(%ActionRun{} = run, reason) when is_binary(reason) do
-    transition(run, :refused, %{finished_at: DateTime.utc_now(), error_message: reason})
+  # A failed send-time recheck refuses only the first send, fenced to the
+  # `:pending` claim it tried: a run another dispatcher has since sent is never
+  # rewritten, and the reason may truthfully say it never ran. A `:sent` run
+  # was already published and may have executed, so its redelivery is withheld
+  # (the recheck still blocks the envelope) but the run is left `:sent` — the
+  # runner's own result settles it, or the dispatch deadline records its
+  # outcome as unknown. Never a terminal "dispatch it again".
+  defp refuse_unsent(%ActionRun{} = run, :pending, reason) do
+    transition_from(run, :pending, :refused, %{
+      finished_at: DateTime.utc_now(),
+      error_message: reason
+    })
+  end
+
+  defp refuse_unsent(%ActionRun{} = run, :sent, _reason) do
+    Logger.warning("dispatch redelivery withheld run=#{run.id}: send-time recheck failed")
+    :ok
   end
 
   @doc """
@@ -3715,9 +3727,6 @@ defmodule Emisar.Runs do
       is_integer(payload["progress_chunks"]) and
       payload["progress_chunks"] == run.progress_event_count
   end
-
-  defp transition(%ActionRun{} = run, status, attrs),
-    do: transition_from(run, :any_nonterminal, status, attrs, nil)
 
   defp transition_from(%ActionRun{} = run, expected_status, status, attrs),
     do: transition_from(run, expected_status, status, attrs, nil)

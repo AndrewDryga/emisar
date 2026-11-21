@@ -2054,8 +2054,8 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "it comes from stdout, never stderr"
       assert html =~ "Wait policy"
       assert html =~ "caddy.reverse_proxy_upstreams"
-      assert html =~ "&quot;expression&quot;: &quot;/healthy&quot;"
-      assert html =~ "&quot;operator&quot;: &quot;equals&quot;"
+      assert html =~ "&quot;type&quot;: &quot;regex&quot;"
+      assert html =~ "&quot;operator&quot;: &quot;matches&quot;"
       assert html =~ "&quot;max_attempts&quot;: 12"
 
       [_, escaped_canonical] =
@@ -2929,7 +2929,7 @@ defmodule EmisarWeb.MarketingTest do
       # Refresh needs a connection. A long-offline runner can therefore reach
       # expiry and needs an eligible enrollment key for recovery.
       assert html =~ "A token that expires anyway"
-      assert html =~ "spent single-use key works only for the original identity"
+      assert html =~ "A spent single-use key is accepted again only to retry a bootstrap"
 
       # The comparison table agreed the token never rotated and had no overlap.
       # Both were wrong once enforcement landed.

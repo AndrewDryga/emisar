@@ -47,6 +47,10 @@ defmodule Emisar.Catalog.PublishedRegistry.Cache do
   require Logger
 
   @term_key {__MODULE__, :catalog}
+  # The status facts live beside the snapshot so a reader never waits on this
+  # process: it fetches inline, and a hung registry would otherwise time out the
+  # staleness gauge in exactly the outage it reports.
+  @status_key {__MODULE__, :status}
   @refresh_interval :timer.minutes(10)
   @type snapshot :: %{
           packs: [Pack.t()],
@@ -91,11 +95,15 @@ defmodule Emisar.Catalog.PublishedRegistry.Cache do
           loaded_at: DateTime.t(),
           count: non_neg_integer()
         }
-  def status, do: GenServer.call(__MODULE__, :status)
+  def status do
+    @status_key
+    |> :persistent_term.get()
+    |> Map.put(:count, length(current()))
+  end
 
   @impl true
   def init(_opts) do
-    state = boot_state()
+    state = put_status(boot_state())
 
     if state.url do
       send(self(), :refresh)
@@ -144,21 +152,16 @@ defmodule Emisar.Catalog.PublishedRegistry.Cache do
     end
   end
 
-  @impl true
-  def handle_call(:status, _from, state) do
-    status = %{
-      source: state.source,
-      checked_at: state.checked_at,
-      loaded_at: state.loaded_at,
-      count: length(current())
-    }
-
-    {:reply, status, state}
+  # Written once at boot and once per refresh (every ten minutes), so the
+  # persistent_term update cost stays negligible.
+  defp put_status(state) do
+    :persistent_term.put(@status_key, Map.take(state, [:source, :checked_at, :loaded_at]))
+    state
   end
 
   @impl true
   def handle_info(:refresh, state) do
-    state = refresh(state, CatalogClient.fetch(state.url))
+    state = put_status(refresh(state, CatalogClient.fetch(state.url)))
     Process.send_after(self(), :refresh, @refresh_interval)
     {:noreply, state}
   end

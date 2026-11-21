@@ -146,6 +146,22 @@ defmodule Emisar.Catalog.PackVersion.ChangesetTest do
     end
   end
 
+  describe "reject_revoked/1" do
+    test "returns the row to rejected, dropping the refused hash and keeping the revoked one" do
+      pack_version = %PackVersion{
+        trust_state: :pending,
+        hash: "sha256:REVOKED",
+        pending_hash: "sha256:DECOY",
+        trust_revoked_at: DateTime.utc_now()
+      }
+
+      changeset = Changeset.reject_revoked(pack_version)
+
+      assert changeset.valid?
+      assert changeset.changes == %{trust_state: :rejected, pending_hash: nil}
+    end
+  end
+
   describe "reject_untrusted/1" do
     test "marks the row rejected and KEEPS the refused pending hash" do
       pack_version = %PackVersion{trust_state: :pending, pending_hash: "sha256:NOPE"}
@@ -170,8 +186,9 @@ defmodule Emisar.Catalog.PackVersion.ChangesetTest do
       changeset = Changeset.revoke_trust(pack_version)
 
       assert changeset.valid?
+      assert {%DateTime{}, changes} = Map.pop(changeset.changes, :trust_revoked_at)
 
-      assert changeset.changes == %{
+      assert changes == %{
                trust_state: :rejected,
                retirement_overridden_at: nil,
                retirement_overridden_by_membership_id: nil
@@ -181,11 +198,16 @@ defmodule Emisar.Catalog.PackVersion.ChangesetTest do
 
   describe "restore_trust/1" do
     test "flips a revoked row back to trusted on its recorded hash" do
-      pack_version = %PackVersion{trust_state: :rejected, hash: "sha256:GOOD"}
+      pack_version = %PackVersion{
+        trust_state: :rejected,
+        hash: "sha256:GOOD",
+        trust_revoked_at: DateTime.utc_now()
+      }
+
       changeset = Changeset.restore_trust(pack_version)
 
       assert changeset.valid?
-      assert changeset.changes == %{trust_state: :trusted}
+      assert changeset.changes == %{trust_state: :trusted, trust_revoked_at: nil}
     end
 
     test "refuses a row with no recorded hash" do

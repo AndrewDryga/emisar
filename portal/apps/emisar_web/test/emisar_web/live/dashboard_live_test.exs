@@ -322,6 +322,29 @@ defmodule EmisarWeb.DashboardLiveTest do
       refute html =~ "Enable SSO"
     end
 
+    test "the agents pillar counts a live key behind twenty newer dead ones", %{conn: conn} do
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
+      runner = Fixtures.Runners.create_runner(account_id: account.id, name: "runner-1")
+      now = DateTime.utc_now()
+
+      {:ok, _raw, live_key} = Emisar.ApiKeys.create_key(%{name: "Live bot"}, subject)
+
+      live_key
+      |> Ecto.Changeset.change(last_used_at: DateTime.add(now, -60, :second))
+      |> Emisar.Repo.update!()
+
+      for n <- 1..20 do
+        {:ok, _raw, key} = Emisar.ApiKeys.create_key(%{name: "Old bot #{n}"}, subject)
+        key |> Ecto.Changeset.change(revoked_at: now) |> Emisar.Repo.update!()
+      end
+
+      first_run(account, runner)
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
+
+      assert html =~ "1<span class=\"text-2xl text-zinc-400\"> / 1 active</span>"
+    end
+
     test "describes pending approvals as shared review work", %{conn: conn} do
       {conn, owner, account} = register_and_log_in(conn)
       runner = Fixtures.Runners.create_runner(account_id: account.id, name: "runner-1")

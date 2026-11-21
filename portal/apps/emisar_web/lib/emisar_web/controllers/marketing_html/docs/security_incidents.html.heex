@@ -81,9 +81,11 @@
       <.docs_callout kind={:warn} title="Never put the value anywhere that keeps it.">
         <p>
           Not in a ticket, a chat message, a run's reason field, an action argument, a shell
-          example, or your incident notes. Identify a credential by its ID, never by its value.
-          Every key row's Actions menu has <strong class="text-zinc-200">Copy ID</strong>.
-          Everything below is written so you never need to paste one.
+          example, or your incident notes. Identify a credential without its value. An agent
+          key's Actions menu has <strong class="text-zinc-200">Copy ID</strong>. An audit-export
+          token or enrollment key row shows its name and a short prefix; use those. For a runner
+          token, use the runner's name. For an OIDC secret or SCIM bearer, use the SSO
+          connection's name. Everything below is written so you never need to paste a value.
         </p>
       </.docs_callout>
       <p class="mt-6 text-base leading-7 text-zinc-400">
@@ -481,9 +483,7 @@
         <p>
           Report a suspected compromise of anything emisar issues to
           <a href={EmisarWeb.MailTo.security()}>security@emisar.dev</a>
-          after containment. Send the credential's ID from <strong class="text-zinc-200">Copy
-          ID</strong>
-          on its row. Never send its value. For a broken feature instead of an exposure, see
+          after containment. Identify the credential as described in <a href="#sequence">The sequence, every time</a>. Never send its value. For a broken feature instead of an exposure, see
           <.link navigate={~p"/docs/troubleshooting"}>Troubleshooting</.link>
           or <.link navigate={~p"/support"}>Support</.link>.
         </p>

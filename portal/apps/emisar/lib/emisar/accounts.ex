@@ -3094,6 +3094,47 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
+  Internal — release a directory member's fail-closed pending marker onto the
+  role and runner access it already holds, without recomputing either. For a
+  provider that has not sent its first group snapshot: there is no directory
+  evidence to apply, so neither a mapping nor the connection default may
+  change the member. The same provider/version fence as
+  `sync_set_membership_authorization/4` applies, so a newer pending change is
+  never released. A member with nothing pending is returned unchanged.
+  `{:ok, membership} | {:error, reason}`.
+  """
+  def settle_directory_authorization(
+        %Membership{} = membership,
+        %SSO.IdentityProvider{} = provider
+      ) do
+    Multi.new()
+    |> Multi.run(:target, fn repo, _changes ->
+      lock_runner_access_membership(repo, membership.id, provider.account_id)
+    end)
+    |> Multi.run(:previous_access, fn repo, %{target: target} ->
+      {:ok, load_runner_access(repo, target)}
+    end)
+    |> Multi.run(:authorization_guard, fn _repo, %{target: target} ->
+      with :ok <- ensure_membership_in_provider_account(target, provider),
+           :ok <- ensure_directory_provider_matches(target, provider),
+           :ok <- ensure_current_authorization_version(target, provider) do
+        {:ok, :ok}
+      end
+    end)
+    |> Multi.update(:membership, fn %{target: target} ->
+      Membership.Changeset.settle_directory_authorization(target, provider.id)
+    end)
+    |> Multi.run(:runner_access, fn repo, %{membership: updated} ->
+      {:ok, load_runner_access(repo, updated)}
+    end)
+    |> Repo.commit_multi(after_commit: &after_sync_membership_authorization_committed/1)
+    |> case do
+      {:ok, %{membership: updated}} -> {:ok, updated}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
   Internal — compose one directory-owned membership authorization transition
   into a caller's transaction. The caller owns the outer commit and must invoke
   `after_sync_membership_authorization_committed/1` afterwards. Durable
@@ -3630,7 +3671,9 @@ defmodule Emisar.Accounts do
   # transition takes this row FIRST, so two concurrent transitions on two
   # different members of one account queue on the same lock instead of
   # deadlocking against the last-owner guard's owner-set lock, which has no
-  # order of its own. Break-glass administration reaches a DISABLED account, so
+  # order of its own. Directory-sync writes reach `put_sync_membership_lifecycle/4`
+  # holding the same account row (SCIM takes it before its subscription and
+  # provider fences). Break-glass administration reaches a DISABLED account, so
   # only a deleted one is refused; the browser MFA reset keeps the stricter
   # active-account lock.
   defp put_membership_account_lock(multi, account_id) do

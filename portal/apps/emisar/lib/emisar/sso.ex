@@ -2293,8 +2293,14 @@ defmodule Emisar.SSO do
           {:error, changeset}
         end
 
-      {:error, %Ecto.Changeset{data: %LinkRequest{}}} ->
-        {:error, :identity_pending_approval}
+      # An IdP claim too long to park is the same validation refusal an
+      # oversized new identity gets; nothing was filed for an admin to approve.
+      {:error, %Ecto.Changeset{data: %LinkRequest{}} = changeset} ->
+        if Enum.any?(changeset.errors, fn {_field, {_message, opts}} ->
+             opts[:validation] == :length
+           end),
+           do: {:error, changeset},
+           else: {:error, :identity_pending_approval}
 
       {:error, reason} ->
         {:error, reason}
@@ -2977,7 +2983,9 @@ defmodule Emisar.SSO do
   resets to the provider's `default_role` (least-privilege on directory
   removal). A member who is currently an account `:owner` keeps that role and its
   account-wide runner access; only its directory authorization state is reconciled.
-  `{:ok, membership} | {:error, reason}`.
+  Before the provider's first group snapshot (`Provisioning.groups_ever_synced?/1`)
+  nothing is recomputed; a pending marker settles onto the authorization the
+  member already holds. `{:ok, membership} | {:error, reason}`.
   """
   def recompute_role_for_identity(%IdentityProvider{} = provider, %UserIdentity{} = identity) do
     recompute_authorization_for_identity(
@@ -3013,31 +3021,13 @@ defmodule Emisar.SSO do
 
       apply_recomputed_authorization(provider, role, access, membership)
     else
-      {:ok, Accounts.peek_sync_membership_by_id(provider.account_id, identity.membership_id)}
+      # Nothing to recompute from, but a pending marker must still settle — the
+      # member keeps the authorization it already holds.
+      membership =
+        Accounts.peek_sync_membership_by_id(provider.account_id, identity.membership_id)
+
+      settle_without_snapshot(provider, membership)
     end
-  end
-
-  # A connection that never syncs groups (no group mappings configured at all)
-  # has nothing to wait for — its members sit at `default_role` by design.
-  defp groups_ever_synced?(%IdentityProvider{scim_groups_synced_at: %DateTime{}}), do: true
-
-  defp groups_ever_synced?(%IdentityProvider{} = provider),
-    do: not provider_maps_any_group?(provider)
-
-  # Runner access is mapped from groups too, so a connection that maps ONLY
-  # runner access still has a snapshot to wait for. Checking role mappings alone
-  # let it treat the empty pre-push state as authoritative and replace mapped
-  # access with the connection default.
-  defp provider_maps_any_group?(%IdentityProvider{} = provider) do
-    roles =
-      GroupRoleMapping.Query.not_deleted()
-      |> GroupRoleMapping.Query.by_provider_id(provider.id)
-
-    access =
-      GroupRunnerAccessMapping.Query.not_deleted()
-      |> GroupRunnerAccessMapping.Query.by_provider_id(provider.id)
-
-    Repo.exists?(roles) or Repo.exists?(access)
   end
 
   # #14: a DirectoryGroupMember always belongs to its user_identity's provider,

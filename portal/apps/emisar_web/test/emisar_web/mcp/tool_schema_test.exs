@@ -102,9 +102,21 @@ defmodule EmisarWeb.MCP.ToolSchemaTest do
               "name" => "timeout",
               "type" => "duration",
               "validation" => %{"min_duration" => "1s", "max_duration" => "1h0m0s"}
-            }
+            },
+            %{
+              "name" => "file",
+              "type" => "string",
+              "validation" => %{"allowed_prefixes" => ["/srv/compose"]}
+            },
+            %{"name" => "plain", "type" => "string"}
           ])
         )
+
+      assert schema.properties["file"]["x-emisar-pathConstraints"] == %{
+               "allowed_prefixes" => ["/srv/compose"]
+             }
+
+      refute Map.has_key?(schema.properties["plain"], "x-emisar-pathConstraints")
 
       assert schema["x-emisar-maxEncodedBytes"] == 32_768
 
@@ -158,10 +170,26 @@ defmodule EmisarWeb.MCP.ToolSchemaTest do
              ]
     end
 
+    test "never advertises a per-argument byte limit above the whole-object envelope" do
+      schema =
+        ToolSchema.action_args_schema(
+          action([
+            %{"name" => "payload", "type" => "string", "validation" => %{"max_length" => 262_144}}
+          ])
+        )
+
+      assert schema.properties["payload"]["x-emisar-maxUtf8Bytes"] == 32_768
+      assert schema.description =~ "must fit in 32768 UTF-8 bytes"
+    end
+
     test "returns a closed JSON Schema object for absent or malformed args" do
       for action <- [%{}, %{args_schema: %{"args" => %{}}}] do
         assert ToolSchema.action_args_schema(action) == %{
                  "x-emisar-maxEncodedBytes" => 32_768,
+                 description:
+                   "The whole arguments object, encoded as JSON with its keys, quotes and " <>
+                     "escapes, must fit in 32768 UTF-8 bytes. That total bounds every " <>
+                     "argument together.",
                  "$schema": "https://json-schema.org/draft/2020-12/schema",
                  type: "object",
                  properties: %{},

@@ -774,6 +774,9 @@ defmodule Emisar.RunbooksTest do
             {:failed, 2, :halted, :halted, :failed},
             {:running, 1, :active, :active, :running},
             {:waiting, 2, :active, :active, :waiting},
+            {:waiting, 2, :halted, :active, :halted},
+            {:waiting, 2, :active, :halted, :halted},
+            {:running, 1, :halted, :halted, :running},
             {:succeeded, 1, :succeeded, :succeeded, :succeeded},
             {:cancelled, 1, :cancelled, :cancelled, :cancelled}
           ] do

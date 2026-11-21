@@ -83,7 +83,7 @@
       "properties": {
         "input_count": {"type": "integer", "minimum": 0, "maximum": 32},
         "stage_count": {"type": "integer", "minimum": 0, "maximum": 16},
-        "step_count": {"type": "integer", "minimum": 0, "maximum": 32}
+        "step_count": {"type": "integer", "minimum": 0}
       }
     },
     "runbook_live_side": {
@@ -1778,7 +1778,7 @@
                     "draft": {"$ref": "#/$defs/runbook_draft_side"},
                     "input_count": {"type": "integer", "minimum": 0, "maximum": 32},
                     "stage_count": {"type": "integer", "minimum": 0, "maximum": 16},
-                    "step_count": {"type": "integer", "minimum": 0, "maximum": 32},
+                    "step_count": {"type": "integer", "minimum": 0},
                     "available": {
                       "type": "boolean",
                       "description": "False when this runbook cannot be returned or executed over MCP and must be opened in the console. get_runbook then answers runbook_too_large."

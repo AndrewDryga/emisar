@@ -104,6 +104,33 @@ defmodule Emisar.ApiKeys do
   end
 
   @doc """
+  The account-wide agent posture over every visible MCP key, not one list page:
+  `{:ok, %{live, connected, active_today, last_call_at}}` with the same reading
+  `summarize_key_facts/1` gives a list (`live` = usable keys, `connected` =
+  usable keys that ever called, `active_today` = called within a day). For the
+  workspace totals the dashboard promises. `%Subject{}` needs `view_api_keys`.
+  """
+  def summarize_agent_posture(%Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_api_keys_permission()
+           ) do
+      now = DateTime.utc_now()
+
+      posture =
+        ApiKey.Query.visible_to_operators()
+        |> ApiKey.Query.by_kind(:mcp)
+        |> ApiKey.Query.usable(now)
+        |> ApiKey.Query.select_agent_posture(DateTime.add(now, -@idle_threshold_seconds))
+        |> Authorizer.for_subject(subject)
+        |> Repo.one()
+
+      {:ok, posture}
+    end
+  end
+
+  @doc """
   `{:ok, [{membership_id, local_label}]}` — the distinct creating Members of the
   account's visible agent keys (the same `visible_to_operators` + `kind: :mcp`
   set the agents list shows), for that page's "Owner" filter options.

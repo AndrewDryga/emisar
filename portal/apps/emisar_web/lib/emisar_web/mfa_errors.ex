@@ -20,6 +20,8 @@ defmodule EmisarWeb.MfaErrors do
   @messages %{
     invalid_otp: "That code didn't match. Try the latest code from your authenticator.",
     mfa_enrollment_proof_stale: "Your account changed. Verify your current email again.",
+    mfa_enrollment_sso_proof_stale:
+      "Your sign-in confirmation expired. Verify with your identity provider again.",
     session_not_found: "Your session changed. Sign in again to continue.",
     email_verification_required: "Request an email verification code first.",
     recovery_codes_unsaved: "Save your recovery codes before continuing.",

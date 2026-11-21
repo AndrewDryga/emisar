@@ -329,6 +329,39 @@ defmodule Emisar.Billing.SubscriptionRetirementsTest do
     refute_received {:paddle, :cancel_subscription, _id, _caller}
   end
 
+  test "the sweep reports an unconfirmed retirement and records why it failed", %{
+    account: account
+  } do
+    subscription = paid_subscription(account)
+    retirement = Fixtures.Billing.create_retirement(account, subscription)
+    subscription_id = subscription["id"]
+
+    Config.put_override(:emisar, :billing_test_after_call, fn
+      :get_subscription, ^subscription_id, _result -> {:error, :timeout}
+      _operation, _args, result -> result
+    end)
+
+    log = capture_log(fn -> assert :ok = SyncSubscriptions.execute(limit: 1) end)
+    assert log =~ "paddle_subscription_id=#{subscription_id} error=:provider_unavailable"
+    assert log =~ "billing.subscription_retirement_failed"
+    assert Repo.reload!(retirement).failure_category == :provider_unavailable
+
+    # Provider data that answers but no longer proves the binding is not a
+    # transport failure.
+    Config.put_override(:emisar, :billing_test_after_call, fn
+      :get_subscription, ^subscription_id, {:ok, data} ->
+        {:ok, Map.put(data, "customer_id", "ctm_someone_else")}
+
+      _operation, _args, result ->
+        result
+    end)
+
+    log = capture_log(fn -> assert :ok = SyncSubscriptions.execute(limit: 1) end)
+    assert log =~ "billing.subscription_retirement_failed"
+    assert Repo.reload!(retirement).failure_category == :invalid_provider_data
+    assert Repo.reload!(retirement).state == :pending
+  end
+
   defp paid_subscription(account, attrs \\ %{}) do
     transaction = Fixtures.Billing.create_legacy_transaction(account)
     Fixtures.Billing.complete_transaction(transaction["id"], attrs)

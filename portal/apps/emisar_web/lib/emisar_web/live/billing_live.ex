@@ -38,15 +38,24 @@ defmodule EmisarWeb.BillingLive do
   # the dead render leaves it unassigned. Firing it anyway would render the
   # context's refusal as this section's failure state, which reads as an outage
   # rather than "not yours".
+  # The read also waits on the summary's own `invoices_available?` — the one
+  # decision the section renders on — so a lapsed subscription's history is
+  # both fetched and shown, and an account with nothing to list never calls
+  # Paddle.
   defp assign_invoices(socket, account, subject) do
     limit = socket.assigns.invoice_limit
 
-    if Billing.subject_can_view_invoices?(subject) do
+    if invoices_shown?(socket.assigns.summary, subject) do
       assign_async(socket, :invoices, fn -> fetch_invoices(account, subject, limit) end)
     else
       socket
     end
   end
+
+  defp invoices_shown?(%{invoices_available?: true}, subject),
+    do: Billing.subject_can_view_invoices?(subject)
+
+  defp invoices_shown?(_summary, _subject), do: false
 
   defp fetch_summary(account, subject) do
     case Billing.billing_summary(account, subject) do
@@ -60,8 +69,21 @@ defmodule EmisarWeb.BillingLive do
     channels = if summary, do: summary.support_channels, else: %{email?: false, slack_url: nil}
 
     socket
+    |> ensure_invoices(summary)
     |> assign(:summary, summary)
     |> ShellChrome.put(support_channels: channels)
+  end
+
+  # A refresh that first makes invoices available (a first purchase) never calls
+  # Paddle on the tick: the section opens empty, and its explicit refresh loads
+  # the ledger. Mount (no previous summary) does the real read instead.
+  defp ensure_invoices(%{assigns: %{invoices: _loaded}} = socket, _summary), do: socket
+  defp ensure_invoices(%{assigns: %{summary: nil}} = socket, _summary), do: socket
+
+  defp ensure_invoices(socket, summary) do
+    if invoices_shown?(summary, socket.assigns.current_subject),
+      do: assign(socket, :invoices, Phoenix.LiveView.AsyncResult.ok([])),
+      else: socket
   end
 
   # One local-database refresh at a time. Neither the timer nor the return
@@ -829,7 +851,7 @@ defmodule EmisarWeb.BillingLive do
             </section>
             <.async_result
               :let={invoices}
-              :if={@summary.plan != "free" and Billing.subject_can_view_invoices?(@current_subject)}
+              :if={invoices_shown?(@summary, @current_subject)}
               assign={@invoices}
             >
               <:loading>

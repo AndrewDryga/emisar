@@ -64,13 +64,13 @@ defmodule Emisar.TelemetryTest do
       assert measurements.age_seconds >= 86_400
     end
 
-    # The telemetry poller permanently drops a sampler that exits, so a single
-    # slow catalog call would freeze this gauge. A failed read skips the tick,
+    # The telemetry poller permanently drops a sampler that raises or exits, so
+    # one failed read would freeze this gauge. A failed read skips the tick,
     # logs only its failure class, and the next tick still measures.
     test "a failed catalog read skips the tick and the next one still measures" do
-      name = Emisar.Catalog.PublishedRegistry.Cache
-      cache = Process.whereis(name)
-      true = Process.unregister(name)
+      key = {Emisar.Catalog.PublishedRegistry.Cache, :status}
+      status = :persistent_term.get(key)
+      true = :persistent_term.erase(key)
 
       log =
         try do
@@ -78,11 +78,11 @@ defmodule Emisar.TelemetryTest do
             assert Emisar.Telemetry.measure_published_catalog() == :ok
           end)
         after
-          Process.register(cache, name)
+          :persistent_term.put(key, status)
         end
 
       assert log =~ "telemetry.sample_failed sampler=published_catalog"
-      assert log =~ "error=:exit"
+      assert log =~ "error=ArgumentError"
 
       measurements =
         capture_measurements(

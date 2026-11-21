@@ -238,16 +238,20 @@ defmodule Emisar.Runbooks.ExecutionProjection do
 
   # A pending item inherits its scope's outcome, halt before cancellation: what
   # the operator must act on is the halt, even where a cancellation followed it.
+  # A wait the halt stranded (its next poll will never run) reads the same way;
+  # a running peer keeps its own status until it settles.
   defp effective_status(
-         %ExecutionItem{status: :pending},
+         %ExecutionItem{status: status},
          %ExecutionStage{status: :halted},
          _exec
-       ),
+       )
+       when status in [:pending, :waiting],
        do: :halted
 
-  defp effective_status(%ExecutionItem{status: :pending}, _stage, %RunbookExecution{
+  defp effective_status(%ExecutionItem{status: status}, _stage, %RunbookExecution{
          status: :halted
-       }),
+       })
+       when status in [:pending, :waiting],
        do: :halted
 
   defp effective_status(

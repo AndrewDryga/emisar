@@ -4881,6 +4881,67 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "settle_directory_authorization/2" do
+    # A directory member holding operator + a restricted grant, then marked
+    # fail-closed pending at `version`.
+    defp pending_directory_member(version_offset) do
+      account = Fixtures.Accounts.create_account()
+      provider = provider_fixture(account)
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
+      {:ok, access} = RunnerAccess.restricted(["operations"], [])
+
+      {:ok, member} =
+        Accounts.sync_set_membership_authorization(member, :operator, access, provider)
+
+      version = provider.authorization_version + version_offset
+
+      {:ok, _} =
+        Accounts.mark_directory_authorization_pending(
+          Repo,
+          account.id,
+          provider.id,
+          [member.id],
+          version
+        )
+
+      %{account: account, provider: provider, member: Repo.reload!(member), access: access}
+    end
+
+    test "releases the pending marker onto the role and grant the member already holds" do
+      %{account: account, provider: provider, member: member, access: access} =
+        pending_directory_member(0)
+
+      assert Accounts.runner_access_for_membership(account.id, member.id) == RunnerAccess.none()
+
+      assert {:ok, %Membership{role: :operator} = settled} =
+               Accounts.settle_directory_authorization(member, provider)
+
+      assert settled.directory_authorization_pending_version == nil
+      assert settled.directory_provider_id == provider.id
+      assert Accounts.runner_access_for_membership(account.id, member.id) == access
+    end
+
+    test "never releases a newer pending change than the provider version it was given" do
+      %{provider: provider, member: member} = pending_directory_member(1)
+
+      assert Accounts.settle_directory_authorization(member, provider) ==
+               {:error, :stale_authorization_version}
+
+      assert Repo.reload!(member).directory_authorization_pending_version ==
+               provider.authorization_version + 1
+    end
+
+    test "another account's provider cannot settle the member" do
+      %{member: member} = pending_directory_member(0)
+      other_provider = provider_fixture(Fixtures.Accounts.create_account())
+
+      assert Accounts.settle_directory_authorization(member, other_provider) ==
+               {:error, :not_found}
+
+      assert Repo.reload!(member).directory_authorization_pending_version
+    end
+  end
+
   describe "put_sync_membership_authorization/5" do
     test "composes into an outer transaction whose later failure rolls every write back" do
       account = Fixtures.Accounts.create_account()

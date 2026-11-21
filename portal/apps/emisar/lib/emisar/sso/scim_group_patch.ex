@@ -108,7 +108,10 @@ defmodule Emisar.SSO.SCIMGroupPatch do
   # one. Treating any such map containing `displayName` as a rename dropped
   # `members` on the floor — the endpoint answered 200 while the people the
   # directory had just removed kept the group's mapped role and runner access.
-  # Split it into one operation per attribute so each reaches its own handler.
+  # Split it into one operation per attribute so each reaches its own handler —
+  # including a one-attribute map such as `{"members": [...]}` (RFC 7644
+  # §3.5.2.3), which otherwise reached the members handler as a map and was
+  # refused.
   # An operation is an object; `null`, a number or a string is a malformed
   # request, refused here rather than crashing a handler that reads its fields.
   defp split_pathless_attributes(operation, _remaining) when not is_map(operation),
@@ -120,7 +123,7 @@ defmodule Emisar.SSO.SCIMGroupPatch do
   defp split_pathless_attributes(%{"value" => %{} = value} = op, remaining) do
     path = Map.get(op, "path")
 
-    if replace?(op) and (is_nil(path) or path == "") and map_size(value) > 1 do
+    if replace?(op) and (is_nil(path) or path == "") and map_size(value) > 0 do
       if map_size(value) <= remaining do
         attributes =
           Enum.map(value, fn {attribute, attribute_value} ->

@@ -363,6 +363,24 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     assert {:ok, [], _} = Runners.list_enrollment_keys(subject)
   end
 
+  test "an expiry already in the past is refused on the field and mints no key", %{conn: conn} do
+    {conn, owner, account} = register_and_log_in(conn)
+    subject = Fixtures.Subjects.subject_for(owner)
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys/new")
+
+    html =
+      lv
+      |> form("#enrollment_key_form", %{
+        "enrollment_key" => %{"description" => "dead-key", "expires_at" => "2020-01-01T10:30"}
+      })
+      |> render_submit()
+
+    assert html =~ "must be in the future"
+    refute html =~ "Enrollment key created"
+    assert {:ok, [], _} = Runners.list_enrollment_keys(subject)
+  end
+
   test "a zero max_uses is refused on the field and mints no key", %{conn: conn} do
     {conn, owner, account} = register_and_log_in(conn)
     subject = Fixtures.Subjects.subject_for(owner)

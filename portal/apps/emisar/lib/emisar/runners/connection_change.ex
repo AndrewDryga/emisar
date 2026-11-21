@@ -37,6 +37,48 @@ defmodule Emisar.Runners.ConnectionChange do
 
   def normalize(_event), do: %__MODULE__{}
 
+  @doc "Whether the change names any runner at all."
+  @spec names_runners?(t()) :: boolean()
+  def names_runners?(%__MODULE__{} = change) do
+    map_size(change.online) > 0 or MapSet.size(change.offline_ids) > 0 or
+      MapSet.size(change.updated_ids) > 0
+  end
+
+  @doc """
+  Resolves every runner the change names against the account's authoritative
+  Presence map (`%{runner_id => %{metas: [...]}}`). A runner still tracked is
+  online with its newest socket's metadata — a leave-only diff for it was one
+  superseded socket, so it becomes a metadata update, never a disconnect. A
+  runner no longer tracked keeps the diff's own reading.
+  """
+  @spec reconcile(t(), map()) :: t()
+  def reconcile(%__MODULE__{} = change, presences) when is_map(presences) do
+    change.online
+    |> Map.keys()
+    |> MapSet.new()
+    |> MapSet.union(change.offline_ids)
+    |> Enum.reduce(change, fn id, acc ->
+      case Map.get(presences, id) do
+        %{metas: [_ | _]} = presence -> still_tracked(acc, id, presence)
+        _absent -> acc
+      end
+    end)
+  end
+
+  defp still_tracked(change, id, presence) do
+    updated_ids =
+      if MapSet.member?(change.offline_ids, id),
+        do: MapSet.put(change.updated_ids, id),
+        else: change.updated_ids
+
+    %{
+      change
+      | online: Map.put(change.online, id, connection_meta(presence)),
+        offline_ids: MapSet.delete(change.offline_ids, id),
+        updated_ids: updated_ids
+    }
+  end
+
   @spec topology_changed?(t()) :: boolean()
   def topology_changed?(%__MODULE__{} = change),
     do: MapSet.size(change.joined_ids) > 0 or MapSet.size(change.offline_ids) > 0
@@ -75,7 +117,9 @@ defmodule Emisar.Runners.ConnectionChange do
 
   def project_connection(current, _runner_id, %__MODULE__{}), do: current
 
-  defp connection_meta(%{metas: [meta | _]}) do
+  defp connection_meta(%{metas: [_ | _] = metas}) do
+    meta = latest_meta(metas)
+
     %{
       action_load: Map.get(meta, :action_load, 0),
       last_heartbeat_at: unix_to_datetime(Map.get(meta, :last_heartbeat_at))
@@ -84,6 +128,35 @@ defmodule Emisar.Runners.ConnectionChange do
 
   defp connection_meta(_presence), do: %{action_load: 0, last_heartbeat_at: nil}
 
-  defp unix_to_datetime(nil), do: nil
-  defp unix_to_datetime(unix) when is_integer(unix), do: DateTime.from_unix!(unix)
+  @doc """
+  Internal — lease reclamation can briefly leave the old and new socket metas
+  under one Presence key, and Presence does not promise list order, so prefer
+  the newest connection generation, then its newest heartbeat/online timestamp.
+  """
+  def latest_meta([_ | _] = metas) do
+    Enum.max_by(metas, fn meta ->
+      {
+        integer_meta(meta, :connection_generation),
+        integer_meta(meta, :last_heartbeat_at),
+        integer_meta(meta, :online_at)
+      }
+    end)
+  end
+
+  defp integer_meta(meta, key) do
+    case Map.get(meta, key) do
+      value when is_integer(value) -> value
+      _invalid -> -1
+    end
+  end
+
+  @doc "Internal — a Presence unix timestamp as a DateTime, or nil when absent or invalid."
+  def unix_to_datetime(unix) when is_integer(unix) do
+    case DateTime.from_unix(unix) do
+      {:ok, datetime} -> datetime
+      {:error, _reason} -> nil
+    end
+  end
+
+  def unix_to_datetime(_absent_or_invalid), do: nil
 end

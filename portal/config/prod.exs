@@ -59,6 +59,11 @@ config :emisar_web, EmisarWeb.Endpoint,
 # /dev/*. The matching in-memory mailer is switched on at runtime (runtime.exs).
 config :emisar_web, dev_routes: System.get_env("EMISAR_DEV_ROUTES") == "1"
 
+# The release image verifies the Tailwind CLI against a pinned digest and sets
+# TAILWIND_PATH (portal/Dockerfile), so `mix assets.deploy` runs that binary
+# instead of downloading one. Unset, the library manages its own download.
+config :tailwind, path: System.get_env("TAILWIND_PATH")
+
 # Disable Swoosh Local Memory Storage
 config :swoosh, local: false
 

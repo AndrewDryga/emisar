@@ -120,16 +120,27 @@ defmodule Emisar.Seeds.Runbooks do
             "action" => "caddy.reverse_proxy_upstreams",
             "targets" => %{"selection" => "all", "refs" => ["group:edge-web"]},
             "args" => %{},
+            # The action is untyped, so its JSON array is read from stdout. Caddy
+            # reports each upstream's remembered passive-check `fails`; the step
+            # passes once at least one upstream is listed and none reports any.
             "outputs" => [
               %{
-                "id" => "healthy",
-                "source" => "structured_output",
+                "id" => "upstreams",
+                "source" => "stdout",
                 "sensitive" => false,
-                "extract" => %{"type" => "json_pointer", "expression" => "/healthy"}
+                "extract" => %{
+                  "type" => "regex",
+                  "expression" => "(?s)\\A(.*\\S)",
+                  "capture" => "1"
+                }
               }
             ],
             "success" => [
-              %{"output" => "healthy", "operator" => "equals", "value" => true}
+              %{
+                "output" => "upstreams",
+                "operator" => "matches",
+                "value" => "(?s)\\A\\[\\{(?!.*\"fails\":\\s*[1-9])"
+              }
             ],
             "wait" => %{
               "interval_seconds" => 10,

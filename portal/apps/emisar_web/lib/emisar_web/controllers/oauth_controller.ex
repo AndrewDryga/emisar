@@ -35,6 +35,8 @@ defmodule EmisarWeb.OAuthController do
   plug EmisarWeb.Plugs.RateLimit,
        [bucket: "oauth_register", limit: 20, window_ms: 3_600_000] when action == :register
 
+  plug :no_store when action == :token
+
   plug EmisarWeb.Plugs.RateLimit,
        [bucket: "oauth_token", limit: 60, window_ms: 60_000] when action == :token
 
@@ -242,6 +244,14 @@ defmodule EmisarWeb.OAuthController do
   defp respond_with_tokens(conn, {:ok, tokens}), do: json(conn, token_response(tokens))
   defp respond_with_tokens(conn, {:error, reason}), do: token_error(conn, reason)
 
+  # RFC 6749 §5.1: a response carrying credentials is never cached. The whole
+  # action is covered so its errors cannot become a cached negative answer.
+  defp no_store(conn, _opts) do
+    conn
+    |> put_resp_header("cache-control", "no-store")
+    |> put_resp_header("pragma", "no-cache")
+  end
+
   # -- Rendering / redirects ------------------------------------------
 
   defp render_consent(conn, client, params) do
@@ -297,9 +307,13 @@ defmodule EmisarWeb.OAuthController do
     redirect(conn, external: append_query(redirect_uri, params))
   end
 
-  defp redirect_error(conn, redirect_uri, error_code, state) do
-    redirect_back(conn, redirect_uri, %{error: error_code, state: state})
-  end
+  # A malformed (non-string) `state` is never echoed: the request is refused as
+  # `invalid_request`, and the client gets no value it did not send as a string.
+  defp redirect_error(conn, redirect_uri, error_code, state) when is_binary(state),
+    do: redirect_back(conn, redirect_uri, %{error: error_code, state: state})
+
+  defp redirect_error(conn, redirect_uri, error_code, _state),
+    do: redirect_back(conn, redirect_uri, %{error: error_code})
 
   # ChatGPT's sandboxed OAuth document rejects host sources for the consent POST,
   # even when the configured server origin is named explicitly. Allow HTTPS

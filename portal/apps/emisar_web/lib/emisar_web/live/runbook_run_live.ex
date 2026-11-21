@@ -1104,6 +1104,7 @@ defmodule EmisarWeb.RunbookRunLive do
                   label_variant={:eyebrow}
                   rows="3"
                   required
+                  maxlength={Emisar.Runs.justification_limit!(:reason)}
                   placeholder="Why this runbook should run now"
                   disabled={not @can_dispatch?}
                 />

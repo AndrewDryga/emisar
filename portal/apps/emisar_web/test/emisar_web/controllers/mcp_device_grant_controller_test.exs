@@ -81,6 +81,8 @@ defmodule EmisarWeb.MCPDeviceGrantControllerTest do
 
       first = post(conn, ~p"/api/mcp/device_token", %{"device_code" => device_code})
       body = json_response(first, 200)
+      assert get_resp_header(first, "cache-control") == ["no-store"]
+      assert get_resp_header(first, "pragma") == ["no-cache"]
       assert body["account_id"] == subject.account.id
       assert body["account_slug"] == subject.account.slug
       assert body["account_name"] == subject.account.name

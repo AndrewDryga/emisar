@@ -237,5 +237,19 @@ defmodule Emisar.Catalog.PublishedRegistry.CacheTest do
       assert Cache.current() != []
       assert map_size(Cache.trust_snapshot().baseline) > 0
     end
+
+    test "status stays readable while the cache process is busy fetching" do
+      # A hung registry keeps the process inside its inline fetch; the
+      # staleness gauge's read must not queue behind it.
+      expected = Cache.status()
+      :ok = :sys.suspend(Cache)
+
+      try do
+        task = Task.async(&Cache.status/0)
+        assert Task.await(task, 1_000) == expected
+      after
+        :sys.resume(Cache)
+      end
+    end
   end
 end

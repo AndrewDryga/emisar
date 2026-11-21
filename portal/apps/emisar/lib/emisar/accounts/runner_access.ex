@@ -284,8 +284,13 @@ defmodule Emisar.Accounts.RunnerAccess do
     values = changeset |> Ecto.Changeset.get_field(scope_field) |> List.wrap()
     pack_mode = Ecto.Changeset.get_field(changeset, field(pack_prefix, :access_mode))
     pack_values = changeset |> Ecto.Changeset.get_field(pack_scope_field) |> List.wrap()
+    selection = {mode, values, pack_mode, pack_values}
 
-    case from_selection(mode, values, allowlist, pack_mode, pack_values) do
+    case unchanged_persisted_selection?(changeset, prefix, selection) ||
+           from_selection(mode, values, allowlist, pack_mode, pack_values) do
+      true ->
+        changeset
+
       {:ok, access} ->
         changeset
         |> put_changes(access, prefix)
@@ -302,6 +307,30 @@ defmodule Emisar.Accounts.RunnerAccess do
         Ecto.Changeset.add_error(changeset, field(runner_prefix, :access_mode), "is invalid")
     end
   end
+
+  # A persisted selection the edit leaves exactly as stored — omitted, or the
+  # untouched form resubmitting it — keeps its arrays without the allowlist, so a
+  # rename or an enable never fails on a runner, group or pack that has since
+  # gone away (a deleted runner's id grants nothing). Any different selection is
+  # a deliberate edit and is allowlisted as usual.
+  defp unchanged_persisted_selection?(
+         %Ecto.Changeset{data: %{__meta__: %{state: :loaded}} = data},
+         prefix,
+         {mode, values, pack_mode, pack_values}
+       ) do
+    with {:ok, stored} <- from_prefixed_fields(data, prefix),
+         {:ok, mode} <- cast_mode(mode),
+         {:ok, pack_mode} <- cast_pack_mode(pack_mode),
+         {:ok, {groups, runner_ids}} <- selection_refs(values),
+         {:ok, pack_ids} <- pack_selection_refs(pack_values) do
+      {mode, groups, runner_ids, pack_mode, pack_ids} ==
+        {stored.mode, stored.groups, stored.runner_ids, stored.pack_mode, stored.pack_ids}
+    else
+      _invalid -> false
+    end
+  end
+
+  defp unchanged_persisted_selection?(_changeset, _prefix, _selection), do: false
 
   @doc """
   The combined reach of several additive grants (a provider default plus every

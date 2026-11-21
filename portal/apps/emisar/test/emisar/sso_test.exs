@@ -1389,6 +1389,47 @@ defmodule Emisar.SSOTest do
       assert Repo.reload!(provider).default_runner_access_mode == :none
     end
 
+    test "an untouched stored selection naming a deleted runner does not block other edits" do
+      {_owner, account, subject} = enterprise_owner()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      other = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
+      provider = provider_fixture(account)
+      runner_value = "runner:#{runner.id}"
+
+      {:ok, provider} =
+        SSO.update_provider(
+          provider,
+          %{default_runner_access_mode: :restricted, default_runner_scope: [runner_value]},
+          subject
+        )
+
+      Fixtures.Runners.mark_deleted(runner)
+
+      assert {:ok, renamed} = SSO.update_provider(provider, %{name: "Renamed"}, subject)
+      assert renamed.name == "Renamed"
+      assert renamed.default_runner_scope_runner_ids == [runner.id]
+
+      # The form resubmits the stored selection as raw picker values.
+      form_attrs = %{
+        "name" => "Renamed again",
+        "default_runner_access_mode" => "restricted",
+        "default_runner_scope" => [runner_value],
+        "default_pack_access_mode" => "all"
+      }
+
+      assert {:ok, resubmitted} = SSO.update_provider(renamed, form_attrs, subject)
+      assert resubmitted.name == "Renamed again"
+      assert resubmitted.default_runner_access_mode == :restricted
+      assert resubmitted.default_runner_scope_runner_ids == [runner.id]
+
+      # Adding to the stale selection is a deliberate edit and is allowlisted.
+      changed = %{form_attrs | "default_runner_scope" => [runner_value, "runner:#{other.id}"]}
+
+      assert {:error, changeset} = SSO.update_provider(resubmitted, changed, subject)
+      assert "is invalid" in errors_on(changeset).default_runner_access_mode
+      assert Repo.reload!(provider).default_runner_scope_runner_ids == [runner.id]
+    end
+
     test "a cross-account update with a malformed selection is still not_found" do
       {_owner, account, _subject} = enterprise_owner()
       {_other_user, _other_account, other_subject} = enterprise_owner()
@@ -3288,6 +3329,35 @@ defmodule Emisar.SSOTest do
       assert UserIdentity.Query.not_deleted() |> Repo.all() == []
     end
 
+    test "a parked sign-in whose claims exceed the request columns is refused, not raised" do
+      {_owner, account, _subject} = enterprise_owner()
+      provider = provider_fixture(account, provisioner: :manual)
+      # A combining mark is its own codepoint, which is what varchar(255) counts.
+      at_limit = String.duplicate("é", 127) <> "x"
+      base = %{"sub" => "okta|long", "email" => "u@acme.test", "email_verified" => true}
+
+      assert {:pending, %LinkRequest{full_name: ^at_limit}} =
+               SSO.complete_auth(
+                 provider,
+                 callback(Map.put(base, "name", at_limit)),
+                 %{},
+                 %RequestContext{}
+               )
+
+      for {field, value} <- [
+            {"name", at_limit <> "y"},
+            {"email", String.duplicate("a", 250) <> "@acme.test"},
+            {"sub", String.duplicate("s", 256)}
+          ] do
+        claims = Map.put(%{base | "sub" => "okta|long-#{field}"}, field, value)
+
+        assert {:error, %Ecto.Changeset{}} =
+                 SSO.complete_auth(provider, callback(claims), %{}, %RequestContext{})
+      end
+
+      assert [%LinkRequest{provider_identifier: "okta|long"}] = link_requests(provider.id)
+    end
+
     test "with directory sync on, an unknown sub is parked — never a second member" do
       # The split this prevents: SCIM provisions externalId `directory-123` with
       # no email, OIDC later presents `oid-456` with no email either. Nothing
@@ -4045,6 +4115,21 @@ defmodule Emisar.SSOTest do
              |> Accounts.Membership.Query.by_account_id(fixture.account.id)
              |> Accounts.Membership.Query.by_email(fixture.email)
              |> Repo.aggregate(:count) == 1
+    end
+
+    test "SCIM parking an oversized name for an existing address is refused and files no request" do
+      fixture = invitation_sso_fixture()
+      provider = Fixtures.SSO.enable_scim(fixture.provider)
+      _accepted = accept_through_sso(fixture, "okta|invitee")
+
+      assert {:error, %Ecto.Changeset{}} =
+               SSO.scim_provision_user(provider, %{
+                 external_id: "directory|long",
+                 email: fixture.email,
+                 full_name: String.duplicate("x", 256)
+               })
+
+      assert link_requests(provider.id) == []
     end
 
     test "SCIM after the step: another externalId for the invited address parks a link request whose approval rebinds the same identity" do
@@ -7257,6 +7342,105 @@ defmodule Emisar.SSOTest do
       {_ub, _account_b, sb} = enterprise_owner()
 
       assert SSO.disable_scim(provider, sb) == {:error, :not_found}
+    end
+  end
+
+  # -- Directory defaults before the first group snapshot ----------------
+
+  describe "directory authorization before the first group snapshot" do
+    # Sync off and on again discards the group snapshot while the admin mapping
+    # survives: `admin` was mapped to grp-adm, `member` sat at the default.
+    setup do
+      {_owner, account, subject} = enterprise_owner()
+      provider = provider_fixture(account)
+      {:ok, provider, _raw} = SSO.enable_scim(provider, subject)
+      map_group(provider, subject, "grp-adm", :admin)
+      %{identity: admin} = provision(provider, "okta|admin")
+      %{identity: member} = provision(provider, "okta|member")
+
+      {:ok, _} =
+        SSO.scim_upsert_group(provider, %{external_id: "grp-adm", member_ids: [admin.id]})
+
+      assert role_of(admin) == :admin
+      assert role_of(member) == :viewer
+
+      {:ok, disabled} = SSO.disable_scim(provider, subject)
+      {:ok, reenabled, _raw} = SSO.enable_scim(disabled, subject)
+      %{identity: admin} = provision(reenabled, "okta|admin")
+      %{identity: member} = provision(reenabled, "okta|member")
+
+      %{account: account, subject: subject, provider: reenabled, admin: admin, member: member}
+    end
+
+    test "a default edit neither demotes nor raises a member, and settles", %{
+      subject: subject,
+      provider: provider,
+      admin: admin,
+      member: member
+    } do
+      assert {:ok, _} = SSO.update_provider(provider, %{default_role: :operator}, subject)
+
+      assert role_of(admin) == :admin
+      assert role_of(member) == :viewer
+
+      for identity <- [admin, member] do
+        settled = Fixtures.SSO.identity_membership(identity)
+        assert settled.directory_authorization_pending_version == nil
+        assert settled.directory_provider_id == provider.id
+      end
+    end
+
+    test "an explicitly empty snapshot still applies the default edit", %{
+      subject: subject,
+      provider: provider,
+      admin: admin,
+      member: member
+    } do
+      {:ok, _} = SSO.scim_upsert_group(provider, %{external_id: "grp-adm", member_ids: []})
+      assert role_of(admin) == :viewer
+
+      provider = Repo.reload!(provider)
+      assert {:ok, _} = SSO.update_provider(provider, %{default_role: :operator}, subject)
+
+      assert role_of(admin) == :operator
+      assert role_of(member) == :operator
+    end
+
+    test "the retry job settles a member left pending, keeping its authorization", %{
+      account: account,
+      provider: provider,
+      admin: admin
+    } do
+      membership = Fixtures.SSO.identity_membership(admin)
+      provider = Repo.reload!(provider)
+
+      {:ok, _} =
+        Accounts.mark_directory_authorization_pending(
+          Repo,
+          account.id,
+          provider.id,
+          [membership.id],
+          provider.authorization_version
+        )
+
+      assert Fixtures.SSO.identity_membership(admin).directory_authorization_pending_version
+
+      SSO.reconcile_pending_authorizations()
+
+      settled = Fixtures.SSO.identity_membership(admin)
+      assert settled.directory_authorization_pending_version == nil
+      assert settled.role == :admin
+    end
+
+    test "a member without manage_sso cannot edit the defaults", %{
+      account: account,
+      provider: provider,
+      admin: admin
+    } do
+      assert SSO.update_provider(provider, %{default_role: :operator}, viewer_in(account)) ==
+               {:error, :unauthorized}
+
+      assert role_of(admin) == :admin
     end
   end
 

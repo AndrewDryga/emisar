@@ -22,7 +22,9 @@ defmodule Emisar.Catalog.PackVersion do
       dispatch fails CLOSED. Re-advertisements of the already-refused hash
       stay quiet; only a genuinely new hash flips it back to `:pending`
       for another review. Trusting the row again (adopt the refused hash,
-      or restore the revoked one) is always available.
+      or restore the revoked one) is always available. Rejecting the new
+      hash on a revoked row returns it to `:rejected` with the revoked
+      `hash` still on record (`trust_revoked_at`); it never reinstates it.
 
   `trusted_manifest` is a versioned snapshot of the complete bounded action
   descriptors for the exact trusted hash. A re-advertised hash can therefore
@@ -39,6 +41,12 @@ defmodule Emisar.Catalog.PackVersion do
     field :pending_hash, :string
     field :trust_state, Ecto.Enum, values: [:trusted, :pending, :rejected], default: :trusted
     field :trusted_manifest, :map
+
+    # Set when an operator revokes trust in the recorded `hash`, cleared when
+    # trust is adopted or restored. A revoked row that a new hash re-opens for
+    # review is `:pending` like any drift, so this is what tells Reject to
+    # return it to `:rejected` instead of reinstating the revoked hash.
+    field :trust_revoked_at, :utc_datetime_usec
     field :first_seen_at, :utc_datetime_usec
     field :last_seen_at, :utc_datetime_usec
 

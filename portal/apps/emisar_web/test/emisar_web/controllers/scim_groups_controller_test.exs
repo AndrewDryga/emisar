@@ -832,6 +832,50 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       assert role_of(identity) == :admin
     end
 
+    test "a pathless replace whose value names only members replaces the members", %{
+      conn: conn,
+      token: token,
+      provider: provider,
+      subject: subject
+    } do
+      {:ok, _} =
+        create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
+
+      kept = provision(provider, "okta|pathless-kept")
+      removed = provision(provider, "okta|pathless-removed")
+      group_id = create_group(conn, token, "grp-adm")["id"]
+
+      add_body = %{
+        "Operations" => [
+          %{
+            "op" => "add",
+            "path" => "members",
+            "value" => [%{"value" => kept.id}, %{"value" => removed.id}]
+          }
+        ]
+      }
+
+      assert conn
+             |> scim_send(token, :patch, "/scim/v2/Groups/#{group_id}", add_body)
+             |> json_response(200)
+
+      assert role_of(removed) == :admin
+
+      # RFC 7644 §3.5.2.3: a pathless value is a set of attributes.
+      replace_body = %{
+        "Operations" => [
+          %{"op" => "replace", "value" => %{"members" => [%{"value" => kept.id}]}}
+        ]
+      }
+
+      assert conn
+             |> scim_send(token, :patch, "/scim/v2/Groups/#{group_id}", replace_body)
+             |> json_response(200)
+
+      assert role_of(kept) == :admin
+      refute role_of(removed) == :admin
+    end
+
     test "the op keyword is matched case-insensitively (`Add`)", %{
       conn: conn,
       token: token,

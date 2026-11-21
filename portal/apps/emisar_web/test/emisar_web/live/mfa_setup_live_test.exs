@@ -646,6 +646,30 @@ defmodule EmisarWeb.MfaSetupLiveTest do
       assert has_element?(lv, ~s(li[aria-current="step"]), "Authenticator")
     end
 
+    test "an expired IdP proof left in the session asks for a fresh sign-in, not a dead QR", %{
+      sso_conn: conn,
+      account: account
+    } do
+      # The session keeps the proof until it is renewed; one that no longer
+      # verifies (expired, or from another session) must not open the
+      # authenticator step.
+      conn = Plug.Conn.put_session(conn, :mfa_enrollment_proof, "expired-proof")
+      {:ok, lv, _html} = live(conn, setup_path(account))
+      html = render(lv)
+
+      refute html =~ "mfa-setup-key"
+      refute has_element?(lv, "#mfa_form")
+
+      assert html =~
+               "Your sign-in confirmation expired. Verify with your identity provider again."
+
+      assert has_element?(
+               lv,
+               ~s(a[href="#{setup_path(account)}/sso"][data-method="post"]),
+               "Verify with Acme IdP"
+             )
+    end
+
     test "enrolls after a fresh sign-in at its IdP", %{
       sso_conn: conn,
       sso_member: member,

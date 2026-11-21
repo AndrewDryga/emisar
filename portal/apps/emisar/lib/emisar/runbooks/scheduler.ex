@@ -767,7 +767,10 @@ defmodule Emisar.Runbooks.Scheduler do
       runner_id: item.runner_id,
       action_id: item.action_id,
       args_raw: attempt.args_raw,
-      reason: "runbook: #{stage.title} / #{item.step_id} — #{execution.reason}",
+      # The submitted justification, whole: the run's stage and step ids below
+      # already say where it came from, and a prefix could push a reason at the
+      # published limit past the run's own cap.
+      reason: execution.reason,
       api_key_id: execution.api_key_id,
       operation_id: execution.operation_id,
       runbook_id: execution.runbook_id,

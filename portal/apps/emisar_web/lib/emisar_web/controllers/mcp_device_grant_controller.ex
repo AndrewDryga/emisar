@@ -37,6 +37,9 @@ defmodule EmisarWeb.MCPDeviceGrantController do
   # grant expired. A wider IP bucket rides alongside as the anti-abuse backstop:
   # it has to admit many legitimate simultaneous installs, so it bounds a
   # scanner rather than a fleet.
+  # The success body is the raw per-client API key map.
+  plug :no_store when action == :token
+
   plug EmisarWeb.Plugs.RateLimit,
        [bucket: "mcp_device_token", limit: 24, window_ms: 60_000, by: :device_code]
        when action == :token
@@ -99,5 +102,13 @@ defmodule EmisarWeb.MCPDeviceGrantController do
         else: %{error: error}
 
     conn |> put_status(400) |> json(body)
+  end
+
+  # RFC 6749 §5.1: a response carrying credentials is never cached. The whole
+  # action is covered so its errors cannot become a cached negative answer.
+  defp no_store(conn, _opts) do
+    conn
+    |> put_resp_header("cache-control", "no-store")
+    |> put_resp_header("pragma", "no-cache")
   end
 end

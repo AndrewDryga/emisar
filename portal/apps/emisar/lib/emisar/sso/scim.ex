@@ -87,7 +87,9 @@ defmodule Emisar.SSO.SCIM do
   # disable or delete can commit in that gap, so every mutation takes this same
   # provider-only fence before touching a user. No account join: the lock stays
   # one row, and the locked row — never the bearer-time struct — supplies every
-  # default and audit attribution used below.
+  # default and audit attribution used below. Every user write takes the account
+  # row first (`put_active_account_lock/2`), the order manual membership
+  # transitions use, so a deprovision's owner-set lock cannot cross theirs.
   defp put_current_scim_provider(multi, provider, expected_authorization_version \\ :any) do
     Multi.run(multi, :locked_provider, fn repo, _changes ->
       with {:ok, locked} <- fetch_current_scim_provider(provider, repo, lock?: true),
@@ -734,6 +736,7 @@ defmodule Emisar.SSO.SCIM do
   defp update_scim_user(provider, id, update) do
     multi =
       Multi.new()
+      |> put_active_account_lock(provider.account_id)
       |> put_current_scim_provider(provider)
       |> Multi.run(:identity, fn repo, %{locked_provider: locked_provider} ->
         lock_scim_identity(locked_provider, id, repo)
@@ -773,6 +776,7 @@ defmodule Emisar.SSO.SCIM do
   defp delete_scim_user(provider, id) do
     multi =
       Multi.new()
+      |> put_active_account_lock(provider.account_id)
       |> put_current_scim_provider(provider)
       |> Multi.run(:identity, fn repo, %{locked_provider: locked_provider} ->
         lock_scim_identity(locked_provider, id, repo)

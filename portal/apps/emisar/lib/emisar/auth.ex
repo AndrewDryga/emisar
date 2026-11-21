@@ -2807,6 +2807,19 @@ defmodule Emisar.Auth do
   def enable_mfa(_secret, _otp, _proof, _presented_digest, %Subject{}),
     do: {:error, :mfa_enrollment_proof_stale}
 
+  @doc """
+  Whether `proof` is still an enrollment proof for the subject's own Member —
+  the same signature, kind and five-minute freshness check `enable_mfa/5` runs
+  first. A page uses it to decide whether to start the authenticator step at
+  all; it grants nothing, and `enable_mfa/5` still rechecks every binding under
+  its locks.
+  """
+  def mfa_enrollment_proof_current?(proof, %Subject{actor: %Accounts.Membership{id: id}})
+      when is_binary(proof),
+      do: match?({:ok, _enrollment}, verify_mfa_enrollment_proof(proof, id))
+
+  def mfa_enrollment_proof_current?(_proof, %Subject{}), do: false
+
   defp mfa_enrollment_proof(method, payload) when method in [:email, :sso] do
     Phoenix.Token.sign(
       mfa_proof_secret(),

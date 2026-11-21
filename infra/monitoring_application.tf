@@ -14,7 +14,7 @@ locals {
 
     billing_sync_failures = {
       description = "Paddle lifecycle, missed-subscription discovery, or billable-runner quantity reconciliation failures."
-      filter      = "resource.type=\"gce_instance\" AND (jsonPayload.message=\"billing_sync.retrieve_failed\" OR jsonPayload.message=\"billing_sync.upsert_failed\" OR jsonPayload.message=\"billing_sync.runner_quantity_failed\" OR jsonPayload.message=\"billing_runner_quantity_sync.failed\" OR jsonPayload.message=\"billing_sync.discovery_failed\" OR jsonPayload.message=\"billing_sync.discovery_upsert_failed\" OR jsonPayload.message=\"billing_sync.discovery_crashed\")"
+      filter      = "resource.type=\"gce_instance\" AND (jsonPayload.message=\"billing_sync.retrieve_failed\" OR jsonPayload.message=\"billing_sync.upsert_failed\" OR jsonPayload.message=\"billing_sync.runner_quantity_failed\" OR jsonPayload.message=\"billing_runner_quantity_sync.failed\" OR jsonPayload.message=\"billing_sync.discovery_failed\" OR jsonPayload.message=\"billing_sync.discovery_upsert_failed\" OR jsonPayload.message=\"billing_sync.discovery_crashed\" OR jsonPayload.message=\"billing.subscription_retirement_failed\" OR jsonPayload.message=\"billing.checkout_recovery_failed\")"
     }
 
     cluster_failures = {

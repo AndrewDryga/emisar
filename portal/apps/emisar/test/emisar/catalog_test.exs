@@ -2357,6 +2357,88 @@ defmodule Emisar.CatalogTest do
       assert reopened.pending_hash == Fixtures.Catalog.pack_hash("sha256:CHANGED")
     end
 
+    test "rejecting a new hash on a revoked row keeps it revoked until an explicit restore", %{
+      account: account,
+      subject: subject,
+      runner: runner,
+      pack_version: pack_version
+    } do
+      _ = advertise_custom_do(runner, "sha256:OK")
+      assert {:ok, revoked} = Catalog.revoke_pack_version_trust(pack_version.id, subject)
+      assert %DateTime{} = revoked.trust_revoked_at
+
+      # A runner offers a decoy hash, the operator refuses it, then the runner
+      # re-advertises the revoked bytes. None of it may reinstate them.
+      _ = advertise_custom_do(runner, "sha256:DECOY")
+      assert {:ok, rejected} = Catalog.reject_pack_version(pack_version.id, subject)
+      assert rejected.trust_state == :rejected
+      assert rejected.hash == Fixtures.Catalog.pack_hash("sha256:OK")
+      assert rejected.pending_hash == nil
+
+      _ = advertise_custom_do(runner, "sha256:OK")
+      assert Repo.reload!(pack_version).trust_state == :rejected
+
+      {:ok, action} = Catalog.fetch_action_for_account("custom.do", runner.id, account.id)
+      assert {:error, :pack_untrusted, _} = Catalog.check_pack_trusted(action)
+
+      # Only the explicit Trust restores the revoked hash.
+      assert {:ok, restored} = Catalog.trust_pack_version(pack_version.id, subject)
+      assert restored.trust_state == :trusted
+      assert restored.hash == Fixtures.Catalog.pack_hash("sha256:OK")
+      assert restored.trust_revoked_at == nil
+
+      assert Catalog.check_pack_trusted(action) ==
+               {:ok, Fixtures.Catalog.pack_hash("sha256:OK")}
+    end
+
+    defp advertise_custom_do(runner, hash) do
+      Catalog.observe_state(
+        runner,
+        state_payload(
+          packs: %{"custom" => %{"version" => "1.0", "hash" => hash}},
+          actions: [action("custom.do", pack_id: "custom")]
+        )
+      )
+    end
+
+    test "after a restore, rejecting drift keeps the restored baseline trusted", %{
+      subject: subject,
+      runner: runner,
+      pack_version: pack_version
+    } do
+      assert {:ok, _} = Catalog.revoke_pack_version_trust(pack_version.id, subject)
+      assert {:ok, _} = Catalog.trust_pack_version(pack_version.id, subject)
+
+      _ =
+        Catalog.observe_state(
+          runner,
+          state_payload(packs: %{"custom" => %{"version" => "1.0", "hash" => "sha256:DRIFT"}})
+        )
+
+      assert {:ok, kept} = Catalog.reject_pack_version(pack_version.id, subject)
+      assert kept.trust_state == :trusted
+      assert kept.hash == Fixtures.Catalog.pack_hash("sha256:OK")
+      assert kept.pending_hash == nil
+    end
+
+    test "another account cannot reject the new hash on a revoked row", %{
+      subject: subject,
+      runner: runner,
+      pack_version: pack_version
+    } do
+      assert {:ok, _} = Catalog.revoke_pack_version_trust(pack_version.id, subject)
+
+      _ =
+        Catalog.observe_state(
+          runner,
+          state_payload(packs: %{"custom" => %{"version" => "1.0", "hash" => "sha256:DECOY"}})
+        )
+
+      {_owner_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      assert Catalog.reject_pack_version(pack_version.id, subject_b) == {:error, :not_found}
+      assert Repo.reload!(pack_version).trust_state == :pending
+    end
+
     test "a pending row is refused with :not_trusted", %{subject: subject, runner: runner} do
       _ =
         Catalog.observe_state(

@@ -1161,6 +1161,7 @@ defmodule EmisarWeb.BillingLiveTest do
     } do
       attach_customer(account, "ctm_free_invoices")
       Emisar.Config.put_override(:emisar, :paddle_client, InvoicePaddleClient)
+      Emisar.Config.put_override(:emisar, :billing_test_invoice_owner, self())
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
@@ -1171,6 +1172,7 @@ defmodule EmisarWeb.BillingLiveTest do
       refute html =~ "No invoices yet"
       refute has_element?(lv, "button[phx-click='retry_invoices']")
       refute has_element?(lv, "#billing-update-payment-method")
+      refute_received {:invoice_request, _params}
 
       section_ids =
         html
@@ -1186,6 +1188,45 @@ defmodule EmisarWeb.BillingLiveTest do
                "billing-features",
                "billing-upgrade-offers"
              ]
+    end
+
+    test "a lapsed subscription keeps its invoice history", %{conn: conn, account: account} do
+      attach_customer(account, "ctm_lapsed_invoices")
+      insert_subscription(account, "canceled")
+      Emisar.Config.put_override(:emisar, :paddle_client, InvoicePaddleClient)
+      Emisar.Config.put_override(:emisar, :billing_test_invoice_owner, self())
+
+      Emisar.Config.put_override(
+        :emisar,
+        :billing_test_invoice_result,
+        Emisar.Billing.PaddleClient.Stub.list_transactions(%{})
+      )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
+      html = render_async(lv)
+
+      # The workspace is back on Free, yet the history the context reports as
+      # available is both fetched and shown.
+      assert_received {:invoice_request, %{customer: "ctm_lapsed_invoices"}}
+      assert html =~ "Recent invoices"
+      assert has_element?(lv, "#billing-invoices button[phx-value-id='txn_stub_1']")
+    end
+
+    test "a viewer of a lapsed subscription neither fetches nor sees invoices", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      downgrade_to(user, "viewer")
+      attach_customer(account, "ctm_lapsed_viewer")
+      insert_subscription(account, "canceled")
+      Emisar.Config.put_override(:emisar, :paddle_client, InvoicePaddleClient)
+      Emisar.Config.put_override(:emisar, :billing_test_invoice_owner, self())
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
+
+      refute render_async(lv) =~ "Recent invoices"
+      refute_received {:invoice_request, _params}
     end
 
     test "a paid workspace with no invoices shows an empty state and can refresh", %{

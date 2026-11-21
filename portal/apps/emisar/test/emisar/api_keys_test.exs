@@ -92,6 +92,49 @@ defmodule Emisar.ApiKeysTest do
     end
   end
 
+  describe "summarize_agent_posture/1" do
+    test "reads every visible key, not one page, and counts only usable ones" do
+      {_owner, account, subject} = owner_subject_pair()
+      Fixtures.Accounts.create_subscription(account, "team")
+      now = DateTime.utc_now()
+      called = now |> DateTime.add(-3_600, :second) |> DateTime.truncate(:microsecond)
+
+      {:ok, _raw, oldest} = ApiKeys.create_key(%{name: "oldest live"}, subject)
+      {:ok, _raw, _never} = ApiKeys.create_key(%{name: "never called"}, subject)
+      {:ok, _raw, expired} = ApiKeys.create_key(%{name: "expired"}, subject)
+      set_key(oldest, last_used_at: called)
+      set_key(expired, last_used_at: now, expires_at: DateTime.add(now, -1, :second))
+
+      # Twenty newer dead keys fill the first list page on their own.
+      for n <- 1..20 do
+        {:ok, _raw, key} = ApiKeys.create_key(%{name: "revoked #{n}"}, subject)
+        set_key(key, last_used_at: now, revoked_at: now)
+      end
+
+      assert {:ok, posture} = ApiKeys.summarize_agent_posture(subject)
+      assert posture.live == 2
+      assert posture.connected == 1
+      assert posture.active_today == 1
+      assert DateTime.compare(posture.last_call_at, called) == :eq
+    end
+
+    test "a subject without view_api_keys is refused with :unauthorized" do
+      account = Fixtures.Accounts.create_account()
+      subject = Fixtures.Subjects.permissionless_subject(account)
+
+      assert ApiKeys.summarize_agent_posture(subject) == {:error, :unauthorized}
+    end
+
+    test "never counts another account's keys" do
+      {_owner_a, _account_a, subject_a} = owner_subject_pair()
+      {:ok, _raw, _key} = ApiKeys.create_key(%{name: "a-key"}, subject_a)
+      {_owner_b, _account_b, subject_b} = owner_subject_pair()
+
+      assert {:ok, %{live: 0, connected: 0, active_today: 0, last_call_at: nil}} =
+               ApiKeys.summarize_agent_posture(subject_b)
+    end
+  end
+
   describe "list_key_owner_options/1 + the owner filter" do
     test "an unnamed active member is not described as a former member" do
       member =
@@ -3792,4 +3835,6 @@ defmodule Emisar.ApiKeysTest do
              )
     end
   end
+
+  defp set_key(key, changes), do: key |> Ecto.Changeset.change(changes) |> Repo.update!()
 end

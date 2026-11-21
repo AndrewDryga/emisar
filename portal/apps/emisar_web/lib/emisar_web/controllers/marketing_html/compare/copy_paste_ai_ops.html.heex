@@ -175,7 +175,7 @@
         {"What the model can do", "Nothing on its own. You run every command.",
          "Through emisar, it can request declared actions on runners it may access. Policies govern which actions are allowed and which stop for human review."},
         {"What it knows", "Only the text and images you paste, from that moment.",
-         "Fresh output from the actions you allow. The model never has to access the shell on the runner host, and never sees secrets."},
+         "Fresh output from the actions you allow. The model never has to access the shell on the runner host."},
         {"How commands are checked",
          "You are the check. That gets harder with an unfamiliar command or generated script, and easier to skip when the loop becomes routine.",
          "The runner checks the arguments and builds the command from an action definition you installed."},
@@ -183,7 +183,7 @@
          "Pressing Enter is approval. The chat does not record exactly what you approved on which host.",
          "The approval page shows the action, arguments, runner, requester, and reason. Your approval applies to that run unless you enable reuse."},
         {"Secrets", "You must notice secrets before copying text or screenshots into the chat.",
-         "The runner applies the action's redaction rules before output leaves the host."},
+         "The runner masks output that matches configured patterns before it leaves the host. Unknown secret formats can still pass through."},
         {"What is saved", "Chat history, shell history, dashboards, and tickets.",
          "Cloud audit events, linked run history, and a separate hash-chained journal on the runner."}
       ] %>

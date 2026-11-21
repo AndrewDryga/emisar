@@ -97,6 +97,26 @@ COPY portal/config/config.exs portal/config/${MIX_ENV}.exs config/
 # `COPY priv priv` here would break the build.
 COPY portal/apps apps
 
+# The Tailwind CLI executes inside this builder, so it is fetched here and
+# checked against the release's published SHA-256 (sha256sums.txt, matching
+# GitHub's asset digests) for the architecture being built, instead of letting
+# `mix tailwind` download it unverified. config/prod.exs points the tailwind
+# library at this path. Bump TAILWIND_VERSION with config.exs `:tailwind`
+# `version`, and both digests from that release's sha256sums.txt.
+ARG TARGETARCH
+ARG TAILWIND_VERSION=4.3.5
+ARG TAILWIND_SHA256_AMD64=e47695cee3f0d90623a91f3939b08bdee610eb5ad99340adff9d4145b284d6cc
+ARG TAILWIND_SHA256_ARM64=ffcd0d21dbd7c605dc12743ff0c0b47debc963c86b399674084c1c8f2c96ecad
+RUN case "${TARGETARCH}" in \
+      amd64) tailwind_target=x64; tailwind_sha256="${TAILWIND_SHA256_AMD64}" ;; \
+      arm64) tailwind_target=arm64; tailwind_sha256="${TAILWIND_SHA256_ARM64}" ;; \
+      *) echo "no pinned Tailwind digest for TARGETARCH='${TARGETARCH}'" >&2; exit 1 ;; \
+    esac \
+  && curl -fsSL "https://github.com/tailwindlabs/tailwindcss/releases/download/v${TAILWIND_VERSION}/tailwindcss-linux-${tailwind_target}" -o /usr/local/bin/tailwindcss \
+  && printf '%s  %s\n' "$tailwind_sha256" /usr/local/bin/tailwindcss | sha256sum --check -- \
+  && chmod 0755 /usr/local/bin/tailwindcss
+ENV TAILWIND_PATH=/usr/local/bin/tailwindcss
+
 # Build assets (esbuild + tailwind)
 RUN mix assets.deploy
 

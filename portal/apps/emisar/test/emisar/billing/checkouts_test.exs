@@ -1,5 +1,6 @@
 defmodule Emisar.Billing.CheckoutsTest do
   use Emisar.DataCase, async: true
+  import ExUnit.CaptureLog
   alias Emisar.{Billing, Config, Crypto, Fixtures, Repo}
   alias Emisar.Billing.CheckoutIntent
 
@@ -103,8 +104,18 @@ defmodule Emisar.Billing.CheckoutsTest do
     subject: subject
   } do
     reserved = Fixtures.Billing.create_checkout_intent(account)
-    assert {:error, :checkout_pending} = Billing.start_checkout(account, "team", :month, subject)
-    assert {:error, :checkout_pending} = Billing.start_checkout(account, "team", :year, subject)
+
+    log =
+      capture_log(fn ->
+        assert {:error, :checkout_pending} =
+                 Billing.start_checkout(account, "team", :month, subject)
+
+        assert {:error, :checkout_pending} =
+                 Billing.start_checkout(account, "team", :year, subject)
+      end)
+
+    # A young reservation is ordinary pending work, not a failure to report.
+    refute log =~ "billing.checkout_recovery_failed"
     assert Repo.reload!(reserved).state == :creating
     refute_received {:paddle, :create, _attrs, _caller}
   end
@@ -209,8 +220,16 @@ defmodule Emisar.Billing.CheckoutsTest do
     Fixtures.Billing.set_transaction(old.transaction_id, %{"status" => "paid"})
     assert_received {:paddle, :create, _attrs, _caller}
 
-    assert {:error, :payment_reconciling} =
-             Billing.start_checkout(account, "team", :year, subject)
+    log =
+      capture_log(fn ->
+        assert {:error, :payment_reconciling} =
+                 Billing.start_checkout(account, "team", :year, subject)
+      end)
+
+    # Charged without the plan is reported, not only refused.
+    assert log =~ "billing.checkout_recovery_failed"
+    assert log =~ "account_id=#{account.id}"
+    assert log =~ "error=:payment_reconciling"
 
     assert {:error, :payment_reconciling} =
              Billing.start_checkout(account, "team", :month, subject)

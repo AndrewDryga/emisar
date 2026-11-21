@@ -93,19 +93,29 @@ defmodule Emisar.Fixtures.Runners do
 
   @doc """
   Creates a bootstrap enrollment key. Returns `{raw, key}` so callers can
-  test both the raw secret + the persisted struct.
+  test both the raw secret + the persisted struct. A past `expires_at` cannot be
+  minted, so the key is minted without one and then backdated.
   """
   def create_enrollment_key(attrs \\ %{}) do
     attrs = Map.new(attrs)
+    {past_expiry, mint_attrs} = split_past_expiry(attrs)
 
     create_attrs =
-      attrs
+      mint_attrs
       |> Map.take([:description, :group, :reusable, :max_uses, :expires_at])
 
     subject = enrollment_creator(attrs) |> Fixtures.Subjects.subject_for()
     {:ok, raw, key} = Runners.create_enrollment_key(create_attrs, subject)
-    {raw, key}
+    {raw, set_enrollment_key_state(key, past_expiry)}
   end
+
+  defp split_past_expiry(%{expires_at: %DateTime{} = expires_at} = attrs) do
+    if DateTime.compare(expires_at, DateTime.utc_now()) == :gt,
+      do: {%{}, attrs},
+      else: {%{expires_at: expires_at}, Map.delete(attrs, :expires_at)}
+  end
+
+  defp split_past_expiry(attrs), do: {%{}, attrs}
 
   @doc "Creates a console install key, with optional persisted lifecycle state for tests."
   def create_install_key(attrs \\ %{}) do

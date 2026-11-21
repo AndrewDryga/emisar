@@ -205,24 +205,41 @@ defmodule Emisar.SSO.OIDC.OidccTest do
   end
 
   test "a discovery document pointing elsewhere is refused before anything fetches it" do
-    # A real listener stands in for the internal target, so "was it fetched" is
-    # observed rather than inferred. It is reachable — only the policy stops us.
-    #
-    # There are now two independent reasons it is never contacted: the endpoint
-    # policy refuses the document between the discovery fetch and the JWKS fetch,
-    # and the guard refuses the connection itself. Loopback is exactly what both
-    # refuse, which is why this cannot be a happy-path test — see
-    # `Emisar.SSO.OIDC.GuardTest` for the boundary's own coverage.
+    # The login path judges the fetched document between the discovery and JWKS
+    # requests. The guard refuses this loopback IdP at connect time (the test
+    # above), so the document is fetched here over a plain test profile and
+    # handed to that same judge. A real listener stands in for the internal
+    # target, so "was it fetched" is observed rather than inferred.
+    profile = :emisar_oidcc_discovery_judge_test
+    start_httpc_profile(profile)
     forbidden_port = start_probe_listener()
     issuer = start_local_idp(jwks_uri: "http://localhost:#{forbidden_port}/jwks")
-    provider = provider(%{issuer: issuer})
 
-    params = %{"state" => "expected-state", "iss" => issuer, "code" => "authorization-code"}
+    opts = %{
+      quirks: %{allow_unsafe_http: true},
+      request_opts: %{
+        timeout: @request_timeout,
+        http_adapter: {Emisar.SSO.OIDC.BoundedHTTPAdapter, %{profile: profile}}
+      }
+    }
 
-    assert {:error, _reason} = Oidcc.verify_callback(provider, params, stashed())
+    # `Elixir.` reaches the oidcc library past this file's `Oidcc` alias.
+    assert {:ok, {config, _expiry}} =
+             Elixir.Oidcc.ProviderConfiguration.load_configuration(issuer, opts)
+
+    assert_receive {:oidc_request, "GET", "/.well-known/openid-configuration", _body}
+
+    # Only the planted jwks_uri is refused: the same document with a public one
+    # passes.
+    assert Oidcc.judge_discovered_configuration(config) == {:error, :blocked_discovery_endpoint}
+
+    assert {:ok, _judged} =
+             Oidcc.judge_discovered_configuration(%{
+               config
+               | jwks_uri: "https://idp.example/jwks"
+             })
 
     refute_receive :forbidden_endpoint_contacted, 200
-    refute_receive {:oidc_request, "POST", "/token", _body}, 50
   end
 
   describe "judge_discovered_configuration/1" do
@@ -535,8 +552,8 @@ defmodule Emisar.SSO.OIDC.OidccTest do
     body =
       Jason.encode!(%{
         issuer: issuer,
-        authorization_endpoint: issuer <> "/authorize",
-        token_endpoint: issuer <> "/token",
+        authorization_endpoint: "https://idp.example/authorize",
+        token_endpoint: "https://idp.example/token",
         jwks_uri: jwks_uri,
         scopes_supported: ["openid"],
         response_types_supported: ["code"],
@@ -547,8 +564,6 @@ defmodule Emisar.SSO.OIDC.OidccTest do
     http_response(200, body)
   end
 
-  defp response("/jwks", _issuer, _jwks), do: http_response(200, ~s({"keys":[]}))
-  defp response("/token", _issuer, _jwks), do: http_response(400, ~s({"error":"invalid_grant"}))
   defp response(_path, _issuer, _jwks), do: http_response(404, ~s({"error":"not_found"}))
 
   defp http_response(status, body) do

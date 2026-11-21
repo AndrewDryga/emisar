@@ -24,7 +24,8 @@ defmodule Emisar.Runbooks.RunbookExecution.Changeset do
       :definition_sha256,
       :kind
     ])
-    |> validate_length(:reason, min: 1, max: 4_096)
+    # Every attempt carries this reason verbatim, so it shares the run's cap.
+    |> validate_length(:reason, min: 1, max: Emisar.Runs.justification_limit!(:reason))
     |> validate_length(:inputs_sha256, is: 64)
     |> validate_length(:definition_sha256, is: 64)
     |> check_constraint(:kind, name: :runbook_executions_kind_check)

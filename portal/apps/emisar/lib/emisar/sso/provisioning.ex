@@ -171,9 +171,53 @@ defmodule Emisar.SSO.Provisioning do
   def apply_recomputed_authorization(_provider, _role, _access, nil),
     do: {:error, :not_found}
 
+  @doc """
+  Internal — whether the provider's group memberships are evidence to
+  recompute from. Before the first group push there is no snapshot: SCIM does
+  not order Users before Groups, so reading the absence as "in no groups" would
+  revoke a grant that is still current or, where the default outranks a
+  mapping, hand someone a role no Group operation authorized. A push that names
+  no members IS a snapshot, so real removals still apply. A connection with no
+  group mappings at all has nothing to wait for; its members sit at the
+  connection defaults by design.
+  """
+  def groups_ever_synced?(%IdentityProvider{scim_groups_synced_at: %DateTime{}}), do: true
+
+  def groups_ever_synced?(%IdentityProvider{} = provider),
+    do: not provider_maps_any_group?(provider)
+
+  # Runner access is mapped from groups too, so a connection that maps ONLY
+  # runner access still has a snapshot to wait for. Checking role mappings alone
+  # let it treat the empty pre-push state as authoritative and replace mapped
+  # access with the connection default.
+  defp provider_maps_any_group?(%IdentityProvider{} = provider) do
+    roles =
+      GroupRoleMapping.Query.not_deleted()
+      |> GroupRoleMapping.Query.by_provider_id(provider.id)
+
+    access =
+      GroupRunnerAccessMapping.Query.not_deleted()
+      |> GroupRunnerAccessMapping.Query.by_provider_id(provider.id)
+
+    Repo.exists?(roles) or Repo.exists?(access)
+  end
+
+  @doc """
+  Internal — with no group snapshot, release a member's pending marker onto the
+  authorization it already holds instead of applying mappings or defaults.
+  """
+  def settle_without_snapshot(provider, %Accounts.Membership{} = membership),
+    do: Accounts.settle_directory_authorization(membership, provider)
+
+  def settle_without_snapshot(_provider, nil), do: {:error, :not_found}
+
   def recompute_role_for_affected(%IdentityProvider{}, []), do: :ok
 
   def recompute_role_for_affected(%IdentityProvider{} = provider, identities) do
+    recompute_affected(provider, identities, groups_ever_synced?(provider))
+  end
+
+  defp recompute_affected(provider, identities, synced?) do
     role_mappings = provider_role_mappings(provider)
     runner_access_mappings = provider_runner_access_mappings(provider)
     group_ids_by_identity = group_ids_by_identity(identities)
@@ -196,11 +240,18 @@ defmodule Emisar.SSO.Provisioning do
     |> Enum.filter(&Map.has_key?(memberships, &1.membership_id))
     |> Enum.each(fn identity ->
       group_ids = Map.get(group_ids_by_identity, identity.id, [])
-      role = highest_role_for_groups(group_ids, role_mappings) || provider.default_role
-      access = effective_runner_access(provider, group_ids, runner_access_mappings)
       membership = Map.get(memberships, identity.membership_id)
 
-      case apply_recomputed_authorization(provider, role, access, membership) do
+      result =
+        if synced? do
+          role = highest_role_for_groups(group_ids, role_mappings) || provider.default_role
+          access = effective_runner_access(provider, group_ids, runner_access_mappings)
+          apply_recomputed_authorization(provider, role, access, membership)
+        else
+          settle_without_snapshot(provider, membership)
+        end
+
+      case result do
         {:ok, _membership} ->
           :ok
 

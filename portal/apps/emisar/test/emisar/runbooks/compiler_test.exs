@@ -247,6 +247,31 @@ defmodule Emisar.Runbooks.CompilerTest do
     assert Enum.sort(selected_ids) == Enum.sort([first.id, second.id])
   end
 
+  test "repeated random_one steps over one pool compile within the logical item limit", %{
+    account: account,
+    subject: subject
+  } do
+    # 32 steps × 9 eligible runners is 288 per-step lookups but only 9 distinct
+    # ones, and only 32 logical items.
+    for _ <- 1..9, do: trusted_runner(account, subject, group: "workers")
+
+    [stage] = definition("workers")["stages"]
+    [step] = stage["steps"]
+
+    steps =
+      for n <- 1..32 do
+        step
+        |> Map.put("id", "uptime-#{n}")
+        |> put_in(["targets", "selection"], "random_one")
+      end
+
+    definition = put_in(definition("workers"), ["stages", Access.at(0), "steps"], steps)
+
+    assert {:ok, compiled} = compile(definition, %{}, subject)
+    assert length(compiled.items) == 32
+    assert Enum.all?(compiled.items, &(&1.target_selection == "random_one"))
+  end
+
   test "validates the complete online group before choosing one runner", %{
     account: account,
     subject: subject

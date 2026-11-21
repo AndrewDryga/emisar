@@ -42,9 +42,19 @@ defmodule Emisar.Runbooks.ExecutionItem.Query do
   def select_count(queryable),
     do: select(queryable, [runbook_execution_items: i], count(i.id))
 
+  # Only an ACTIVE execution's waits are recovery work: a halt leaves its
+  # waiting siblings in place, and counting them made the overdue lag climb for
+  # an execution nothing will ever advance.
   def waiting_recovery_stats(queryable \\ all(), now) do
     queryable
     |> by_status(:waiting)
+    |> join(
+      :inner,
+      [runbook_execution_items: i],
+      execution in Emisar.Runbooks.RunbookExecution,
+      on: execution.id == i.runbook_execution_id and execution.status == :active,
+      as: :recovering_execution
+    )
     |> select([runbook_execution_items: i], %{
       waiting: count(i.id),
       overdue: filter(count(i.id), i.next_attempt_at <= ^now),

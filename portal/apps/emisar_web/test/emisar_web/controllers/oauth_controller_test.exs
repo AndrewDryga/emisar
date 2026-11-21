@@ -1070,6 +1070,33 @@ defmodule EmisarWeb.OAuthControllerTest do
       assert redirected_to(conn, 302) =~ "error=invalid_request"
     end
 
+    test "an array or map scope or state redirects back with invalid_request", %{
+      user: user,
+      client: client,
+      challenge: challenge
+    } do
+      base =
+        "client_id=#{client.id}&redirect_uri=#{URI.encode_www_form(@redirect)}" <>
+          "&response_type=code&code_challenge=#{challenge}&code_challenge_method=S256" <>
+          "&resource=#{URI.encode_www_form(@resource)}"
+
+      for {malformed, echoed?} <- [
+            {"&scope[]=mcp&state=xyz", true},
+            {"&scope[a]=mcp&state=xyz", true},
+            {"&state[]=x", false},
+            {"&state[a]=x", false}
+          ] do
+        location =
+          build_conn()
+          |> log_in_member(user)
+          |> get("/oauth/authorize?" <> base <> malformed)
+          |> redirected_to(302)
+
+        assert location =~ "error=invalid_request"
+        assert location =~ "state=xyz" == echoed?
+      end
+    end
+
     # MCP mandates S256; code_challenge_method=plain is
     # rejected at the consent GET (redirected back as invalid_request).
     test "code_challenge_method=plain is rejected (S256 only)", %{
@@ -1292,6 +1319,48 @@ defmodule EmisarWeb.OAuthControllerTest do
       assert location =~ "claude.ai"
       assert location =~ "code="
       assert location =~ "state=xyz"
+    end
+
+    test "approve with an array or map scope or state mints nothing", %{
+      account: account,
+      user: user,
+      client: client,
+      challenge: challenge
+    } do
+      valid = %{
+        "client_id" => client.id,
+        "redirect_uri" => @redirect,
+        "response_type" => "code",
+        "scope" => "mcp offline_access",
+        "state" => "xyz",
+        "code_challenge" => challenge,
+        "code_challenge_method" => "S256",
+        "resource" => @resource,
+        "account_id" => account.id,
+        "decision" => "approve"
+      }
+
+      codes_before = Repo.aggregate(OAuth.AuthorizationCode, :count)
+      keys_before = Repo.aggregate(Emisar.ApiKeys.ApiKey, :count)
+
+      for {field, value} <- [
+            {"scope", ["mcp"]},
+            {"scope", %{"a" => "mcp"}},
+            {"state", ["x"]},
+            {"state", %{"a" => "x"}}
+          ] do
+        location =
+          build_conn()
+          |> log_in_member(user)
+          |> post(~p"/oauth/authorize", Map.put(valid, field, value))
+          |> redirected_to(302)
+
+        assert location =~ "error=invalid_request"
+        refute location =~ "code="
+      end
+
+      assert Repo.aggregate(OAuth.AuthorizationCode, :count) == codes_before
+      assert Repo.aggregate(Emisar.ApiKeys.ApiKey, :count) == keys_before
     end
 
     test "Cursor consent names and redirects to the exact native callback", %{
@@ -2095,17 +2164,18 @@ defmodule EmisarWeb.OAuthControllerTest do
       {verifier, challenge} = pkce()
       {client, code} = issue_code!(user, %{"code_challenge" => challenge})
 
-      body =
-        conn
-        |> post_json(~p"/oauth/token", %{
+      response =
+        post_json(conn, ~p"/oauth/token", %{
           "grant_type" => "authorization_code",
           "code" => code,
           "client_id" => client.id,
           "redirect_uri" => @redirect,
           "code_verifier" => verifier
         })
-        |> json_response(200)
 
+      body = json_response(response, 200)
+      assert get_resp_header(response, "cache-control") == ["no-store"]
+      assert get_resp_header(response, "pragma") == ["no-cache"]
       assert "emo-" <> _ = body["access_token"]
       assert "emor-" <> _ = body["refresh_token"]
       assert body["token_type"] == "Bearer"

@@ -100,7 +100,14 @@ defmodule EmisarWeb.MCPRPCController do
   plug :put_client_metadata when action == :handle
 
   # POST /api/mcp/rpc
-  def handle(conn, %{"jsonrpc" => "2.0", "method" => method} = req) when is_binary(method) do
+  #
+  # The envelope comes from the JSON body alone — the same body the exact-JSON
+  # gate parsed and the operation id hashes. Phoenix's action params also merge
+  # the query string, which would let `method`, `id` or `params` bypass both.
+  def handle(conn, _params), do: handle_envelope(conn, conn.body_params)
+
+  defp handle_envelope(conn, %{"jsonrpc" => "2.0", "method" => method} = req)
+       when is_binary(method) do
     case envelope_kind(req) do
       {:request, id} -> handle_message(conn, :request, method, Map.get(req, "params"), id)
       :notification -> handle_message(conn, :notification, method, Map.get(req, "params"), nil)
@@ -108,7 +115,7 @@ defmodule EmisarWeb.MCPRPCController do
     end
   end
 
-  def handle(conn, _bad_request), do: invalid_request(conn)
+  defp handle_envelope(conn, _bad_request), do: invalid_request(conn)
 
   defp handle_message(conn, :request, "notifications/" <> _ = method, _raw_params, id) do
     respond(conn, :request, id, {:error, -32601, "method not found", method})

@@ -4,6 +4,7 @@ defmodule Emisar.Billing.SubscriptionRetirements do
   alias Emisar.{Accounts, Crypto, Repo}
   alias Emisar.Billing.{CheckoutIntent, Checkouts, PaddleClient}
   alias Emisar.Billing.{Subscription, SubscriptionRetirement}
+  require Logger
 
   @known_statuses ~w[active trialing past_due paused canceled]
 
@@ -117,26 +118,47 @@ defmodule Emisar.Billing.SubscriptionRetirements do
   def recover(%SubscriptionRetirement{state: :confirmed} = retirement), do: {:ok, retirement}
 
   def recover(%SubscriptionRetirement{} = retirement) do
-    with {:ok, subscription} <- PaddleClient.retrieve_subscription(retirement.subscription_id),
-         :ok <-
-           verify_subscription(
-             subscription,
-             retirement.account_id,
-             retirement.transaction_id,
-             retirement.subscription_id,
-             retirement.customer_id
-           ),
+    with {:ok, subscription} <- retrieve_for_retirement(retirement),
+         :ok <- verify_retirement_subscription(subscription, retirement),
          {:ok, _canceled} <- cancel_unless_canceled(subscription) do
       update(retirement, &SubscriptionRetirement.Changeset.confirm/1)
     else
-      _unconfirmed ->
+      {:error, category} ->
         _result =
-          update(
-            retirement,
-            &SubscriptionRetirement.Changeset.record_failure(&1, :provider_unavailable)
-          )
+          update(retirement, &SubscriptionRetirement.Changeset.record_failure(&1, category))
+
+        # A pending retirement is a paid subscription Emisar decided to cancel;
+        # every unconfirmed attempt is actionable, so it is reported, not only
+        # stored.
+        Logger.warning("billing.subscription_retirement_failed",
+          paddle_subscription_id: retirement.subscription_id,
+          account_id: retirement.account_id,
+          error: inspect(category)
+        )
 
         {:error, :subscription_retirement_pending}
+    end
+  end
+
+  defp retrieve_for_retirement(retirement) do
+    case PaddleClient.retrieve_subscription(retirement.subscription_id) do
+      {:ok, subscription} -> {:ok, subscription}
+      {:error, _reason} -> {:error, :provider_unavailable}
+    end
+  end
+
+  # Provider data that answers but no longer proves this retirement's binding is
+  # recorded apart from a transport failure.
+  defp verify_retirement_subscription(subscription, retirement) do
+    case verify_subscription(
+           subscription,
+           retirement.account_id,
+           retirement.transaction_id,
+           retirement.subscription_id,
+           retirement.customer_id
+         ) do
+      :ok -> :ok
+      {:error, _reason} -> {:error, :invalid_provider_data}
     end
   end
 
@@ -145,7 +167,7 @@ defmodule Emisar.Billing.SubscriptionRetirements do
   defp cancel_unless_canceled(%{"id" => id}) do
     case PaddleClient.cancel_subscription(id) do
       {:ok, %{"id" => ^id, "status" => "canceled"} = subscription} -> {:ok, subscription}
-      _unconfirmed -> {:error, :cancellation_not_confirmed}
+      _unconfirmed -> {:error, :provider_unavailable}
     end
   end
 

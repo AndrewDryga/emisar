@@ -14,6 +14,12 @@ defmodule EmisarWeb.MCP.ToolSchema do
   # schema owns the number on the Elixir side; the runner's decoder enforces it.
   @max_action_args_bytes Runbooks.definition_limit!(:max_action_args_bytes)
 
+  # One envelope bounds every argument together, so a pack's per-argument
+  # `max_length` larger than it can never be sent; say so once, at the top.
+  @envelope_description "The whole arguments object, encoded as JSON with its keys, quotes " <>
+                          "and escapes, must fit in #{@max_action_args_bytes} UTF-8 bytes. " <>
+                          "That total bounds every argument together."
+
   @doc "Builds the action-only JSON Schema exposed by `get_action`."
   @spec action_args_schema(map()) :: map()
   def action_args_schema(action) do
@@ -22,6 +28,7 @@ defmodule EmisarWeb.MCP.ToolSchema do
     required = args |> Enum.filter(& &1["required"]) |> Enum.map(& &1["name"])
 
     schema_object(properties, required)
+    |> Map.put(:description, @envelope_description)
     |> Map.put("x-emisar-maxEncodedBytes", @max_action_args_bytes)
   end
 
@@ -98,7 +105,8 @@ defmodule EmisarWeb.MCP.ToolSchema do
 
   defp apply_string_byte_limit(map, type, validation)
        when type in ["string", "path", "string_array"] do
-    Map.put(map, "x-emisar-maxUtf8Bytes", validation["max_length"] || @max_action_args_bytes)
+    declared = validation_count(validation["max_length"]) || @max_action_args_bytes
+    Map.put(map, "x-emisar-maxUtf8Bytes", min(declared, @max_action_args_bytes))
   end
 
   defp apply_string_byte_limit(map, _type, _validation), do: map
@@ -111,7 +119,10 @@ defmodule EmisarWeb.MCP.ToolSchema do
 
   defp apply_duration_bounds(map, _type, _validation), do: map
 
-  defp apply_path_constraints(map, type, validation) when type in ["path", "string_array"] do
+  # The runner enforces path rules on `string`, `path` and `string_array`
+  # (runner/pkg/actionspec/args.go), so all three advertise them.
+  defp apply_path_constraints(map, type, validation)
+       when type in ["string", "path", "string_array"] do
     constraints =
       ~w(allowed_paths denied_paths allowed_prefixes denied_prefixes)
       |> Map.new(&{&1, validation_list(validation[&1])})

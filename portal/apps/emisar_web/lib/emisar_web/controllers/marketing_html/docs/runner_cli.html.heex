@@ -387,7 +387,8 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
         (a project id, a hostname, a pid), verify skips the pack and prints the command that completes
         it. It also skips a pack your
         <.docs_inline_code>admission</.docs_inline_code>
-        config refuses. Only a real failure exits non-zero. Read the detail before concluding the
+        config refuses, and a verify action that is not low risk, which it never runs. Only a real
+        failure exits non-zero. Read the detail before concluding the
         pack is misconfigured: a target that is simply down fails the same way a bad credential
         does.
       </p>

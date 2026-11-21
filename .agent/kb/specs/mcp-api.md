@@ -1966,8 +1966,8 @@ A draft read uses the bounded canonical v1 object envelope but may still be
 incomplete. Publication and explicit draft execution apply the complete
 definition contract before any action can run.
 
-One definition is at most 64 KiB and contains at most 32 inputs, 16 stages, 32
-steps total, 16 target refs per step, and 256 resolved logical items. A title is
+One definition is at most 64 KiB and contains at most 32 inputs, 16 stages, 16
+target refs per step, and 256 resolved logical items. A title is
 at most 80 characters and 320 bytes; a description at most 4,096 characters and
 8 KiB. `list_runbooks`, `get_runbook`, `execute_runbook`, MCP draft creation,
 and the console use these same canonical limits.

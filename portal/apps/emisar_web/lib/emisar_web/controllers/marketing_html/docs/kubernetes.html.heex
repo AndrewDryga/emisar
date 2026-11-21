@@ -197,7 +197,14 @@ unset EMISAR_ENROLLMENT_KEY</.docs_code>
         needs writable systemd and D-Bus sockets, so mount
         <code class="font-mono">/run/systemd</code>
         and <code class="font-mono">/run/dbus</code>
-        writable. Grant exactly what the intended actions need and nothing more. The runner's user
+        writable. Writable mounts alone are not enough: the official image refuses every action
+        above low risk. To admit one, mount your own
+        <code class="font-mono">/etc/emisar/config.yaml</code>
+        with a higher <code class="font-mono">admission.max_risk</code>, as shown in <.link
+          navigate={~p"/docs/containers" <> "#building-blocks"}
+          class="text-brand-400 hover:text-brand-300"
+        >Identity and state</.link>.
+        Grant exactly what the intended actions need and nothing more. The runner's user
         and polkit pattern on the
         <.link
           navigate={~p"/docs/host-install" <> "#user"}

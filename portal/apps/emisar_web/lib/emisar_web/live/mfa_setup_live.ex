@@ -86,13 +86,29 @@ defmodule EmisarWeb.MfaSetupLive do
     end
   end
 
+  # The session keeps the proof until it is renewed, but the proof itself lasts
+  # five minutes. An expired one never opens a QR code that cannot finish: the
+  # page stays on the "Verify with <provider>" step, which mints a fresh one.
   defp continue_sso_enrollment(socket, proof) when is_binary(proof) do
-    if socket.redirected,
-      do: socket,
-      else: socket |> MfaEnrollment.prepare_authenticator(proof) |> assign_mfa_form()
+    cond do
+      socket.redirected ->
+        socket
+
+      Auth.mfa_enrollment_proof_current?(proof, socket.assigns.current_subject) ->
+        socket |> MfaEnrollment.prepare_authenticator(proof) |> assign_mfa_form()
+
+      true ->
+        assign(socket, :mfa_start_error, MfaErrors.message(:mfa_enrollment_sso_proof_stale))
+    end
   end
 
   defp continue_sso_enrollment(socket, _proof), do: socket
+
+  # The sentence names the proof the member can actually renew.
+  defp stale_proof_reason(%{assigns: %{mfa_facts: %{enrollment_proof: :sso}}}),
+    do: :mfa_enrollment_sso_proof_stale
+
+  defp stale_proof_reason(_socket), do: :mfa_enrollment_proof_stale
 
   def render(assigns) do
     ~H"""
@@ -409,7 +425,7 @@ defmodule EmisarWeb.MfaSetupLive do
           {:noreply,
            socket
            |> reset_enrollment()
-           |> assign(:mfa_start_error, MfaErrors.message(:mfa_enrollment_proof_stale))}
+           |> assign(:mfa_start_error, MfaErrors.message(stale_proof_reason(socket)))}
 
         {:error, :mfa_already_enabled} ->
           {:noreply, remount(socket)}

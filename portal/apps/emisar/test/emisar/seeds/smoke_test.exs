@@ -247,4 +247,41 @@ defmodule Emisar.Seeds.SmokeTest do
       assert session.membership.account.slug == slug
     end
   end
+
+  test "the seeded rollout verifies upstreams with a check the untyped Caddy action can pass" do
+    ExUnit.CaptureIO.capture_io(fn ->
+      Code.eval_file(Application.app_dir(:emisar, "priv/repo/seeds.exs"))
+    end)
+
+    runbook =
+      Emisar.Runbooks.Runbook.Query.all()
+      |> Emisar.Runbooks.Runbook.Query.by_slug("edge-configuration-rollout")
+      |> Repo.all()
+      |> List.first()
+
+    step =
+      runbook.definition["stages"]
+      |> Enum.flat_map(& &1["steps"])
+      |> Enum.find(&(&1["id"] == "check_upstreams"))
+
+    # caddy.reverse_proxy_upstreams declares no output schema, so it can only
+    # be read from stdout, in the shape Caddy's admin API returns.
+    assert Enum.all?(step["outputs"], &(&1["source"] == "stdout"))
+
+    healthy =
+      ~s([{"address":"10.0.10.11:8080","num_requests":2,"fails":0},) <>
+        ~s({"address":"10.0.10.12:8080","num_requests":0,"fails":0}]\n)
+
+    failing =
+      String.replace(healthy, ~s("num_requests":0,"fails":0), ~s("num_requests":0,"fails":3))
+
+    for {stdout, met?} <- [{healthy, true}, {failing, false}, {"[]\n", false}] do
+      assert {:ok, %{conditions_met?: ^met?}} =
+               Emisar.Runbooks.Extractor.evaluate_materialized(
+                 step["outputs"],
+                 step["success"],
+                 %{"stdout" => stdout, "stderr" => ""}
+               )
+    end
+  end
 end

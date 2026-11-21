@@ -379,9 +379,39 @@ defmodule Emisar.Runbooks.Compiler do
     )
   end
 
+  # A `random_one` step asks about its whole pool but yields one item, so the
+  # logical fan-out check cannot bound the lookups. Equal lookups (the same
+  # runner, pack and action from several steps) collapse first; the rest go in
+  # catalog-sized batches, and a scope needing more than
+  # @max_candidate_batches of them is refused as too large to resolve.
+  @max_candidate_batches 16
+
   defp resolve_candidates(requests, runners, subject) do
-    requests
-    |> Catalog.resolve_runbook_candidates(runners, subject)
+    batches =
+      requests
+      |> Enum.uniq_by(&{&1.runner_id, &1.pack_id, &1.action_id})
+      |> Enum.chunk_every(Catalog.max_candidate_requests())
+
+    if length(batches) > @max_candidate_batches do
+      candidate_resolution_result({:error, :candidate_catalog_too_large})
+    else
+      Enum.reduce_while(batches, {:ok, %{}}, fn batch, {:ok, resolved} ->
+        case resolve_candidate_batch(batch, runners, subject) do
+          {:ok, candidates} -> {:cont, {:ok, Map.merge(resolved, candidates)}}
+          error -> {:halt, error}
+        end
+      end)
+    end
+  end
+
+  defp resolve_candidate_batch(batch, runners, subject) do
+    batch_runner_ids = MapSet.new(batch, & &1.runner_id)
+
+    batch
+    |> Catalog.resolve_runbook_candidates(
+      Enum.filter(runners, &MapSet.member?(batch_runner_ids, &1.id)),
+      subject
+    )
     |> candidate_resolution_result()
   end
 

@@ -407,6 +407,25 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
     end
   end
 
+  test "runbook counts publish no step ceiling, keeping the input and stage bounds" do
+    # The definition limits cap inputs, stages and resolved items, never the
+    # number of steps, so a published runbook with 33 steps is a valid summary.
+    registry = @schema_path |> File.read!() |> Jason.decode!()
+    bundled = Compiler.bundle!(%{"$ref" => "#/$defs/runbook_counts"}, registry)
+    assert {:ok, schema} = JSONSchex.compile(bundled, format_assertion: true)
+
+    counts = %{"input_count" => 32, "stage_count" => 16, "step_count" => 33}
+    assert JSONSchex.validate(schema, counts) == :ok
+    assert {:error, _} = JSONSchex.validate(schema, %{counts | "input_count" => 33})
+    assert {:error, _} = JSONSchex.validate(schema, %{counts | "stage_count" => 17})
+
+    # The list_runbooks item restates the counts inline; neither copy caps steps.
+    step_counts = Regex.scan(~r/"step_count":\{[^}]*\}/, Jason.encode!(registry))
+
+    assert length(step_counts) == 2
+    refute Enum.any?(step_counts, fn [match] -> match =~ "maximum" end)
+  end
+
   test "the published pack action bound is the trusted manifest's own ceiling" do
     # list_packs emits every action the trusted manifest holds, with no take or
     # count guard on the path, so a lower bound here rejects a legitimate

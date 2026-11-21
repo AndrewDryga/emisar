@@ -194,6 +194,31 @@ defmodule EmisarWeb.MCPRPCControllerTest do
       end
     end
 
+    test "envelope fields in the query string are ignored", %{raw: raw} do
+      no_method =
+        build_conn()
+        |> authorize(raw)
+        |> put_req_header("content-type", "application/json")
+        |> post("/api/mcp/rpc?method=ping", Jason.encode!(%{jsonrpc: "2.0", id: 1}))
+        |> json_response(400)
+
+      assert no_method["error"]["code"] == -32_600
+
+      # A body with no params never borrows them from the query string.
+      no_params =
+        build_conn()
+        |> authorize(raw)
+        |> put_req_header("content-type", "application/json")
+        |> post(
+          "/api/mcp/rpc?params[name]=list_packs&params[arguments][query]=x",
+          Jason.encode!(%{jsonrpc: "2.0", id: 2, method: "tools/call"})
+        )
+        |> json_response(200)
+
+      assert %{"id" => 2, "error" => %{}} = no_params
+      refute Map.has_key?(no_params, "result")
+    end
+
     test "invalid JSON-RPC id types fail with id null", %{raw: raw} do
       for id <- [nil, true, 1.5, [], %{"nested" => 1}] do
         payload = %{jsonrpc: "2.0", id: id, method: "ping", params: %{}}
