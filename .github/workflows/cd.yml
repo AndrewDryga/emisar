@@ -665,12 +665,15 @@ jobs:
           # failing the push that happened to land during an apply is not, and
           # that false red cost a green main here. One retry only: a second
           # discard is a signal about the workspace, not a race.
+          # Both attempts share one 25-minute deadline, so with about a minute of
+          # setup this step reports why before the job's 30-minute timeout.
+          deadline=$((SECONDS + 1500))
           for plan_attempt in 1 2; do
-            run=$(curl -fsS "${auth[@]}" -X POST -d "$payload" "${api}/runs")
+            run=$(curl -fsS --max-time 30 "${auth[@]}" -X POST -d "$payload" "${api}/runs")
             run_id=$(jq -er '.data.id' <<< "$run")
             RUN_LINK="https://app.terraform.io/app/${TF_CLOUD_ORGANIZATION}/workspaces/${TFC_WORKSPACE}/runs/${run_id}"
-            for attempt in $(seq 1 150); do
-              run=$(curl -fsS "${auth[@]}" "${api}/runs/${run_id}")
+            while :; do
+              run=$(curl -fsS --max-time 30 "${auth[@]}" "${api}/runs/${run_id}")
               status=$(jq -er '.data.attributes.status' <<< "$run")
               case "$status" in
                 # HCP saves a reviewable plan when changes exist and finishes a
@@ -682,8 +685,8 @@ jobs:
                   exit 1
                   ;;
               esac
-              if [ "$attempt" = 150 ]; then
-                echo "::error::HCP Terraform run did not reach planned_and_saved within 25 minutes (last: ${status})"
+              if [ "$SECONDS" -ge "$deadline" ]; then
+                echo "::error::HCP Terraform run did not reach planned_and_saved within 25 minutes across plan attempt ${plan_attempt} of 2 (last: ${status}; ${RUN_LINK})"
                 exit 1
               fi
               sleep 10

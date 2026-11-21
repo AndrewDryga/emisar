@@ -163,15 +163,17 @@ func TestAdminContainerLogViewBoundary(t *testing.T) {
 	}
 }
 
-// Qualified from the registry's immutable 0.3.13 artifact, independently loaded
-// and validated at its exact pack hash. These are NOT regenerated from HEAD.
-// Retaining that identity is safe for this regression only while BOTH Logging
-// files remain byte-identical; any Logging change needs a qualified new pin.
-const qualifiedLoggingPin = "gcp-monitoring=0.3.13|sha256:e4edd4210cbe3b050e6b9c96d934a66f22eaa13eeed924af0e4d9c485ce96aef"
+// Qualified from the registry's immutable 0.3.16 artifact
+// (v1/packs/gcp-monitoring/0.3.16/151c42ef…/pack.tar.gz), independently loaded
+// with `emisar pack validate` at its exact pack hash, with the two digests taken
+// from that tarball. These are NOT regenerated from HEAD. Retaining that
+// identity is safe for this regression only while BOTH Logging files remain
+// byte-identical; any Logging change needs a qualified new pin.
+const qualifiedLoggingPin = "gcp-monitoring=0.3.16|sha256:151c42ef9a5b8e68dc9f709e892b925d91874283ce464eff4ec0465a6a178217"
 
 var qualifiedLoggingFiles = map[string]string{
-	"actions/log_entries.yaml": "c1f44e8bd2a46dbba9cc48e182a76088cb5c67a0fd43621df200e3ca089275a0",
-	"scripts/logging_api.sh":   "a183a8ab5afd0467a032f97a017687c6ffe3c83923688e60cddf48f6d99332b6",
+	"actions/log_entries.yaml": "b0766a68860e6234f1c980d47f1c1161d54e83f89675d218c33db0a49b496acf",
+	"scripts/logging_api.sh":   "9bba7747ed02fffdad3945304e8f39788b68ab9585e5d386a1d82ccef25bb465",
 }
 
 func adminLoggingPinMatches(currentPin, pin, packDir string, files map[string]string) error {

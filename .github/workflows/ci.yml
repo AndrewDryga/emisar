@@ -21,9 +21,10 @@ name: CI
 #   * `actions/checkout` always runs with `persist-credentials: false`.
 #   * Every action — first-party included — is pinned to a full commit SHA
 #     (the version tag rides along as a comment).
-#   * External tools (terraform, tflint, actionlint) are installed at a
-#     pinned version AND checksum-verified before use; Go tools are
-#     version-pinned `go install`s.
+#   * External tools (terraform, tflint) are installed at a pinned version
+#     AND checksum-verified before use; actionlint and staticcheck are
+#     `tool` directives in tools/go.mod, built from its verified sums; other
+#     Go tools are version-pinned `go install`s.
 #   * Caches key on lockfiles; a PR's cache writes are ref-scoped by GitHub
 #     Actions, so a malicious PR can't poison what main restores.
 

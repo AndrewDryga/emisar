@@ -12,6 +12,15 @@ subprojects:
 # Responder draft-PR publication revalidates the rebased candidate with this trusted parent gate.
 # The gate selects every project affected since Coop's pinned review base.
 gate: ./run gate review
+# Exact files that define that gate, so a task changing one gets Coop's protected-change audit:
+# the entry point, the gate definitions it runs, and the git hooks. Coop already protects its own
+# config, workflows and .claude hooks; this is not a full inventory of everything a gate calls.
+gate_sources:
+  - run
+  - tools/internal/devtool/gates.go
+  - .githooks/pre-commit
+  - .githooks/commit-msg
+  - .githooks/prepare-commit-msg
 
 # Publication review is CI-like: it needs PostgreSQL, not the developer Keycloak stack or ignored
 # local TLS material. Coop starts this tracked stack for the disposable candidate only.

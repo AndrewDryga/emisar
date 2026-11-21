@@ -132,5 +132,7 @@ updates:
     # purpose: infra/github_oidc.tf trusts that exact SHA for workload identity,
     # so a bump here without the Terraform rotation breaks the release at
     # authentication (PR #82). The release runbook rotates both together.
+    # Only "/" is listed: the composite .github/actions/verify-release-tag is
+    # part of that trusted release surface, so the same rotation moves its pins.
     ignore:
       - dependency-name: "AndrewDryga/emisar/.github/workflows/*"

@@ -1,10 +1,12 @@
 package devtool
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -56,5 +58,47 @@ func TestActionlintExceptionMatchesOnlyTheKnownFalsePositive(t *testing.T) {
 		if pattern.MatchString(finding) {
 			t.Fatalf("exception unexpectedly hides %q", finding)
 		}
+	}
+}
+
+// actionlint runs as a tools-module `tool`, like staticcheck, so the
+// release-age gate reviews each release. `go run module@version` skipped
+// that review.
+func TestLintWorkflowsRunsThePinnedTool(t *testing.T) {
+	root := t.TempDir()
+	directory := filepath.Join(root, ".github", "workflows")
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"ci.yml", "runner-release-trusted.yml"} {
+		if err := os.WriteFile(filepath.Join(directory, name), []byte("name: test\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	bin := t.TempDir()
+	log := filepath.Join(t.TempDir(), "commands.log")
+	t.Setenv("COMMAND_LOG", log)
+	t.Setenv("PATH", bin)
+	script := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$COMMAND_LOG\"\n"
+	if err := os.WriteFile(filepath.Join(bin, "go"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	leaveTheBox(t)
+	app := New(root, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
+
+	if err := app.lintWorkflows(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"tool actionlint -color " + filepath.Join(directory, "ci.yml"),
+		"tool actionlint -color -ignore " + actionlintSelfReferenceFalsePositive + " " +
+			filepath.Join(directory, "runner-release-trusted.yml"),
+	}
+	if got := strings.Split(strings.TrimSpace(string(data)), "\n"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("commands:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 }

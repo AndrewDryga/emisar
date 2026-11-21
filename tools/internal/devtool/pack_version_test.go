@@ -16,12 +16,13 @@ import (
 // by `packctl catalog build`, so it can never be published. Catching them at
 // authoring is the whole point.
 func TestPublishableVersion(t *testing.T) {
-	for _, ok := range []string{"1", "1.4", "0.3.15", "10.20.30"} {
+	for _, ok := range []string{"0.3.15", "10.20.30", "0.0.0"} {
 		if err := publishableVersion(ok); err != nil {
 			t.Errorf("publishableVersion(%q) = %v, want nil", ok, err)
 		}
 	}
-	for _, bad := range []string{"", "1.0.0-rc1", "2.0.0+build", "v1.2", "stable", "1.0.0.beta"} {
+	for _, bad := range []string{"", "1.0.0-rc1", "2.0.0+build", "v1.2", "stable", "1.0.0.beta",
+		"1", "1.4", "1.2.3.4", "01.2.0", "+1.2.3"} {
 		if err := publishableVersion(bad); err == nil {
 			t.Errorf("publishableVersion(%q) = nil, want a refusal", bad)
 		}

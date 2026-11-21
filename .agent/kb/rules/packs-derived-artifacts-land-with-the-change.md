@@ -3,7 +3,7 @@
 **Rule.** A pack add or change ships in one commit with everything derived
 from it: the regenerated bundled catalog artifact, the refreshed cross-language
 hash golden when `redis/` or `cassandra/` bytes moved, and a `version` bump
-whenever the pack's contract changed. Versions are dot-numeric only.
+whenever the pack's contract changed. Versions are exactly `MAJOR.MINOR.PATCH`.
 
 **Why.** The portal never scans `packs/`. It seeds a fresh VM
 from `portal/apps/emisar/priv/packs/catalog.json`, and `Emisar.Catalog.PackBaseline`
@@ -13,8 +13,8 @@ until its first successful refresh. The registry publishes by appending: a byte
 change for an already-published `id/version` fails the build until the version
 moves. And a version with a SemVer suffix validates, installs, advertises,
 produces a valid `pack_ref`, and can be signed — yet can never be published,
-because `packctl catalog build` parses each component as an integer for the
-retirement compare. Four things judge a version and three differ on purpose:
+because `packctl catalog build` accepts only `MAJOR.MINOR.PATCH` without a
+sign or leading zero, the form the portal's SemVer parse of a catalog accepts. Four things judge a version and three differ on purpose:
 the loader is permissive (a third-party pack may label itself anything), the
 portal's `runner_action` column matches whatever a runner advertised, and the
 MCP projection accepts suffixes; only the catalog build is strict.

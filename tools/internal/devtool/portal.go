@@ -592,15 +592,17 @@ func (a *App) lintWorkflows(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// The tools module pins actionlint with a `tool` directive, like
+	// staticcheck, so the release-age gate reviews each release.
 	if len(regular) != 0 {
-		args := append([]string{"run", actionlintVersion, "-color"}, regular...)
+		args := append([]string{"tool", "actionlint", "-color"}, regular...)
 		if err := a.run(ctx, a.Root, nil, "go", args...); err != nil {
 			return fmt.Errorf("workflow lint findings: %w", err)
 		}
 	}
 	if len(selfReferenced) != 0 {
 		args := []string{
-			"run", actionlintVersion, "-color",
+			"tool", "actionlint", "-color",
 			"-ignore", actionlintSelfReferenceFalsePositive,
 		}
 		args = append(args, selfReferenced...)

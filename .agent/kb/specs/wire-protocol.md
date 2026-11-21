@@ -124,7 +124,10 @@ to MCP.
 
 On disconnect the runner reconnects with bounded exponential backoff and sends a
 fresh `runner_state`. In-flight actions continue and queue progress/results for
-the next connection. Heartbeats let the portal expire half-open sockets.
+the next connection. Heartbeats let the portal expire half-open sockets. A
+`heartbeat` frame carries one field beyond the envelope, `action_load`: the
+number of runs in flight on the runner when it was sent. The portal records it
+with the heartbeat for the runner's live status.
 
 The portal sends `shutdown` before lifecycle-driven disconnects. A reversible
 disable uses `reason: "runner_disabled"`; the runner retains its bearer token and
@@ -370,7 +373,15 @@ one fixed, bounded, operator-safe message per `code`, safe to write to a runner
 log. It never echoes the internal failure reason, changeset, arguments,
 attestation, output, or credentials. The `code` and `request_id` are the whole
 correlation contract, and every rejection sharing a code is indistinguishable on
-the wire.
+the wire. The portal sends three codes:
+
+| Code | Sent when | `request_id` | Runner response |
+| --- | --- | --- | --- |
+| `bad_envelope` | a frame is not one JSON object with a `type` | none | logs it |
+| `runner_state_failed` | the portal could not ingest a `runner_state` | none | logs it and does not resend that state |
+| `finalize_failed` | the portal could not persist an `action_result` | the result's | replays that result once on the same socket |
+
+There is no acknowledgement for an accepted `runner_state`.
 
 The runner-to-portal direction has its own vocabulary, and the portal relies on
 one code: `concurrency_cap_reached` means the runner is already at

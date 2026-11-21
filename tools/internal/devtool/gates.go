@@ -37,9 +37,6 @@ func (a *App) gatePhase(label string, action func() error) error {
 	return nil
 }
 
-// Keep this in step with the version any workflow installs directly.
-const actionlintVersion = "github.com/rhysd/actionlint/cmd/actionlint@v1.7.12"
-
 // GitHub's $/ self-repository action reference is newer than the latest
 // actionlint release. Keep the exception exact and restricted to the two
 // trusted workflows; release-pin verification separately requires this form.

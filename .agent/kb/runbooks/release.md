@@ -116,7 +116,11 @@ verification; never use **Re-run all jobs** after `main` advances, and never mov
 or recreate the tag. The thin tag workflow calls a no-input reusable workflow
 at an exact commit SHA; release WIF accepts only that called workflow path and
 SHA. Rotating the trusted workflow requires landing it first, then changing the
-caller pin and Terraform condition together. The workflow attests the archives,
+caller pin and Terraform condition together. The same rotation refreshes the
+action pins inside `.github/actions/verify-release-tag/action.yml` (its
+`actions/setup-go`) to match the workflows: Dependabot's `github-actions` lane
+scans only `/`, which covers the workflows and a root action manifest, not this
+nested composite. The workflow attests the archives,
 uploads the immutable files and manifest below `https://emisar.dev/releases/`,
 advances `latest.json`, verifies the public bytes, and finally publishes GitHub
 Releases as the secondary mirror. GitHub's native workflow token is not

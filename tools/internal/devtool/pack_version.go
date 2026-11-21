@@ -30,9 +30,9 @@ type packVersionManifest struct {
 //   - the MCP projection accepts dot-numeric plus SemVer's prerelease and build
 //     suffixes, deliberately widened after versions "vanished from list_packs
 //     with no issue code".
-//   - `packctl catalog build` requires STRICT dot-numeric, because the portal's
-//     retirement compare parses each component as an integer and must fail
-//     closed on junk.
+//   - `packctl catalog build` requires exactly MAJOR.MINOR.PATCH with no sign
+//     or leading zero, because the portal parses catalog versions with SemVer
+//     and fails the whole document on anything else.
 //
 // The gap is between authoring and publishing. A pack in packs/ numbered
 // `1.0.0-rc1` loads, advertises, persists, produces a valid pack_ref and can be
@@ -76,14 +76,20 @@ func publishableVersion(v string) error {
 	if v == "" {
 		return fmt.Errorf("is required")
 	}
-	for _, part := range strings.Split(v, ".") {
+	parts := strings.Split(v, ".")
+	valid := len(parts) == 3
+	for _, part := range parts {
 		n, err := strconv.Atoi(part)
-		if err != nil || n < 0 {
-			return fmt.Errorf(
-				"%q is not publishable: every component must be a non-negative integer, "+
-					"so a SemVer prerelease or build suffix (1.0.0-rc1, 2.0.0+build) validates "+
-					"and installs but can never reach the registry", v)
+		if err != nil || n < 0 || part != strconv.Itoa(n) {
+			valid = false
 		}
+	}
+	if !valid {
+		return fmt.Errorf(
+			"%q is not publishable: it must be MAJOR.MINOR.PATCH, each a non-negative integer "+
+				"without a sign or leading zero, so a SemVer prerelease or build suffix (1.0.0-rc1, "+
+				"2.0.0+build) or another component count (1.4, 1.2.3.4) validates and installs but "+
+				"can never reach the registry", v)
 	}
 	return nil
 }
