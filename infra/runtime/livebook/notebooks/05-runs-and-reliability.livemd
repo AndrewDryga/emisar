@@ -23,7 +23,7 @@ reliability =
     count(*) AS runs,
     count(*) FILTER (WHERE status = 'success') AS successful,
     count(*) FILTER (WHERE status IN ('failed', 'error', 'validation_failed', 'unknown_action', 'cancelled', 'timed_out', 'refused', 'denied')) AS unsuccessful,
-    count(*) FILTER (WHERE status IN ('pending', 'pending_approval', 'sent', 'running')) AS unsettled,
+    count(*) FILTER (WHERE status IN ('pending', 'pending_approval', 'sent', 'running', 'cancelling')) AS unsettled,
     round(percentile_cont(0.50) WITHIN GROUP (ORDER BY duration_ms) FILTER (WHERE duration_ms IS NOT NULL))::bigint AS p50_duration_ms,
     round(percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms) FILTER (WHERE duration_ms IS NOT NULL))::bigint AS p95_duration_ms
   FROM action_runs
@@ -53,7 +53,7 @@ daily_outcomes =
   ), outcomes AS (
     SELECT inserted_at::date AS day,
       CASE WHEN status = 'success' THEN 'success'
-           WHEN status IN ('pending', 'pending_approval', 'sent', 'running') THEN 'unsettled'
+           WHEN status IN ('pending', 'pending_approval', 'sent', 'running', 'cancelling') THEN 'unsettled'
            ELSE 'unsuccessful' END AS outcome,
       count(*) AS runs
     FROM action_runs

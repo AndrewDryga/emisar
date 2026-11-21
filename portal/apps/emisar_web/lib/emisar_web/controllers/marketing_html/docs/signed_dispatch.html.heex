@@ -476,14 +476,18 @@ emisar://dispatch/v1?group=prod&amp;label.env=prod&amp;label.region=us</.docs_co
 
       <.docs_h2 id="troubleshooting">Troubleshooting a refusal</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        A refused dispatch ends as a <.status_badge status={:refused} /> run whose error shows the
-        cause:
+        A refused dispatch ends as a <.status_badge status={:refused} /> run. The runner names the
+        cause as the
+        <.docs_inline_code>code</.docs_inline_code>
+        on its
+        <.docs_inline_code>cloud.signature_refused</.docs_inline_code>
+        log line and in its local journal:
       </p>
       <div class="mt-5 overflow-x-auto rounded-xl border border-zinc-800">
         <table class="w-full min-w-[720px] text-left text-sm">
           <thead class="bg-zinc-900/60 text-xs uppercase tracking-wide text-zinc-400">
             <tr>
-              <th class="px-4 py-3">The error shows</th>
+              <th class="px-4 py-3">The runner logs</th>
               <th class="min-w-[16rem] px-4 py-3">What it means</th>
               <th class="min-w-[16rem] px-4 py-3">What to do</th>
             </tr>
