@@ -85,6 +85,19 @@ func newSigner(keyEncoded, certEncoded string) (*signer, error) {
 			"EMISAR_SIGNING_CERT was issued for a different key than EMISAR_SIGNING_KEY - " +
 				"use the matching key+cert pair printed by `emisar signing new-cert`")
 	}
+	// The runner verifies under the leaf's key with its profile's algorithms
+	// (Ed25519 or ECDSA P-256 only), so the probe must verify the same way here.
+	probe, err := attest.SignClaim(key, probeClaim())
+	if err != nil {
+		return nil, fmt.Errorf("EMISAR_SIGNING_KEY: %w", err)
+	}
+	valid, err := attest.VerifyClaim(leaf, probeClaim(), probe)
+	if err != nil {
+		return nil, fmt.Errorf("EMISAR_SIGNING_CERT: an enforcing runner would refuse its signatures: %w", err)
+	}
+	if !valid {
+		return nil, fmt.Errorf("EMISAR_SIGNING_CERT: a probe signature does not verify under its key")
+	}
 	return &signer{key: key, certChain: chain, newNonce: newNonce}, nil
 }
 
@@ -165,19 +178,18 @@ func parseSigningCertChain(encoded string) ([]string, *x509.Certificate, error) 
 	return chain, leaf, nil
 }
 
-// leafScopeURI checks the leaf carries exactly one canonical emisar scope SAN.
-// A certificate without it is not for emisar, and an enforcing runner would
-// refuse every dispatch it signed.
+// leafScopeURI checks the leaf's only URI SAN is a canonical emisar scope. A
+// certificate without it is not for emisar, and one with any other URI SAN
+// fails the runner's profile; an enforcing runner would refuse every dispatch
+// either signed.
 func leafScopeURI(leaf *x509.Certificate) (attest.Scope, error) {
+	if len(leaf.URIs) > 1 {
+		return attest.Scope{}, fmt.Errorf(
+			"EMISAR_SIGNING_CERT carries %d URI SANs; the profile allows exactly one", len(leaf.URIs))
+	}
 	var found string
-	for _, uri := range leaf.URIs {
-		if uri.Scheme != "emisar" {
-			continue
-		}
-		if found != "" {
-			return attest.Scope{}, fmt.Errorf("EMISAR_SIGNING_CERT carries several emisar scope URIs")
-		}
-		found = uri.String()
+	if len(leaf.URIs) == 1 && leaf.URIs[0].Scheme == "emisar" {
+		found = leaf.URIs[0].String()
 	}
 	if found == "" {
 		return attest.Scope{}, fmt.Errorf(

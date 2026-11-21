@@ -322,7 +322,7 @@ func cliFleetRisk(w io.Writer, value string) string {
 		return cliStyledText(w, "32", label)
 	case "medium":
 		return cliStyledText(w, "33", label)
-	case "high":
+	case "high", "critical":
 		return cliStyledText(w, "31", label)
 	default:
 		return label

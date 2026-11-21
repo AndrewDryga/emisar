@@ -3,7 +3,9 @@ package main
 import (
 	"bytes"
 	"crypto"
+	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -194,6 +196,18 @@ func TestNewSignerRequiresOneStrictMatchingPair(t *testing.T) {
 	}
 	leafKey := ed25519.NewKeyFromSeed(seed)
 	noScopeCert := encodeTestChain(t, testCAChain(t, leafKey.Public(), []string{}))
+	// The runner's profile allows exactly one URI SAN and only P-256 ECDSA, so a
+	// dual-purpose certificate or a P-384 pair fails here, not at every runner.
+	scopeURI, err := attest.EncodeScopeURI(attest.Scope{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dualURICert := encodeTestChain(t, testCAChain(t, leafKey.Public(), []string{scopeURI, "spiffe://example/bridge"}))
+	p384Key, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p384Cert := encodeTestChain(t, testCAChain(t, p384Key.Public(), nil))
 
 	rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -217,6 +231,8 @@ func TestNewSignerRequiresOneStrictMatchingPair(t *testing.T) {
 		{name: "cert not base64", key: key, cert: "!!"},
 		{name: "cert not PEM", key: key, cert: base64.StdEncoding.EncodeToString([]byte("nope"))},
 		{name: "certificate without an emisar scope", key: key, cert: noScopeCert},
+		{name: "certificate with a second URI SAN", key: key, cert: dualURICert},
+		{name: "P-384 key and certificate", key: encodeTestKey(t, p384Key), cert: p384Cert},
 		{name: "mismatched key", key: otherKey, cert: cert},
 	}
 	for _, test := range tests {
