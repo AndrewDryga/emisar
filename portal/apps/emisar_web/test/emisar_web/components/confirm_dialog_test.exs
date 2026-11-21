@@ -37,6 +37,45 @@ defmodule EmisarWeb.Components.ConfirmDialogTest do
     assert html =~ ~s(phx-hook="Phoenix.FocusWrap")
   end
 
+  test "Escape reaches only the open dialog" do
+    assigns = %{}
+
+    html =
+      rendered_to_string(~H"""
+      <CoreComponents.confirm_dialog
+        id="del"
+        title="Delete this runner"
+        confirm_label="Delete runner"
+        confirm_token="edge-fra-01"
+        typed=""
+        on_confirm="delete"
+      >
+        <:body>Removes the runner row.</:body>
+      </CoreComponents.confirm_dialog>
+      """)
+
+    document = LazyHTML.from_fragment(html)
+    dialog = LazyHTML.query(document, "#del")
+
+    # Every dialog on a page binds Escape on the window. The binding runs the
+    # close command only on a dialog marked open, so a closed typed dialog no
+    # longer pushes its reset on an unrelated Escape.
+    [escape] = LazyHTML.attribute(dialog, "phx-window-keydown")
+    assert escape =~ ~s("exec")
+    assert escape =~ "#del[data-open]"
+
+    [close] = LazyHTML.attribute(dialog, "data-escape")
+    assert close =~ "confirm_reset"
+    assert close =~ ~s("remove_attr")
+    assert close =~ ~s("attr":"data-open")
+
+    # Opening marks it; a hidden dialog carries no mark.
+    assert LazyHTML.attribute(dialog, "data-open") == []
+
+    assert CoreComponents.show_confirm_dialog("del") |> Phoenix.json_library().encode!() =~
+             ~s("set_attr")
+  end
+
   test "renders title, body, and the type-to-confirm prompt for the token" do
     assigns = %{}
 

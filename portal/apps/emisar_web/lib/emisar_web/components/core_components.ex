@@ -3784,7 +3784,8 @@ defmodule EmisarWeb.CoreComponents do
       aria-modal="true"
       aria-label={@title}
       phx-hook="DialogFocus"
-      phx-window-keydown={@close_dialog}
+      data-escape={@close_dialog}
+      phx-window-keydown={JS.exec("data-escape", to: "##{@id}[data-open]")}
       phx-key="escape"
     >
       <%!-- Backdrop — clicking it closes the dialog. --%>
@@ -3912,14 +3913,19 @@ defmodule EmisarWeb.CoreComponents do
     # copy control precedes its input, so `show_confirm_dialog/2` then focuses
     # the input itself.
     |> JS.focus_first(to: "##{id}")
+    # Escape is bound on the window of every dialog on the page; `data-open`
+    # lets only the open one answer it.
+    |> JS.set_attribute({"data-open", "true"}, to: "##{id}")
   end
 
   defp fade_dialog_out(js, id) do
-    JS.hide(js,
+    js
+    |> JS.hide(
       to: "##{id}",
       time: 150,
       transition: {"transition-opacity ease-in duration-150", "opacity-100", "opacity-0"}
     )
+    |> JS.remove_attribute("data-open", to: "##{id}")
   end
 
   @doc """
