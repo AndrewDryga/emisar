@@ -8986,6 +8986,21 @@ defmodule Emisar.SSOTest do
           "email_verified" => true
         })
 
+      :ok = SSO.subscribe_link_request(request.id)
+      :ok = SSO.subscribe_account_link_requests(account.id)
+
+      # A refused repoint rolls back and tells nobody: the request still waits.
+      assert {:error, :client_secret_required} =
+               SSO.update_provider(
+                 provider,
+                 %{"issuer" => "https://an-idp-the-admin-controls.test"},
+                 subject
+               )
+
+      refute_received {:sso_link_request, _, _}
+      refute_received {:sso_link_requests_changed, _}
+      assert [%LinkRequest{}] = link_requests(provider.id)
+
       assert {:ok, _provider} =
                SSO.update_provider(
                  provider,
@@ -8995,6 +9010,13 @@ defmodule Emisar.SSOTest do
                  },
                  subject
                )
+
+      # The waiting browser and the admin queue both learn it is gone; neither
+      # polls, so without the broadcast the browser waits on a dead request.
+      request_id = request.id
+      account_id = account.id
+      assert_receive {:sso_link_request, :dismissed, %{id: ^request_id}}
+      assert_receive {:sso_link_requests_changed, ^account_id}
 
       assert SSO.approve_link_request(
                request,
@@ -9888,7 +9910,57 @@ defmodule Emisar.SSOTest do
     end
   end
 
+  describe "subject_sso_configuration/1" do
+    test "answers both plan gates from one subscription read" do
+      # The settings page needs both answers on each of mount's two passes and
+      # on every directory refresh; the two predicates read the row twice.
+      {_owner, account, enterprise} = enterprise_owner()
+      {_owner, _account, team} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+      {_owner, _account, free} = Fixtures.Subjects.owner_subject(%{})
+      viewer = viewer_in(account)
+      reads = count_subscription_reads()
+
+      assert SSO.subject_sso_configuration(enterprise) == {true, true}
+      assert reads.() == 1
+      assert SSO.subject_sso_configuration(team) == {true, false}
+      assert SSO.subject_sso_configuration(free) == {false, false}
+      reads.()
+
+      # Without manage_sso there is nothing to configure and nothing to read.
+      assert SSO.subject_sso_configuration(viewer) == {false, false}
+      assert reads.() == 0
+    end
+  end
+
   # -- Helpers ---------------------------------------------------------
+
+  defp count_subscription_reads do
+    {test_pid, ref} = {self(), make_ref()}
+    handler = {__MODULE__, test_pid, ref}
+
+    :ok =
+      :telemetry.attach(
+        handler,
+        [:emisar, :repo, :query],
+        fn _event, _measurements, metadata, _config ->
+          if self() == test_pid and metadata.source == "billing_subscriptions",
+            do: send(test_pid, {ref, :subscription_read})
+        end,
+        nil
+      )
+
+    on_exit(fn -> :telemetry.detach(handler) end)
+
+    fn -> drain_count(ref, 0) end
+  end
+
+  defp drain_count(ref, count) do
+    receive do
+      {^ref, :subscription_read} -> drain_count(ref, count + 1)
+    after
+      0 -> count
+    end
+  end
 
   defp record_session_effects do
     marker = make_ref()

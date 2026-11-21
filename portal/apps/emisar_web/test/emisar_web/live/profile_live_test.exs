@@ -1406,7 +1406,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert has_element?(
                lv,
                "#mfa_recovery_regeneration_form",
-               "already used. Wait for the next authenticator code."
+               "already used. Wait for the next code."
              ),
              "Expected inline replay: consumed bucket #{consumed_bucket}, response bucket #{response_bucket}"
 

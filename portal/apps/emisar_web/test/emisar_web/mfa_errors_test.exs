@@ -34,6 +34,12 @@ defmodule EmisarWeb.MfaErrorsTest do
                "That code didn't match. Try the latest code from your authenticator."
     end
 
+    test "a replayed authenticator code reads the same on every page that refuses one" do
+      # Profile, its email change, and the OIDC step-up had three wordings.
+      assert MfaErrors.message(:replay) ==
+               "That authenticator code was already used. Wait for the next code."
+    end
+
     test "a refused challenge is worded by factor, for the challenge, setup, and reset pages" do
       assert MfaErrors.challenge(:totp) ==
                "That code didn't match. Check your authenticator app and try again."

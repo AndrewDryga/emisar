@@ -77,6 +77,21 @@ groups:
           summary: "Paddle billing webhook failing"
           description: "{{ $value }} billing webhook(s) failed to apply in the last 15m. Subscription state may be stale."
 
+      # Example: the published pack catalog stopped refreshing. The portal keeps
+      # serving its last-good catalog, so new pack versions silently stop reaching
+      # the fleet. It refreshes every 10 minutes; an hour is six missed refreshes,
+      # and a portal that never fetched reports 86400 so it trips too. Drop this
+      # rule when EMISAR_PACK_CATALOG_URL is set empty (bundled catalog only):
+      # nothing remote is fetched then, and the age stays at 86400 by design.
+      - alert: EmisarPackCatalogStale
+        expr: emisar_catalog_published_age_seconds > 3600
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Published pack catalog not refreshed for over an hour"
+          description: "The last validated catalog fetch was {{ $value | humanizeDuration }} ago. New pack versions are not reaching the fleet; check the portal log for catalog refresh warnings."
+
       # Atom-table growth — the IL-14 failure mode (unbounded String.to_atom on
       # untrusted runner/LLM input) made visible. The atom table never GCs, so a
       # steady climb is a leak, and an exhausted table crashes the node.

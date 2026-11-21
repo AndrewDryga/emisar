@@ -30,7 +30,15 @@ defmodule EmisarWeb.MfaErrors do
     challenge_totp: "That code didn't match. Check your authenticator app and try again.",
     challenge_recovery: "That recovery code didn't match or has already been used.",
     step_up_factor_invalid: "That authenticator or recovery code didn't match. Try again.",
-    email_code_invalid: "That code is incorrect or expired. Try again or request a new code."
+    email_code_invalid: "That code is incorrect or expired. Try again or request a new code.",
+    email_code_unverifiable: "Could not verify that code. Try again.",
+    email_unavailable:
+      "Your email address isn't verified, so we can't send a code to it. Ask your workspace administrator for help, or contact support@emisar.dev.",
+    email_suppressed:
+      "Emisar cannot deliver mail to your address. Contact support to restore email delivery before setting up MFA.",
+    email_delivery_failed:
+      "We could not deliver the verification code. Try again. If it keeps failing, contact support.",
+    replay: "That authenticator code was already used. Wait for the next code."
   }
 
   # An enrollment write that fails validation is not something the member can

@@ -59,12 +59,8 @@ defmodule EmisarWeb.SSOSettingsLive do
         :pack_access_restricted?,
         socket.assigns.current_membership.pack_access_mode == :restricted
       )
-      |> assign(:can_configure?, SSO.subject_can_configure_sso?(socket.assigns.current_subject))
+      |> assign_sso_configuration(socket.assigns.current_subject)
       |> assign(:has_sso_permission?, SSO.subject_can_manage_sso?(socket.assigns.current_subject))
-      |> assign(
-        :can_configure_directory_sync?,
-        SSO.subject_can_configure_directory_sync?(socket.assigns.current_subject)
-      )
       |> assign(:kind_options, @kind_options)
       |> assign(:role_options, @role_options)
       |> assign(:member_role_options, member_role_options(socket.assigns.current_subject))
@@ -121,6 +117,16 @@ defmodule EmisarWeb.SSOSettingsLive do
       |> ConfirmDialog.init()
 
     {:ok, socket}
+  end
+
+  # Both plan answers from one subscription read; mount runs twice and the
+  # directory refresh repeats this every tick.
+  defp assign_sso_configuration(socket, subject) do
+    {can_configure?, can_configure_directory_sync?} = SSO.subject_sso_configuration(subject)
+
+    socket
+    |> assign(:can_configure?, can_configure?)
+    |> assign(:can_configure_directory_sync?, can_configure_directory_sync?)
   end
 
   # Where single sign-on actually lives: the anchored card on the Team page. The
@@ -380,11 +386,7 @@ defmodule EmisarWeb.SSOSettingsLive do
           |> assign(:scim_token, current_scim_token(socket.assigns.scim_token, provider))
           |> assign(:provider, provider)
           |> assign(:provider_load_error?, false)
-          |> assign(:can_configure?, SSO.subject_can_configure_sso?(subject))
-          |> assign(
-            :can_configure_directory_sync?,
-            SSO.subject_can_configure_directory_sync?(subject)
-          )
+          |> assign_sso_configuration(subject)
           |> load_sign_in_verification(provider)
           |> load_synced_members(provider, socket.assigns.mapping_filter_params)
           |> load_refused_changes(provider)

@@ -44,8 +44,9 @@ promtool check rules alerts.yaml
 
 The rules fire on the SLOs the code calls out: approvals waiting too long
 (`emisar_approvals_pending_oldest_age_seconds`), runners dropped, recurrent job
-failures, host run-failure rate, failing Paddle webhooks, and atom-table growth
-(the IL-14 early-warning line).
+failures, host run-failure rate, failing Paddle webhooks, a published pack catalog
+that stopped refreshing (drop that one if you run with the bundled catalog only),
+and atom-table growth (the IL-14 early-warning line).
 
 ## 3. Import the dashboard
 

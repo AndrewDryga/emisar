@@ -5,9 +5,12 @@ defmodule Emisar.Analytics.MixpanelClient.Live do
   payload here — `token` for events, `$token` for profile/group updates
   — so it lives only in config + this module.
 
-  Best-effort by design: ingestion failures are logged at debug and
-  returned as `{:error, …}`, never raised — analytics must never break
-  a user request. The async wrapper is the caller's (`Emisar.Analytics`).
+  Best-effort by design: ingestion failures are returned as `{:error, …}`,
+  never raised — analytics must never break a user request. The async
+  wrapper is the caller's (`Emisar.Analytics`). Transport and HTTP failures
+  log at debug. The ingestion endpoints answer HTTP 200 with body `0` when
+  they reject every object in a batch; that means this module built a bad
+  payload, so it logs at warning with the path only, never the payload.
   """
 
   @behaviour Emisar.Analytics.MixpanelClient
@@ -41,6 +44,10 @@ defmodule Emisar.Analytics.MixpanelClient.Live do
         request = Finch.build(:post, host() <> path, headers(), body)
 
         case Finch.request(request, Emisar.Finch, receive_timeout: 5_000) do
+          {:ok, %Finch.Response{status: status, body: "0"}} when status in 200..299 ->
+            Logger.warning("mixpanel #{path} rejected every object in the batch")
+            {:error, :rejected}
+
           {:ok, %Finch.Response{status: status}} when status in 200..299 ->
             :ok
 
@@ -63,5 +70,5 @@ defmodule Emisar.Analytics.MixpanelClient.Live do
 
   defp token, do: Emisar.Config.fetch_env!(:emisar, :mixpanel_token)
 
-  defp host, do: Application.get_env(:emisar, :mixpanel_api_host, "https://api.mixpanel.com")
+  defp host, do: Emisar.Config.get_env(:emisar, :mixpanel_api_host, "https://api.mixpanel.com")
 end

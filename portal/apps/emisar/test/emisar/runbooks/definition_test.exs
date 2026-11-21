@@ -415,6 +415,26 @@ defmodule Emisar.Runbooks.DefinitionTest do
     assert Definition.schema()["$schema"] == "https://json-schema.org/draft/2020-12/schema"
     refute Map.has_key?(Definition.schema()["x-emisar-limits"], "max_steps")
     assert Definition.limit!(:default_stage_parallelism) == 5
+
+    # The wait and parallelism limits restate the schema's own property bounds,
+    # which are what validation enforces; a copy that drifts would mislead the
+    # docs and editor that read it.
+    defs = Definition.schema()["$defs"]
+
+    for {def_name, property, min_limit, max_limit} <- [
+          {"wait", "interval_seconds", :min_wait_interval_seconds, :max_wait_interval_seconds},
+          {"wait", "timeout_seconds", :min_wait_timeout_seconds, :max_wait_timeout_seconds},
+          {"wait", "max_attempts", :min_wait_attempts, :max_wait_attempts},
+          {"stage", "max_parallel", :min_stage_parallelism, :max_stage_parallelism}
+        ] do
+      bound = defs[def_name]["properties"][property]
+      assert Definition.limit!(min_limit) == bound["minimum"]
+      assert Definition.limit!(max_limit) == bound["maximum"]
+    end
+
+    assert Definition.limit!(:default_stage_parallelism) in Definition.limit!(
+             :min_stage_parallelism
+           )..Definition.limit!(:max_stage_parallelism)
   end
 
   defp contains_union?(%{} = schema) do

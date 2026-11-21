@@ -785,6 +785,10 @@ defmodule Emisar.Audit.Event.Query do
   # signed-in user's action carries both; an MCP/API-key request carries only
   # request_id (keys don't "sign in"); engine/socket/sweeper/pre-auth events
   # carry neither (a sign-in's method lives in its PAYLOAD, not the column).
+  # A Member's own security events (`member_security_event/4`) have no Subject,
+  # so they carry request_id from their request context but never auth_method.
+  # Types no current builder writes keep their flags so older rows stay
+  # filterable.
   # The description feeds the Type picker's hover pane — one line on when the
   # event is written.
   @event_type_meta %{
@@ -822,7 +826,7 @@ defmodule Emisar.Audit.Event.Query do
       {true, false, false,
        "A runner was refused because its version is below the enforced minimum."},
     "runner.retention_swept" =>
-      {false, false, true,
+      {true, true, true,
        "Runners offline beyond the cleanup period were removed. Disabled runners were kept."},
     "enrollment_key.created" => {true, true, true, "A runner enrollment key was created."},
     "enrollment_key.revoked" =>
@@ -838,12 +842,12 @@ defmodule Emisar.Audit.Event.Query do
     "api_key.revoked" =>
       {true, true, true, "An operator revoked an API key. Its next call gets a 401."},
     "api_key.bound" =>
-      {true, false, true, "An automatically generated API key was used for the first time."},
+      {false, false, true, "An automatically generated API key was used for the first time."},
     "api_key.auto_rotated" =>
       {true, false, true,
        "A replacement key was created through automatic rotation. The previous key is revoked when its replacement is first used."},
     "api_key.retired_by_rotation" =>
-      {true, false, true,
+      {false, false, true,
        "The replacement key was used for the first time, so the old key was revoked automatically."},
     "api_key.device_grant_approved" =>
       {true, true, true,
@@ -885,7 +889,7 @@ defmodule Emisar.Audit.Event.Query do
       {true, true, true,
        "The recorded versions of a pack were removed from the account’s catalog. Pack files on runners were not removed."},
     "pack_retention_swept" =>
-      {false, false, true, "Pack versions not reported within the cleanup period were removed."},
+      {true, true, true, "Pack versions not reported within the cleanup period were removed."},
     "pack_retirement_swept" =>
       {false, false, true, "Retired pack versions no longer reported by runners were removed."},
     "pack_retirement_overridden" =>
@@ -912,16 +916,16 @@ defmodule Emisar.Audit.Event.Query do
       {true, false, false, "A sign-in attempt failed (wrong or expired code, bad link)."},
     "user.invited" => {true, true, true, "An admin invited a teammate into the workspace."},
     "user.invitation_accepted" =>
-      {true, false, false, "An invited person accepted and registered a new user account."},
+      {false, false, false, "An invited person accepted and registered a new user account."},
     "user.email_confirmed" =>
       {true, false, false, "A user proved ownership of their email address."},
     "user.email_change_requested" =>
-      {true, true, false, "A user asked to change their sign-in email (confirmation pending)."},
+      {true, false, false, "A user asked to change their sign-in email (confirmation pending)."},
     "user.email_change_code_failed" =>
       {true, false, false,
        "The confirmation code emailed for an email change was wrong or expired."},
     "user.oidc_identity_step_up_requested" =>
-      {true, true, false,
+      {true, false, false,
        "A user requested confirmation before linking, removing, or testing an SSO sign-in method."},
     "user.oidc_identity_step_up_failed" =>
       {true, false, false,
@@ -953,10 +957,10 @@ defmodule Emisar.Audit.Event.Query do
     "user.mfa_enrollment_failed" =>
       {true, false, false,
        "The confirmation code emailed for MFA enrollment was wrong or expired."},
-    "user.mfa_enabled" => {true, true, false, "A user enrolled a second factor."},
-    "user.mfa_disabled" => {true, true, false, "A user disabled their MFA."},
+    "user.mfa_enabled" => {true, false, false, "A user enrolled a second factor."},
+    "user.mfa_disabled" => {true, false, false, "A user disabled their MFA."},
     "user.mfa_verified" =>
-      {true, true, false,
+      {true, false, false,
        "An MFA code was accepted, or an existing session was marked MFA-verified."},
     "user.mfa_failed" => {true, false, false, "An MFA verification attempt failed."},
     "user.mfa_rate_limited" =>
@@ -965,11 +969,11 @@ defmodule Emisar.Audit.Event.Query do
     "user.mfa_recovery_code_used" =>
       {true, false, false, "A one-time recovery code was used to pass the second factor."},
     "user.mfa_recovery_codes_regenerated" =>
-      {true, true, false,
+      {true, false, false,
        "A user regenerated their recovery codes (the old ones no longer work)."},
-    "user.session_revoked" => {true, true, false, "A user revoked one of their own sessions."},
+    "user.session_revoked" => {true, false, false, "A user revoked one of their own sessions."},
     "user.other_sessions_revoked" =>
-      {true, true, false, "A user revoked every session except the current one."},
+      {true, false, false, "A user revoked every session except the current one."},
     "user.sessions_revoked" =>
       {true, true, true, "An admin ended all of a teammate's browser sessions in this workspace."},
     "user.mfa_reset_by_admin" =>
@@ -1068,9 +1072,9 @@ defmodule Emisar.Audit.Event.Query do
     "action_run.pending_approval" =>
       {true, false, true, "Policy held an action for human approval."},
     "user.provisioned_via_sso" =>
-      {true, false, false, "A user was created automatically on their first SSO sign-in."},
+      {false, false, false, "A user was created automatically on their first SSO sign-in."},
     "user.provisioned_via_scim" =>
-      {true, false, true, "The identity provider created a user over SCIM."},
+      {false, false, true, "The identity provider created a user over SCIM."},
     "user.renamed_via_scim" =>
       {false, false, true, "The identity provider renamed a user over SCIM."},
     "membership.renamed_via_scim" =>
@@ -1080,14 +1084,14 @@ defmodule Emisar.Audit.Event.Query do
       {false, false, true,
        "The identity provider changed a member's email address; the new address can't receive sign-in codes."},
     "membership.deprovisioned_via_scim" =>
-      {true, false, true,
+      {false, false, true,
        "The identity provider suspended a member and ended their existing access to this workspace."},
     "membership.reprovisioned_via_scim" =>
-      {true, false, true, "The identity provider re-activated a previously suspended member."},
+      {false, false, true, "The identity provider re-activated a previously suspended member."},
     "membership.role_synced_via_scim" =>
-      {true, false, true, "A member's role was recomputed from directory group mappings."},
+      {false, false, true, "A member's role was recomputed from directory group mappings."},
     "membership.runner_access_synced_via_scim" =>
-      {true, false, true,
+      {false, false, true,
        "A member's runner access was recomputed from directory group mappings."},
     "directory_sync.change_refused" =>
       {false, false, true,
@@ -1124,7 +1128,7 @@ defmodule Emisar.Audit.Event.Query do
     "sso.link_request_dismissed" =>
       {true, true, true, "An admin dismissed an SSO request without adding or linking a user."},
     "audit.exported" =>
-      {true, false, true,
+      {true, true, true,
        "Audit events were read for CSV or API export. This does not confirm a complete download or delivery to a SIEM."},
     "audit.retention_swept" =>
       {false, false, false, "Audit events past their retention period were removed."},

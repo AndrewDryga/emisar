@@ -38,8 +38,20 @@ defmodule EmisarWeb.TelemetryDashboardTest do
            "dashboard.json references metrics EmisarWeb.Telemetry does not emit: #{inspect(missing)}"
   end
 
-  test "the reference alert rules file is present" do
-    assert @observability_dir |> Path.join("alerts.yaml") |> File.exists?()
+  test "the reference alert rules use emitted metrics and watch the published catalog" do
+    alerts = @observability_dir |> Path.join("alerts.yaml") |> File.read!()
+    emitted = EmisarWeb.Telemetry.metrics() |> Enum.map(&Enum.join(&1.name, "_")) |> MapSet.new()
+
+    referenced =
+      ~r/\b(?:emisar|vm)_[a-z0-9_]+/
+      |> Regex.scan(alerts)
+      |> List.flatten()
+      |> Enum.uniq()
+
+    assert Enum.reject(referenced, &MapSet.member?(emitted, &1)) == []
+    # The code calls a rising catalog age the alertable signal for a portal that
+    # silently stopped refreshing; the reference rules must carry it.
+    assert "emisar_catalog_published_age_seconds" in referenced
   end
 
   test "LiveView event latency uses only the server-owned view label" do

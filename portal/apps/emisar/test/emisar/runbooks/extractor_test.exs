@@ -17,6 +17,24 @@ defmodule Emisar.Runbooks.ExtractorTest do
       assert result.public == result.raw
     end
 
+    test "an array index must be canonical" do
+      materialized = %{"structured_output" => %{"items" => ["zero", "one"]}}
+
+      for pointer <- ["/items/+1", "/items/01", "/items/-0", "/items/ 1", "/items/-"] do
+        outputs = [output("value", "structured_output", "json_pointer", pointer)]
+
+        assert {:error, "extraction_failed", "JSON Pointer does not resolve.", _evidence} =
+                 Extractor.extract_outputs(outputs, materialized)
+      end
+
+      for {pointer, expected} <- [{"/items/0", "zero"}, {"/items/1", "one"}] do
+        outputs = [output("value", "structured_output", "json_pointer", pointer)]
+
+        assert {:ok, %{raw: %{"value" => ^expected}}} =
+                 Extractor.extract_outputs(outputs, materialized)
+      end
+    end
+
     test "parses bounded JSON text before applying a pointer" do
       outputs = [output("state", "stdout", "json_pointer", "/replica/state")]
       materialized = %{"stdout" => ~s({"replica":{"state":"streaming"}})}

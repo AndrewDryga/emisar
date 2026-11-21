@@ -12,6 +12,9 @@ defmodule Emisar.Runbooks.ExecutionItem do
     field :action_id, :string
     field :pack_ref, :string
     field :pack_hash, :string
+    # `risk` and `policy_decision` are frozen snapshot text, written once from the
+    # compiled plan and never cast back to atoms: an item must keep loading, and
+    # keep showing what was decided, even after either vocabulary changes.
     field :risk, :string
     field :policy_version, :integer
     field :policy_decision, :string

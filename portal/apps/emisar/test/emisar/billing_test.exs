@@ -405,6 +405,31 @@ defmodule Emisar.BillingTest do
     end
   end
 
+  describe "sso_entitlements/1" do
+    test "answers both plan gates, entitlement overrides included, like the two predicates" do
+      free = Fixtures.Accounts.create_account()
+      team = Fixtures.Accounts.create_account()
+      Fixtures.Accounts.create_subscription(team, "team")
+      enterprise = Fixtures.Accounts.create_account()
+      Fixtures.Accounts.create_subscription(enterprise, "enterprise")
+      custom = Fixtures.Accounts.create_account()
+
+      Fixtures.Accounts.create_subscription(custom, "team",
+        entitlements: %{"features_sso_enabled?" => false, "features_scim_enabled?" => true}
+      )
+
+      for account <- [free, team, enterprise, custom] do
+        assert Billing.sso_entitlements(account) ==
+                 {Billing.sso_available?(account), Billing.directory_sync_available?(account)}
+      end
+
+      assert Billing.sso_entitlements(free) == {false, false}
+      assert Billing.sso_entitlements(team) == {true, false}
+      assert Billing.sso_entitlements(enterprise) == {true, true}
+      assert Billing.sso_entitlements(custom) == {false, true}
+    end
+  end
+
   describe "audit_export_available?/1" do
     setup do
       %{account: Fixtures.Accounts.create_account()}

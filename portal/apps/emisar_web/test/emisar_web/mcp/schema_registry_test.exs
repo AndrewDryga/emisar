@@ -426,6 +426,32 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
     refute Enum.any?(step_counts, fn [match] -> match =~ "maximum" end)
   end
 
+  test "runbook result titles accept every title the changeset stores" do
+    # 80 graphemes inside the 320-byte limit can carry 200 code points (a base
+    # letter plus two combining marks), and JSON Schema counts code points.
+    title = String.duplicate("é̂", 60) <> String.duplicate("a", 20)
+    assert {String.length(title), byte_size(title)} == {80, 320}
+
+    title_bytes = Runbooks.metadata_limit!(:title_bytes)
+    by_name = Map.new(SchemaRegistry.contracts(), &{&1["name"], &1["outputSchema"]})
+
+    ok =
+      &Enum.find(&1["oneOf"], fn branch -> branch["properties"]["ok"] == %{"const" => true} end)
+
+    title_schemas =
+      [ok.(by_name["list_runbooks"])["properties"]["runbooks"]["items"]] ++
+        ok.(by_name["get_runbook"])["properties"]["runbook"]["oneOf"]
+
+    assert length(title_schemas) == 3
+
+    for %{"properties" => %{"title" => schema}} <- title_schemas do
+      assert schema["maxLength"] == title_bytes
+      assert schema["x-maxUtf8Bytes"] == title_bytes
+      assert {:ok, compiled} = JSONSchex.compile(schema)
+      assert JSONSchex.validate(compiled, title) == :ok
+    end
+  end
+
   test "the published pack action bound is the trusted manifest's own ceiling" do
     # list_packs emits every action the trusted manifest holds, with no take or
     # count guard on the path, so a lower bound here rejects a legitimate

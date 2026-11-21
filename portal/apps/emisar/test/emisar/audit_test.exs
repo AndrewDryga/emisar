@@ -1081,6 +1081,35 @@ defmodule Emisar.AuditTest do
       refute :request_id in names.(applicable)
     end
 
+    test "conditional filters follow what each builder actually stamps", %{subject: subject} do
+      # A flag that disagrees with its builder offers a filter that can never
+      # match a new row, or hides one that would.
+      context = %RequestContext{request_id: "req_trace"}
+      session = %{subject | auth_method: :magic_link, context: context}
+      member = subject.actor
+      provider = %SSO.IdentityProvider{id: Ecto.UUID.generate(), name: "Okta", kind: :okta}
+      filters = Audit.Event.Query.filters()
+
+      for changeset <- [
+            Audit.Events.member_security_event(member, "user.mfa_enabled", context),
+            Audit.Events.member_security_event(member, "user.session_revoked", context),
+            Audit.Events.user_invitation_accepted(member),
+            Audit.Events.membership_role_synced_via_scim(member, provider, :admin),
+            Audit.Events.runner_retention_swept(session, [], 24),
+            Audit.Events.pack_retention_swept(session, [], 7)
+          ] do
+        type = Ecto.Changeset.get_field(changeset, :event_type)
+        offered = Enum.map(Audit.Event.Query.applicable_filters(filters, type), & &1.name)
+
+        assert :request_id in offered == !is_nil(Ecto.Changeset.get_field(changeset, :request_id)),
+               "#{type}: Request ID filter disagrees with its builder"
+
+        assert :auth_method in offered ==
+                 !is_nil(Ecto.Changeset.get_field(changeset, :auth_method)),
+               "#{type}: Sign-in method filter disagrees with its builder"
+      end
+    end
+
     test "actor_id narrows the list to one identity", %{account: account, subject: subject} do
       actor_a = Ecto.UUID.generate()
       actor_b = Ecto.UUID.generate()

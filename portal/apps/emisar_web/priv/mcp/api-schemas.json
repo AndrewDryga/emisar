@@ -1772,7 +1772,7 @@
                   "additionalProperties": false,
                   "properties": {
                     "slug": {"$ref": "#/$defs/runbook_slug"},
-                    "title": {"type": "string", "minLength": 1, "maxLength": 160},
+                    "title": {"type": "string", "minLength": 1, "maxLength": 320, "x-maxUtf8Bytes": 320},
                     "summary": {"type": "string", "maxLength": 512},
                     "live": {"$ref": "#/$defs/runbook_live_side"},
                     "draft": {"$ref": "#/$defs/runbook_draft_side"},
@@ -1828,7 +1828,7 @@
                       "runbook_ref": {"$ref": "#/$defs/runbook_ref"},
                       "status": {"const": "published"},
                       "definition_sha256": {"$ref": "#/$defs/definition_sha256"},
-                      "title": {"type": "string", "minLength": 1, "maxLength": 160},
+                      "title": {"type": "string", "minLength": 1, "maxLength": 320, "x-maxUtf8Bytes": 320},
                       "description": {
                         "oneOf": [
                           {"type": "null"},
@@ -1849,7 +1849,7 @@
                       "draft_id": {"type": "string", "format": "uuid"},
                       "status": {"const": "draft"},
                       "definition_sha256": {"$ref": "#/$defs/definition_sha256"},
-                      "title": {"type": "string", "minLength": 1, "maxLength": 160},
+                      "title": {"type": "string", "minLength": 1, "maxLength": 320, "x-maxUtf8Bytes": 320},
                       "description": {
                         "oneOf": [
                           {"type": "null"},

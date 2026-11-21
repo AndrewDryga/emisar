@@ -339,14 +339,28 @@ defmodule Emisar.Billing do
 
   @doc false
   def sso_available_for_account_id?(account_id, opts \\ []) when is_binary(account_id) do
-    posture = account_id |> subscription_for_account(opts) |> effective_plan()
+    account_id |> subscription_for_account(opts) |> effective_plan() |> sso_entitled?()
+  end
 
+  @doc """
+  Both single sign-on plan answers from ONE subscription read:
+  `{sso_available?, directory_sync_available?}`, for a page that shows both.
+  """
+  def sso_entitlements(%Accounts.Account{} = account) do
+    posture = account.id |> peek_subscription_for_account() |> effective_plan()
+    {sso_entitled?(posture), directory_sync_entitled?(posture)}
+  end
+
+  defp sso_entitled?(posture) do
     entitled_feature(
       posture,
       "features_sso_enabled?",
       posture.plan_name in ["team", "enterprise"]
     )
   end
+
+  defp directory_sync_entitled?(posture),
+    do: entitled_feature(posture, "features_scim_enabled?", posture.plan_name == "enterprise")
 
   @doc "True when the account's plan includes audit-log export — the CSV download AND the SIEM/NDJSON API (a `features_audit_export_enabled?` entitlement, else Team and Enterprise). Free keeps the in-console trail; taking the data OUT is the paid surface."
   def audit_export_available?(%Accounts.Account{} = account) do
@@ -372,8 +386,7 @@ defmodule Emisar.Billing do
   @doc false
   def directory_sync_available_for_account_id?(account_id, opts \\ [])
       when is_binary(account_id) do
-    posture = account_id |> subscription_for_account(opts) |> effective_plan()
-    entitled_feature(posture, "features_scim_enabled?", posture.plan_name == "enterprise")
+    account_id |> subscription_for_account(opts) |> effective_plan() |> directory_sync_entitled?()
   end
 
   # Internal unlocked nil-or-struct read. Not exposed to LiveView/MCP because

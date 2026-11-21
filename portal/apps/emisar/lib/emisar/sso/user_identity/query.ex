@@ -143,6 +143,9 @@ defmodule Emisar.SSO.UserIdentity.Query do
     |> where([provider: provider], provider.enabled == true)
   end
 
+  def select_ids(queryable),
+    do: select(queryable, [identities: i], i.id)
+
   def select_membership_ids(queryable \\ all()),
     do: select(queryable, [identities: i], i.membership_id)
 

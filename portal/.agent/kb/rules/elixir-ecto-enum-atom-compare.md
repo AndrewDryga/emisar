@@ -16,8 +16,10 @@ shows) writes a comparison that compiles clean and never matches.
 
 Applies to every `Ecto.Enum`: run/approval/runbook `status`, membership `role`,
 action `risk`, pack `trust_state`, policy/scope `scope_type`, run `source`,
-event `kind`. The two deliberate `:string` look-alikes — `Subscription.status`
-and `Subscription.plan` (see §3) — DO compare as strings; know which you hold.
+event `kind`. The deliberate `:string` look-alikes listed in §3 (the Paddle
+mirror's `Subscription.status`, `Subscription.plan` and siblings, and the frozen
+`ExecutionItem.risk` and `ExecutionItem.policy_decision`) DO compare as
+strings; know which you hold.
 
 **✅ Good**
 

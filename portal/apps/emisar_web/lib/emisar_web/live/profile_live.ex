@@ -14,10 +14,6 @@ defmodule EmisarWeb.ProfileLive do
   alias EmisarWeb.{LiveForm, LiveTable, MfaEnrollment, MfaErrors, UserAgent, UserAuth}
   alias Phoenix.LiveView.JS
 
-  @mfa_enrollment_email_unavailable_error "Your email address isn't verified, so we can't send a code to it. Ask your workspace administrator for help, or contact support@emisar.dev."
-  @mfa_enrollment_email_suppressed_error "Emisar cannot deliver mail to your address. Contact support to restore email delivery before setting up MFA."
-  @mfa_enrollment_email_delivery_error "We could not deliver the verification code. Try again. If it keeps failing, contact support."
-
   def mount(_params, _session, socket) do
     {:ok,
      socket
@@ -180,7 +176,7 @@ defmodule EmisarWeb.ProfileLive do
         assign(socket, :email_step_error, step_up_error(step))
 
       {:error, :replay} ->
-        assign(socket, :email_step_error, "That code was just used. Wait for the next one.")
+        assign(socket, :email_step_error, MfaErrors.message(:replay))
 
       {:error, :rate_limited} ->
         assign(socket, :email_step_error, MfaErrors.message(:rate_limited))
@@ -515,13 +511,13 @@ defmodule EmisarWeb.ProfileLive do
          |> put_flash(:info, "We emailed a verification code to your address.")}
 
       {:ok, :suppressed} ->
-        {:noreply, assign(socket, :mfa_start_error, @mfa_enrollment_email_suppressed_error)}
+        {:noreply, assign(socket, :mfa_start_error, MfaErrors.message(:email_suppressed))}
 
       {:error, :rate_limited} ->
         {:noreply, assign(socket, :mfa_start_error, MfaErrors.message(:email_rate_limited))}
 
       {:error, :email_unavailable} ->
-        {:noreply, assign(socket, :mfa_start_error, @mfa_enrollment_email_unavailable_error)}
+        {:noreply, assign(socket, :mfa_start_error, MfaErrors.message(:email_unavailable))}
 
       {:error, :mfa_already_enabled} ->
         {:noreply, refresh_after_mfa_enabled(socket)}
@@ -530,7 +526,7 @@ defmodule EmisarWeb.ProfileLive do
         {:noreply, UserAuth.reauthenticate(socket)}
 
       {:error, _reason} ->
-        {:noreply, assign(socket, :mfa_start_error, @mfa_enrollment_email_delivery_error)}
+        {:noreply, assign(socket, :mfa_start_error, MfaErrors.message(:email_delivery_failed))}
     end
   end
 
@@ -560,7 +556,7 @@ defmodule EmisarWeb.ProfileLive do
         {:error, :email_unavailable} ->
           {:noreply,
            socket
-           |> put_flash(:error, @mfa_enrollment_email_unavailable_error)
+           |> put_flash(:error, MfaErrors.message(:email_unavailable))
            |> MfaEnrollment.reset()
            |> assign_mfa_enrollment_email_form()
            |> assign_mfa_form()}
@@ -573,7 +569,11 @@ defmodule EmisarWeb.ProfileLive do
 
         {:error, _reason} ->
           {:noreply,
-           assign(socket, :mfa_enrollment_email_error, "Could not verify that code. Try again.")}
+           assign(
+             socket,
+             :mfa_enrollment_email_error,
+             MfaErrors.message(:email_code_unverifiable)
+           )}
       end
     else
       {:noreply, put_flash(socket, :error, "Start MFA setup again.")}
@@ -592,7 +592,7 @@ defmodule EmisarWeb.ProfileLive do
 
         {:ok, :suppressed} ->
           {:noreply,
-           assign(socket, :mfa_enrollment_email_error, @mfa_enrollment_email_suppressed_error)}
+           assign(socket, :mfa_enrollment_email_error, MfaErrors.message(:email_suppressed))}
 
         {:error, :rate_limited} ->
           {:noreply,
@@ -606,7 +606,7 @@ defmodule EmisarWeb.ProfileLive do
 
         {:error, _reason} ->
           {:noreply,
-           assign(socket, :mfa_enrollment_email_error, @mfa_enrollment_email_delivery_error)}
+           assign(socket, :mfa_enrollment_email_error, MfaErrors.message(:email_delivery_failed))}
       end
     else
       {:noreply, put_flash(socket, :error, "Start MFA setup again.")}
@@ -774,7 +774,7 @@ defmodule EmisarWeb.ProfileLive do
          |> assign(:mfa_disable_step, :code)
          |> assign(
            :mfa_disable_error,
-           "That authenticator code was already used. Wait for the next code."
+           MfaErrors.message(:replay)
          )}
 
       {:error, _reason} ->
@@ -818,7 +818,7 @@ defmodule EmisarWeb.ProfileLive do
          |> assign(:mfa_recovery_regeneration_step, :code)
          |> assign(
            :mfa_recovery_regeneration_error,
-           "That authenticator code was already used. Wait for the next authenticator code."
+           MfaErrors.message(:replay)
          )}
 
       {:error, :mfa_not_enabled} ->

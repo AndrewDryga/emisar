@@ -767,6 +767,35 @@ defmodule Emisar.CatalogTest do
              ) == {:error, :unknown_runner}
     end
 
+    test "a runner that installs the whole bundled catalog clears the advertisement caps" do
+      # The pack and action caps bound hostile runners; a runner with every
+      # checked-in pack installed must still pass them, or it is refused on
+      # connect. A superseded lease stops ingestion right after the caps, so
+      # reaching that refusal proves the counts were accepted.
+      runner = Fixtures.Runners.create_runner(connected?: true)
+
+      shipped =
+        Application.app_dir(:emisar, "priv/packs/catalog.json")
+        |> File.read!()
+        |> Jason.decode!()
+        |> Map.fetch!("packs")
+
+      packs =
+        Map.new(shipped, &{&1["id"], %{"version" => &1["version"], "hash" => &1["content_hash"]}})
+
+      actions =
+        for pack <- shipped,
+            catalog_action <- pack["actions"],
+            do: action(catalog_action["id"], pack_id: pack["id"])
+
+      assert Catalog.observe_state_from_connection(
+               runner.id,
+               state_payload(packs: packs, actions: actions),
+               runner.connection_generation,
+               Ecto.UUID.generate()
+             ) == {:error, :connection_superseded}
+    end
+
     test "rejects an advertisement from a disabled runner" do
       {account, subject} = account_with_owner()
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)

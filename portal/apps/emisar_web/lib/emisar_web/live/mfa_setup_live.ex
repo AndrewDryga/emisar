@@ -20,10 +20,6 @@ defmodule EmisarWeb.MfaSetupLive do
   alias Emisar.Auth
   alias EmisarWeb.{MfaEnrollment, MfaErrors, UserAuth}
 
-  @email_unavailable_error "Your email address isn't verified, so we can't send a code to it. Ask your workspace administrator for help, or contact support@emisar.dev."
-  @email_suppressed_error "Emisar cannot deliver mail to your address. Contact support to restore email delivery before setting up MFA."
-  @email_delivery_error "We could not deliver the verification code. Try again. If it keeps failing, contact support."
-
   def mount(_params, session, socket) do
     %{current_membership: membership, account_compliance: compliance} = socket.assigns
     enrolled? = not is_nil(membership.mfa_enabled_at)
@@ -299,13 +295,13 @@ defmodule EmisarWeb.MfaSetupLive do
          |> assign(:mfa_enrollment_email_error, nil)}
 
       {:ok, :suppressed} ->
-        {:noreply, assign(socket, :mfa_start_error, @email_suppressed_error)}
+        {:noreply, assign(socket, :mfa_start_error, MfaErrors.message(:email_suppressed))}
 
       {:error, :rate_limited} ->
         {:noreply, assign(socket, :mfa_start_error, MfaErrors.message(:email_rate_limited))}
 
       {:error, :email_unavailable} ->
-        {:noreply, assign(socket, :mfa_start_error, @email_unavailable_error)}
+        {:noreply, assign(socket, :mfa_start_error, MfaErrors.message(:email_unavailable))}
 
       {:error, :mfa_already_enabled} ->
         {:noreply, remount(socket)}
@@ -314,7 +310,7 @@ defmodule EmisarWeb.MfaSetupLive do
         {:noreply, UserAuth.reauthenticate(socket)}
 
       {:error, _reason} ->
-        {:noreply, assign(socket, :mfa_start_error, @email_delivery_error)}
+        {:noreply, assign(socket, :mfa_start_error, MfaErrors.message(:email_delivery_failed))}
     end
   end
 
@@ -343,7 +339,9 @@ defmodule EmisarWeb.MfaSetupLive do
 
         {:error, :email_unavailable} ->
           {:noreply,
-           socket |> reset_enrollment() |> assign(:mfa_start_error, @email_unavailable_error)}
+           socket
+           |> reset_enrollment()
+           |> assign(:mfa_start_error, MfaErrors.message(:email_unavailable))}
 
         {:error, :mfa_already_enabled} ->
           {:noreply, remount(socket)}
@@ -353,7 +351,11 @@ defmodule EmisarWeb.MfaSetupLive do
 
         {:error, _reason} ->
           {:noreply,
-           assign(socket, :mfa_enrollment_email_error, "Could not verify that code. Try again.")}
+           assign(
+             socket,
+             :mfa_enrollment_email_error,
+             MfaErrors.message(:email_code_unverifiable)
+           )}
       end
     else
       {:noreply, put_flash(socket, :error, MfaErrors.message(:email_verification_required))}
@@ -374,7 +376,8 @@ defmodule EmisarWeb.MfaSetupLive do
            |> push_event("code:reset", %{id: "mfa-enrollment-email-code"})}
 
         {:ok, :suppressed} ->
-          {:noreply, assign(socket, :mfa_enrollment_email_error, @email_suppressed_error)}
+          {:noreply,
+           assign(socket, :mfa_enrollment_email_error, MfaErrors.message(:email_suppressed))}
 
         {:error, :rate_limited} ->
           {:noreply,
@@ -387,7 +390,8 @@ defmodule EmisarWeb.MfaSetupLive do
           {:noreply, UserAuth.reauthenticate(socket)}
 
         {:error, _reason} ->
-          {:noreply, assign(socket, :mfa_enrollment_email_error, @email_delivery_error)}
+          {:noreply,
+           assign(socket, :mfa_enrollment_email_error, MfaErrors.message(:email_delivery_failed))}
       end
     else
       {:noreply, put_flash(socket, :error, MfaErrors.message(:email_verification_required))}

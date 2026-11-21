@@ -960,6 +960,13 @@ defmodule Emisar.SSO do
         end
       end)
       |> Multi.update(:provider, fn %{update_target: %{changeset: changeset}} -> changeset end)
+      |> Multi.run(:dismissed_requests, fn _repo,
+                                           %{
+                                             provider: provider,
+                                             update_target: %{changeset: changeset}
+                                           } ->
+        {:ok, discard_requests_captured_under_the_old_namespace(provider, changeset)}
+      end)
       |> Multi.run(:session_effect, fn repo,
                                        %{
                                          provider: provider,
@@ -991,9 +998,11 @@ defmodule Emisar.SSO do
         after_commit: fn %{
                            provider: provider,
                            update_target: %{changeset: changeset},
-                           session_effect: %{socket_topics: topics}
+                           session_effect: %{socket_topics: topics},
+                           dismissed_requests: dismissed
                          } ->
           Auth.disconnect_live_socket_topics(topics)
+          Enum.each(dismissed, &broadcast_link_request_dismissed/1)
           _ = recompute_authorization_if_changed(provider, changeset)
           :ok
         end
@@ -1042,7 +1051,6 @@ defmodule Emisar.SSO do
           :client_secret_required
 
         true ->
-          discard_requests_captured_under_the_old_namespace(loaded_provider, changeset)
           prepare_provider_authorization_change(loaded_provider, changeset)
       end
     else
@@ -1361,18 +1369,12 @@ defmodule Emisar.SSO do
   # its identifier against the NEW one: an admin who repoints the connection to an
   # IdP they control can then mint that identifier there and sign in as whoever the
   # request named. The request outlives the provenance the approval rests on, so it
-  # goes with it, in the same transaction as the change.
+  # goes with it, in the same transaction as the change; the caller tells each
+  # waiting browser and the admin queue once that transaction commits.
   defp discard_requests_captured_under_the_old_namespace(provider, changeset) do
-    if Enum.any?(@identity_namespace_fields, &Ecto.Changeset.changed?(changeset, &1)) do
-      queryable = LinkRequest.Query.all() |> LinkRequest.Query.by_provider_id(provider.id)
-      {discarded, _} = Repo.delete_all(queryable)
-
-      if discarded > 0 do
-        Logger.info("SSO discarded #{discarded} link request(s) after a namespace change")
-      end
-    end
-
-    :ok
+    if Enum.any?(@identity_namespace_fields, &Ecto.Changeset.changed?(changeset, &1)),
+      do: delete_pending_link_requests(provider),
+      else: []
   end
 
   # An identity is keyed on `(provider_id, provider_identifier)`, and that
@@ -1641,8 +1643,8 @@ defmodule Emisar.SSO do
     ids =
       UserIdentity.Query.all()
       |> UserIdentity.Query.by_provider_id(provider.id)
+      |> UserIdentity.Query.select_ids()
       |> repo.all()
-      |> Enum.map(& &1.id)
 
     Auth.delete_identity_sessions(ids, repo)
   end
@@ -4399,6 +4401,17 @@ defmodule Emisar.SSO do
   def subject_can_configure_directory_sync?(%Subject{account: account} = subject) do
     Auth.Authorizer.has_permission?(subject, Authorizer.manage_sso_permission()) and
       Billing.directory_sync_available?(account)
+  end
+
+  @doc """
+  `{subject_can_configure_sso?, subject_can_configure_directory_sync?}` from one
+  subscription read, for the settings page that renders both. A subject without
+  `manage_sso` reads nothing.
+  """
+  def subject_sso_configuration(%Subject{account: account} = subject) do
+    if Auth.Authorizer.has_permission?(subject, Authorizer.manage_sso_permission()),
+      do: Billing.sso_entitlements(account),
+      else: {false, false}
   end
 
   # A plan gate bounds what an account may ADD or keep running — never what it may

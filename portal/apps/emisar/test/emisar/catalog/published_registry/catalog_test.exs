@@ -34,7 +34,7 @@ defmodule Emisar.Catalog.PublishedRegistry.CatalogTest do
     }
   end
 
-  # A complete trusted descriptor — the shape `emisar pack catalog build`
+  # A complete trusted descriptor — the shape `packctl catalog build`
   # publishes. Tests override only the field under test, since anything less
   # than a full descriptor is now rejected outright.
   defp action(id, overrides \\ %{}) do

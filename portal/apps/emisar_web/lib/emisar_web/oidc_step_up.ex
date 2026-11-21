@@ -67,7 +67,7 @@ defmodule EmisarWeb.OIDCStepUp do
         {:error, MfaErrors.message(:rate_limited)}
 
       {:error, :replay} ->
-        {:error, "That authenticator code was already used. Wait for the next code."}
+        {:error, MfaErrors.message(:replay)}
 
       {:error, _reason} ->
         {:error, wrong_code_message(step.factor)}

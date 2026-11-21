@@ -214,10 +214,11 @@ defmodule Emisar.Runbooks.Extractor do
     end
   end
 
+  # RFC 6901 array indexes are `0` or a digit run without a leading zero, so
+  # `+1`, `01` and `-0` name no element.
   defp pointer_child(token, {:ok, value}) when is_list(value) do
-    with {index, ""} <- Integer.parse(token),
-         true <- index >= 0,
-         {:ok, child} <- Enum.fetch(value, index) do
+    with true <- Regex.match?(~r/\A(?:0|[1-9][0-9]*)\z/, token),
+         {:ok, child} <- Enum.fetch(value, String.to_integer(token)) do
       {:cont, {:ok, child}}
     else
       _invalid -> {:halt, {:error, "JSON Pointer does not resolve."}}
