@@ -227,6 +227,23 @@ cases:
         /more_available: true
         /next_page_cursor: null
         /cursor_omitted: true
+  # A sparse search over a long interval: Cloud Logging returns empty pages with
+  # tokens too long for a cursor before the matching entries.
+  - name: gcp.log_entries-follows-empty-scan-pages-past-a-long-token
+    action: gcp.log_entries
+    args: {project: example-prod, resource_type: sparse_scan, page_size: 5}
+    expect:
+      json: {/entries/0/job: continued-page, /more_available: false, /next_page_cursor: null}
+  - name: gcp.log_entries-stops-following-empty-scan-pages-after-eight
+    action: gcp.log_entries
+    args: {project: example-prod, resource_type: endless_scan, page_size: 5}
+    expect:
+      json: {/entries: [], /more_available: true, /next_page_cursor: null, /cursor_omitted: true}
+    probes:
+      - name: the first request and eight follow-ups reached Cloud Logging
+        argv: [/bin/sh, -c, 'set -eu; state=$(curl -fsS --cacert /packs/gcp-monitoring/test/fixtures/server.crt https://gcp-api:8443/probe/state); [ "$(printf %s "$state" | grep -o endless_scan | wc -l)" -eq 9 ] && echo nine-requests']
+        expect:
+          stdout_contains: [nine-requests]
   - name: gcp.log_entries-follows-max-provider-cursor
     action: gcp.log_entries
     env: *logging-clock

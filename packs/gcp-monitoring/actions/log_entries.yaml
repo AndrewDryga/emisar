@@ -10,13 +10,15 @@ description: >
   instance ID, exact log ID, and a jsonPayload.message event name,
   matched as the whole message or its first word.
   Returns fixed, clipped diagnostic fields including jsonPayload.job and error,
-  plus a continuation cursor. Use gcp.log_entry_detail with an exact log ID and
+  plus a continuation cursor. Empty pages Cloud Logging returns while scanning a
+  long, sparse interval are followed automatically, up to eight more requests.
+  Use gcp.log_entry_detail with an exact log ID and
   returned timestamp for full nested health-check, audit or container payloads
   rather than asking someone to export the JSON. Log content is arbitrary application
   output, so redaction is best-effort and the result should be treated as
   sensitive diagnostics.
 side_effects:
-  - One gcloud token read and one read-only Cloud Logging API request per page.
+  - One gcloud token read and one read-only Cloud Logging API request per page, plus up to eight more while skipping empty scan pages.
   - Returns application-controlled log content into the governed run result and audit trail.
 search_terms:
   - query gcp logs

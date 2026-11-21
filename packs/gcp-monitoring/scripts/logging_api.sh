@@ -416,6 +416,25 @@ case "$mode" in
       --header 'Content-Type: application/json' \
       --data-binary "@$tmp/request.json" \
       "$api_base/v2/entries:list"
+    # A sparse filter over a long interval makes Cloud Logging answer with empty
+    # pages and a token while it scans; that token often exceeds what a cursor
+    # can carry, which would end the search with nothing read. Follow empty pages
+    # here, bounded by count and by elapsed time so the action keeps its timeout.
+    scan_started=$(date -u +%s)
+    scan_follows=0
+    while [ "$scan_follows" -lt 8 ] &&
+      [ "$(($(date -u +%s) - scan_started))" -lt 25 ] &&
+      jq -e '((.entries // []) | length) == 0 and ((.nextPageToken // "") != "")' \
+        "$tmp/response.json" >/dev/null; do
+      jq -ce --slurpfile page "$tmp/response.json" '.pageToken = $page[0].nextPageToken' \
+        "$tmp/request.json" >"$tmp/request.next.json"
+      mv -- "$tmp/request.next.json" "$tmp/request.json"
+      request_to "$tmp/response.json" --request POST \
+        --header 'Content-Type: application/json' \
+        --data-binary "@$tmp/request.json" \
+        "$api_base/v2/entries:list"
+      scan_follows=$((scan_follows + 1))
+    done
     printf '%s' "$access_token" >"$tmp/access-token"
 
     jq -ce \

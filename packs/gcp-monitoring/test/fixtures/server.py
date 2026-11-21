@@ -216,6 +216,12 @@ def response(raw_path):
 
 def log_entries(request_body, access_token):
     filter_value = request_body.get("filter", "")
+    # Cloud Logging scanning a sparse interval: empty pages whose tokens are
+    # longer than a cursor can carry, then the matching entries.
+    if "sparse_scan" in filter_value or "endless_scan" in filter_value:
+        token = request_body.get("pageToken", "")
+        if "endless_scan" in filter_value or len(token) < 3 * 2048:
+            return {"entries": [], "nextPageToken": token + "S" * 2048}
     if "worst_case" in filter_value:
         flood = "\u2028" * 400
         return {
@@ -433,7 +439,7 @@ class Handler(BaseHTTPRequestHandler):
         except InvalidFilter as error:
             self.write_json(400, {"error": {"code": 400, "message": str(error)}})
             return
-        if request_body.get("pageToken") and 'timestamp = "' not in request_body.get("filter", ""):
+        if request_body.get("pageToken") and payload["entries"] and 'timestamp = "' not in request_body.get("filter", ""):
             payload["entries"][0]["jsonPayload"]["job"] = "continued-page"
             payload.pop("nextPageToken", None)
         self.write_json(200, payload)
