@@ -1570,6 +1570,10 @@ defmodule EmisarWeb.SSOSettingsLive do
     "Another connection of this provider type is already enabled. Disable it before enabling this one."
   end
 
+  defp error_message(:runner_access_exceeds_subject) do
+    "You can only give runner and pack access you have yourself. You can still rename a connection, rotate its client secret, turn it off, or delete it."
+  end
+
   defp error_message(:role_exceeds_your_permissions) do
     "You can only give a role you hold yourself. Ask an owner to set this one."
   end

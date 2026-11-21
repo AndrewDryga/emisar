@@ -1475,6 +1475,63 @@ defmodule Emisar.SSOTest do
              ) == {:error, :runner_access_exceeds_subject}
     end
 
+    test "a restricted admin may rename, rotate the secret of, or turn off a broader connection, but not edit its reach" do
+      {_owner, account, _owner_subject} = enterprise_owner()
+      Fixtures.Runners.create_runner(account_id: account.id, group: "web")
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+      {:ok, db_access} = RunnerAccess.restricted(["db"], [])
+      Fixtures.Memberships.force_runner_access(membership, db_access)
+      admin_subject = Fixtures.Subjects.subject_for(membership)
+      provider = provider_fixture(account, %{default_runner_access_mode: :all})
+
+      assert {:ok, renamed} = SSO.update_provider(provider, %{name: "Renamed"}, admin_subject)
+      assert renamed.name == "Renamed"
+
+      assert {:ok, rotated} =
+               SSO.update_provider(renamed, %{client_secret: "rotated"}, admin_subject)
+
+      assert rotated.client_secret == "rotated"
+
+      # Each of these keeps the connection wider than the admin's own reach.
+      for attrs <- [
+            %{default_role: :operator},
+            %{default_runner_access_mode: :restricted, default_runner_scope: ["group:web"]},
+            %{name: "Renamed again", default_role: :operator}
+          ] do
+        assert SSO.update_provider(rotated, attrs, admin_subject) ==
+                 {:error, :runner_access_exceeds_subject}
+      end
+
+      assert {:ok, disabled} = SSO.update_provider(rotated, %{enabled: false}, admin_subject)
+      refute disabled.enabled
+
+      # Turning it back on gives its members the wider reach again.
+      assert SSO.update_provider(disabled, %{enabled: true}, admin_subject) ==
+               {:error, :runner_access_exceeds_subject}
+
+      assert %IdentityProvider{
+               name: "Renamed",
+               enabled: false,
+               default_role: :viewer,
+               default_runner_access_mode: :all
+             } = Repo.reload!(provider)
+    end
+
+    test "a restricted admin cannot rename another account's connection" do
+      {_owner, account, _owner_subject} = enterprise_owner()
+      {_other_owner, other_account, _other_subject} = enterprise_owner()
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+      {:ok, db_access} = RunnerAccess.restricted(["db"], [])
+      Fixtures.Memberships.force_runner_access(membership, db_access)
+      admin_subject = Fixtures.Subjects.subject_for(membership)
+      provider = provider_fixture(other_account)
+
+      assert SSO.update_provider(provider, %{name: "Renamed"}, admin_subject) ==
+               {:error, :not_found}
+
+      assert Repo.reload!(provider).name == "Okta"
+    end
+
     test "JumpCloud stores the selected region and starts disabled" do
       {_owner, account, subject} = enterprise_owner()
 
@@ -5394,19 +5451,40 @@ defmodule Emisar.SSOTest do
     test "a rename for a member an operator removed is :not_found and commits nothing" do
       # The rename step rolls the transaction back from INSIDE
       # `sync_member_display_name`'s own (joined) transaction — the error must
-      # surface as `{:error, :not_found}`, and the deactivation and identity
-      # flag the operation also carried must not survive it.
+      # surface as `{:error, :not_found}`, and the identity flag the operation
+      # also carried must not survive it.
       %{provider: provider, account: account} = scim_provider()
       %{identity: identity, membership: membership} = provision(provider, "okta|removed")
       Fixtures.Memberships.mark_membership_as_deleted(membership)
       refute Accounts.peek_sync_membership_by_id(account.id, identity.membership_id)
 
-      update = %SCIMUserUpdate{name: {:replace, "New Name"}, active: false}
+      update = %SCIMUserUpdate{name: {:replace, "New Name"}, active: true}
 
       assert SSO.scim_update_user(provider, user_resource_id(provider, "okta|removed"), update) ==
                {:error, :not_found}
 
       assert Repo.reload!(identity).scim_active
+    end
+
+    test "a deactivation carrying a name succeeds for a member an operator removed" do
+      # A bare deactivation of an already-removed member succeeds with nothing
+      # to do; a name on the same PATCH or PUT must not turn it into a 404 that
+      # makes the directory retry the deactivate or re-create the person.
+      %{provider: provider, account: account} = scim_provider()
+      %{identity: identity, membership: membership} = provision(provider, "okta|removed-put")
+      Fixtures.Memberships.mark_membership_as_deleted(membership)
+      refute Accounts.peek_sync_membership_by_id(account.id, identity.membership_id)
+
+      update = %SCIMUserUpdate{name: {:replace, "New Name"}, active: false}
+
+      assert {:ok, %{membership: nil}} =
+               SSO.scim_update_user(
+                 provider,
+                 user_resource_id(provider, "okta|removed-put"),
+                 update
+               )
+
+      refute Repo.reload!(identity).scim_active
     end
   end
 

@@ -4,6 +4,10 @@ defmodule Emisar.Runners.Jobs.InactiveRunnerRetention do
   account's configured window. `Runners.inactive_retention_hours/1` decides
   what each account's stored setting means, so accounts with cleanup off are
   skipped; each nonempty committed batch audits the runners actually removed.
+
+  A suspended account is skipped too: suspension closes every runner socket, so
+  its runners look cleanly offline only because the portal turned them away,
+  and lifting the suspension must give the fleet back.
   """
   use Emisar.Jobs.Job,
     otp_app: :emisar,
@@ -30,6 +34,9 @@ defmodule Emisar.Runners.Jobs.InactiveRunnerRetention do
 
     :ok
   end
+
+  defp sweep_account(%Accounts.Account{disabled_at: %DateTime{}}, deleted_total, _batch_opts),
+    do: deleted_total
 
   defp sweep_account(%Accounts.Account{} = account, deleted_total, batch_opts) do
     with {:ok, hours} <- Runners.inactive_retention_hours(account),

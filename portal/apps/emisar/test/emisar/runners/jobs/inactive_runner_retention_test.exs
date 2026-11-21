@@ -75,6 +75,18 @@ defmodule Emisar.Runners.Jobs.InactiveRunnerRetentionTest do
     assert is_nil(Repo.reload!(runner).deleted_at)
   end
 
+  test "skips a suspended account, so lifting the suspension gives its fleet back" do
+    account = Fixtures.Accounts.create_account()
+    Fixtures.Accounts.set_runner_inactive_retention_hours(account, @window_hours)
+    runner = offline_runner(account, @beyond_window_hours)
+    Fixtures.Accounts.disable_account(account)
+
+    assert InactiveRunnerRetention.execute([]) == :ok
+
+    assert is_nil(Repo.reload!(runner).deleted_at)
+    assert retention_markers(account.id) == []
+  end
+
   test "skips accounts without the retention setting" do
     account = Fixtures.Accounts.create_account()
     runner = offline_runner(account, @beyond_window_hours)

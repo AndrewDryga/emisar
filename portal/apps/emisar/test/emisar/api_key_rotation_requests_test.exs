@@ -31,7 +31,8 @@ defmodule Emisar.ApiKeyRotationRequestsTest do
       assert event.actor_id == subject.membership_id
 
       {new_raw, prefix, hash} = Crypto.mint("emk-", 12)
-      key_subject = Subject.for_api_key(key, account)
+      # Each MCP request authenticates the key afresh, so it carries the request.
+      key_subject = Subject.for_api_key(Repo.reload!(key), account)
       assert {:ok, successor} = ApiKeys.install_auto_rotation_successor(prefix, hash, key_subject)
       assert {:ok, retried} = ApiKeys.install_auto_rotation_successor(prefix, hash, key_subject)
       assert retried.id == successor.id
@@ -74,7 +75,7 @@ defmodule Emisar.ApiKeyRotationRequestsTest do
       assert ApiKeys.install_auto_rotation_successor(
                prefix,
                hash,
-               Subject.for_api_key(key, account)
+               Subject.for_api_key(Repo.reload!(key), account)
              ) ==
                {:error, :already_rotated}
 
@@ -98,7 +99,7 @@ defmodule Emisar.ApiKeyRotationRequestsTest do
                ApiKeys.install_auto_rotation_successor(
                  prefix,
                  hash,
-                 Subject.for_api_key(key, account)
+                 Subject.for_api_key(Repo.reload!(key), account)
                )
 
       assert ApiKeys.rotate_api_key(key, subject) == {:error, :already_rotated}

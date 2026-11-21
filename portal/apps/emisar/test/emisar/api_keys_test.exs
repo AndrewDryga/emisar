@@ -1748,6 +1748,29 @@ defmodule Emisar.ApiKeysTest do
       assert successor_id == successor.id
     end
 
+    test "a key far from rotation is refused without opening the locking transaction" do
+      # The bridge re-offers its proposal on every request; a key weeks from
+      # its rotation window must not lock the account row each time.
+      {_owner, account, subject} = owner_subject_pair()
+      far = DateTime.add(DateTime.utc_now(), 30, :day)
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "steady", expires_at: far}, subject)
+      key_subject = Subject.for_api_key(key, account)
+      {_raw, prefix, hash} = Crypto.mint("emk-", 12)
+
+      handler = "rotation-precheck-#{System.unique_integer([:positive])}"
+
+      :ok =
+        :telemetry.attach(handler, [:emisar, :repo, :query], &__MODULE__.repo_query/4, self())
+
+      on_exit(fn -> :telemetry.detach(handler) end)
+
+      assert ApiKeys.install_auto_rotation_successor(prefix, hash, key_subject) ==
+               {:error, :not_eligible}
+
+      refute_received :repo_query
+      assert Repo.aggregate(ApiKey, :count) == 1
+    end
+
     test "a stale key subject cannot install a successor after the account is disabled" do
       {_owner, account, subject} = owner_subject_pair()
       soon = DateTime.add(DateTime.utc_now(), 3, :day)
@@ -1913,7 +1936,9 @@ defmodule Emisar.ApiKeysTest do
 
     test "an API key cannot install a successor in another account" do
       {_owner_a, _account_a, subject_a} = owner_subject_pair()
-      {:ok, _raw, key_a} = ApiKeys.create_key(%{name: "a"}, subject_a)
+      # Inside its rotation window, so the account scope is what refuses it.
+      soon = DateTime.add(DateTime.utc_now(), 3, :day)
+      {:ok, _raw, key_a} = ApiKeys.create_key(%{name: "a", expires_at: soon}, subject_a)
       {_owner_b, account_b, _subject_b} = owner_subject_pair()
       {_raw, prefix, hash} = Crypto.mint("emk-", 12)
       forged_subject = Subject.for_api_key(key_a, account_b)
@@ -3837,4 +3862,8 @@ defmodule Emisar.ApiKeysTest do
   end
 
   defp set_key(key, changes), do: key |> Ecto.Changeset.change(changes) |> Repo.update!()
+
+  def repo_query(_event, _measurements, _metadata, owner) do
+    if self() == owner, do: send(owner, :repo_query)
+  end
 end

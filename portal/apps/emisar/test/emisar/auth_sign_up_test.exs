@@ -345,6 +345,27 @@ defmodule Emisar.AuthSignUpTest do
       refute Map.has_key?(errors_on(changeset), :slug)
     end
 
+    test "explains why a name cannot make a web address and what to type instead" do
+      for {account_name, message} <- [
+            {"Ромашка",
+             ~s(The web address is made from the name's Latin letters and digits, and this name has none, so add some, for example "Acme".)},
+            {"3M Company",
+             ~s(The web address made from the name must start with a letter, so put a word first, for example "Labs 42" instead of "42 Labs".)},
+            {"HP",
+             ~s(The web address made from the name needs at least 3 letters or digits, so use a longer name, for example "HP Inc" instead of "HP".)},
+            {"Team",
+             ~s(Emisar uses the web address made from this name for its own pages, so add a word, for example "Acme Team" instead of "Team".)}
+          ] do
+        assert {:error, changeset} =
+                 Accounts.validate_sign_up(%{
+                   "email" => "owner@example.test",
+                   "account_name" => account_name
+                 })
+
+        assert errors_on(changeset) == %{account_name: [message]}
+      end
+    end
+
     test "accepts a name whose slug cap lands on a word break" do
       account_name = String.duplicate("a", 59) <> " b"
 

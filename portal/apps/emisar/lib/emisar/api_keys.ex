@@ -807,48 +807,60 @@ defmodule Emisar.ApiKeys do
         hash,
         %Subject{actor: %ApiKey{} = key, account: account} = subject
       ) do
-    if valid_rotation_material?(prefix, hash) do
-      source_queryable =
-        ApiKey.Query.not_deleted()
-        |> ApiKey.Query.by_id(key.id)
-        |> ApiKey.Query.by_account_id(account.id)
-        |> ApiKey.Query.lock_for_update()
+    cond do
+      not valid_rotation_material?(prefix, hash) ->
+        {:error, :invalid_successor}
 
-      Multi.new()
-      |> put_active_account_lock(account.id)
-      |> put_key_owner_membership(key.created_by_membership_id)
-      |> Multi.run(:source, fn repo,
-                               %{
-                                 key_owner_membership: owner_membership
-                               } ->
-        with {:ok, source} <- repo.fetch(source_queryable, ApiKey.Query),
-             true <- source.created_by_membership_id == owner_membership.id,
-             :ok <- ensure_membership_can_use_key(owner_membership, source.kind, :not_eligible),
-             true <- auto_rotation_eligible?(source) do
-          {:ok, source}
-        else
+      # The bridge re-offers its proposal on every request. Judge the key this
+      # request just authenticated first, so a key far from rotation never
+      # takes the account lock; an eligible one is re-checked under the lock.
+      not auto_rotation_eligible?(key) ->
+        {:error, :not_eligible}
+
+      true ->
+        source_queryable =
+          ApiKey.Query.not_deleted()
+          |> ApiKey.Query.by_id(key.id)
+          |> ApiKey.Query.by_account_id(account.id)
+          |> ApiKey.Query.lock_for_update()
+
+        Multi.new()
+        |> put_active_account_lock(account.id)
+        |> put_key_owner_membership(key.created_by_membership_id)
+        |> Multi.run(:source, fn repo,
+                                 %{
+                                   key_owner_membership: owner_membership
+                                 } ->
+          with {:ok, source} <- repo.fetch(source_queryable, ApiKey.Query),
+               true <- source.created_by_membership_id == owner_membership.id,
+               :ok <- ensure_membership_can_use_key(owner_membership, source.kind, :not_eligible),
+               true <- auto_rotation_eligible?(source) do
+            {:ok, source}
+          else
+            {:error, reason} -> {:error, reason}
+            false -> {:error, :not_eligible}
+          end
+        end)
+        |> Multi.run(:successor, fn repo, %{source: source} ->
+          install_or_fetch_successor(repo, source, prefix, hash)
+        end)
+        |> Multi.run(:mark_rotated, fn repo, %{source: source, successor: result} ->
+          mark_auto_rotation(repo, source, result)
+        end)
+        |> Multi.run(:audit, fn repo,
+                                %{
+                                  active_account: active_account,
+                                  source: source,
+                                  successor: result
+                                } ->
+          current_subject = Subject.for_api_key(source, active_account, subject.context)
+          insert_auto_rotation_audit(repo, current_subject, source, result)
+        end)
+        |> Repo.commit_multi(after_commit: &broadcast_installed_successor/1)
+        |> case do
+          {:ok, %{successor: %{key: successor}}} -> {:ok, successor}
           {:error, reason} -> {:error, reason}
-          false -> {:error, :not_eligible}
         end
-      end)
-      |> Multi.run(:successor, fn repo, %{source: source} ->
-        install_or_fetch_successor(repo, source, prefix, hash)
-      end)
-      |> Multi.run(:mark_rotated, fn repo, %{source: source, successor: result} ->
-        mark_auto_rotation(repo, source, result)
-      end)
-      |> Multi.run(:audit, fn repo,
-                              %{active_account: active_account, source: source, successor: result} ->
-        current_subject = Subject.for_api_key(source, active_account, subject.context)
-        insert_auto_rotation_audit(repo, current_subject, source, result)
-      end)
-      |> Repo.commit_multi(after_commit: &broadcast_installed_successor/1)
-      |> case do
-        {:ok, %{successor: %{key: successor}}} -> {:ok, successor}
-        {:error, reason} -> {:error, reason}
-      end
-    else
-      {:error, :invalid_successor}
     end
   end
 

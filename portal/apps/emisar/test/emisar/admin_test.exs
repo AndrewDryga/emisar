@@ -1358,6 +1358,13 @@ defmodule Emisar.AdminTest do
       assert report.failures |> Enum.map(& &1.status) |> Enum.frequencies() ==
                %{failed: 3, denied: 1}
 
+      # The fleet-wide sample carries IDs and status, never a run's reason or
+      # error text: no customer-visible audit row records this read.
+      for failure <- report.failures do
+        assert failure |> Map.keys() |> Enum.sort() ==
+                 [:account_id, :action_id, :occurred_at, :request_id, :runner_id, :status]
+      end
+
       assert %DateTime{} = report.since
     end
   end

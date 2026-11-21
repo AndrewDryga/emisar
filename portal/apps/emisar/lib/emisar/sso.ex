@@ -1024,7 +1024,7 @@ defmodule Emisar.SSO do
     changeset = IdentityProvider.Changeset.update(loaded_provider, attrs, allowlist)
 
     with {:ok, access} <- provider_access_from_changeset(changeset),
-         :ok <- Accounts.ensure_runner_access_grant_allowed(subject, access) do
+         :ok <- ensure_provider_edit_within_reach(changeset, access, subject) do
       cond do
         not grantable_role?(Ecto.Changeset.get_change(changeset, :default_role), subject) ->
           :role_exceeds_your_permissions
@@ -1049,6 +1049,27 @@ defmodule Emisar.SSO do
       {:error, %Ecto.Changeset{} = invalid} -> invalid
       {:error, reason} -> reason
     end
+  end
+
+  # Renaming a connection, rotating its client secret, or turning sign-in off
+  # gives nobody more reach, so an admin whose own runner access is narrower
+  # than the connection's default may still make those edits, as they may delete
+  # it. Every other edit (reach, role, enabling, who the IdP lets in) must leave
+  # the connection within the editor's own reach. The form resubmits the virtual
+  # picker selections on every save; a real reach change shows in the persisted
+  # scope fields derived from them.
+  @reach_neutral_provider_fields ~w[name client_secret default_runner_scope default_pack_scope]a
+
+  defp ensure_provider_edit_within_reach(%Ecto.Changeset{changes: changes}, access, subject) do
+    reach_neutral? =
+      Enum.all?(changes, fn
+        {:enabled, false} -> true
+        {field, _value} -> field in @reach_neutral_provider_fields
+      end)
+
+    if reach_neutral?,
+      do: :ok,
+      else: Accounts.ensure_runner_access_grant_allowed(subject, access)
   end
 
   @doc """

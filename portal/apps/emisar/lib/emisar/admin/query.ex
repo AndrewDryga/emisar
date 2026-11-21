@@ -188,6 +188,10 @@ defmodule Emisar.Admin.Query do
   # counting 412 `:denied` runs the sample can never contain reads as a broken
   # sample. Both derive their set from `terminal_statuses/0`, so a new terminal
   # status reaches both halves at once.
+  #
+  # Identity and status only: this read spans every workspace and writes no
+  # customer-visible audit row, so a run's reason and error text stay behind
+  # the per-account staff reads that do.
   def recent_failures(since, limit \\ 50) do
     Runs.ActionRun.Query.all()
     |> where(
@@ -202,8 +206,6 @@ defmodule Emisar.Admin.Query do
       runner_id: r.runner_id,
       action_id: r.action_id,
       status: r.status,
-      reason: r.reason_text,
-      error: r.error_message,
       occurred_at: r.inserted_at
     })
   end

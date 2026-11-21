@@ -731,6 +731,44 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert Repo.reload!(provider).name == "New Name"
     end
 
+    test "an admin with narrower runner access renames a broader connection, and a reach edit says why it is refused",
+         %{account: account} do
+      provider =
+        insert_provider(account, %{name: "Old Name", default_runner_access_mode: :all})
+
+      admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+      {:ok, db_only} = Accounts.RunnerAccess.restricted(["db"], [])
+      Fixtures.Memberships.force_runner_access(admin, db_only)
+      conn = log_in_member(build_conn(), admin)
+      path = ~p"/app/#{account}/settings/sso/#{provider.id}/edit"
+
+      {:ok, lv, _html} = live(conn, path)
+
+      lv
+      |> form("#edit-provider-#{provider.id}", %{
+        "provider_id" => provider.id,
+        "provider" => %{"name" => "New Name"}
+      })
+      |> render_submit()
+
+      assert_redirect(lv, ~p"/app/#{account}/settings/sso/#{provider.id}")
+      assert Repo.reload!(provider).name == "New Name"
+
+      {:ok, lv, _html} = live(conn, path)
+
+      lv
+      |> form("#edit-provider-#{provider.id}", %{
+        "provider_id" => provider.id,
+        "provider" => %{"default_role" => "operator"}
+      })
+      |> render_submit()
+
+      assert render(lv) =~
+               "You can only give runner and pack access you have yourself. You can still rename a connection, rotate its client secret, turn it off, or delete it."
+
+      assert Repo.reload!(provider).default_role == :viewer
+    end
+
     test "the setup guide shows a FIXED callback URI, never an operator input", %{
       conn: conn,
       account: account

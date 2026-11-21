@@ -7402,10 +7402,12 @@ defmodule Emisar.AccountsTest do
   end
 
   describe "count_memberships/1" do
-    test "counts the account's membership rows (the Billing seat count)" do
+    test "counts the account's people, as the Team page does, not its service accounts" do
       account = Fixtures.Accounts.create_account()
       Fixtures.Memberships.create_membership(account_id: account.id)
       Fixtures.Memberships.create_membership(account_id: account.id)
+      Fixtures.Memberships.create_service_account(account_id: account.id)
+      Fixtures.Memberships.create_membership()
 
       assert Accounts.count_memberships(account.id) == 2
     end
@@ -7524,7 +7526,7 @@ defmodule Emisar.AccountsTest do
   end
 
   describe "list_accounts_due_for_report/2" do
-    test "includes never-reported and stale accounts; excludes freshly-reported and deleted" do
+    test "includes never-reported and stale accounts; excludes freshly-reported, deleted and suspended" do
       cutoff = ~U[2026-07-01 00:00:00.000000Z]
 
       never_reported = Fixtures.Accounts.create_account()
@@ -7538,6 +7540,8 @@ defmodule Emisar.AccountsTest do
 
       deleted = Fixtures.Accounts.create_account()
       Fixtures.Accounts.mark_account_as_deleted(deleted)
+
+      Fixtures.Accounts.create_account() |> Fixtures.Accounts.disable_account()
 
       due_ids =
         cutoff |> Accounts.list_accounts_due_for_report() |> Enum.map(& &1.id) |> Enum.sort()

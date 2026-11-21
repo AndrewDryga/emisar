@@ -742,7 +742,9 @@ defmodule Emisar.SSO.SCIM do
         lock_scim_identity(locked_provider, id, repo)
       end)
       |> Multi.run(:rename, fn _repo, %{locked_provider: locked_provider, identity: identity} ->
-        apply_scim_rename(locked_provider, identity, update.name)
+        if update.active == false and removed_member?(locked_provider, identity),
+          do: {:ok, :unchanged},
+          else: apply_scim_rename(locked_provider, identity, update.name)
       end)
       |> Multi.run(:email, fn _repo, %{locked_provider: locked_provider, identity: identity} ->
         apply_scim_email(locked_provider, identity, update.email, update.active)
@@ -896,6 +898,12 @@ defmodule Emisar.SSO.SCIM do
       {:error, :not_found}
     end
   end
+
+  # A deactivation for a member an operator already removed succeeds with
+  # nothing to do (see `scim_lifecycle_multi/3`); a name riding along on the
+  # same PATCH or PUT must not turn that success back into :not_found.
+  defp removed_member?(%IdentityProvider{} = provider, identity),
+    do: is_nil(Accounts.peek_sync_membership_by_id(provider.account_id, identity.membership_id))
 
   defp apply_scim_rename(_provider, _identity, :keep), do: {:ok, :unchanged}
 

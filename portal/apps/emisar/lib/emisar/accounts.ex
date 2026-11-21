@@ -529,18 +529,38 @@ defmodule Emisar.Accounts do
 
   # The slug's shape alone: which free suffix it gets is chosen when the proved
   # sign-up creates the workspace, so this unauthenticated form never walks the
-  # taken-slug chain, a query per suffix, on every submit.
+  # taken-slug chain, a query per suffix, on every submit. A refused slug is
+  # explained in terms of the name the operator typed.
   defp sign_up_account_errors(name) when is_binary(name) do
     account_changeset = Account.Changeset.create(%{name: name, slug: slug_base(name)})
 
     case {account_changeset.errors[:name], account_changeset.errors[:slug]} do
       {nil, nil} -> []
-      {nil, slug_error} -> [slug_error]
+      {nil, _slug_error} -> [{sign_up_address_error(Slug.slugify(name, max_length: 60)), []}]
       {name_error, _slug_error} -> [name_error]
     end
   end
 
   defp sign_up_account_errors(_name), do: []
+
+  # Slugify leaves only a-z, 0-9 and inner hyphens, so a derived slug fails the
+  # account's rules only by being empty, starting with a digit, being shorter
+  # than 3 characters, or being one of the console's own paths.
+  defp sign_up_address_error("") do
+    ~s(The web address is made from the name's Latin letters and digits, and this name has none, so add some, for example "Acme".)
+  end
+
+  defp sign_up_address_error(<<digit, _rest::binary>>) when digit in ?0..?9 do
+    ~s(The web address made from the name must start with a letter, so put a word first, for example "Labs 42" instead of "42 Labs".)
+  end
+
+  defp sign_up_address_error(slug) when byte_size(slug) < 3 do
+    ~s(The web address made from the name needs at least 3 letters or digits, so use a longer name, for example "HP Inc" instead of "HP".)
+  end
+
+  defp sign_up_address_error(_reserved) do
+    ~s(Emisar uses the web address made from this name for its own pages, so add a word, for example "Acme Team" instead of "Team".)
+  end
 
   @doc """
   Internal compositional half of self-serve sign-up, run by Auth in the
@@ -5045,14 +5065,16 @@ defmodule Emisar.Accounts do
   # `%Subject{}`: the unsubscribe link's signed token is its authority.
 
   @doc """
-  Internal — Billing seat counting: membership rows in the account.
-  Counts suspended members too — suspension preserves the seat (role +
-  history kept for reinstate), it doesn't free it. Removed (soft-deleted)
-  members do free their seat.
+  Internal — the people in the account, as Billing's member count and the
+  monthly report show them: the Team page's roster of humans. Service accounts
+  are apps, not seats, so they are not counted. Counts suspended members too —
+  suspension preserves the seat (role + history kept for reinstate), it doesn't
+  free it. Removed (soft-deleted) members do free their seat.
   """
   def count_memberships(account_id) do
     Membership.Query.not_deleted()
     |> Membership.Query.by_account_id(account_id)
+    |> Membership.Query.by_kind(:human)
     |> Repo.aggregate(:count, :id)
   end
 
@@ -5076,16 +5098,17 @@ defmodule Emisar.Accounts do
   defp after_account_id(queryable, _id), do: queryable
 
   @doc """
-  Internal — monthly report job: a bounded, id-ordered page of non-deleted
-  accounts whose value report is due at `cutoff` (never sent, or sent in an
-  earlier month). Accepts `:limit` plus optional `:after_account_id` for keyset
-  pagination — stamping a row doesn't move its id, so paging stays stable as the
-  sweep stamps as it goes.
+  Internal — monthly report job: a bounded, id-ordered page of active
+  (neither deleted nor suspended) accounts whose value report is due at `cutoff`
+  (never sent, or sent in an earlier month). A suspended account stays unstamped,
+  so it is due again once support lifts the suspension. Accepts `:limit` plus
+  optional `:after_account_id` for keyset pagination — stamping a row doesn't
+  move its id, so paging stays stable as the sweep stamps as it goes.
   """
   def list_accounts_due_for_report(%DateTime{} = cutoff, opts \\ []) do
     limit = Keyword.get(opts, :limit, 100)
 
-    Account.Query.not_deleted()
+    Account.Query.active()
     |> Account.Query.due_for_report(cutoff)
     |> after_account_id(Keyword.get(opts, :after_account_id))
     |> Account.Query.ordered_by_id()

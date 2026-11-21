@@ -36,6 +36,8 @@ defmodule Emisar.Accounts.Jobs.MonthlyReportsTest do
   describe "execute/1" do
     test "emails the owner the prior month's summary and stamps the account" do
       %{account: account, owner: owner} = active_account(runs: 3)
+      # Apps are not team members: the count matches the Team page's people.
+      Fixtures.Memberships.create_service_account(account_id: account.id)
 
       assert MonthlyReports.execute([]) == :ok
 
@@ -51,6 +53,7 @@ defmodule Emisar.Accounts.Jobs.MonthlyReportsTest do
       assert email.text_body =~ "3 sent"
       assert email.text_body =~ ~r/Succeeded\s+3$/m
       assert email.text_body =~ "Active runners"
+      assert email.text_body =~ ~r/Team members\s+1$/m
       assert email.text_body =~ "/app/#{account.slug}"
       assert email.text_body =~ "Turn off monthly reports for every Owner in this workspace: "
       assert email.html_body =~ "Open your dashboard"
@@ -185,6 +188,16 @@ defmodule Emisar.Accounts.Jobs.MonthlyReportsTest do
     test "an account opted out of reports receives nothing and stays unstamped" do
       %{account: account} = active_account()
       Fixtures.Accounts.set_account_settings(account, %{monthly_report_opt_out: true})
+
+      assert MonthlyReports.execute([]) == :ok
+
+      refute_received {:email, _}
+      refute Repo.reload(account).last_report_sent_at
+    end
+
+    test "a suspended account receives nothing and stays unstamped until support lifts it" do
+      %{account: account} = active_account()
+      Fixtures.Accounts.disable_account(account)
 
       assert MonthlyReports.execute([]) == :ok
 

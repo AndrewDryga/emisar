@@ -3453,6 +3453,8 @@ defmodule Emisar.BillingTest do
     test "rolls plan limits + live counts + subscription mirror into one map" do
       {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       Fixtures.Runners.create_runner(account_id: account.id)
+      # An app's service account is not a member seat.
+      Fixtures.Memberships.create_service_account(account_id: account.id)
 
       assert {:ok, summary} = Billing.billing_summary(account, subject)
       assert summary.plan == "free"
