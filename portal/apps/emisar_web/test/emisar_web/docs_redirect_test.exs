@@ -2,6 +2,7 @@ defmodule EmisarWeb.DocsRedirectTest do
   use EmisarWeb.ConnCase, async: true
 
   @moved_pages %{
+    "/docs/runners" => "/docs/runner-fleet",
     "/docs/deployment" => "/docs/production",
     "/docs/connect-a-cli-client" => "/docs/connect-cli-agent",
     "/docs/upgrades" => "/docs/runner-upgrades"

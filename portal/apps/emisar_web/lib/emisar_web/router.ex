@@ -242,6 +242,7 @@ defmodule EmisarWeb.Router do
     get "/docs/scim", MarketingController, :scim
     get "/docs/runner-fleet", MarketingController, :runner_fleet
     get "/docs/production", MarketingController, :production
+    get "/docs/runners", DocsRedirectController, :runners
     get "/docs/deployment", DocsRedirectController, :deployment
     get "/docs/audit-and-siem", MarketingController, :audit_and_siem
     get "/docs/host-install", MarketingController, :host_install

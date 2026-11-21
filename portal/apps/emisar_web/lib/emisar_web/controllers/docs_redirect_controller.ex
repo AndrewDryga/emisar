@@ -5,6 +5,7 @@ defmodule EmisarWeb.DocsRedirectController do
   use EmisarWeb, :controller
 
   @retired_pages [
+    runners: "/docs/runner-fleet",
     deployment: "/docs/production",
     connect_cli_client: "/docs/connect-cli-agent",
     upgrades: "/docs/runner-upgrades",
