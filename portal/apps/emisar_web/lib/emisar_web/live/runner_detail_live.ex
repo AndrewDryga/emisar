@@ -77,6 +77,14 @@ defmodule EmisarWeb.RunnerDetailLive do
   def handle_params(_params, _uri, %{assigns: %{runner: nil}} = socket),
     do: {:noreply, socket}
 
+  # A filter or page change touches only the actions table. The recent-runs
+  # sidebar was loaded with the runner, so each search keystroke does not read
+  # the host's run history again.
+  def handle_params(params, _uri, %{assigns: %{loading?: false}} = socket) do
+    %{runner: runner, current_subject: subject} = socket.assigns
+    {:noreply, load_actions(socket, runner, subject, params)}
+  end
+
   def handle_params(params, _uri, socket),
     do: {:noreply, load_lists(socket, socket.assigns.runner, params)}
 

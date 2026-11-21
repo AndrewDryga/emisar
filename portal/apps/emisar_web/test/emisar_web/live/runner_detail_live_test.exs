@@ -310,6 +310,35 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     assert html =~ "Actions sent to this runner will appear here."
   end
 
+  test "filtering the actions does not read the host's run history again", %{
+    conn: conn,
+    account: account,
+    runner: runner
+  } do
+    Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
+
+    test_pid = self()
+    handler = "runner-detail-run-reads-#{System.unique_integer([:positive])}"
+
+    :telemetry.attach(
+      handler,
+      [:emisar, :repo, :query],
+      # Queries run in the process that issues them; count only this page's.
+      fn _event, _measurements, %{source: source}, page_pid ->
+        if source == "action_runs" and self() == page_pid, do: send(test_pid, :run_history_read)
+      end,
+      lv.pid
+    )
+
+    on_exit(fn -> :telemetry.detach(handler) end)
+
+    html = render_patch(lv, ~p"/app/#{account}/runners/#{runner.id}?action=uptime")
+
+    assert html =~ "linux.uptime"
+    refute_received :run_history_read
+  end
+
   test "a bad cursor in the URL falls back to the first page, not a crash", %{
     conn: conn,
     account: account,
