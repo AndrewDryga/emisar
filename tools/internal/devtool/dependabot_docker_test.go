@@ -28,7 +28,7 @@ updates:
 // Every exclusion must match a file, or the check reports it as stale, so each
 // fixture carries one for each of them.
 var dependabotDockerExcludedFixtures = []string{
-	".agent/Dockerfile", "dev/compose.yml", "dev/review-compose.yml", "dev/test-packs/compose.yaml",
+	".agent/Dockerfile", "dev/compose.yml", "dev/ryker-compose.yml", "dev/test-packs/compose.yaml",
 	"dev/test-packs/gcloud/Dockerfile", "packs/nginx/test/compose.yaml", "packs/docker/test/fixtures/worst-case-compose.yml",
 }
 

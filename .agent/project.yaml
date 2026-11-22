@@ -25,7 +25,7 @@ gate_sources:
 # Publication review is CI-like: it needs PostgreSQL, not the developer Keycloak stack or ignored
 # local TLS material. Coop starts this tracked stack for the disposable candidate only.
 review:
-  compose: dev/review-compose.yml
+  compose: dev/ryker-compose.yml
   env:
     CI: "1"
     DATABASE_URL: postgres://postgres:postgres@db/emisar_test

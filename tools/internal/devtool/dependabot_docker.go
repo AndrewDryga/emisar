@@ -24,8 +24,8 @@ import (
 // path.Match pattern over the repository-relative path.
 var dependabotDockerExclusions = map[string]string{
 	".agent/Dockerfile":                "builds FROM an ARG base image that is the operator's coop box, which Dependabot cannot resolve",
-	"dev/compose.yml":                  "mirrors the root docker-compose.yml Postgres and Keycloak pins byte for byte, together with dev/review-compose.yml; Dependabot opens PRs per directory, so listing \"/dev\" would move one mirror off the reference on its own and fail the shared service image pins phase",
-	"dev/review-compose.yml":           "mirrors the root docker-compose.yml Postgres pin byte for byte and travels with dev/compose.yml, whose reason covers both mirrors",
+	"dev/compose.yml":                  "mirrors the root docker-compose.yml Postgres and Keycloak pins byte for byte, together with dev/ryker-compose.yml; Dependabot opens PRs per directory, so listing \"/dev\" would move one mirror off the reference on its own and fail the shared service image pins phase",
+	"dev/ryker-compose.yml":            "mirrors the root docker-compose.yml Postgres pin byte for byte and travels with dev/compose.yml, whose reason covers both mirrors",
 	"dev/test-packs/compose.yaml":      "runs the locally built runner image PACKTEST_RUNNER_IMAGE names, which no registry publishes",
 	"dev/test-packs/gcloud/Dockerfile": "builds FROM an ARG gcloud version owned by each packs/gcp-*/test/cases.yaml, which the pack gate makes compose default PACKTEST_VERSION to",
 	"packs/*/test/compose.yaml":        "a pack's primary SUT image defaults PACKTEST_VERSION to the version its test/cases.yaml matrix owns, which the pack gate enforces, so a compose-only bump would fail that gate",

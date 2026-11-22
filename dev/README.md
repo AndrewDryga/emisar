@@ -14,8 +14,8 @@ The repository has intentionally separate Compose environments:
   demo, runners, MCP, and signing smoke tests.
 - `dev/test-packs/compose.yaml` supplies the shared action-client container;
   each `packs/<name>/test/compose.yaml` owns its disposable system under test.
-- `dev/review-compose.yml` runs Coop's disposable PostgreSQL for the
-  publication-review gate.
+- `dev/ryker-compose.yml` runs disposable PostgreSQL for Ryker contributor
+  work and the publication-review gate. It works from a clean checkout.
 
 The application server stays out of the fast dependency stack, while the
 packaged stack verifies the release image. Every pack behavior project stays
@@ -143,7 +143,7 @@ unformatted staged blob: Portal files whose working copy matches the index share
 one `mix format` run, and a partly staged file is checked from its index blob.
 It never compiles, so a commit does not rebuild dependencies. Landing still uses
 the stronger candidate boundary. Coop rebases the fork, starts
-`dev/review-compose.yml`, and runs the repository-configured `./run gate review`
+`dev/ryker-compose.yml`, and runs the repository-configured `./run gate review`
 against those exact bytes before Responder opens or updates the draft pull
 request.
 

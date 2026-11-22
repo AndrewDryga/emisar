@@ -19,7 +19,7 @@ func writeImagePinFixtures(t *testing.T, e2e, dev, review, ci string) *App {
 	for path, body := range map[string]string{
 		"docker-compose.yml":        e2e,
 		"dev/compose.yml":           dev,
-		"dev/review-compose.yml":    review,
+		"dev/ryker-compose.yml":     review,
 		".github/workflows/ci.yml":  ci,
 		"packs/x/test/compose.yaml": "services:\n  db:\n    image: postgres:16-alpine\n",
 	} {
@@ -50,7 +50,7 @@ func TestCheckSharedServiceImagePins(t *testing.T) {
 	// The drift this check was added for: the review stack on a bare tag.
 	err := writeImagePinFixtures(t, e2e, dev, "services:\n  db:\n    image: postgres:18.4-alpine\n", ci).
 		checkSharedServiceImagePins()
-	if err == nil || !strings.Contains(err.Error(), "dev/review-compose.yml:3: postgres:18.4-alpine differs from docker-compose.yml:4") {
+	if err == nil || !strings.Contains(err.Error(), "dev/ryker-compose.yml:3: postgres:18.4-alpine differs from docker-compose.yml:4") {
 		t.Fatalf("unpinned review stack not reported: %v", err)
 	}
 

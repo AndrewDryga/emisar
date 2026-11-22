@@ -215,7 +215,7 @@ func TestCheckTaskDirsAcceptsLifecycleAndBacklogStates(t *testing.T) {
 
 func TestCheckReviewGateRequiresCanonicalCandidateGate(t *testing.T) {
 	check := testChecker(t)
-	writeTestFile(t, check.root, ".agent/project.yaml", "gate: ./run gate portal\nreview:\n  compose: dev/review-compose.yml\n  env:\n    CI: '1'\n    DATABASE_URL: postgres://db\n")
+	writeTestFile(t, check.root, ".agent/project.yaml", "gate: ./run gate portal\nreview:\n  compose: dev/ryker-compose.yml\n  env:\n    CI: '1'\n    DATABASE_URL: postgres://db\n")
 
 	check.checkReviewGate()
 

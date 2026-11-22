@@ -93,7 +93,7 @@ func dependencyReviewFixture(t *testing.T) (*App, string) {
 	}
 	files := []string{
 		".tool-versions", "docker-compose.yml", "portal/config/config.exs", "portal/Dockerfile",
-		"dev/compose.yml", "dev/review-compose.yml", ".github/workflows/ci.yml", ".github/dependabot.yml",
+		"dev/compose.yml", "dev/ryker-compose.yml", ".github/workflows/ci.yml", ".github/dependabot.yml",
 		".agent/Dockerfile", "dev/test-packs/gcloud/Dockerfile", "dev/test-packs/compose.yaml",
 		"packs/docker/test/fixtures/worst-case-compose.yml", "run",
 		"packs/gcp-load-balancing/pack.yaml", "packs/gcp-load-balancing/test/cases.yaml", "packs/gcp-load-balancing/test/compose.yaml",

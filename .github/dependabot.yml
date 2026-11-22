@@ -98,7 +98,7 @@ updates:
 
   - package-ecosystem: "docker-compose"
     # The root docker-compose.yml (the signing-e2e/sso-e2e stack). Only "/" is
-    # listed: dev/compose.yml and dev/review-compose.yml mirror its Postgres and
+    # listed: dev/compose.yml and dev/ryker-compose.yml mirror its Postgres and
     # Keycloak pins byte for byte, and Dependabot opens PRs per directory, so
     # listing "/dev" would move one mirror off the reference on its own and fail
     # the shared service image pins phase of `./run gate tooling`. The mirrors

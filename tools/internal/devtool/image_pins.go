@@ -19,7 +19,7 @@ import (
 var sharedServiceImageFiles = []string{
 	"docker-compose.yml",
 	"dev/compose.yml",
-	"dev/review-compose.yml",
+	"dev/ryker-compose.yml",
 	".github/workflows/ci.yml",
 }
 
