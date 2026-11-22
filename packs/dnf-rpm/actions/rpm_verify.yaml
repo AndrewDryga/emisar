@@ -3,12 +3,16 @@ id: rpm.rpm_verify
 title: rpm -Va (verify all)
 kind: exec
 risk: low
-description: Verify every installed file's checksum / size / perms against the rpm. Lists only mismatches.
+description: >
+  Verify every installed file's checksum / size / perms against the rpm. Lists only mismatches.
+  rpm exits 1 when it lists any, which a normal host always has (edited configs, missing
+  runtime files), so exit 1 is a completed check, not a failure.
 side_effects: ["Reads every package's files for verification — IO-heavy.", "Read-only."]
 args: []
 execution:
   command: {binary: rpm, argv: ["-Va"]}
   timeout: 30m
+  success_exit_codes: [1]
 output:
   parser: text
   max_stdout_bytes: 524288
