@@ -6,7 +6,7 @@ FROM ${PACKTEST_IMAGE} AS symbolicator
 # The vendor runtime is distroless. A static healthcheck helper preserves that
 # runtime and its non-root identity without depending on a vendor shell or
 # package manager.
-FROM busybox:1.38.0-musl@sha256:ea2b9914a16a4ac1981994af97b318f7c7d4db76b580c56177f08bf76f4a0be8 AS health-tools
+FROM busybox:1.38.0-musl@sha256:80e38f9a1b39188b8bdb28879178edb322a4402b081a9aedda1924609decd6f6 AS health-tools
 
 # The client runs the CLI actions, so it needs the same binary the host would
 # have — and its own caches, configuration, and crash artifacts to act on,
