@@ -121,7 +121,9 @@ supply.
    the portal's **Packs** page and in audit history.
 3. Use `recent_runs` with the narrowest useful filters. Start with the current
    credential's runs; use account history only when available and relevant.
-4. Use `list_runbooks` with the incident task language, then `get_runbook` for
+4. Use `list_runbooks` with one keyword from the incident, such as the service
+   or symptom (`nginx`, `disk`). It matches that text inside a runbook's slug,
+   title, or summary, so a whole sentence finds nothing. Then `get_runbook` for
    a plausible slug. Its live release may already encode the intended checks and
    mitigation, but reading it does not authorize execution.
 5. Use connected metrics, logs, traces, alerts, deployment history, and change
