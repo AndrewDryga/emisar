@@ -3,18 +3,20 @@ id: vault.cubbyhole_list
 title: vault list cubbyhole
 kind: exec
 risk: low
-description: List the runner token's own cubbyhole (each token sees only its own).
+description: >
+  List the runner token's own cubbyhole (each token sees only its own). An empty cubbyhole, the usual
+  case, returns an empty list (`vault list` itself exits 2 with `{}` there, which this action reports as success).
 side_effects:
   - One cubbyhole/ request.
   - Read-only — values not returned, only keys.
 args: []
 execution:
   command:
-    binary: vault
+    binary: /bin/sh
     argv:
-      - "list"
-      - "-format=json"
-      - "cubbyhole/"
+      - "-c"
+      - 'set -eu; out=$(vault list -format=json cubbyhole/) && rc=0 || rc=$?; if [ "$rc" -eq 2 ] && [ "$out" = "{}" ]; then echo "[]"; exit 0; fi; if [ -n "$out" ]; then printf "%s\n" "$out"; fi; exit "$rc"'
+
   timeout: 15s
 output:
   parser: json

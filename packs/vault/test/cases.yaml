@@ -44,6 +44,15 @@ cases:
     expect:
       json:
         /0: create/
+  # `vault list` exits 2 with `{}` on an empty path; the action reports an empty list.
+  - name: vault.leases_count-reports-an-empty-prefix-as-an-empty-list
+    action: vault.leases_count
+    args: {prefix: packtest/no-leases-here}
+    expect:
+      stdout_contains: ["[]"]
+  - action: vault.cubbyhole_list
+    expect:
+      stdout_contains: ["[]"]
   - action: vault.list_audit
     arrange:
       - argv: [vault, audit, enable, file, "file_path=/tmp/packtest-audit.log"]

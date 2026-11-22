@@ -3,7 +3,10 @@ id: vault.leases_count
 title: vault list sys/leases/lookup/<prefix>
 kind: exec
 risk: low
-description: List the immediate keys (lease IDs or sub-prefixes) under one sys/leases/lookup prefix; it does not count leases in deeper prefixes.
+description: >
+  List the immediate keys (lease IDs or sub-prefixes) under one sys/leases/lookup prefix; it does not
+  count leases in deeper prefixes. A prefix with no leases returns an empty list (`vault list` itself
+  exits 2 with `{}` there, which this action reports as success).
 side_effects:
   - One sys/leases/lookup request.
   - Read-only.
@@ -16,11 +19,12 @@ args:
       pattern: "^[a-zA-Z0-9_./][a-zA-Z0-9_./\\-]{0,255}$"
 execution:
   command:
-    binary: vault
+    binary: /bin/sh
     argv:
-      - "list"
-      - "-format=json"
-      - "sys/leases/lookup/{{ args.prefix }}"
+      - "-c"
+      - 'set -eu; out=$(vault list -format=json "sys/leases/lookup/$1") && rc=0 || rc=$?; if [ "$rc" -eq 2 ] && [ "$out" = "{}" ]; then echo "[]"; exit 0; fi; if [ -n "$out" ]; then printf "%s\n" "$out"; fi; exit "$rc"'
+      - "emisar"
+      - "{{ args.prefix }}"
   timeout: 30s
 output:
   parser: json

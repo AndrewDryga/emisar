@@ -2,7 +2,7 @@ schema_version: 1
 
 id: mysql
 name: MySQL / MariaDB operations
-version: 0.1.17
+version: 0.1.18
 # Versions below this ran processlist, innodb_status, slow_queries and
 # lock_waits, which return live SQL text, at low risk. They fail closed.
 retired_below: 0.1.12
@@ -46,8 +46,8 @@ setup:
       description: Unix socket path, used when connecting to localhost.
       example: /var/run/mysqld/mysqld.sock
   notes:
-    - "Cleanest credential store: `~/.my.cnf` (mode 0600) on the runner host with [client] user/password/host — read from disk, so it needs no `inherit_env` entry."
-    - The username is never read from the environment; set it in `~/.my.cnf`, otherwise it defaults to the runner's OS user.
+    - "Cleanest credential store: `~/.my.cnf` (mode 0600) in the runner user's home with [client] user/password/host. The mysql client finds that file through `HOME`, and the runner passes only PATH/LANG/LC_ALL/TERM to actions by default, so add `HOME` to `execution.inherit_env`."
+    - The username is never read from the environment; set it in `~/.my.cnf` (which needs `HOME`, above), otherwise it defaults to the runner's OS user.
     - Each read sets its own session limits, so a timed-out read stops on the server and a read behind a metadata lock fails in 5 seconds instead of waiting up to a year, the default. `max_execution_time` on MySQL and `max_statement_time` on MariaDB each apply only on their own server.
     - Mutators (kill_query, kill_connection, flush_logs, analyze_table, optimize_table) need a user with PROCESS/RELOAD and the relevant table privileges.
   verify: mysql.uptime
