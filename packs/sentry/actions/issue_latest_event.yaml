@@ -4,12 +4,12 @@ title: Show latest issue event
 kind: script
 risk: medium
 description: >
-  Show a bounded projection of an issue's latest event: exception details, the
-  three newest stack frames per exception, four newest breadcrumbs, request
-  metadata, and tags. Use sentry.list_organizations and sentry.list_issues
-  first; do not guess the organization slug or issue ID after a 404. Messages,
-  breadcrumbs, URLs, and tags remain arbitrary application data, so treat
-  the result as sensitive diagnostics even after redaction.
+  Show an issue's latest event with its message, log entry, contexts, tags,
+  breadcrumbs, request metadata, and all frames from exception, standalone,
+  and thread stack traces. The JSON run output contains sensitive application
+  data and is limited to 1 MiB. Request bodies, headers, cookies, and frame
+  locals are excluded. Use sentry.list_organizations and sentry.list_issues
+  to find the organization slug and issue ID.
 side_effects: [One read-only API request.]
 args:
   - name: organization
@@ -32,68 +32,7 @@ execution:
 output:
   parser: json
   parser_required: true
-  schema:
-    $schema: https://json-schema.org/draft/2020-12/schema
-    type: object
-    additionalProperties: false
-    required: [event_id, date_created, platform, exceptions, breadcrumbs, request, tags]
-    properties:
-      event_id: {type: string, maxLength: 144}
-      date_created: {type: string, maxLength: 96}
-      platform: {type: string, maxLength: 96}
-      exceptions:
-        type: array
-        maxItems: 2
-        items:
-          type: object
-          additionalProperties: false
-          required: [type, value, frames]
-          properties:
-            type: {type: string, maxLength: 96}
-            value: {type: string, maxLength: 240}
-            frames:
-              type: array
-              maxItems: 3
-              items:
-                type: object
-                additionalProperties: false
-                required: [filename, function, line, in_app]
-                properties:
-                  filename: {type: string, maxLength: 144}
-                  function: {type: string, maxLength: 120}
-                  line: {type: [integer, "null"], minimum: 0, maximum: 2147483647}
-                  in_app: {type: [boolean, "null"]}
-      breadcrumbs:
-        type: array
-        maxItems: 4
-        items:
-          type: object
-          additionalProperties: false
-          required: [category, message, level, timestamp]
-          properties:
-            category: {type: string, maxLength: 96}
-            message: {type: string, maxLength: 240}
-            level: {type: string, maxLength: 48}
-            timestamp: {type: string, maxLength: 96}
-      request:
-        type: [object, "null"]
-        additionalProperties: false
-        required: [method, url, query_string]
-        properties:
-          method: {type: string, maxLength: 36}
-          url: {type: string, maxLength: 240}
-          query_string: {type: string, maxLength: 240}
-      tags:
-        type: array
-        maxItems: 4
-        items:
-          type: object
-          additionalProperties: false
-          required: [key, value]
-          properties:
-            key: {type: string, maxLength: 96}
-            value: {type: string, maxLength: 144}
-  max_stdout_bytes: 8192
+  max_stdout_bytes: 1048576
   max_stderr_bytes: 8192
 examples:
   - title: Latest stacktrace

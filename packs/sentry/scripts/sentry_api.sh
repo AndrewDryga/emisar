@@ -36,9 +36,8 @@ request() {
     --max-filesize 8388608 "$@"
 }
 
-# Every model-visible application string is control-collapsed and bounded in
-# both codepoints and UTF-8 bytes. The byte bound matters because JSON escaping
-# can expand one source character into several output bytes.
+# Strings in the structured issue listing are bounded in codepoints and
+# encoded UTF-8 bytes so the entire page fits its result limit.
 readonly projection_helpers='
 def controls_collapsed:
   (explode | map(if . <= 31 or (. >= 127 and . <= 159) then 0 else . end)) as $cs
@@ -139,57 +138,70 @@ issue_latest_event() {
     fi
     exit "$rc"
   fi
-  printf '%s' "$response" | jq -ce "$projection_helpers"'
+  # Emit one complete document or fail before the runner can cut it mid-field.
+  # The limit includes the newline jq writes and matches the action stdout cap.
+  printf '%s' "$response" | jq -rse '
+    def entry($kind):
+      first(.entries[]? | select(.type == $kind) | .data);
     def values($kind):
-      [.entries[]? | select(.type == $kind) | .data.values[]?];
-    (.request // ([.entries[]? | select(.type == "request") | .data] | first) // null) as $request
+      .entries[]? | select(.type == $kind) | .data.values[]?;
+    def frames:
+      [.frames[]? | {
+        filename: (.filename // ""),
+        function: (.function // ""),
+        line: .lineNo,
+        in_app: .inApp
+      }];
+
+    if length == 1 and (.[0] | type) == "object" then .[0]
+    else error("Expected one Sentry event object") end
+    | (.request // entry("request") // null) as $request
+    | (.stacktrace // entry("stacktrace") // null) as $stacktrace
+    | (.logentry // entry("message") // null) as $logentry
     | {
-        event_id: (.eventID | clipped(48; 48)),
-        date_created: (.dateCreated | clipped(32; 32)),
-        platform: (.platform | clipped(32; 32)),
+        event_id: (.eventID // ""),
+        date_created: (.dateCreated // ""),
+        platform: (.platform // ""),
+        title: .title,
+        message: ((.message | select(. != "")) // $logentry.formatted // $logentry.message // ""),
+        logentry: $logentry,
+        contexts: (.contexts // {}),
+        context: (.context // {}),
         exceptions: [
-          values("exception")[] | {
-            type: (.type | clipped(32; 32)),
-            value: (.value | clipped(80; 80)),
-            frames: [
-              ((.stacktrace.frames // []) | reverse | .[:3] | reverse)[] | {
-                filename: (.filename | clipped(48; 48)),
-                function: (.function | clipped(40; 40)),
-                line: (
-                  if (.lineNo | type) == "number" and .lineNo >= 0 and .lineNo <= 2147483647
-                  then (.lineNo | floor)
-                  else null
-                  end
-                ),
-                in_app: (if (.inApp | type) == "boolean" then .inApp else null end)
-              }
-            ]
+          values("exception") | {
+            type: (.type // ""),
+            value: (.value // ""),
+            frames: ((.stacktrace // .rawStacktrace) | frames)
           }
-        ][:2],
-        breadcrumbs: ([
-          values("breadcrumbs")[] | {
-            category: (.category | clipped(32; 32)),
-            message: (.message | clipped(80; 80)),
-            level: (.level | clipped(16; 16)),
-            timestamp: (.timestamp | clipped(32; 32))
+        ],
+        stacktrace: ($stacktrace | if . == null then null else {frames: frames} end),
+        threads: [
+          values("threads") | {
+            id, name, current, crashed,
+            frames: ((.stacktrace // .rawStacktrace) | frames)
           }
-        ] | reverse | .[:4] | reverse),
+        ],
+        breadcrumbs: [
+          values("breadcrumbs") | {
+            category: (.category // ""),
+            message: (.message // ""),
+            level: (.level // ""),
+            timestamp: (.timestamp // "")
+          }
+        ],
         request: (
           if $request == null then null
           else {
-            method: ($request.method | clipped(12; 12)),
-            url: ($request.url | clipped(80; 80)),
-            query_string: (($request.query_string // $request.query) | clipped(80; 80))
+            method: ($request.method // ""),
+            url: ($request.url // ""),
+            query_string: (($request.query_string // $request.query // "") | tostring)
           }
           end
         ),
-        tags: [
-          .tags[:4][]? | {
-            key: (.key | clipped(32; 32)),
-            value: (.value | clipped(48; 48))
-          }
-        ]
-      }'
+        tags: (.tags // [])
+      }
+    | tojson
+    | if utf8bytelength < 1048576 then . else error("Sentry event exceeds the 1 MiB output limit") end'
 }
 
 issue_tags() {

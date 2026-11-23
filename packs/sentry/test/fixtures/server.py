@@ -11,6 +11,8 @@ ORG = "acme"
 PROJECT = "backend"
 ISSUE_ONE = "1234567890"
 ISSUE_TWO = "1234567891"
+ISSUE_LOG = "1234567892"
+ISSUE_OVERSIZED = "1234567893"
 KEY_ID = "cec9dfceb0b74c1c9a5e3c135585f364"
 NEXT_CURSOR = "1700000000000:1:0"
 
@@ -29,6 +31,21 @@ def issue(issue_id, title, culprit, count, user_count):
         "firstSeen": "2026-08-09T08:00:00Z",
         "lastSeen": "2026-08-11T20:00:00Z",
         "project": {"id": "11", "slug": PROJECT},
+    }
+
+
+def stacktrace(count, filename="app/checkout.py", function="confirm"):
+    return {
+        "frames": [
+            {
+                "filename": filename,
+                "function": function,
+                "lineNo": 218 + index,
+                "inApp": index > 0,
+                "vars": {"session": "private-frame-local"},
+            }
+            for index in range(count)
+        ],
     }
 
 
@@ -139,39 +156,68 @@ class Handler(BaseHTTPRequestHandler):
         if path == f"/api/0/organizations/{ORG}/issues/{ISSUE_ONE}/":
             self.send_json(STATE["issues"][ISSUE_ONE])
             return
+        if path == f"/api/0/organizations/{ORG}/issues/{ISSUE_LOG}/events/latest/":
+            self.send_json(
+                {
+                    "eventID": "feedfacefeedfacefeedfacefeedface",
+                    "dateCreated": "2026-08-11T20:01:00Z",
+                    "platform": "python",
+                    "message": "",
+                    "entries": [
+                        {
+                            "type": "message",
+                            "data": {
+                                "formatted": "Cart 42 is still pending",
+                                "message": "Cart %d is still pending",
+                                "params": [42],
+                            },
+                        },
+                        {"type": "stacktrace", "data": stacktrace(6, function="log_pending")},
+                        {
+                            "type": "threads",
+                            "data": {
+                                "values": [
+                                    {"id": 1, "current": True, "stacktrace": stacktrace(5, function="worker")},
+                                ],
+                            },
+                        },
+                    ],
+                    "contexts": {"cart": {"items": [{"sku": "A42", "amount": 2}]}},
+                    "context": {"attempt": 3},
+                    "tags": [
+                        {"key": "release", "value": "2.1.0"},
+                        {"key": "environment", "value": "production"},
+                        {"key": "browser", "value": "Firefox"},
+                        {"key": "level", "value": "warning"},
+                        {"key": "feature", "value": "checkout"},
+                    ],
+                }
+            )
+            return
+        if path == f"/api/0/organizations/{ORG}/issues/{ISSUE_OVERSIZED}/events/latest/":
+            self.send_json({"contexts": {"oversized": {"description": "x" * (1024 * 1024)}}})
+            return
         if path in {
             f"/api/0/organizations/{ORG}/issues/{ISSUE_ONE}/events/latest/",
             f"/api/0/organizations/{ORG}/issues/{ISSUE_TWO}/events/latest/",
         }:
             worst_case = path.endswith(f"/{ISSUE_TWO}/events/latest/")
-            flood = ('"\\\x01pwd=x' * 220) if worst_case else ""
             exception_values = [
                 {
-                    "type": "TypeError" if not worst_case else flood,
-                    "value": "cannot read frames of undefined" if not worst_case else flood,
-                    "stacktrace": {
-                        "frames": [
-                            {
-                                "filename": "app/checkout.py" if not worst_case else flood,
-                                "function": "confirm" if not worst_case else flood,
-                                "lineNo": 218 + index,
-                            }
-                            for index in range(5 if worst_case else 2)
-                        ]
-                    },
+                    "type": "TypeError",
+                    "value": "cannot read frames of undefined",
+                    "stacktrace": stacktrace(48, filename="app/" + "nested/" * 20 + "checkout.py")
+                    if worst_case
+                    else stacktrace(6),
                 }
-                for _ in range(2 if worst_case else 1)
+                for _ in range(3 if worst_case else 1)
             ]
             breadcrumbs = [
                 {
-                    "category": "query" if not worst_case else flood,
-                    "message": (
-                        flood
-                        if worst_case
-                        else f"Authorization: Bearer {API_TOKEN}"
-                        if index == 1
-                        else "SELECT * FROM carts WHERE id = %s"
-                    ),
+                    "category": "query",
+                    "message": f"Authorization: Bearer {API_TOKEN}"
+                    if index == 1
+                    else "SELECT * FROM carts WHERE id = %s",
                     "level": "info",
                     "timestamp": "2026-08-11T20:00:00Z",
                 }
@@ -182,6 +228,7 @@ class Handler(BaseHTTPRequestHandler):
                     "eventID": "f00dfeedf00dfeedf00dfeedf00dfeed",
                     "dateCreated": "2026-08-11T20:00:00Z",
                     "platform": "python",
+                    "message": "Checkout failed",
                     "entries": [
                         {
                             "type": "exception",
@@ -191,19 +238,20 @@ class Handler(BaseHTTPRequestHandler):
                             "type": "breadcrumbs",
                             "data": {"values": breadcrumbs},
                         },
+                        {
+                            "type": "request",
+                            "data": {
+                                "method": "POST",
+                                "url": "https://shop.example.test/checkout",
+                                "query": [["cart", "42"]],
+                                "headers": [["Authorization", f"Bearer {API_TOKEN}"]],
+                                "cookies": [["session", "private-request-cookie"]],
+                                "data": {"password": 'quote"slash\\secret'},
+                            },
+                        },
                     ],
-                    "request": {
-                        "method": "POST",
-                        "url": "https://shop.example.test/checkout",
-                        "query_string": "cart=42",
-                        "headers": [["Authorization", f"Bearer {API_TOKEN}"]],
-                        "data": {"password": 'quote"slash\\secret'},
-                    },
                     "contexts": {"runtime": {"name": "CPython", "version": "3.12.4"}},
-                    "tags": [
-                        {"key": "release" if not worst_case else flood, "value": "2.1.0" if not worst_case else flood}
-                        for _ in range(8 if worst_case else 1)
-                    ],
+                    "tags": [{"key": "release", "value": "2.1.0"}],
                     "_meta": {"password": 'quote"slash\\secret'},
                 }
             )

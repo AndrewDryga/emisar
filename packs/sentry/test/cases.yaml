@@ -80,19 +80,49 @@ cases:
       json:
         /event_id: f00dfeedf00dfeedf00dfeedf00dfeed
         /exceptions/0/frames/0/function: confirm
+        /exceptions/0/frames/0/in_app: false
+        /exceptions/0/frames/5/line: 223
         /breadcrumbs/0/message: "SELECT * FROM carts WHERE id = %s"
         /breadcrumbs/1/message: "Authorization: Bearer [REDACTED]"
+        /message: Checkout failed
         /request/method: POST
-      stdout_not_contains: [quote, slash, secret]
+        /request/query_string: '[["cart","42"]]'
+        /contexts/runtime/version: "3.12.4"
+      stdout_not_contains: [quote, slash, secret, private-request-cookie, private-frame-local]
 
-  - name: sentry.issue_latest_event-fits-the-structured-output-cap
+  - name: sentry.issue_latest_event-returns-large-exception-traces
     action: sentry.issue_latest_event
     args: {organization: acme, issue_id: "1234567891"}
     expect:
       json:
         /event_id: f00dfeedf00dfeedf00dfeedf00dfeed
-        /exceptions/1/frames/2/line: 222
-        /breadcrumbs/3/level: info
+        /exceptions/2/frames/47/line: 265
+        /breadcrumbs/7/level: info
+
+  - name: sentry.issue_latest_event-returns-stack-traces-without-an-exception
+    action: sentry.issue_latest_event
+    args: {organization: acme, issue_id: "1234567892"}
+    expect:
+      json:
+        /exceptions: []
+        /stacktrace/frames/5/function: log_pending
+        /threads/0/frames/4/function: worker
+        /message: Cart 42 is still pending
+        /logentry/message: Cart %d is still pending
+        /logentry/params/0: 42
+        /contexts/cart/items/0/sku: A42
+        /context/attempt: 3
+        /tags/4/value: checkout
+        /request: null
+      stdout_not_contains: [private-frame-local]
+
+  - name: sentry.issue_latest_event-rejects-an-oversized-event
+    action: sentry.issue_latest_event
+    args: {organization: acme, issue_id: "1234567893"}
+    expect:
+      status: failure
+      stderr_contains: [Sentry event exceeds the 1 MiB output limit]
+      stdout_not_contains: [event_id, oversized]
 
   - action: sentry.issue_tags
     args: {organization: acme, issue_id: "1234567890"}
