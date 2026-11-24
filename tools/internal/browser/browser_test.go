@@ -518,12 +518,6 @@ func countProcessesMentioning(t *testing.T, needle string) int {
 	return count
 }
 
-// countIsolatedChromium counts live processes whose cmdline names an isolated-session profile.
-func countIsolatedChromium(t *testing.T) int {
-	t.Helper()
-	return countProcessesMentioning(t, "emisar-browser-isolated")
-}
-
 // The lifeline is the only mechanism that survives the owner dying without running any Go code.
 // Before it existed this exact shape leaked: an isolated session outlived its owner's SIGKILL,
 // because Pdeathsig applies to the immediate child only and Chromium forks the real browser —
@@ -550,13 +544,14 @@ func TestIsolatedSessionDiesWithSIGKILLedOwner(t *testing.T) {
 	if !testInBox() {
 		t.Skip("SIGKILL-orphan semantics are exercised in the box (linux /proc + bundled chromium)")
 	}
-	baseline := countIsolatedChromium(t)
+	root := t.TempDir()
+	profilePrefix := filepath.Join(root, "emisar-browser-isolated-")
 	self, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
 	child := exec.Command(self, "-test.run", "^TestIsolatedSessionDiesWithSIGKILLedOwner$", "-test.v")
-	child.Env = append(os.Environ(), "BROWSER_LIFELINE_CHILD=1")
+	child.Env = append(os.Environ(), "BROWSER_LIFELINE_CHILD=1", "TMPDIR="+root)
 	stdout, err := child.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -586,8 +581,8 @@ func TestIsolatedSessionDiesWithSIGKILLedOwner(t *testing.T) {
 	case <-time.After(120 * time.Second):
 		t.Fatal("child session did not start within its cold-start budget")
 	}
-	if live := countIsolatedChromium(t); live <= baseline {
-		t.Fatalf("expected a live isolated browser before the kill (baseline %d, live %d)", baseline, live)
+	if live := countProcessesMentioning(t, profilePrefix); live == 0 {
+		t.Fatal("expected a live browser for this isolated session before the kill")
 	}
 	if err := child.Process.Kill(); err != nil { // SIGKILL: no defers, no Cancel hooks, no Go code
 		t.Fatal(err)
@@ -595,11 +590,12 @@ func TestIsolatedSessionDiesWithSIGKILLedOwner(t *testing.T) {
 	_, _ = child.Process.Wait()
 	deadline := time.Now().Add(15 * time.Second)
 	for {
-		if live := countIsolatedChromium(t); live <= baseline {
+		live := countProcessesMentioning(t, profilePrefix)
+		if live == 0 {
 			return // the kernel-side lifeline reaped the tree
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("isolated browser tree survived its owner's SIGKILL (baseline %d, live %d)", baseline, countIsolatedChromium(t))
+			t.Fatalf("isolated browser tree survived its owner's SIGKILL (%d live)", live)
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
