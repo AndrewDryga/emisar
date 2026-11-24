@@ -5,12 +5,12 @@ kind: script
 risk: medium
 description: >
   List one page of an issue's events to compare custom context such as item
-  IDs across failures. The JSON run output contains sensitive application
-  data, including event IDs, timestamps, messages, release versions, users,
-  tags, and both custom contexts and extra context. Breadcrumbs and stack
-  frames are omitted. Pass pagination.next_page_cursor back as page_cursor
-  to continue. Pages are limited to 1 MiB. Use a smaller limit if a page
-  exceeds that size.
+  IDs across failures. Filter by environment or an exact time window. The
+  JSON run output contains sensitive application data, including event IDs,
+  timestamps, messages, release versions, users, tags, and both custom
+  contexts and extra context. Breadcrumbs and stack frames are omitted.
+  Pass pagination.next_page_cursor back as page_cursor to continue.
+  Pages are limited to 1 MiB. Use a smaller limit if a page exceeds that size.
 side_effects: [One read-only API request.]
 args:
   - name: organization
@@ -27,6 +27,27 @@ args:
     validation:
       pattern: "^[0-9]{1,20}$"
       max_length: 20
+  - name: environment
+    type: string
+    default: ""
+    description: Exact Sentry environment name, such as production. Empty includes all environments.
+    validation:
+      pattern: '^[^\s/]*$'
+      max_length: 64
+  - name: start
+    type: string
+    default: ""
+    description: Window start in UTC, such as 2026-08-11T19:00:00Z. Supply start and end together.
+    validation:
+      pattern: '^(|[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z)$'
+      max_length: 20
+  - name: end
+    type: string
+    default: ""
+    description: Window end in UTC, such as 2026-08-11T21:00:00Z. Supply start and end together.
+    validation:
+      pattern: '^(|[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z)$'
+      max_length: 20
   - name: limit
     type: integer
     default: 5
@@ -41,7 +62,7 @@ args:
       max_length: 120
 execution:
   script: {path: scripts/sentry_api.sh, interpreter: /bin/bash}
-  argv: [list-issue-events, "{{ args.organization }}", "{{ args.issue_id }}", "{{ args.limit }}", "{{ args.page_cursor }}"]
+  argv: [list-issue-events, "{{ args.organization }}", "{{ args.issue_id }}", "{{ args.limit }}", "{{ args.page_cursor }}", "{{ args.environment }}", "{{ args.start }}", "{{ args.end }}"]
   timeout: 30s
 output:
   parser: json
@@ -51,3 +72,5 @@ output:
 examples:
   - title: Compare context across occurrences
     args: {organization: acme, issue_id: "1234567890"}
+  - title: Compare production occurrences during an incident
+    args: {organization: acme, issue_id: "1234567890", environment: production, start: "2026-08-11T19:00:00Z", end: "2026-08-11T21:00:00Z"}

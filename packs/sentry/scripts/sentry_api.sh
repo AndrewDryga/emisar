@@ -209,11 +209,18 @@ issue_tags() {
 }
 
 list_issue_events() {
-  local org=$1 issue_id=$2 limit=$3 cursor=$4 response
+  local org=$1 issue_id=$2 limit=$3 cursor=$4 environment=$5 start=$6 end=$7 response
+  local -a query=(--data-urlencode "full=true" --data-urlencode "per_page=$limit")
+  if [[ -n "$environment" ]]; then
+    query+=(--data-urlencode "environment=$environment")
+  fi
+  if [[ -n "$start" || -n "$end" ]]; then
+    [[ -n "$start" && -n "$end" ]] || fail "Supply both start and end for the Sentry event window"
+    query+=(--data-urlencode "start=$start" --data-urlencode "end=$end")
+  fi
   # Sentry exposes custom context only with full=true. The full list
   # serializer exposes the release version as a tag.
-  response=$(with_cursor "$cursor" --get "$api/organizations/$org/issues/$issue_id/events/" \
-    --data-urlencode "full=true" --data-urlencode "per_page=$limit")
+  response=$(with_cursor "$cursor" --get "$api/organizations/$org/issues/$issue_id/events/" "${query[@]}")
   printf '%s' "$response" | jq -rse '
     if length == 1 and (.[0].results | type) == "array" then .[0]
     else error("Expected one Sentry issue event array") end

@@ -173,6 +173,34 @@ cases:
         /pagination/next_page_cursor: null
         /pagination/has_more: false
 
+  - name: sentry.list_issue_events-filters-by-environment-and-time
+    action: sentry.list_issue_events
+    args: {organization: acme, issue_id: "1234567894", environment: production, start: "2026-08-11T19:50:00Z", end: "2026-08-11T20:05:00Z", limit: 1}
+    expect:
+      json:
+        /results/0/contexts/cart/item_id: cart-42
+        /pagination/next_page_cursor: "0:1:0"
+        /pagination/has_more: true
+      stdout_not_contains: [cart-18, cart-staging, cart-yesterday]
+
+  - name: sentry.list_issue_events-keeps-filters-on-the-next-page
+    action: sentry.list_issue_events
+    args: {organization: acme, issue_id: "1234567894", environment: production, start: "2026-08-11T19:50:00Z", end: "2026-08-11T20:05:00Z", limit: 1, page_cursor: "0:1:0"}
+    expect:
+      json:
+        /results/0/contexts/cart/item_id: cart-18
+        /pagination/next_page_cursor: null
+        /pagination/has_more: false
+      stdout_not_contains: [cart-42, cart-staging, cart-yesterday]
+
+  - name: sentry.list_issue_events-requires-both-window-ends
+    action: sentry.list_issue_events
+    args: {organization: acme, issue_id: "1234567894", start: "2026-08-11T19:50:00Z"}
+    expect:
+      status: failure
+      stderr_contains: [Supply both start and end for the Sentry event window]
+      stdout_not_contains: [event_id]
+
   - name: sentry.list_issue_events-rejects-an-oversized-page
     action: sentry.list_issue_events
     args: {organization: acme, issue_id: "1234567893"}

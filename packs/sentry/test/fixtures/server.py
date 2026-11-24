@@ -13,6 +13,7 @@ ISSUE_ONE = "1234567890"
 ISSUE_TWO = "1234567891"
 ISSUE_LOG = "1234567892"
 ISSUE_OVERSIZED = "1234567893"
+ISSUE_FILTERED = "1234567894"
 KEY_ID = "cec9dfceb0b74c1c9a5e3c135585f364"
 NEXT_CURSOR = "1700000000000:1:0"
 
@@ -49,14 +50,14 @@ def stacktrace(count, filename="app/checkout.py", function="confirm"):
     }
 
 
-def issue_event(event_id, date_created, item_id):
+def issue_event(event_id, date_created, item_id, environment="production"):
     return {
         "eventID": event_id,
         "dateCreated": date_created,
         "message": "Checkout failed",
         "user": {"id": "customer-101"},
         "tags": [
-            {"key": "environment", "value": "production"},
+            {"key": "environment", "value": environment},
             {"key": "release", "value": "2.1.0"},
         ],
         "contexts": {"cart": {"item_id": item_id}},
@@ -141,6 +142,26 @@ class Handler(BaseHTTPRequestHandler):
         older = issue_event("feedfacefeedfacefeedfacefeedface", "2026-08-11T19:55:00Z", "cart-18")
         older.update(user=None, tags=[], context={})
         events = [latest, older]
+        if path.endswith(f"/{ISSUE_FILTERED}/events/"):
+            events = [
+                issue_event("a" * 32, "2026-08-11T20:02:00Z", "cart-staging", "staging"),
+                issue_event("b" * 32, "2026-08-11T20:00:00Z", "cart-42"),
+                issue_event("c" * 32, "2026-08-11T19:55:00Z", "cart-18"),
+                issue_event("d" * 32, "2026-08-11T19:00:00Z", "cart-yesterday"),
+            ]
+
+        if "environment" in query:
+            events = [
+                event for event in events
+                if any(tag["key"] == "environment" and tag["value"] in query["environment"] for tag in event["tags"])
+            ]
+        if "start" in query or "end" in query:
+            if "start" not in query or "end" not in query or query["start"][0] >= query["end"][0]:
+                self.send_json({"detail": "start and end must form a valid window"}, 400)
+                return
+            start, end = query["start"][0], query["end"][0]
+            events = [event for event in events if start <= event["dateCreated"] < end]
+
         offset = 1 if query.get("cursor") == ["0:1:0"] else 0
         end = offset + limit
         self.send_json(events[offset:end], link=self.link_header(path, f"0:{end}:0", end < len(events)))
@@ -197,7 +218,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path in {
             f"/api/0/organizations/{ORG}/issues/{issue_id}/events/"
-            for issue_id in (ISSUE_ONE, ISSUE_TWO, ISSUE_OVERSIZED)
+            for issue_id in (ISSUE_ONE, ISSUE_TWO, ISSUE_OVERSIZED, ISSUE_FILTERED)
         }:
             self.list_issue_events(path, query)
             return
