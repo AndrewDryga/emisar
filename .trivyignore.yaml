@@ -30,8 +30,9 @@ vulnerabilities:
     expired_at: 2026-12-09
   - id: CVE-2026-107494
     purls:
-      - pkg:deb/debian/libssl3@3.0.22-1~deb12u2?arch=amd64&distro=debian-12
-    statement: the exact Bookworm OpenSSL 3.0 package predates native QUIC. The OpenSSL advisory lists the affected branches as 3.5, 4.0, and 4.1.
+      - pkg:deb/debian/libssl3@3.0.22-1~deb12u2?arch=amd64
+      - pkg:deb/debian/openssl@3.0.22-1~deb12u2?arch=amd64
+    statement: these exact Bookworm OpenSSL 3.0 packages predate native QUIC. The OpenSSL advisory lists the affected branches as 3.5, 4.0, and 4.1.
     expired_at: 2026-12-09
   - id: CVE-2026-53613
     statement: the non-root portal cannot gain mount's SUID privileges under no-new-privileges, drops all capabilities, and has no user-mount fstab entry.
