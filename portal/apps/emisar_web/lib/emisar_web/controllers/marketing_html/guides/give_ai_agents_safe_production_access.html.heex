@@ -115,11 +115,9 @@
     explains why the host, not the cloud, gets the last word.
   </p>
   <p>
-    See the
-    <.link navigate={~p"/docs/investigate-a-service"}>service investigation walkthrough</.link>
-    to try an investigation and see the command output. You can also compare <.link navigate={
-      ~p"/compare/raw-ssh-for-ai"
-    }>emisar with unrestricted SSH access</.link>.
+    When a storage driver wiped 33 hours of metrics, the agent traced the loss and prepared
+    a Terraform fix. <.link href={~p"/#incident-demo"}>Follow the investigation</.link>
+    to see what the agent ran and where an operator stepped in.
   </p>
 
   <h2 id="read-production-write-code">Read production, write code</h2>
@@ -147,16 +145,19 @@
     they reach production.
   </p>
 
-  <h2 id="start-small">Start small</h2>
+  <h2 id="start-small">Try it on a dev host</h2>
   <p>
-    Run coding agents in a sandbox that keeps your home directory and production credentials
-    out of reach.
+    Run your coding agent in a sandbox such as <a href="https://coop.dryga.com">co:op</a>.
+    Use the <.link navigate={~p"/docs/quickstart"}>quickstart</.link>
+    to connect it to emisar.
+    Then follow the <.link navigate={~p"/docs/investigate-a-service"}>nginx walkthrough</.link>
+    with a disposable container. Give the agent permission to read the logs and set restarts to
+    require your approval.
   </p>
   <p>
-    Give the agent read-only actions on a non-critical production service and watch it investigate.
-    Add actions as it needs them, with approval for changes you want to review. Each action has
-    an access rule and a record of its use. The
-    <.link navigate={~p"/docs/quickstart"}>quickstart</.link>
-    takes about five minutes.
+    Ask the agent to find your request in the access log. Then ask it to restart the container.
+    You should see the log entry right away and a restart waiting for you in Approvals.
+    After you approve it, check that nginx responds again and open the run to see which
+    command the agent ran on which host.
   </p>
 </.guide_page>
