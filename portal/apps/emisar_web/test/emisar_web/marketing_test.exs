@@ -1690,6 +1690,8 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Dataproc, NATS JetStream, and Better Stack packs"
       assert html =~ "v0.60.0"
       assert html =~ "Dependency updates and clearer access guidance"
+      assert html =~ "v0.61.0"
+      assert html =~ "Fuller Sentry events and run diagnostics"
       assert html =~ "v0.15.0"
 
       # The first-party RSS feed, the repo, and the "see all" out-link.

@@ -22,7 +22,7 @@ same product contract.
 
 Before 1.0, a normal product feature is a minor bump and a release hotfix is a
 patch bump. Pre-1.0 releases do not promise long-lived compatibility between
-components. The current release snapshot is product `v0.60.0`, runner
+components. The current release snapshot is product `v0.61.0`, runner
 `0.32.1`, and `emisar-mcp` `0.18.0`. Those component versions are release tips;
 unstamped local builds report `dev`.
 
@@ -844,7 +844,7 @@ It accepts
 `VERSION`, `INSTALL_DIR`, `EMISAR_REPO`, `EMISAR_GITHUB_TOKEN`, `ASSUME_YES`,
 `EMISAR_ATTESTATION_WORKFLOW`, and `EMISAR_URL` (the portal the connection phase talks to and writes into
 configs; default `https://emisar.dev`). The bridge installer also requires the
-selected GitHub release to be marked immutable. For product `v0.60.0`, the current
+selected GitHub release to be marked immutable. For product `v0.61.0`, the current
 installer release tags are `runner-v0.32.1` and `mcp-v0.18.0`.
 
 **The installers place the binary; the bridge owns the connection phase.** An

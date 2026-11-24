@@ -17,6 +17,31 @@ defmodule EmisarWeb.Changelog do
 
   @entries [
     %{
+      date: ~D[2026-11-23],
+      slug: "fuller-sentry-events-and-run-diagnostics",
+      title: "Fuller Sentry events and run diagnostics",
+      tag: "v0.61.0",
+      summary:
+        "The Sentry pack now returns stack frames from log events as well as exceptions, along with messages, contexts, and tags. Cloud Logging searches continue across empty scan pages, and the Runs page makes it easier to distinguish agents with the same name.",
+      details: [
+        {"Packs",
+         [
+           "Sentry event results include standalone and thread stack traces, log entries, and breadcrumbs. The JSON run output has a 1 MiB limit.",
+           "GCP Policy Troubleshooter adds read-only diagnostics for access decisions. Vault list actions report empty collections consistently."
+         ]},
+        {"Console",
+         [
+           "The Runs agent filter shows the owner and key for each agent. Runner pages keep their recent runs visible when filtering actions.",
+           "Key creation offers expiry presets and shows the validated expiration date before submission."
+         ]},
+        {"Security",
+         [
+           "Updated Phoenix, Phoenix LiveView, and idna for published security fixes.",
+           "The runner validates refreshed credentials before use, and the MCP bridge rejects unsupported signing keys at startup."
+         ]}
+      ]
+    },
+    %{
       date: ~D[2026-11-17],
       slug: "dependency-updates-and-clearer-access-guidance",
       title: "Dependency updates and clearer access guidance",
