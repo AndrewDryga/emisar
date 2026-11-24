@@ -124,6 +124,41 @@ cases:
       stderr_contains: [Sentry event exceeds the 1 MiB output limit]
       stdout_not_contains: [event_id, oversized]
 
+  - action: sentry.issue_event
+    args: {organization: acme, issue_id: "1234567890", event_id: feedfacefeedfacefeedfacefeedface}
+    expect:
+      json:
+        /event_id: feedfacefeedfacefeedfacefeedface
+        /date_created: "2026-08-11T19:55:00Z"
+        /title: "CartUnavailable: Checkout could not continue"
+        /contexts/cart/item_id: cart-18
+        /stacktrace/frames/5/function: confirm
+        /breadcrumbs/0/message: private-breadcrumb
+      stdout_not_contains: [cart-42, private-frame-local]
+
+  - name: sentry.issue_event-accepts-a-hyphenated-uuid
+    action: sentry.issue_event
+    args: {organization: acme, issue_id: "1234567890", event_id: feedface-feed-face-feed-facefeedface}
+    expect:
+      json:
+        /event_id: feedfacefeedfacefeedfacefeedface
+
+  - name: sentry.issue_event-retains-a-provider-404
+    action: sentry.issue_event
+    args: {organization: acme, issue_id: "1234567890", event_id: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}
+    expect:
+      status: failure
+      stderr_contains: [Event not found.]
+      stdout_not_contains: [event_id]
+
+  - name: sentry.issue_event-rejects-an-invalid-event-id
+    action: sentry.issue_event
+    args: {organization: acme, issue_id: "1234567890", event_id: "../latest"}
+    expect:
+      status: failure
+      reason: argument_invalid
+      error_contains: [must match pattern]
+
   - action: sentry.list_issue_events
     args: {organization: acme, issue_id: "1234567890"}
     expect:
@@ -137,6 +172,7 @@ cases:
         /results/0/contexts/cart/item_id: cart-42
         /results/0/context/attempt: 3
         /results/1/contexts/cart/item_id: cart-18
+        /results/1/message: "CartUnavailable: Checkout could not continue"
         /pagination/next_page_cursor: null
         /pagination/has_more: false
       stdout_not_contains: ['"entries"', '"frames"', '"breadcrumbs"', private-frame-local, private-breadcrumb]
@@ -158,6 +194,7 @@ cases:
       json:
         /results/0/event_id: feedfacefeedfacefeedfacefeedface
         /results/0/contexts/cart/item_id: cart-18
+        /results/0/message: "CartUnavailable: Checkout could not continue"
         /results/0/release: null
         /results/0/user: null
         /pagination/next_page_cursor: null

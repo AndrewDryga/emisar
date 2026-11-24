@@ -8,9 +8,11 @@ description: >
   IDs across failures. Filter by environment or an exact time window. The
   JSON run output contains sensitive application data, including event IDs,
   timestamps, messages, release versions, users, tags, and both custom
-  contexts and extra context. Breadcrumbs and stack frames are omitted.
-  Pass pagination.next_page_cursor back as page_cursor to continue.
-  Pages are limited to 1 MiB. Use a smaller limit if a page exceeds that size.
+  contexts and extra context. The event title supplies the message when it
+  is empty. Breadcrumbs and stack frames are omitted. Use sentry.issue_event
+  with a returned event ID for those details. Pass pagination.next_page_cursor
+  back as page_cursor to continue. Pages are limited to 1 MiB. Use a smaller
+  limit if a page exceeds that size.
 side_effects: [One read-only API request.]
 args:
   - name: organization

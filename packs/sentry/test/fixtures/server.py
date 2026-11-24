@@ -2,6 +2,7 @@
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
+from uuid import UUID
 
 
 API_TOKEN = "packtest-canary-sentry-token-51c2"
@@ -14,6 +15,7 @@ ISSUE_TWO = "1234567891"
 ISSUE_LOG = "1234567892"
 ISSUE_OVERSIZED = "1234567893"
 ISSUE_FILTERED = "1234567894"
+OLDER_EVENT_ID = "feedfacefeedfacefeedfacefeedface"
 KEY_ID = "cec9dfceb0b74c1c9a5e3c135585f364"
 NEXT_CURSOR = "1700000000000:1:0"
 
@@ -55,6 +57,7 @@ def issue_event(event_id, date_created, item_id, environment="production"):
         "eventID": event_id,
         "dateCreated": date_created,
         "message": "Checkout failed",
+        "title": "CheckoutError",
         "user": {"id": "customer-101"},
         "tags": [
             {"key": "environment", "value": environment},
@@ -67,6 +70,12 @@ def issue_event(event_id, date_created, item_id, environment="production"):
             {"type": "breadcrumbs", "data": {"values": [{"message": "private-breadcrumb"}]}},
         ],
     }
+
+
+def older_issue_event():
+    event = issue_event(OLDER_EVENT_ID, "2026-08-11T19:55:00Z", "cart-18")
+    event.update(message="", title="CartUnavailable: Checkout could not continue", user=None, tags=[], context={})
+    return event
 
 
 STATE = {
@@ -139,9 +148,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         latest = issue_event("f00dfeedf00dfeedf00dfeedf00dfeed", "2026-08-11T20:00:00Z", "cart-42")
-        older = issue_event("feedfacefeedfacefeedfacefeedface", "2026-08-11T19:55:00Z", "cart-18")
-        older.update(user=None, tags=[], context={})
-        events = [latest, older]
+        events = [latest, older_issue_event()]
         if path.endswith(f"/{ISSUE_FILTERED}/events/"):
             events = [
                 issue_event("a" * 32, "2026-08-11T20:02:00Z", "cart-staging", "staging"),
@@ -321,6 +328,13 @@ class Handler(BaseHTTPRequestHandler):
                     "_meta": {"password": 'quote"slash\\secret'},
                 }
             )
+            return
+        event_path = f"/api/0/organizations/{ORG}/issues/{ISSUE_ONE}/events/"
+        if path in {f"{event_path}{OLDER_EVENT_ID}/", f"{event_path}{UUID(OLDER_EVENT_ID)}/"}:
+            self.send_json(older_issue_event())
+            return
+        if path.startswith(event_path):
+            self.send_json({"detail": "Event not found."}, 404)
             return
         if path == f"/api/0/organizations/{ORG}/issues/{ISSUE_ONE}/tags/":
             self.send_json(

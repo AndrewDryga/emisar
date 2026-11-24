@@ -127,9 +127,9 @@ issue_details() {
   request "$api/organizations/$1/issues/$2/" | jq -ce .
 }
 
-issue_latest_event() {
-  local response rc=0
-  response=$(request "$api/organizations/$1/issues/$2/events/latest/") || rc=$?
+issue_event() {
+  local org=$1 issue_id=$2 event_id=$3 response rc=0
+  response=$(request "$api/organizations/$org/issues/$issue_id/events/$event_id/") || rc=$?
   # Same capture guard as request_paged: the error body is in $response, and
   # nothing else would ever print it.
   if (( rc != 0 )); then
@@ -227,7 +227,7 @@ list_issue_events() {
     | .results |= map({
         event_id: (.eventID // .id),
         date_created: (.dateCreated // (.endTimestamp | numbers | todateiso8601) // null),
-        message: (.message // ""),
+        message: ((.message | select(. != "")) // .title // ""),
         release: (first(.tags[]? | select(.key == "release") | .value) // null),
         user: .user,
         tags: (.tags // []),
@@ -305,7 +305,8 @@ case "$command" in
   list-projects) list_projects "$@" ;;
   list-issues) list_issues "$@" ;;
   issue-details) issue_details "$@" ;;
-  issue-latest-event) issue_latest_event "$@" ;;
+  issue-latest-event) issue_event "$1" "$2" latest ;;
+  issue-event) issue_event "$@" ;;
   list-issue-events) list_issue_events "$@" ;;
   issue-tags) issue_tags "$@" ;;
   list-releases) list_releases "$@" ;;

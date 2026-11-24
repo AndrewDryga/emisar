@@ -1,0 +1,46 @@
+schema_version: 1
+id: sentry.issue_event
+title: Show issue event by ID
+kind: script
+risk: medium
+description: >
+  Show a specific event from sentry.list_issue_events with its message,
+  log entry, contexts, tags, breadcrumbs, request metadata, and all frames
+  from exception, standalone, and thread stack traces. The JSON run output
+  contains sensitive application data and is limited to 1 MiB. Request
+  bodies, headers, cookies, and frame locals are excluded.
+side_effects: [One read-only API request.]
+args:
+  - name: organization
+    type: string
+    required: true
+    description: Organization slug used to list the event.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9._-]{0,63}$"
+      max_length: 64
+  - name: issue_id
+    type: string
+    required: true
+    description: Numeric issue ID used to list the event.
+    validation:
+      pattern: "^[0-9]{1,20}$"
+      max_length: 20
+  - name: event_id
+    type: string
+    required: true
+    description: Event ID from sentry.list_issue_events. Accepts 32 hexadecimal digits or a hyphenated UUID.
+    validation:
+      pattern: "^([0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
+      max_length: 36
+execution:
+  script: {path: scripts/sentry_api.sh, interpreter: /bin/bash}
+  argv: [issue-event, "{{ args.organization }}", "{{ args.issue_id }}", "{{ args.event_id }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Inspect an older occurrence
+    args: {organization: acme, issue_id: "1234567890", event_id: feedfacefeedfacefeedfacefeedface}
