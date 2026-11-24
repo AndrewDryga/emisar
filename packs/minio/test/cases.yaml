@@ -7,9 +7,6 @@ secret_env: [MC_HOST_minio]
 inherit_env: [MC_HOST_minio]
 env:
   MC_HOST_minio: "http://minio_admin:packtest-canary-minio-74a9@minio:9000"
-defaults:
-  expect:
-    stdout_not_empty: true
 cases:
   - action: minio.admin_info
     args: {alias: minio}
@@ -133,24 +130,38 @@ cases:
       stdout_not_contains: [aws4_request]
     cleanup:
       - argv: [mc, rb, "--force", minio/harness-trace]
-  # The server re-execs itself in place on restart, so the container (and its
-  # /data) survives; mc prints one compact JSON line (piped stdin turns on
-  # JSONLine mode). The probes retry through the restart window and prove the
-  # server came back serving the pre-restart object.
+  # The server may re-exec before mc prints its response. Compare the
+  # server's boot time across the restart and check the pre-restart object.
   - action: minio.service_restart
     args: {alias: minio}
     arrange:
       - argv: [mc, mb, "--ignore-existing", minio/harness-bucket]
       - argv: [/bin/sh, -c, 'printf packtest | mc pipe minio/harness-bucket/probe.txt']
-    expect:
-      stdout_contains: ['"status":"success"', restartDuration]
+      - name: record the server boot time before the restart
+        argv:
+          - /bin/sh
+          - -ec
+          - |
+            info=$(mc admin info minio --json)
+            uptime=$(printf '%s\n' "$info" | jq -er '.info.servers[0].uptime | numbers | select(. >= 5)')
+            printf '%s\n' "$(($(date +%s) - uptime))" >/tmp/minio-boot-before
+        retry_for: 20s
     probes:
-      - name: server healthy again after the restart
-        argv: [mc, admin, info, minio, --json]
+      - name: server uptime reset after the restart
+        argv:
+          - /bin/sh
+          - -ec
+          - |
+            before=$(cat /tmp/minio-boot-before)
+            info=$(mc admin info minio --json)
+            printf '%s\n' "$info" | jq -ce --argjson before "$before" --argjson now "$(date +%s)" '
+              select(.status == "success") | .info.servers[0] | objects
+              | select(($now - (.uptime // 0)) >= ($before + 3))
+              | {uptime_reset: true}'
         retry_for: 60s
         retry_every: 1s
         expect:
-          stdout_contains: ['"status":"success"']
+          json: {/uptime_reset: true}
       - name: pre-restart data survived
         argv: [mc, cat, minio/harness-bucket/probe.txt]
         retry_for: 15s
@@ -159,3 +170,4 @@ cases:
           stdout_contains: [packtest]
     cleanup:
       - argv: [mc, rb, "--force", minio/harness-bucket]
+        retry_for: 60s

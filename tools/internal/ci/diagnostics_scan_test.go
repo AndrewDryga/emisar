@@ -259,6 +259,34 @@ func TestFindmntAssessmentRejectsUnreviewedBytes(t *testing.T) {
 	}
 }
 
+func TestDiagnosticsScanOpenSSLAssessmentRequiresCryptoOnly(t *testing.T) {
+	const version = "3.0.22-1~deb12u2"
+	for _, tc := range []struct{ name, path, symbol string }{
+		{name: "crypto only"},
+		{name: "added TLS library", path: "lib/libssl.so.3", symbol: "SSL_connect"},
+		{name: "added QUIC symbol", path: "libexec/tool", symbol: "OSSL_QUIC_client_method"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pkg := scanPackage{ID: "libssl3@" + version, Name: "libssl3", Version: version, Arch: "amd64", SrcName: "openssl", SrcVersion: "3.0.22", SrcRelease: "1~deb12u2"}
+			pkg.Identifier.PURL = "pkg:deb/debian/libssl3@" + version + "?arch=amd64&distro=debian-12"
+			bundle, sbom, report := packageScanFixture(t, "libssl3\t"+version+"\tamd64\topenssl\t"+version,
+				"lib/libcrypto.so.3", "/usr/lib/x86_64-linux-gnu/libcrypto.so.3", "OpenSSL_version", pkg, "CVE-2026-107494", "HIGH")
+			if tc.path != "" {
+				scanELFFixture(t, filepath.Join(bundle, tc.path), tc.symbol, elf.ELFCLASS64)
+			}
+			raw, _ := json.Marshal(report)
+			assessed, _, blocking, err := classifyDiagnosticsScan(bundle, sbom, raw, time.Date(2026, 11, 23, 0, 0, 0, 0, time.UTC))
+			if tc.path == "" {
+				if err != nil || len(assessed) != 1 || len(blocking) != 0 {
+					t.Fatalf("crypto-only assessment: assessed=%d blocking=%d err=%v", len(assessed), len(blocking), err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), "non-affected predicate failed") {
+				t.Fatalf("unreviewed OpenSSL payload accepted: %v", err)
+			}
+		})
+	}
+}
+
 func TestZlibWriterAssessmentRejectsAnyGzipFileWriter(t *testing.T) {
 	for _, tc := range []struct {
 		symbol string

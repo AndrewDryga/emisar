@@ -66,6 +66,9 @@ var diagnosticsNonaffected = map[string]nonaffectedRule{
 	"CVE-2026-7210":   {"python3.11", "3.11.2-6+deb12u9", "no-expat", "https://mail.python.org/archives/list/security-announce@python.org/message/PNY5OMBDPM2FRUZTWFFPJ6LISWKV627K/", []string{"libpython3.11-minimal", "libpython3.11-stdlib", "python3.11-minimal"}},
 	"CVE-2026-53613":  {"util-linux", "2.38.1-5+deb12u3", "findmnt-read-only", "https://github.com/util-linux/util-linux/security/advisories/GHSA-8gj5-72r3-428g", []string{"bsdutils", "libblkid1", "libmount1", "libsmartcols1", "libuuid1", "util-linux", "util-linux-extra"}},
 	"CVE-2026-78410":  {"util-linux", "2.38.1-5+deb12u3", "findmnt-read-only", "https://github.com/util-linux/util-linux/security/advisories/GHSA-rh77-686x-2f2m", []string{"bsdutils", "libblkid1", "libmount1", "libsmartcols1", "libuuid1", "util-linux", "util-linux-extra"}},
+	// Native QUIC first shipped in OpenSSL 3.2. This exact Bookworm 3.0
+	// package contributes only libcrypto to the final diagnostics bundle.
+	"CVE-2026-107494": {"openssl", "3.0.22-1~deb12u2", "no-openssl-quic", "https://www.cve.org/CVERecord?id=CVE-2026-107494", []string{"libssl3"}},
 }
 
 // Owner-accepted risks, not non-affected assessments: the final bundle cannot
@@ -428,6 +431,21 @@ func proveDiagnosticsNonaffected(bundle string, rule nonaffectedRule) error {
 	case "no-homed":
 		if err := allowOnly("./lib/libsystemd.so.0", "./lib/libudev.so.1"); err != nil {
 			return err
+		}
+	case "no-openssl-quic":
+		if err := allowOnly("./lib/libcrypto.so.3"); err != nil {
+			return err
+		}
+		isLibSSL := func(name string) bool { return strings.HasPrefix(name, "libssl.so") }
+		for path, file := range elfs {
+			if isLibSSL(filepath.Base(path)) || slices.ContainsFunc(file.Libraries, isLibSSL) {
+				return fmt.Errorf("OpenSSL TLS library shipped or imported by %s", path)
+			}
+			for _, symbol := range file.Symbols {
+				if strings.Contains(strings.ToLower(symbol.Name), "ossl_quic") {
+					return fmt.Errorf("OpenSSL QUIC symbol in %s: %s", path, symbol.Name)
+				}
+			}
 		}
 	case "no-tarfile", "no-expat":
 		if err := provePrivatePython(bundle); err != nil {
