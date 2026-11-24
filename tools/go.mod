@@ -8,8 +8,8 @@ tool (
 )
 
 require (
-	github.com/chromedp/cdproto v0.159.3
-	github.com/chromedp/chromedp v0.23.0
+	github.com/chromedp/cdproto v0.160.1
+	github.com/chromedp/chromedp v0.23.1
 	go.yaml.in/yaml/v3 v3.0.6
 )
 
