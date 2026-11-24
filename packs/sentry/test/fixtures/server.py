@@ -49,6 +49,25 @@ def stacktrace(count, filename="app/checkout.py", function="confirm"):
     }
 
 
+def issue_event(event_id, date_created, item_id):
+    return {
+        "eventID": event_id,
+        "dateCreated": date_created,
+        "message": "Checkout failed",
+        "user": {"id": "customer-101"},
+        "tags": [
+            {"key": "environment", "value": "production"},
+            {"key": "release", "value": "2.1.0"},
+        ],
+        "contexts": {"cart": {"item_id": item_id}},
+        "context": {"attempt": 3},
+        "entries": [
+            {"type": "stacktrace", "data": stacktrace(6)},
+            {"type": "breadcrumbs", "data": {"values": [{"message": "private-breadcrumb"}]}},
+        ],
+    }
+
+
 STATE = {
     "issues": {
         ISSUE_ONE: issue(ISSUE_ONE, "TypeError: cannot read frames of undefined", "app/checkout.py in confirm", "4821", "312"),
@@ -106,6 +125,26 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json({"detail": "Invalid token"}, 401)
         return False
 
+    def list_issue_events(self, path, query):
+        limit = int(query.get("per_page", ["0"])[0])
+        if query.get("full") != ["true"] or not 1 <= limit <= 10:
+            self.send_json({"detail": "full=true and a bounded per_page are required"}, 400)
+            return
+        if path.endswith(f"/{ISSUE_TWO}/events/"):
+            self.send_json([])
+            return
+        if path.endswith(f"/{ISSUE_OVERSIZED}/events/"):
+            self.send_json([{"context": {"item_id": "x" * (1024 * 1024)}}])
+            return
+
+        latest = issue_event("f00dfeedf00dfeedf00dfeedf00dfeed", "2026-08-11T20:00:00Z", "cart-42")
+        older = issue_event("feedfacefeedfacefeedfacefeedface", "2026-08-11T19:55:00Z", "cart-18")
+        older.update(user=None, tags=[], context={})
+        events = [latest, older]
+        offset = 1 if query.get("cursor") == ["0:1:0"] else 0
+        end = offset + limit
+        self.send_json(events[offset:end], link=self.link_header(path, f"0:{end}:0", end < len(events)))
+
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
@@ -155,6 +194,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == f"/api/0/organizations/{ORG}/issues/{ISSUE_ONE}/":
             self.send_json(STATE["issues"][ISSUE_ONE])
+            return
+        if path in {
+            f"/api/0/organizations/{ORG}/issues/{issue_id}/events/"
+            for issue_id in (ISSUE_ONE, ISSUE_TWO, ISSUE_OVERSIZED)
+        }:
+            self.list_issue_events(path, query)
             return
         if path == f"/api/0/organizations/{ORG}/issues/{ISSUE_LOG}/events/latest/":
             self.send_json(

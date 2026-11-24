@@ -208,6 +208,30 @@ issue_tags() {
   request "$api/organizations/$1/issues/$2/tags/" | jq -ce .
 }
 
+list_issue_events() {
+  local org=$1 issue_id=$2 limit=$3 cursor=$4 response
+  # Sentry exposes custom context only with full=true. The full list
+  # serializer exposes the release version as a tag.
+  response=$(with_cursor "$cursor" --get "$api/organizations/$org/issues/$issue_id/events/" \
+    --data-urlencode "full=true" --data-urlencode "per_page=$limit")
+  printf '%s' "$response" | jq -rse '
+    if length == 1 and (.[0].results | type) == "array" then .[0]
+    else error("Expected one Sentry issue event array") end
+    | .results |= map({
+        event_id: (.eventID // .id),
+        date_created: (.dateCreated // (.endTimestamp | numbers | todateiso8601) // null),
+        message: (.message // ""),
+        release: (first(.tags[]? | select(.key == "release") | .value) // null),
+        user: .user,
+        tags: (.tags // []),
+        contexts: (.contexts // {}),
+        context: (.context // {})
+      })
+    | tojson
+    | if utf8bytelength < 1048576 then .
+      else error("Sentry issue event page exceeds the 1 MiB output limit. Use a smaller limit.") end'
+}
+
 list_releases() {
   with_cursor "$2" --get "$api/organizations/$1/releases/"
 }
@@ -275,6 +299,7 @@ case "$command" in
   list-issues) list_issues "$@" ;;
   issue-details) issue_details "$@" ;;
   issue-latest-event) issue_latest_event "$@" ;;
+  list-issue-events) list_issue_events "$@" ;;
   issue-tags) issue_tags "$@" ;;
   list-releases) list_releases "$@" ;;
   list-project-keys) list_project_keys "$@" ;;

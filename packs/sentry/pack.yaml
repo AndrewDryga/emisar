@@ -2,7 +2,7 @@ schema_version: 1
 
 id: sentry
 name: Sentry error monitoring
-version: 0.1.13
+version: 0.1.14
 # 0.1.6 and below rated issue_tags `low`, so up to a megabyte of raw
 # application tag values — end-user identifiers, request URLs — auto-ran even
 # for an operator who gates `medium`.
@@ -58,6 +58,7 @@ actions:
   - actions/list_issues.yaml
   - actions/issue_details.yaml
   - actions/issue_latest_event.yaml
+  - actions/list_issue_events.yaml
   - actions/issue_tags.yaml
   - actions/list_releases.yaml
   - actions/list_project_keys.yaml
