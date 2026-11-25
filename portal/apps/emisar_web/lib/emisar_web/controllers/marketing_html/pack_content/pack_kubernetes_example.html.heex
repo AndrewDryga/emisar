@@ -1,26 +1,70 @@
 <section aria-labelledby="kubernetes-ai-example">
-  <h2 id="kubernetes-ai-example">Example: investigate CrashLoopBackOff after a deployment</h2>
-  <blockquote class="mt-4 border-l-2 border-brand-500 pl-5 text-zinc-200">
-    Investigate the restarting containers in this namespace. Check pod state, warning
-    events, previous-container logs, and rollout history. Explain the failure before proposing a rollback.
-  </blockquote>
-  <ol class="mt-5 list-decimal space-y-3 pl-5">
-    <li>
-      Select the affected pod and container from the pod listing, then inspect <a href="#action-kubernetes.events_for_pod">events for that pod</a>.
-      Read previous-container logs when they are available.
-    </li>
-    <li>
-      Check the workload's rollout status and history. Use the deployment details and
-      container errors to decide whether to roll back or try another fix.
-    </li>
-    <li>
-      If a rollback is needed, request it through emisar. Your policy decides whether it
-      can run. Check the rollout and application health again when it finishes.
-    </li>
-  </ol>
+  <h2 id="kubernetes-ai-example">Why does this nginx pod keep restarting?</h2>
   <p>
-    Reading logs is medium risk because they can contain sensitive data. Reading workload
-    descriptions or YAML is high risk because environment variables can contain readable
-    passwords or other secrets. Review access to these reads as well as changes.
+    We started nginx in a local Kubernetes 1.37 cluster and pointed it at a config file
+    the image didn’t contain. After four restarts, the pod showed <code>CrashLoopBackOff</code>.
+    Its <a href="#action-kubernetes.events_for_pod">warning event</a>
+    said <code>Back-off restarting failed container nginx</code>. Kubernetes was giving
+    the container more time between attempts. The reason nginx quit was in <a href="#action-kubernetes.pod_previous_logs">the previous container’s log</a>.
   </p>
+  <.docs_code phx-no-format label="Container log">nginx: [emerg] open() "/etc/site/nginx.conf" failed (2: No such file or directory)</.docs_code>
+  <p>
+    Another restart would use the same missing file. We removed the test deployment’s
+    custom startup command so nginx would load its own config. The new pod came up with
+    zero restarts and served the nginx welcome page.
+  </p>
+  <blockquote class="mt-4 border-l-2 border-brand-500 pl-5 text-zinc-200">
+    Why is web restarting in emisar-lab? Check the pod events and the last container log.
+    Show me what failed before I change the deployment.
+  </blockquote>
+  <p>
+    With the Kubernetes pack installed, an agent can make those checks through emisar.
+    Pod events are low risk. Container logs are medium risk because applications can log
+    private data. Full workload descriptions and YAML are high risk because they can
+    include secrets. Set a <.link navigate={~p"/docs/policies-and-approvals"}>policy</.link>
+    for each read you want to allow. You can require approval for a rollout or keep
+    that change in your deployment repository.
+  </p>
+  <details class="mt-5 rounded-lg border border-zinc-800 px-4 py-3">
+    <summary class="cursor-pointer font-medium text-zinc-100">
+      Reproduce the failure with kubectl
+    </summary>
+    <p>
+      Point kubectl at a disposable local cluster. Create a fresh namespace for this
+      example and start the deployment with the bad path.
+    </p>
+    <.docs_code phx-no-format label="Create the test deployment" copy_id="k8s-crash-create">kubectl create namespace emisar-lab &amp;&amp;
+kubectl -n emisar-lab create deployment web --image=nginx:1.28.0-alpine -- nginx -c /etc/site/nginx.conf -g 'daemon off;'</.docs_code>
+    <p>
+      Wait for the container to restart, then check the pod. Its name and restart count will vary.
+    </p>
+    <.docs_code
+      phx-no-format
+      label="Pod status"
+      copy_text="kubectl -n emisar-lab get pods -l app=web"
+    >$ kubectl -n emisar-lab get pods -l app=web
+<span class="text-zinc-400">NAME                   READY   STATUS             RESTARTS      AGE
+web-6c4c65bc88-xqqxm   0/1     CrashLoopBackOff   4 (74s ago)   2m37s</span></.docs_code>
+    <p>Use the pod name to look up its events. The BackOff warning records the failed restart.</p>
+    <.docs_code phx-no-format label="Events for this pod" copy_id="k8s-crash-events">{~S|pod=$(kubectl -n emisar-lab get pod -l app=web -o jsonpath='{.items[0].metadata.name}')
+kubectl -n emisar-lab get events --field-selector involvedObject.kind=Pod,involvedObject.name="$pod"|}</.docs_code>
+    <p>Read the previous log to see why nginx quit.</p>
+    <.docs_code
+      phx-no-format
+      label="Previous log"
+      copy_text="kubectl -n emisar-lab logs deployment/web --previous"
+    >$ kubectl -n emisar-lab logs deployment/web --previous
+<span class="text-zinc-400">2026/11/24 07:05:59 [emerg] 1#1: open() "/etc/site/nginx.conf" failed (2: No such file or directory)
+nginx: [emerg] open() "/etc/site/nginx.conf" failed (2: No such file or directory)</span></.docs_code>
+    <p>
+      Remove the test command and wait for the replacement pod. When you finish,
+      delete the namespace you created with <code>kubectl delete namespace emisar-lab</code>.
+    </p>
+    <.docs_code
+      phx-no-format
+      label="Restore the image’s startup command"
+      copy_id="k8s-crash-restore"
+    >{~S|kubectl -n emisar-lab patch deployment web --type=json -p='[{"op":"remove","path":"/spec/template/spec/containers/0/command"}]'
+kubectl -n emisar-lab rollout status deployment/web|}</.docs_code>
+  </details>
 </section>

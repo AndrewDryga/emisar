@@ -1,29 +1,65 @@
 <section aria-labelledby="postgres-ai-example">
-  <h2 id="postgres-ai-example">Example: diagnose a PostgreSQL lock incident</h2>
-  <blockquote class="mt-4 border-l-2 border-brand-500 pl-5 text-zinc-200">
-    Find the sessions blocking checkout queries. Report the blocking chain, query age,
-    and affected sessions. Suggest a query to cancel only if the findings support it, then wait for my decision.
-  </blockquote>
-  <ol class="mt-5 list-decimal space-y-3 pl-5">
-    <li>
-      Read the blocking chains and check the sessions they identify. Confirm the process
-      ID (PID) and current query before suggesting a change.
-    </li>
-    <li>
-      Consider <a href="#action-postgres.cancel_query">query cancellation</a>
-      if the findings support it. This stops the current query and keeps the connection open.
-      <a href="#action-postgres.terminate_backend">Terminating a backend</a>
-      disconnects
-      the session. Both are high-risk actions with different consequences.
-    </li>
-    <li>
-      Read the blocking chain again after the action finishes. Check whether the block
-      cleared and report which sessions still need attention.
-    </li>
-  </ol>
+  <h2 id="postgres-ai-example">Why is this PostgreSQL update taking so long?</h2>
   <p>
-    Set policy rules for the reads and changes the agent may make. Asking it to wait in a
-    prompt gives it guidance. Requiring approval in policy makes it wait before running
-    the action. See <.link navigate={~p"/docs/policies-and-approvals"}>how action policies and approvals work</.link>.
+    In a PostgreSQL 17.12 test database, two checkout sessions tried to update order 42.
+    The first marked it paid and left the transaction open. The second tried to mark it
+    sent and had to wait.
+  </p>
+  <blockquote class="mt-4 border-l-2 border-brand-500 pl-5 text-zinc-200">
+    What’s holding up the update to order 42? Show me which session is waiting and
+    which one holds the lock.
+  </blockquote>
+  <p>
+    We ran the SQL from the pack’s
+    <a href="#action-postgres.lock_blocking_chains">blocking chains action</a>
+    with a monitoring role. Session <code>133</code>
+    was waiting for session <code>132</code>.
+    Both query texts named the same order. The
+    <a href="#action-postgres.activity_detail">session details</a>
+    showed that session 132 was <code>idle in transaction</code>. Its update had
+    finished, but the transaction still held the lock.
+  </p>
+  <p>
+    In the test, we ran <code>ROLLBACK</code>
+    in session 132. The waiting update finished and the blocking chains query returned no rows. On a live database, find out whether
+    the transaction should commit before asking its owner to end it.
+    <a href="#action-postgres.cancel_query">Canceling a query</a>
+    targets a running
+    statement. <a href="#action-postgres.terminate_backend">Terminating the session</a>
+    closes the connection and rolls back uncommitted work. Both actions are high risk.
+  </p>
+  <details class="mt-5 rounded-lg border border-zinc-800 px-4 py-3">
+    <summary class="cursor-pointer font-medium text-zinc-100">Reproduce the wait in psql</summary>
+    <p>
+      Open three psql sessions to the same empty test database. Use two for the updates and one to inspect the lock. In the first, create one
+      order and leave the transaction open.
+    </p>
+    <.docs_code phx-no-format label="First session" copy_id="pg-lock-holder">CREATE TABLE orders (id integer PRIMARY KEY, state text);
+INSERT INTO orders VALUES (42, 'new');
+BEGIN;
+UPDATE orders SET state = 'paid' WHERE id = 42;</.docs_code>
+    <p>Run this in the second session. It waits until the first transaction ends.</p>
+    <.docs_code phx-no-format label="Second session" copy_id="pg-lock-waiter">UPDATE orders SET state = 'sent' WHERE id = 42;</.docs_code>
+    <p>
+      While it waits, run the blocking chains action with emisar, or use the third psql
+      session to see the two process IDs. Yours will differ.
+    </p>
+    <.docs_code
+      phx-no-format
+      label="Third session"
+      copy_text="SELECT pid AS waiting, unnest(pg_blocking_pids(pid)) AS holding FROM pg_stat_activity;"
+    >SELECT pid AS waiting, unnest(pg_blocking_pids(pid)) AS holding
+FROM pg_stat_activity;
+<span class="text-zinc-400"> waiting | holding
+---------+---------
+     133 |     132
+(1 row)</span></.docs_code>
+    <p>Back in the first session, run <code>ROLLBACK;</code> to release the row.</p>
+  </details>
+  <p>
+    Query text can include customer data. Use
+    <.link navigate={~p"/docs/policies-and-approvals"}>an action policy</.link>
+    to
+    decide who may read it and whose approval a cancellation or disconnect needs.
   </p>
 </section>

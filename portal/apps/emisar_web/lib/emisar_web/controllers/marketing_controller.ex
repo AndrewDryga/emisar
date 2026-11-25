@@ -92,8 +92,8 @@ defmodule EmisarWeb.MarketingController do
      "Cassandra backup savings: an estimated $1,800/month",
      "ChatGPT Sol used emisar to investigate Cassandra backup costs and deliver an estimated $1,800 in monthly savings."},
     {"/compare/raw-ssh-for-ai", :raw_ssh_for_ai, :raw_ssh_for_ai,
-     "Why not just give the AI agents SSH access?",
-     "Compare SSH access and emisar action packs for AI agents: host permissions, command scope, approvals, audit, and when each approach fits."},
+     "Should you give your AI agent SSH access?",
+     "Compare raw SSH access with emisar. Follow the same Nomad rollback to see what the agent can run, who approves it and what lands in the audit log."},
     {"/compare/custom-mcp-server", :custom_mcp_server, :custom_mcp_server,
      "Custom MCP server vs emisar",
      "Compare a custom Model Context Protocol (MCP) server with emisar for AI infrastructure access: permissions, approvals, host connections, and audit."},
@@ -950,16 +950,16 @@ defmodule EmisarWeb.MarketingController do
         "Connect your AI agent to Cassandra through emisar’s CLI or MCP server. Check cluster health, investigate compaction, and request repairs. Choose which actions can run automatically and which need your approval."
     },
     "postgres" => %{
-      title: "PostgreSQL AI access through CLI and MCP",
+      title: "PostgreSQL MCP tools for blocked queries and replication",
       heading: "Give AI agents access to PostgreSQL operations",
       intro:
-        "Connect your AI agent to PostgreSQL through emisar’s CLI or MCP server. Find blocked queries, check replication lag, and inspect query plans. Choose which actions can run automatically and which need your approval."
+        "Let your agent inspect PostgreSQL through emisar’s CLI or MCP server. It can tell you which transaction is holding up an order while you keep control of who can cancel a query."
     },
     "kubernetes" => %{
-      title: "Kubernetes AI agent access through CLI and MCP",
+      title: "Kubernetes MCP tools for pod restarts and rollouts",
       heading: "Give AI agents access to Kubernetes operations",
       intro:
-        "Connect your AI agent to Kubernetes through emisar’s CLI or MCP server. Investigate unhealthy pods, check rollouts, and request restarts or rollbacks. Both emisar policy and Kubernetes permissions control what it can do."
+        "Let your agent investigate a restarting pod through emisar’s MCP server or CLI. The runner uses its Kubernetes credentials. Your team decides which reads and rollout changes the agent can request."
     }
   }
 
@@ -1075,7 +1075,7 @@ defmodule EmisarWeb.MarketingController do
     "kafka" =>
       "Check Kafka consumer lag, topics, and broker configuration. Review actions for offset resets, retention changes, and leader elections.",
     "kubernetes" =>
-      "Give AI agents Kubernetes access through CLI or MCP. Check workloads, events, and logs. Review action inputs, risks, permissions, and setup.",
+      "Diagnose a Kubernetes CrashLoopBackOff with pod events and nginx logs. See how to give an AI agent those checks through emisar and review a proposed rollout change.",
     "linux-core" =>
       "Give AI agents Linux access through CLI or MCP. Check host health and systemd services, then review the actions for service changes.",
     "medusa" =>
@@ -1115,7 +1115,7 @@ defmodule EmisarWeb.MarketingController do
     "postfix" =>
       "Inspect Postfix queues, configuration, and logs. Review actions to hold or delete individual messages, requeue mail, or flush the deferred queue.",
     "postgres" =>
-      "Give AI agents PostgreSQL access through CLI or MCP. Check sessions, locks, and replication, then review the actions for database changes.",
+      "Find the transaction blocking a PostgreSQL update. Reproduce the lock in psql or give an AI agent the same checks through emisar’s MCP server or CLI.",
     "process-forensics" =>
       "Investigate stuck or slow Linux processes with memory maps, thread state, strace, and gdb. Tracing is read-only but can slow the target process.",
     "prometheus" =>

@@ -6,7 +6,7 @@
       <p>
         List <a href="#action-kubernetes.pods_list">pods</a>, check <a href="#action-kubernetes.events_warnings">warning events</a>, and read the
         container's <a href="#action-kubernetes.pod_previous_logs">previous logs</a>.
-        Check the container state too: a pod can show Running while a container is in CrashLoopBackOff.
+        A pod can show Running while one container keeps restarting. See <a href="#kubernetes-ai-example">how we traced a crash to a missing nginx file</a>.
       </p>
     </div>
     <div>
@@ -22,7 +22,7 @@
       <p>
         <a href="#action-kubernetes.rollout_restart">Rolling restarts</a>
         and <a href="#action-kubernetes.rollout_undo">rollbacks</a>
-        are high risk; a rollback starts a new rollout using a previous revision.
+        are high risk. A rollback starts a new rollout using a previous revision.
         Check the rollout and application health afterwards.
       </p>
     </div>

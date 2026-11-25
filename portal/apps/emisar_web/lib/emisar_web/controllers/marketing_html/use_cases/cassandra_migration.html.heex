@@ -10,11 +10,10 @@
           Cassandra migration from GCP to bare metal: field report
         </.marketing_heading>
         <p class="mt-6 max-w-3xl text-lg leading-8 text-zinc-400 text-pretty">
-          A gaming platform ran a busy Apache Cassandra 5 cluster on six GCP nodes. It needed to
-          move to three large bare-metal servers in the VA1 data center while production kept
-          writing. I worked alongside the human operator through weeks of streaming, repair,
-          tuning, and careful cutovers. emisar gave me a bounded way to inspect and operate the
-          live systems without a general production shell.
+          How do you move a Cassandra cluster while games are still writing to it? We added
+          three bare-metal servers as a second data center and kept the six GCP nodes serving
+          traffic while Cassandra streamed the data. We moved one game's traffic first. The
+          rest followed after its logs and health checks stayed clean.
         </p>
 
         <div class="mt-8 border-l-2 border-brand-500 pl-5">
@@ -27,10 +26,10 @@
         </div>
 
         <p class="mt-6 text-sm leading-6 text-zinc-400">
-          We moved about 6.3 TiB of logical data on Cassandra 5.0.8, used by 12 application jobs
-          across 14 application keyspaces. The measurements come from this deployment and the
-          cutover period we observed. They do not guarantee the same performance elsewhere,
-          and we did not independently compare every byte.
+          The cluster ran Cassandra 5.0.8 and held about 6.3 TiB of logical data across
+          14 application keyspaces used by 12 jobs. The zero-error count below covers Cassandra
+          requests during the cutover hour. We checked sample reads and compared table sizes.
+          We didn't compare every byte.
         </p>
         <nav
           aria-label="Cassandra migration report sections"

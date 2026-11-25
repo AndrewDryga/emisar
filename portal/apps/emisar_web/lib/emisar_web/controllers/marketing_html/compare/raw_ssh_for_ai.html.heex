@@ -6,12 +6,12 @@
       <div class="max-w-3xl">
         <p class="text-sm font-semibold text-brand-400">Compare</p>
         <.marketing_heading tag="h1" scale={:hero} class="mt-2">
-          Why not just give the AI agents SSH access?
+          Should you give your AI agent SSH access?
         </.marketing_heading>
         <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
-          SSH gives an agent the permissions of its host account. emisar gives it specific
-          actions, such as reading service logs or restarting a unit, so it can keep
-          investigating while you control which changes run.
+          If your agent can open a shell through an SSH MCP server, it can run whatever the
+          remote account allows. With emisar, you choose which actions it gets. It can look
+          into a failed deployment while you decide whether to let it roll back.
         </p>
       </div>
 
@@ -55,14 +55,15 @@
         the 3-way comparison reads without a horizontal scroll on phones. --%>
       <% rows = [
         {"What can the agent run?", "Anything the SSH account can run.",
-         "Only actions from installed packs, which group related operations. Anything else is rejected."},
-        {"How are arguments checked?", "They aren't. The agent writes the whole command line.",
-         "The runner, a service on your host, checks each argument against its allowed type and limits. Sensitive values are masked in the console and API."},
+         "Actions the runner's installed packs define and policy permits."},
+        {"How are arguments checked?",
+         "With an unrestricted shell, the agent supplies the whole command.",
+         "The runner on your host checks argument types and limits."},
         {"What code runs?", "Whatever is installed on the host at that moment.",
          "The trusted pack defines each action. Changed packs are blocked until an admin reviews them."},
         {"How does approval work?",
-         "A prompt like \"Do you want to run ssh …?\" One \"don't ask again\" covers every later ssh command.",
-         "Your policy decides which actions need approval. An approval covers that one run unless you allow reuse, and every decision is recorded."},
+         "Depends on the client. A standing SSH approval can cover later commands too.",
+         "Policy decides which runs need approval. You can approve one request or give a standing grant."},
         {"What is recorded?", "Login logs. Recording the commands takes a separate tool.",
          "Each run's request, approval, and result in a searchable audit log, plus a host journal you can verify."},
         {"Do secrets reach the model?", "Yes, if the command prints them.",

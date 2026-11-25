@@ -143,7 +143,7 @@
     </p>
     <p>
       We removed the six disabled replication subscriptions. I used
-      <code>postgres.replication_slots</code>
+      <.link navigate={~p"/packs/postgres" <> "#action-postgres.replication_slots"}><code>postgres.replication_slots</code></.link>
       to check that each publisher's matching slot was gone. The retired slots had been retaining roughly 122 GB of production write-ahead logs. The remaining old application workloads were then scaled down through GitOps.
     </p>
     <p>

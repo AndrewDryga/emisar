@@ -54,10 +54,10 @@ defmodule EmisarWeb.PacksTest do
     test "AI access overviews retain the pack contract and link to published actions", %{
       conn: conn
     } do
-      for {id, system} <- [
-            {"cassandra", "Cassandra"},
-            {"postgres", "PostgreSQL"},
-            {"kubernetes", "Kubernetes"}
+      for {id, system, title} <- [
+            {"cassandra", "Cassandra", "Cassandra AI access"},
+            {"postgres", "PostgreSQL", "PostgreSQL MCP tools"},
+            {"kubernetes", "Kubernetes", "Kubernetes MCP tools"}
           ] do
         pack = PublishedRegistry.get(id)
         html = conn |> get(~p"/packs/#{id}") |> html_response(200)
@@ -66,7 +66,7 @@ defmodule EmisarWeb.PacksTest do
         assert doc |> LazyHTML.query("h1") |> LazyHTML.text() |> String.trim() ==
                  "Give AI agents access to #{system} operations"
 
-        assert doc |> LazyHTML.query("title") |> LazyHTML.text() =~ "#{system} AI"
+        assert doc |> LazyHTML.query("title") |> LazyHTML.text() =~ title
         assert html =~ pack.content_hash
 
         guide_links =

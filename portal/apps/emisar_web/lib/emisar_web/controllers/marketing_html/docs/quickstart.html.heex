@@ -296,7 +296,15 @@ Runner is connected and healthy.</.docs_code>
           navigate={~p"/docs/use-a-published-pack"}
           class="text-brand-400 hover:text-brand-300"
         >add a published pack</.link>
-        for a tool you operate.
+        for a tool you operate. You can use one to
+        <.link
+          navigate={~p"/packs/kubernetes" <> "#kubernetes-ai-example"}
+          class="text-brand-400 hover:text-brand-300"
+        >diagnose a restarting pod</.link>
+        or <.link
+          navigate={~p"/packs/postgres" <> "#postgres-ai-example"}
+          class="text-brand-400 hover:text-brand-300"
+        >find a blocked database query</.link>.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Before expanding access, review the actions, host permissions, and policy. An allowed

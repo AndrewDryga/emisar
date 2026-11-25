@@ -7,7 +7,9 @@
         Start with <a href="#action-postgres.lock_blocking_chains">blocking chains</a>,
         then check <a href="#action-postgres.locks">locks</a>
         and <a href="#action-postgres.activity_detail">session activity</a>.
-        These medium-risk reads expose query text, which can contain application data.
+        These medium-risk reads expose query text. See
+        <a href="#postgres-ai-example">what a blocked update looks like</a>
+        in a test database.
       </p>
     </div>
     <div>

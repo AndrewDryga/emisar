@@ -216,6 +216,16 @@ unset EMISAR_ENROLLMENT_KEY</.docs_code>
       </p>
       <.docs_h2 id="next">After it is connected</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
+        If the runner has <code>kubectl</code>
+        and permission to read pod logs and events,
+        the
+        <.link
+          navigate={~p"/packs/kubernetes" <> "#kubernetes-ai-example"}
+          class="text-brand-400 hover:text-brand-300"
+        >Kubernetes pack</.link>
+        shows how an agent can find out why a container keeps restarting.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         <.link navigate={~p"/docs/runner-fleet"} class="text-brand-400 hover:text-brand-300">
           Manage the runner fleet
         </.link>
