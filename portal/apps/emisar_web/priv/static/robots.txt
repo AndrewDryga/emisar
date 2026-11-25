@@ -4,6 +4,7 @@ Disallow: /app/
 Disallow: /sign_in
 Disallow: /sign_in/
 Disallow: /sign_up
+Disallow: /start/team/
 Disallow: /accept_invitation/
 Disallow: /oauth/
 Disallow: /admin/

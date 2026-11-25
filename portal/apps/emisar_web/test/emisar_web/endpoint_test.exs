@@ -5,6 +5,14 @@ defmodule EmisarWeb.EndpointTest do
     assert EmisarWeb.Endpoint.url() == Emisar.PublicUrl.base()
   end
 
+  test "a cached page can still load CSS after its fingerprint is retired" do
+    path = "/assets/app-00000000000000000000000000000000.css?vsn=d"
+    conn = build_conn(:get, path) |> EmisarWeb.Endpoint.call([])
+    assert conn.status == 307
+    assert get_resp_header(conn, "location") == ["/assets/app.css"]
+    assert get_resp_header(conn, "cache-control") == ["no-store"]
+  end
+
   test "a multipart POST to a capped path is passed through unparsed" do
     body = "--b\r\ncontent-disposition: form-data; name=\"a\"\r\n\r\n1\r\n--b--\r\n"
 

@@ -80,6 +80,15 @@ defmodule EmisarWeb.Endpoint do
   # rejected, 404ing every favicon/manifest in prod while dev (undigested
   # paths) looked fine. `EmisarWeb.static_paths/0` keeps the literal names
   # for ~p verified-route checking.
+  # A browser with HTML from the previous release may need the current CSS
+  # during a rolling deploy. Its stable URL must revalidate across releases.
+  plug Plug.Static,
+    at: "/assets",
+    from: {:emisar_web, "priv/static/assets"},
+    only: ~w(app.css),
+    gzip: true,
+    cache_control_for_etags: "public, no-cache"
+
   # Content-hashed build output (`app-<digest>.css` / `.js`). In prod the digest
   # in the filename IS the cache key, so freeze it: cache a year and never
   # revalidate. Dev serves these undigested at a fixed URL, so it overrides
@@ -98,6 +107,8 @@ defmodule EmisarWeb.Endpoint do
         :assets_cache_control,
         "public, max-age=31536000, immutable"
       )
+
+  plug :recover_retired_stylesheet
 
   plug Plug.Static,
     at: "/",
@@ -177,6 +188,24 @@ defmodule EmisarWeb.Endpoint do
     do: false
 
   def endpoint_log_level(%Plug.Conn{}), do: :info
+
+  defp recover_retired_stylesheet(
+         %Plug.Conn{method: method, path_info: ["assets", "app-" <> digest]} = conn,
+         _opts
+       )
+       when method in ["GET", "HEAD"] do
+    if Regex.match?(~r/\A[0-9a-f]{32}\.css\z/, digest) do
+      conn
+      |> Plug.Conn.put_resp_header("cache-control", "no-store")
+      |> Plug.Conn.put_resp_header("location", "/assets/app.css")
+      |> Plug.Conn.send_resp(307, "")
+      |> Plug.Conn.halt()
+    else
+      conn
+    end
+  end
+
+  defp recover_retired_stylesheet(conn, _opts), do: conn
 
   defp session(conn, _opts) do
     session_config = Plug.Session.init(session_options())
