@@ -34,6 +34,7 @@ Remote MCP clients connect through OAuth at `https://emisar.dev/api/mcp/rpc`. Lo
 
 - [How emisar works](https://emisar.dev/how-it-works): Follow an action from your agent through policy to host execution, then review the result.
 - [Technical guide](https://emisar.dev/guides/how-emisar-works): Read how pack trust, policy, runner checks, audit records, and signed dispatch work.
+- [How emisar can save you tokens by packing 1,918 actions into 14 MCP tools](https://emisar.dev/guides/mcp-tool-token-budget): Compare the tool-definition tokens for 1,918 actions loaded up front or discovered through emisar.
 - [CLI vs MCP for infrastructure agents](https://emisar.dev/guides/cli-vs-mcp-for-infrastructure-agents): Learn how CLI tools, scripts, and filtered output can reduce token use, and where MCP fits.
 - [Guides](https://emisar.dev/guides): Read practical guidance on production access and prompt injection.
 - [Changelog](https://emisar.dev/changelog): Review shipped product changes.

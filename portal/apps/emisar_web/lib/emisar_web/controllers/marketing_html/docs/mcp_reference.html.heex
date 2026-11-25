@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="mcp-reference"
-      updated="November 10, 2026"
+      updated="November 24, 2026"
       toc={[
         {"command-line", "Direct CLI commands"},
         {"calling-the-endpoint", "Calling the MCP endpoint"},
@@ -354,9 +354,10 @@
 
         <h2 id="tools">Fourteen fixed tools</h2>
         <p>
-          Actions are data, not MCP tool descriptors. Runner and pack changes appear in discovery
-          results. Clients never need a hand-maintained action allowlist and never load hundreds
-          of action schemas during setup.
+          Each tool below keeps the same inputs as you add packs. Clients discover new actions
+          through search and fetch the arguments for the action they choose. <.link href={
+            ~p"/guides/mcp-tool-token-budget"
+          }>See the token counts for a full action catalog</.link>.
         </p>
         <div class="my-6 overflow-x-auto rounded-xl border border-zinc-900">
           <table class="w-full min-w-[680px] text-left text-sm">

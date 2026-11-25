@@ -616,6 +616,11 @@ defmodule EmisarWeb.MarketingController do
   # this list drives the index cards, per-guide meta + TechArticle JSON-LD,
   # and the sitemap. {slug, action/template, title, dek, date, read_time, meta}.
   @guides [
+    {"mcp-tool-token-budget", :mcp_tool_token_budget,
+     "How emisar can save you tokens by packing 1,918 actions into 14 MCP tools",
+     "Give each action its own tool and our catalog takes 391,423 tokens to load. We cut that to 10,572. Here’s how an agent finds the one PostgreSQL query it needs when checkout gets stuck.",
+     "November 24, 2026", "6 min read",
+     "See when on-demand MCP tools save tokens, what an agent reads to diagnose a PostgreSQL lock, and how to measure your own setup."},
     {"cli-vs-mcp-for-infrastructure-agents", :cli_vs_mcp_for_infrastructure_agents,
      "CLI vs MCP: why CLI tools work so well for AI agents",
      "Your agent can write scripts. Let it. Why CLI tools compose well, keep intermediate data out of context, and make room for useful work.",

@@ -55,6 +55,7 @@ defmodule EmisarWeb.MarketingLinkingTest do
     # must draw links from high-authority product pages — not sit one click deep
     # behind /guides alone. Assert each is linked from a page other than /guides.
     guides = ~w(
+      /guides/mcp-tool-token-budget
       /guides/cli-vs-mcp-for-infrastructure-agents
       /guides/how-emisar-works
       /guides/give-ai-agents-safe-production-access
