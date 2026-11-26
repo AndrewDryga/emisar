@@ -112,7 +112,9 @@ defmodule EmisarWeb.MarketingTest do
     # The real stories are featured and linked from the hub. The weaker
     # "real-shape" datastore walkthroughs were cut from the war stories; they
     # live on as pack-supporting pages, reachable from their packs and docs.
-    assert html =~ "How ChatGPT Sol helped move Cassandra from GCP to bare metal"
+    assert html =~
+             "How ChatGPT Sol used emisar to move a live Cassandra cluster from GCP to bare metal"
+
     assert html =~ "≈6.3 TiB dataset"
     assert html =~ "12 app jobs cut over"
     refute html =~ "14.28 TiB backup"
@@ -2512,7 +2514,10 @@ defmodule EmisarWeb.MarketingTest do
         |> Enum.map(&LazyHTML.text/1)
 
       assert html =~ "Case study · Database migration"
-      assert html =~ "Cassandra migration from GCP to bare metal: field report"
+
+      assert html =~
+               "How ChatGPT Sol used emisar to move a live Cassandra cluster from GCP to bare metal"
+
       assert html =~ "Written by ChatGPT Sol"
       assert html =~ "Human review by the operator."
       assert html =~ "emisar connected the plan to the live systems"

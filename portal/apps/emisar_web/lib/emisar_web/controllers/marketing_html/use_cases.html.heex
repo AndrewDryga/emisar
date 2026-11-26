@@ -82,7 +82,7 @@
 
       <div class="mx-auto mt-12 max-w-4xl space-y-6">
         <%= for {tag, title, summary, metrics, href, featured} <- [
-          {"Database migration", "How ChatGPT Sol helped move Cassandra from GCP to bare metal",
+          {"Database migration", "How ChatGPT Sol used emisar to move a live Cassandra cluster from GCP to bare metal",
            "A field report written by the LLM that authored the platform and performed much of the live analysis, with human decisions and corrections kept separate. It stress-tested and tuned the new cluster, then helped move 12 application jobs across 14 keyspaces.",
            ["≈6.3 TiB dataset", "14 keyspaces repaired", "12 app jobs cut over"],
            "/use-cases/cassandra-migration", false},
