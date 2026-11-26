@@ -2,9 +2,6 @@
 # Every key is optional — omit it (or a whole section) to use coop's built-in default.
 # Models use coop's target grammar: provider[:model][/effort][@account].
 # Sections are in loop order: preflight (before) → work → between (after each task) → signoff (at the end).
-#
-# The frontier preset owns work routing. Routine between-task audits remain disabled;
-# protected-change audits and final signoff retain their existing enforcement.
 
 preflight:
   # The one-shot pre-loop queue tidy: coop itself returns blocked tasks whose decision.md
@@ -14,8 +11,8 @@ preflight:
   enabled: true
 
 work:
-  # The preset owns the lead's model fallback and thinker/critic/fast roles.
-  agent: [frontier]
+  # Plain coop loop uses a single lead. Use coop loop frontier for the full team.
+  agent: [claude:claude-opus-5-5/high]
 
 between:
   # Measured 2026-08-01 over 49 audits: 4.1 min on a ~12 min task (~31% of runtime) for 3 reopens

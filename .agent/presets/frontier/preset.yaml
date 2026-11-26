@@ -43,7 +43,7 @@ roles:
     # Delegate a bounded implementation when the handoff improves time or quality.
     # Compare worker task outcomes before changing its model or effort.
     mode: delegate
-    agent: claude:claude-opus-5-5/high
+    agent: [codex:gpt-6.2-sol/high, claude:claude-opus-5-5/high]
     when: [boilerplate, bulk-edits, test-scaffolding, repo-survey]
     commit: never
     concurrent: never
