@@ -194,6 +194,9 @@ func (a *App) serveLogPath() (string, error) {
 // survives the shell — or the agent turn — that asked for it. The CHILD takes
 // the flock, which keeps `already owns Phoenix` working unchanged.
 func (a *App) serveDetached(ctx context.Context) error {
+	if err := a.refuseHostPortalTaken(ctx); err != nil {
+		return err
+	}
 	workspace, _, err := a.up(ctx, needPortal)
 	if err != nil {
 		return err
@@ -331,6 +334,49 @@ func (a *App) serveStatus(ctx context.Context) error {
 	return nil
 }
 
+// refuseHostPortalTaken stops a host serve whose portal port something other
+// than ./run serve already holds. Coop publishes the same portal URL for a box
+// open in this checkout (an editor thread or coop shell), so the port answers
+// even while nothing behind it serves. Checked before coop up, which waits for
+// as long as such a box runs; the way forward is to serve inside that box.
+func (a *App) refuseHostPortalTaken(ctx context.Context) error {
+	if a.inBox() {
+		return nil
+	}
+	workspace, err := a.loadWorkspace(ctx, needPortal)
+	if err != nil {
+		return err
+	}
+	port, err := portFromURL(workspace.PortalURL)
+	if err != nil {
+		return err
+	}
+	if !portListening(port) || a.serveOwned(port) {
+		return nil
+	}
+	return fmt.Errorf("cannot serve at %s: port %d is taken by something other than ./run serve, most likely a Coop box open in this checkout (an editor thread or coop shell), which publishes this URL; run ./run serve --detach inside that box, or close it and run this again",
+		workspace.PortalURL, port)
+}
+
+// serveOwned reports whether a ./run serve holds the lock named after port,
+// without taking it over: the lock file keeps its owner's pid.
+func (a *App) serveOwned(port int) bool {
+	dir, err := a.serveRuntimeDir()
+	if err != nil {
+		return false
+	}
+	lock, err := os.OpenFile(filepath.Join(dir, fmt.Sprintf("serve-%d.lock", port)), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return false
+	}
+	defer lock.Close()
+	if lockFile(lock, true) != nil {
+		return true
+	}
+	_ = unlockFile(lock)
+	return false
+}
+
 // serveListenPort is the port Phoenix listens on, which also names the serve
 // lock: 4000 in a box, whose published port proxies to it, and the public port
 // on the host.
@@ -379,6 +425,9 @@ func serveInvocation(interactive bool) (string, []string) {
 }
 
 func (a *App) serve(ctx context.Context, interactive bool) error {
+	if err := a.refuseHostPortalTaken(ctx); err != nil {
+		return err
+	}
 	workspace, env, err := a.up(ctx, needPortal, needMetrics, needDatabase)
 	if err != nil {
 		return err

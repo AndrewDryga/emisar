@@ -2,6 +2,7 @@ package devtool
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"net"
@@ -196,5 +197,66 @@ func TestDevSSOAllowedIDPHostsNamesTheWorkspaceKeycloak(t *testing.T) {
 		if got := devSSOAllowedIDPHosts(keycloakURL); got != want {
 			t.Errorf("devSSOAllowedIDPHosts(%q) = %q, want %q", keycloakURL, got, want)
 		}
+	}
+}
+
+// hostServeWorkspace is the host side: a coop stand-in that answers `fork ls
+// --json` with portal as this checkout's portal URL and records every other call.
+func hostServeWorkspace(t *testing.T, portal string) (*App, string) {
+	t.Helper()
+	app := testApp(t)
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	workspaceJSON, err := json.Marshal(map[string]any{"workspaces": []any{map[string]any{
+		"path":  app.Root,
+		"serve": map[string]string{"4000": portal},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	calls := filepath.Join(bin, "calls")
+	script := fmt.Sprintf("#!/bin/sh\nif [ \"$*\" = 'fork ls --json' ]; then printf '%%s\\n' '%s'; exit 0; fi\necho \"$*\" >> %q\nexit 99\n", workspaceJSON, calls)
+	if err := os.WriteFile(filepath.Join(bin, "coop"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return app, calls
+}
+
+// An open Coop box publishes the checkout's portal URL, so on the host the port
+// answers while nothing serves. serve used to run coop up first, which waits for
+// as long as that box runs, and only then find the port taken.
+func TestHostServeRefusesAPortalABoxPublishesBeforeStartingServices(t *testing.T) {
+	port := freePort(t)
+	portal := fmt.Sprintf("http://127.0.0.1:%d", port)
+	listen(t, port)
+	for _, args := range [][]string{{"serve"}, {"serve", "--detach"}} {
+		app, calls := hostServeWorkspace(t, portal)
+		err := app.Run(t.Context(), args)
+		if err == nil || !strings.Contains(err.Error(), "Coop box open in this checkout") {
+			t.Fatalf("%v with the portal taken = %v, want the box refusal", args, err)
+		}
+		if called, _ := os.ReadFile(calls); len(called) != 0 {
+			t.Fatalf("%v refused only after calling coop: %s", args, called)
+		}
+	}
+}
+
+// A port that a ./run serve holds is that command's own answer to give, not a box.
+func TestHostServeLeavesAPortalItsOwnServeHolds(t *testing.T) {
+	port := freePort(t)
+	portal := fmt.Sprintf("http://127.0.0.1:%d", port)
+	listen(t, port)
+	app, _ := hostServeWorkspace(t, portal)
+	lock, err := app.serveLock(port, portal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = unlockFile(lock); _ = lock.Close() })
+	if err := app.refuseHostPortalTaken(t.Context()); err != nil {
+		t.Fatalf("a portal its own serve holds = %v", err)
+	}
+	if pid, err := app.servePID(port); err != nil || pid != os.Getpid() {
+		t.Fatalf("the check rewrote the owner's lock: pid %d, %v", pid, err)
 	}
 }
