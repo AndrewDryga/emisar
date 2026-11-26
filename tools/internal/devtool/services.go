@@ -424,7 +424,7 @@ func (a *App) doctor(ctx context.Context) error {
 		validCertificate = validLeafCertificate(a.Certs, ca, time.Now())
 	}
 	if !validCertificate {
-		return fmt.Errorf("the Keycloak development certificate is invalid")
+		return fmt.Errorf("the Keycloak development certificate is invalid or out of date; run ./run certs on the host, then reopen any box")
 	}
 	client, err := a.tlsClient()
 	if err != nil {

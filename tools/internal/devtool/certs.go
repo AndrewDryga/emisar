@@ -22,6 +22,13 @@ import (
 
 const certFormat = "2\n"
 
+// leafDNSNames are the names the Keycloak certificate answers to: localhost on the
+// host and in an open box, whose forwards keep the localhost issuer, and the
+// Compose service name in a filtered box, which reaches the sidecar as
+// https://keycloak:8443. Missing the second, every filtered box failed
+// ./run serve on a TLS name mismatch.
+var leafDNSNames = []string{"localhost", "keycloak"}
+
 func certificate(path string) (*x509.Certificate, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -137,7 +144,7 @@ func generateLeaf(dir string, ca *x509.Certificate, caKey *rsa.PrivateKey, now t
 		BasicConstraintsValid: true,
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		DNSNames:              []string{"localhost"},
+		DNSNames:              leafDNSNames,
 		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")},
 		SubjectKeyId:          publicKeyID(&key.PublicKey),
 	}
@@ -165,8 +172,14 @@ func validLeafCertificate(dir string, ca *x509.Certificate, now time.Time) bool 
 	}
 	pool := x509.NewCertPool()
 	pool.AddCert(ca)
-	_, err = leaf.Verify(x509.VerifyOptions{Roots: pool, DNSName: "localhost", KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, CurrentTime: now})
-	return err == nil
+	// A leaf missing any name is replaced, so a checkout's older certificate
+	// gains the names added since.
+	for _, name := range leafDNSNames {
+		if _, err := leaf.Verify(x509.VerifyOptions{Roots: pool, DNSName: name, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, CurrentTime: now}); err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 func validLeaf(dir string, ca *x509.Certificate, now time.Time) bool {
@@ -241,7 +254,7 @@ func (a *App) generateCertificates(rotate bool) error {
 		return fmt.Errorf("generated Keycloak certificate did not verify")
 	}
 	a.certsChanged = before == "" || before != hex.EncodeToString(leaf.Raw)
-	fmt.Fprintln(a.Out, "Keycloak dev certificates ready (SAN: DNS:localhost, IP:127.0.0.1)")
+	fmt.Fprintf(a.Out, "Keycloak dev certificates ready (SAN: DNS:%s, IP:127.0.0.1)\n", strings.Join(leafDNSNames, ", DNS:"))
 	return nil
 }
 

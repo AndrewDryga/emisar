@@ -56,6 +56,10 @@ func TestGenerateCertificatesIsValidIdempotentAndRotatable(t *testing.T) {
 	if err := leafBefore.VerifyHostname("127.0.0.1"); err != nil {
 		t.Fatalf("loopback SAN: %v", err)
 	}
+	// A filtered box reaches the sidecar by its Compose name.
+	if err := leafBefore.VerifyHostname("keycloak"); err != nil {
+		t.Fatalf("keycloak SAN: %v", err)
+	}
 	remaining := time.Until(leafBefore.NotAfter)
 	if remaining < 396*24*time.Hour || remaining > 398*24*time.Hour {
 		t.Fatalf("leaf validity = %v, want about 397 days", remaining)
@@ -156,5 +160,35 @@ func TestCABundleKeepsBoxCopyOutOfTheRepo(t *testing.T) {
 	}
 	if strings.HasPrefix(box, app.Root) {
 		t.Fatalf("box bundle = %q, want it outside the repo root %q", box, app.Root)
+	}
+}
+
+// A checkout keeps the leaf it generated before the keycloak name was added. The
+// next generation must replace it, or every filtered box keeps failing TLS.
+func TestGenerateCertificatesReplacesALeafMissingAName(t *testing.T) {
+	app := testApp(t)
+	if err := app.generateCertificates(false); err != nil {
+		t.Fatal(err)
+	}
+	ca, caKey, err := loadCA(app.Certs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := leafDNSNames
+	leafDNSNames = []string{"localhost"}
+	err = generateLeaf(app.Certs, ca, caKey, time.Now())
+	leafDNSNames = names
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.generateCertificates(false); err != nil {
+		t.Fatal(err)
+	}
+	leaf, err := certificate(filepath.Join(app.Certs, "tls.crt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := leaf.VerifyHostname("keycloak"); err != nil || !app.certsChanged {
+		t.Fatalf("localhost-only leaf was kept: verify=%v changed=%v", err, app.certsChanged)
 	}
 }

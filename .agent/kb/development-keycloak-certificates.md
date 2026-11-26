@@ -3,7 +3,7 @@ name: development-keycloak-certificates
 description: workspace Keycloak uses a long-lived ignored CA plus a 397-day leaf; macOS trust is fingerprint-specific, automated Chrome is SPKI-scoped, and changed material recreates sidecars
 subsystem: agent-stack
 sources: [run, tools/internal/devtool/certs.go, tools/internal/browser/manager.go]
-updated: 2026-09-15
+updated: 2026-11-26
 ---
 
 Each workspace generates an ignored CA and Keycloak leaf under
@@ -11,6 +11,13 @@ Each workspace generates an ignored CA and Keycloak leaf under
 limited to 397 days: macOS rejects longer-lived TLS leaves even when their CA is
 explicitly trusted. The generated `format` marker renews an old-format leaf
 without rotating its CA.
+
+The leaf names `localhost` and `keycloak`. The host and an open box reach
+Keycloak through localhost forwards; a filtered box (an editor session) reaches
+the sidecar by its Compose name, `https://keycloak:8443`, and without that name
+`./run serve` failed there on a TLS name mismatch. A leaf missing any name in
+`leafDNSNames` is renewed on the next host generation. A box cannot generate, so
+an older checkout needs `./run certs` on the host, then a fresh box.
 
 `./run certs trust|untrust|status` manages only the generated CA's SHA-256
 fingerprint in the macOS user keychain, constrained to SSL for `localhost`.
@@ -35,6 +42,7 @@ running sidecar serving stale material.
 Related rule: [development TLS trust stays workspace-scoped](rules/shared-development-tls-trust-stays-workspace-scoped.md).
 
 ## Changelog
+- 2026-11-26 — the leaf also names `keycloak`, for filtered boxes; a leaf missing a name renews.
 - 2026-09-15 — separated no-Keycloak previews from workspace certificate setup.
 - 2026-08-04 — split public-chain validation from host-only private-key
   validation so secret-shadowed Coop boxes can run the complete doctor safely
