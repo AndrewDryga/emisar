@@ -8,10 +8,10 @@
 # ladder. Model ids: coop models. Accounts (logins): coop credentials. A preset
 # names models and accounts, never the secrets themselves.
 
-# Frontier reasoning at high effort, with cross-provider rate-limit fallback.
-# Targets verified 2026-09-05; see kb/runbooks/agent-maintenance.md.
+# The lead falls back to Codex on a rate limit.
+# Host CLI targets verified 2026-11-26. See .agent/kb/runbooks/agent-maintenance.md.
 lead:
-  agent: [claude:claude-fable-5-1/high, codex:gpt-6-astra/xhigh]
+  agent: [claude:claude-fable-5-2/high, codex:gpt-6.2-astra/xhigh]
   prompt: roles/lead.md
 
 roles:
@@ -19,7 +19,7 @@ roles:
     # READ-ONLY deep-reasoning peer via coop-consult: the consult is
     # a second read on work the lead already understands, not a second author.
     mode: consult
-    agent: codex:gpt-6-astra/high
+    agent: codex:gpt-6.2-astra/high
     # emisar is a security product — the thinker's docket leans hard on the
     # trust-boundary work: anything ingesting runner / LLM / operator input.
     when: [architecture, debugging, security, code-review, before-commit]
@@ -32,7 +32,7 @@ roles:
     # A different provider from the thinker. The lead can share either provider;
     # two independent consultations are not a guarantee of independent conclusions.
     mode: consult
-    agent: claude:claude-fable-5-1/high
+    agent: claude:claude-fable-5-2/high
     when: [plan-review, tradeoffs, one-way-doors, security]
     prompt: roles/critic.md
 
@@ -41,10 +41,9 @@ roles:
     # commits — the lead reviews the diff, runs the touched project's gate, commits.
     #
     # Delegate a bounded implementation when the handoff improves time or quality.
-    # Preserve the worker lane and cross-provider fallback; compare task outcomes
-    # before changing its model or effort.
+    # Compare worker task outcomes before changing its model or effort.
     mode: delegate
-    agent: [claude:opus/high, codex:gpt-5.6-luna/xhigh]
+    agent: claude:claude-opus-5-5/high
     when: [boilerplate, bulk-edits, test-scaffolding, repo-survey]
     commit: never
     concurrent: never
