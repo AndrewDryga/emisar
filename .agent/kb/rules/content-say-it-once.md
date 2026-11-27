@@ -7,6 +7,11 @@ and sentence after it must add something new — a concrete example, a caveat, a
 limit, a next step, a link — not restate the idea in fresh words. If a passage
 only recaps what the reader just read, cut it.
 
+Trust what the reader can already infer. Once “Imagine” introduces an alert,
+continue with the stalled order and the query that finds the lock. Cut “in our
+PostgreSQL test” from that scene. Give test conditions beside a measured result
+when they affect how the reader should interpret it.
+
 Before adding a page from test evidence, check the existing pages and name the
 reader's job. If an existing page serves that job, add only evidence that helps
 its reader; keep the rest in the task archive. A completed test or a different

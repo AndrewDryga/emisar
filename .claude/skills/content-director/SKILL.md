@@ -114,6 +114,10 @@ For a new piece or a substantial rewrite, use the full workflow below.
    - Section openings and endings: read each heading with its first sentence,
      then each example with its closing line. Keep the line when it adds a
      condition, consequence, or observation the reader still needs.
+   - Reader context: cut disclaimers that explain what the setup already makes
+     clear. Once a scenario is established, continue inside it. Keep a caveat
+     when it changes the reader’s interpretation or next action. See
+     [Say it once](../../../.agent/kb/rules/content-say-it-once.md).
    - Compression: cut repetition, throat-clearing, needless headings, and any
      closing paragraph that merely summarizes the page.
 
