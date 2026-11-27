@@ -6,28 +6,31 @@
   read_time={@guide_meta.read_time}
 >
   <p>
-    We want our agents to have eyes on production. If an order is stuck, we’d like to ask
-    “what’s holding up checkout?” and let the agent look. We don’t want to copy logs into chat
-    or guess which database query it should run.
+    Imagine Grafana sends you an alert about lock waits on your billing database.
+    You ask an AI agent to find out what’s blocking the updates. Order 42 is already
+    paid, but the update that would mark it as sent is stuck. One query shows which
+    PostgreSQL session holds the lock. A second shows why it still holds it.
   </p>
   <p>
-    The catch is what happens when we connect all the tools we use. Some MCP clients send
-    the model every tool’s description and arguments before it can make its first call.
-    Now a question about a stuck order starts with the agent reading how to check the memory
-    usage of a Redis key. We still want Redis available for the next incident.
+    A PostgreSQL query was enough to start here. On the next alert, the agent might
+    need to check Redis or look up a Sentry event. You want those tools available
+    when they’re needed. But some MCP clients put every tool’s name, description,
+    and arguments in the prompt before the agent makes its first call. That uses
+    tokens on every investigation, and a long list can make it harder to pick the
+    right tool.
   </p>
   <p>
-    We built Emisar with 14 tools. One of them, <code>find_actions</code>, lets the agent
-    look up what it can do on the hosts it has access to. When we added the ability to open
-    a Sentry event by ID, it became searchable through that same tool. Nobody had to install
-    another connector, and the tool list stayed the same size.
+    Emisar gives the agent 14 MCP tools to start with. One of them, <code>find_actions</code>, lets it search for actions it can run on the hosts it
+    can access. We’ll compare the cost of loading every action up front with the
+    cost of looking them up as needed, then follow the agent through the order 42
+    investigation to see where the search helps and where it can miss.
   </p>
 
   <h2 id="token-count">What goes into the first prompt?</h2>
   <p>
-    We used the November 24, 2026 catalog to model what a client would load if each action
-    were its own MCP tool. We counted the name, description and full argument schema for each
-    action, then used the same tokenizer on Emisar’s actual <code>tools/list</code> response.
+    We took the catalog as it stood at the time of writing and treated each action
+    as a separate MCP tool. We counted the tokens in each tool’s name, description, and full argument
+    schema. Then we used the same tokenizer on Emisar’s actual <code>tools/list</code> response.
   </p>
   <figure class="my-8">
     <figcaption class="mb-4 text-sm font-semibold text-zinc-100">
@@ -45,7 +48,7 @@
         <tr :for={
           {scope, actions, eager} <- [
             {"PostgreSQL", "49 actions", "7,158"},
-            {"PostgreSQL, Kubernetes, Redis, Sentry", "167 actions", "32,015"},
+            {"Production stack", "346 actions across 12 packs", "64,742"},
             {"Full catalog", "1,918 actions across 108 packs", "391,423"}
           ]
         }>
@@ -60,68 +63,127 @@
     </table>
   </figure>
   <p>
-    If PostgreSQL is all you need, its 49 tools are cheaper to load directly. Emisar uses
-    3,414 more tokens up front. Two runbook tools alone use 4,582 tokens to explain how to create and edit a procedure.
-    You pay that cost even if all you want is one database read.
+    If PostgreSQL is all you need, loading its 49 tools directly saves 3,414 tokens up
+    front. In Emisar’s list, the two tools for creating and editing runbooks account
+    for 4,582 tokens, even if all you need is one database read.
   </p>
   <p>
-    Add Kubernetes, Redis and Sentry, and the arithmetic flips. Loading those four packs
-    up front takes 32,015 tokens. Emisar still takes 10,572. Across the full catalog that’s <strong>97.3% fewer tokens in the initial tool definitions</strong>. If your client already
-    loads tools on demand, check what it actually sends the model. Anthropic shows how much
-    that choice matters in its <a href="https://www.anthropic.com/research/advanced-tool-use">five-server example</a>.
+    For the 12-pack example, we included the tools you might need on the host
+    itself (Linux Core, Docker, Systemd Deep, Debugging, and Network TLS), plus
+    Kubernetes, Nginx, PostgreSQL, Redis, Grafana, Prometheus, and Sentry. Loading
+    all 346 actions up front takes 64,742 tokens. Emisar’s tool list takes 10,572. For the full catalog, that’s <strong>97.3% fewer tokens in the initial tool definitions</strong>.
+    If your client loads tools on demand, check which definitions it sends in the first
+    request. <a href="https://www.anthropic.com/research/advanced-tool-use">Anthropic’s
+    five-server example</a> shows how much the count can change.
   </p>
 
-  <h2 id="discovery">Which session is holding up order 42?</h2>
+  <h2 id="selection">Why fewer tools can help</h2>
   <p>
-    In our test, one PostgreSQL session marked order 42 as paid. Another tried to mark
-    it sent and waited on a lock. We wanted to know how much the agent would have to read
-    to find the session holding it. We searched a local workspace with all 108 packs
-    across 15 test runners. You can make the same search from the CLI.
+    Tool descriptions take up space in the prompt. A long list can also make it harder
+    for the model to pick the right tool. Anthropic’s
+    <a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool">tool search docs</a>
+    say Claude has more trouble choosing once it has more than 30 to 50 tools.
+    One study found a difference even with just five tools.
   </p>
-  <.docs_code
-    phx-no-format
-    label="Find the lock query"
-    copy_text={"emisar-mcp find_actions '{\n  \"query\": \"blocked queries waiting on locks\",\n  \"limit\": 3\n}' --json > matches.json\njq -r '.candidates[].action_id' matches.json"}
-  >emisar-mcp find_actions '&#123;
-  "query": "blocked queries waiting on locks",
-  "limit": 3
-}' --json &gt; matches.json
-jq -r '.candidates[].action_id' matches.json
+  <figure class="my-8">
+    <figcaption class="mb-4 text-sm font-semibold text-zinc-100">
+      Task success with fewer tools in the prompt
+    </figcaption>
+    <table class="w-full text-left text-sm leading-5 text-zinc-300">
+      <thead class="border-b border-zinc-700">
+        <tr>
+          <th scope="col" class="pb-3 pr-3 font-medium">Measurement</th>
+          <th scope="col" class="px-2 pb-3 text-right font-medium">More tools</th>
+          <th scope="col" class="pb-3 pl-2 text-right font-medium">Fewer tools</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-zinc-800 tabular-nums">
+        <tr :for={
+          {source, href, detail, more, fewer} <- [
+            {"Anthropic MCP evaluations, Claude Opus 4",
+             "https://www.anthropic.com/research/advanced-tool-use",
+             "All tools loaded vs. tool search", "49%", "74%"},
+            {"Anthropic MCP evaluations, Claude Opus 4.5",
+             "https://www.anthropic.com/research/advanced-tool-use",
+             "All tools loaded vs. tool search", "79.5%", "88.1%"},
+            {"MCPVerse task success, Claude Sonnet 4", "https://arxiv.org/abs/2508.16260",
+             "All 65 servers and 550+ tools vs. the servers relevant to each question", "44.2%",
+             "62.4%"},
+            {"Shortlist study, Claude Sonnet 4.6", "https://arxiv.org/abs/2605.24660",
+             "A fixed list of 5 tools vs. an adaptive list averaging about 2", "87.1%", "93.1%"}
+          ]
+        }>
+          <th scope="row" class="py-3.5 pr-3 font-normal">
+            <a href={href} class="block text-zinc-100">{source}</a>
+            <span class="text-xs text-zinc-400">{detail}</span>
+          </th>
+          <td class="px-2 text-right">{more}</td>
+          <td class="pl-2 text-right font-semibold text-zinc-100">{fewer}</td>
+        </tr>
+      </tbody>
+    </table>
+  </figure>
+  <p>
+    In MCPVerse, loading every server took about 147,000 tokens just for tool
+    descriptions. In the five-tool study, the shorter list helped most on harder
+    questions where the right tool appeared farther down the list. On those questions,
+    the success rate rose from 60.9% to 76.8%.
+  </p>
+  <p>
+    <a href="https://www.microsoft.com/en-us/research/blog/tool-space-interference-in-the-mcp-era-designing-for-agent-compatibility-at-scale/">Microsoft Research</a>
+    found that tools can work well on their own and still be easy to mix up when
+    they have similar names or do similar jobs. In our catalog,
+    <code>postgres.lock_blocking_chains</code>
+    and <code>mysql.lock_waits</code>
+    both
+    look for locks, but in different databases. With <code>find_actions</code>, the
+    model searches the catalog and sees only the matches. The next example shows what
+    happens when the search misses the action it needs.
+  </p>
 
-postgres.lock_blocking_chains
-gcp.sql_query_insights
-mysql.lock_waits</.docs_code>
+  <h2 id="discovery">Example of a frontier model finding the lock</h2>
   <p>
-    Another search, “which postgres session is holding up an update,” missed the right
-    action in the top three. “Blocked queries waiting on locks” found it. It also found
-    a MySQL action. If you already know which database you’re looking at, narrow the
-    search with <code>pack_id</code> set to <code>postgres</code>.
+    To find what’s holding up order 42, we asked a frontier model to look for a
+    PostgreSQL lock query. It searched a local workspace with all 108 packs across
+    15 test runners using <code>find_actions</code>. When the model passed “which
+    postgres session is holding up an update” as the search query, the right action
+    didn’t make the top three. With “blocked queries waiting on locks” as the search
+    query, <code>find_actions</code>
+    returned <code>postgres.lock_blocking_chains</code>
+    first. The results also included a
+    MySQL action. If you already know the database, set <code>pack_id</code>
+    to <code>postgres</code>
+    to search just that pack.
   </p>
   <p>
-    Each match includes a <code>next</code>
-    call with the action ID and the exact pack hash. Pass those arguments to
-    <code>get_action</code>
-    to see what the action needs and which host can run it.
+    The model looked up the PostgreSQL action with <code>get_action</code>. The
+    action needed no query arguments, and <code>pg-primary</code>
+    could run it.
+    On PostgreSQL 17.12, using a monitoring role, the query found both sessions.
+    <code>postgres.activity_detail</code>
+    showed what the session holding the lock
+    was doing.
   </p>
-  <.docs_code
-    phx-no-format
-    label="Check the arguments and host"
-    copy_text={"jq '.candidates[] | select(.action_id == \"postgres.lock_blocking_chains\")\n    | .next.arguments' matches.json |\n  emisar-mcp get_action - --json > action.json\njq '{risk: .action.risk, args: .action.args_schema.properties,\n    targets: [.compatible_runners[].name]}' action.json"}
-  >jq '.candidates[] | select(.action_id == "postgres.lock_blocking_chains")
-    | .next.arguments' matches.json |
-  emisar-mcp get_action - --json &gt; action.json
-jq '&#123;risk: .action.risk, args: .action.args_schema.properties,
-    targets: [.compatible_runners[].name]}' action.json
-
-&#123;
-  "risk": "medium",
-  "args": &#123;},
-  "targets": ["pg-primary"]
-}</.docs_code>
+  <.docs_code phx-no-format label="Order 42 · selected fields">Waiting   198   UPDATE orders SET state = 'sent' WHERE id = 42;
+Holding   186   UPDATE orders SET state = 'paid' WHERE id = 42;
+State     186   idle in transaction</.docs_code>
+  <p>
+    Session 186 had finished its update and left the transaction open. The lock
+    would stay until the transaction ended. We rolled it back from session 186.
+    The waiting update finished, order 42 was marked sent, and the lock query
+    came back empty. You can <.link href={~p"/packs/postgres#postgres-ai-example"}>try this in three psql sessions</.link>.
+  </p>
   <figure class="my-8 border-y border-zinc-800 py-6" aria-labelledby="lookup-cost">
     <figcaption id="lookup-cost" class="font-semibold text-zinc-100">
-      12,145 tokens before the first database read
+      Tool tokens before the first database read
     </figcaption>
+    <p>
+      Loading all 346 actions in the 12-pack stack as separate tools would take
+      <strong>64,742 tokens</strong>
+      up front.
+      For order 42, the fixed tool list, one search result, and the details for the
+      lock query came to <strong>12,145 tokens</strong>.
+    </p>
     <div
       aria-hidden="true"
       class="mt-5 grid h-3 grid-cols-[10572fr_1242fr_331fr] gap-px overflow-hidden rounded-sm"
@@ -146,68 +208,72 @@ jq '&#123;risk: .action.risk, args: .action.args_schema.properties,
     </dl>
   </figure>
   <p>
-    We counted the full search result and action details once each, before trimming them
-    for display. A client that sends both the structured result and its text copy spends
-    more. Tool-call inputs, conversation history and the eventual database output cost
-    tokens too.
+    The 12,145-token total counts the full search result and action details once each. If your
+    client sends both the structured result and a text copy, count both. Tool-call
+    inputs, conversation history, and the database output are outside this total.
   </p>
-  <p>
-    The agent now has enough to request <code>postgres.lock_blocking_chains</code>
-    on <code>pg-primary</code>. It supplies the pack and runner references, an empty argument
-    object and a reason. Even this read is rated medium risk because SQL text can contain
-    customer data. The control plane applies the team’s approval policy, and the runner
-    checks the action and its arguments on the host.
-  </p>
-  <p>
-    What would that tell us during an incident? In a separate PostgreSQL 17.12 test, we ran
-    the pack’s queries with a monitoring role. The first read identified both sessions.
-    A second, <code>postgres.activity_detail</code>, told us what the one holding the lock
-    was doing.
-  </p>
-  <.docs_code phx-no-format label="Order 42 · selected fields">Waiting   198   UPDATE orders SET state = 'sent' WHERE id = 42;
-Holding   186   UPDATE orders SET state = 'paid' WHERE id = 42;
-State     186   idle in transaction</.docs_code>
-  <p>
-    Session 186 had finished the update and left its transaction open. There was no running
-    query to cancel. We rolled back the transaction from session 186 in the test. The waiting
-    update finished, order 42 was marked sent and the lock query came back empty. You can <.link href={
-      ~p"/packs/postgres#postgres-ai-example"
-    }>try this in three psql sessions</.link>.
-  </p>
+  <details class="group my-6 border-y border-zinc-800">
+    <summary class="flex min-h-11 cursor-pointer list-none items-center gap-2.5 text-sm font-medium text-zinc-200 hover:text-white [&::-webkit-details-marker]:hidden">
+      <span
+        aria-hidden="true"
+        class="ml-0.5 size-1.5 shrink-0 -rotate-45 border-r border-b border-current text-zinc-400 group-open:rotate-45"
+      ></span>
+      Run the search from the CLI
+    </summary>
+    <.docs_code
+      phx-no-format
+      label="Find the lock query"
+      copy_text={"emisar-mcp find_actions '{\n  \"query\": \"blocked queries waiting on locks\",\n  \"limit\": 3\n}' --json > matches.json\njq -r '.candidates[].action_id' matches.json"}
+    >emisar-mcp find_actions '&#123;
+  "query": "blocked queries waiting on locks",
+  "limit": 3
+}' --json &gt; matches.json
+jq -r '.candidates[].action_id' matches.json
 
-  <h2 id="execution">Who gets to end the database session?</h2>
-  <p>
-    Cloudflare took another approach to a large catalog. Its agent writes JavaScript to
-    search an API specification and call the API in a sandbox. That’s useful when a question
-    needs several requests and you only want a few fields back.
-    <a href="https://blog.cloudflare.com/code-mode-mcp/">Cloudflare’s ruleset example</a>
-    shows how it works.
-  </p>
-  <p>
-    On our database, we want the agent to find out who holds a lock without asking us.
-    If it wants to terminate that session, we want to hear why. An approval for “run SQL”
-    is too broad to express that. Emisar gives those jobs separate action IDs. The pack
-    defines the query and which arguments the agent can supply. We can approve the read in
-    advance and have the control plane hold the termination for review, whether the request
-    comes from a teammate’s terminal or our Slack bot.
-  </p>
-  <p>
-    The cost of that choice is that someone has to define each action. If the one you need
-    is missing, add it to a pack, install it on the relevant hosts and trust that version.
-    The agent can then find it with the tools it already has.
-  </p>
+postgres.lock_blocking_chains
+gcp.sql_query_insights
+mysql.lock_waits</.docs_code>
+    <p>
+      The search result includes a <code>next</code> call with the action ID and
+      exact pack hash. Pass those arguments to <code>get_action</code> to see what
+      the action needs and which hosts can run it.
+    </p>
+    <.docs_code
+      phx-no-format
+      label="Check the arguments and host"
+      copy_text={"jq '.candidates[] | select(.action_id == \"postgres.lock_blocking_chains\")\n    | .next.arguments' matches.json |\n  emisar-mcp get_action - --json > action.json\njq '{risk: .action.risk, args: .action.args_schema.properties,\n    targets: [.compatible_runners[].name]}' action.json"}
+    >jq '.candidates[] | select(.action_id == "postgres.lock_blocking_chains")
+    | .next.arguments' matches.json |
+  emisar-mcp get_action - --json &gt; action.json
+jq '&#123;risk: .action.risk, args: .action.args_schema.properties,
+    targets: [.compatible_runners[].name]}' action.json
 
-  <h2 id="measure">Measure your own MCP setup</h2>
-  <p>
-    Save the <code>tools</code>
-    arrays from every page of your servers’ <code>tools/list</code>
-    responses and combine them into one JSON array. For Emisar, sign in and run
-    <code>emisar-mcp list_tools --json</code>
-    to get the array. The script below counts
-    tokens with <code>o200k_base</code>. If your client rewrites tool descriptions or loads
-    them on demand, also count the definitions in the first request it sends the model.
-  </p>
-  <.docs_code phx-no-format label="count_tools.py" copy_id="count-tools-python">import json
+&#123;
+  "risk": "medium",
+  "args": &#123;},
+  "targets": ["pg-primary"]
+}</.docs_code>
+  </details>
+
+  <details id="measure" class="group my-6 border-y border-zinc-800">
+    <summary class="flex min-h-11 cursor-pointer list-none items-center gap-2.5 text-sm font-medium text-zinc-200 hover:text-white [&::-webkit-details-marker]:hidden">
+      <span
+        aria-hidden="true"
+        class="ml-0.5 size-1.5 shrink-0 -rotate-45 border-r border-b border-current text-zinc-400 group-open:rotate-45"
+      ></span>
+      Measure your own MCP setup
+    </summary>
+    <p>
+      Collect the <code>tools</code>
+      arrays from every page of each server’s <code>tools/list</code>
+      response and combine them into one JSON array. For Emisar,
+      sign in and run <code>emisar-mcp list_tools --json</code>
+      to get the array. The
+      script below counts tokens with <code>o200k_base</code>. If your client rewrites
+      descriptions or loads tools on demand, also count the tool definitions the client
+      actually sends in its first request to the model.
+    </p>
+    <.docs_code phx-no-format label="count_tools.py" copy_id="count-tools-python">import json
 import sys
 import tiktoken
 
@@ -217,10 +283,7 @@ text = json.dumps(tools, ensure_ascii=False,
                   sort_keys=True, separators=(",", ":"))
 tokens = tiktoken.get_encoding("o200k_base").encode_ordinary(text)
 print(f"&#123;len(tools):,} tools, &#123;len(tokens):,} tokens")</.docs_code>
-  <details class="my-6 rounded-xl border border-zinc-800 px-5 py-4">
-    <summary class="cursor-pointer font-medium text-zinc-200">
-      Reproduce the three catalog comparisons
-    </summary>
+    <h3>Reproduce the catalog comparison</h3>
     <p>
       We used the
       <a href="https://github.com/andrewdryga/emisar/tree/21ae3e38a6a58b32844b42d0388b218ba471eb5e">November 24 source snapshot</a>
@@ -230,13 +293,14 @@ print(f"&#123;len(tools):,} tools, &#123;len(tokens):,} tokens")</.docs_code>
       and run <code>mix run --no-start snapshot.exs</code>
       there. It writes one JSON array per row and the fixed MCP list. Pass each file to the
       counter above. Running <code>python count_tools.py stack.json</code>
-      prints <code>167 tools, 32,015 tokens</code>.
+      prints <code>346 tools, 64,742 tokens</code>.
     </p>
     <.docs_code phx-no-format label="snapshot.exs" copy_id="snapshot-elixir">alias EmisarWeb.MCP.&#123;SchemaRegistry, ToolSchema}
 
 packs = Jason.decode!(File.read!("apps/emisar/priv/packs/catalog.json"))["packs"]
 for &#123;file, ids} &lt;- [&#123;"postgres", ["postgres"]},
-                    &#123;"stack", ~w(postgres kubernetes redis sentry)},
+                    &#123;"stack", ~w(postgres kubernetes redis sentry linux-core docker systemd-deep
+                                  debugging network-tls nginx grafana prometheus)},
                     &#123;"catalog", :all}] do
   tools = for pack &lt;- packs, ids == :all or pack["id"] in ids,
               action &lt;- pack["actions"] do
@@ -246,10 +310,18 @@ for &#123;file, ids} &lt;- [&#123;"postgres", ["postgres"]},
   File.write!(file &lt;&gt; ".json", Jason.encode!(tools))
 end
 File.write!("emisar.json", Jason.encode!(SchemaRegistry.tools()))</.docs_code>
+    <p>
+      Pick a question you ask regularly and try each setup in a fresh session with the
+      same model. Compare the first requests, then add up the input tokens across all
+      requests through the answer. That total includes what it cost to search again or
+      send a whole result table back to the model.
+    </p>
   </details>
+
+  <h2 id="takeaway">When to load tools on demand</h2>
   <p>
-    For a question you ask regularly, try both setups in fresh sessions with the same
-    model. Compare the first request, then add up the input tokens through the answer.
-    If the agent needs three searches or returns a whole table, you’ll see what that cost too.
+    If the agent only needs PostgreSQL, loading its tools directly costs fewer
+    tokens up front. With a larger catalog, a short starting list leaves more
+    room in the prompt and gives the model fewer tools to choose from.
   </p>
 </.guide_page>

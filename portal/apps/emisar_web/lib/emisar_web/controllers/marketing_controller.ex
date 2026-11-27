@@ -619,10 +619,10 @@ defmodule EmisarWeb.MarketingController do
   # and the sitemap. {slug, action/template, title, dek, date, read_time, meta}.
   @guides [
     {"mcp-tool-token-budget", :mcp_tool_token_budget,
-     "How emisar can save you tokens by packing 1,918 actions into 14 MCP tools",
-     "Give each action its own tool and our catalog takes 391,423 tokens to load. We cut that to 10,572. Here’s how an agent finds the one PostgreSQL query it needs when checkout gets stuck.",
-     "November 24, 2026", "6 min read",
-     "See when on-demand MCP tools save tokens, what an agent reads to diagnose a PostgreSQL lock, and how to measure your own setup."},
+     "How Emisar cuts token costs with 14 MCP tools",
+     "Loading all 1,918 actions as separate tools takes 391,423 tokens. Emisar’s 14 tools take 10,572. See what the agent loads next to find a PostgreSQL lock.",
+     "Updated November 27, 2026", "7 min read",
+     "See how an agent finds a PostgreSQL lock by looking up actions as needed, and count what your own MCP setup sends to the model."},
     {"cli-vs-mcp-for-infrastructure-agents", :cli_vs_mcp_for_infrastructure_agents,
      "CLI vs MCP: why CLI tools work so well for AI agents",
      "Your agent can write scripts. Let it. Why CLI tools compose well, keep intermediate data out of context, and make room for useful work.",
