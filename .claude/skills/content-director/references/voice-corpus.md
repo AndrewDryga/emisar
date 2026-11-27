@@ -89,15 +89,15 @@ Until those anchors exist, use the behavioral anchors in `tone-rules.md` as a
 fallback. Do not treat the current website or model-written output as approved
 voice merely because it is available.
 
-## Maintain The Voice
+## Approved editorial corrections
 
-Treat substantial human edits as data:
+When drafting or revising, consult the closest approved pair for the surface
+and decision, including local internal examples when available. Apply the
+editorial choice in fresh wording and verify product claims for this piece.
 
-1. Compare the accepted edit with the rejected draft.
-2. Name the general pattern behind the correction.
-3. Update the compact profile or tone rules.
-4. Search active content for the same failure mode.
-5. Remove rules that no longer match approved work.
+<!-- Append published pairs here. For each entry record surface, original,
+accepted revision, endorsement, and user rationale or labeled inference.
+Capture, storage, and replacement follow the KB rule linked below. -->
 
-The corpus should evolve through approved examples and corrections, not through
-whatever the model happened to write last.
+Follow the [correction rule](../../../../.agent/kb/rules/content-plain-specific-prose.md#capture-approved-editorial-corrections)
+when a user edits or endorses wording.

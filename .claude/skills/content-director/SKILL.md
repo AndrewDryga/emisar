@@ -22,7 +22,10 @@ judgment, voice, and editing decide quality; a detector result does not.
 - Read `references/surface-modes.md` for the relevant website, product, docs,
   blog, or release mode. Do not blend their conventions.
 - Read `references/voice-corpus.md` when approved samples, founder transcripts,
-  customer language, or repeated editorial feedback are available.
+  customer language, or editorial corrections are available. Consult the closest approved edit before
+  drafting. When the user supplies or endorses replacement wording, apply the
+  [KB correction rule](../../../.agent/kb/rules/content-plain-specific-prose.md#capture-approved-editorial-corrections)
+  in the same task.
 - Read the current surface, nearby content, product docs, and source-of-truth
   claims before writing. Reuse facts, not old phrasing by default.
 

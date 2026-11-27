@@ -239,6 +239,32 @@ writer first.
   `The workstation bridge moves separately`). The reader did not ask how release
   lines are organized; they asked which page upgrades their runner.
 
+## Capture approved editorial corrections
+
+When the user supplies a replacement for a specific draft passage or explicitly
+endorses a proposed replacement, curate the pair during that edit. A rejection
+such as “this is slop” identifies a problem. Wait for a supplied or endorsed
+replacement before saving a pair. Approval of a plan or an illustrative example
+alone does not establish a preference for its wording.
+
+Keep published, customer-safe pairs in the [voice corpus](../../../.claude/skills/content-director/references/voice-corpus.md#approved-editorial-corrections).
+For unpublished or internal company copy, use the gitignored
+`.agent/kb/internal/content/editorial-corrections.md`, creating it on first use.
+Exclude customer data and secrets from both locations.
+
+Record the surface, the original and accepted passages verbatim, and how the
+user supplied or endorsed the edit. Quote their reason when given. Otherwise
+label the lesson as an editorial inference and keep it specific to that surface.
+Use the shortest excerpts that preserve the decision and its context.
+
+Keep up to 12 pairs across the two locations. Before adding one, read the
+existing entries. Prefer distinct decisions, clear evidence and examples that
+help choose between two plausible edits. Skip duplicates. At capacity replace
+the most redundant pair only when the new one teaches more. Recheck the count
+and briefly tell the user what was saved or replaced after delivering the edit.
+Use repeated evidence or an explicit user instruction to broaden a local lesson
+into a house rule.
+
 ## Enforcement
 
 Use the contributor `content-director` skill for writing and review. On every
