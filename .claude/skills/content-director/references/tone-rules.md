@@ -123,30 +123,55 @@ sentence variation.
 
 ## Remove Generated Cadence
 
-These examples are not an exhaustive blacklist. Catch the underlying pattern:
-language a model could autocomplete onto almost any SaaS page.
+### Phrase blacklist
 
-Distrust canned frames such as:
+Cut these stock phrases from authored product copy, including close variants.
+Keep verbatim quotations, literal UI labels, code, commands, and proper names
+intact. When discussing a phrase as an example, quote it accurately.
 
-- `In today's...`
-- `At its core...`
-- `Whether you're X, Y, or Z...`
-- `It's not just X. It's Y.`
-- `This is where X comes in.`
-- a conclusion that restates the introduction
+| Cut | Edit |
+|---|---|
+| “In today’s fast-paced world,” “in an ever-evolving landscape,” “at its core” | Open with the reader’s situation. |
+| “Let’s dive in,” “let’s unpack,” “here’s what you need to know,” “without further ado” | Start with the first fact or instruction. |
+| “It’s worth noting,” “it bears mentioning,” “needless to say” | Keep the clause that follows. |
+| “Let that sink in,” “read that again,” “that’s the real win” | End on the example or name a new consequence. |
+| “A game changer,” “a testament to,” “paves the way for,” “marks a pivotal moment” | Name what changed and for whom. |
+| “Great question,” “I hope this helps,” “would you like me to continue?” | Remove the chat wrapper from published copy. |
 
-Distrust visible templates such as:
+### Word watchlist
 
-- every list has three items
-- every section opens with a rhetorical question
-- repeated `No X. No Y. Just Z.` fragments
-- repeated contrasts built as `not X, but Y`
-- consecutive sentences with the same grammatical opening
+Review each occurrence in context. Replace empty praise with a verifiable fact
+and preserve words with a precise domain meaning.
 
-Words such as `unlock`, `empower`, `seamless`, `robust`, `transformative`,
-`future-proof`, `world-class`, `comprehensive`, `powerful`, and `enterprise-grade`
-often hide the real claim. They remain valid when the content states what was
-tested, what failure the system withstands, or what capability the word names.
+- **Promotional verbs** include unlock, empower, unleash, revolutionize, and
+  transform. Name the action the reader can take. Keep “unlock the account”
+  when the account is actually locked.
+- **Quality claims** include seamless, robust, powerful, comprehensive,
+  intuitive, enterprise-grade, future-proof, world-class, and cutting-edge.
+  State the saved step, supported case, or tested limit.
+- **Inflated vocabulary** includes delve, leverage, utilize, facilitate,
+  showcase, underscore, pivotal, landscape, ecosystem, and tapestry. Choose
+  the ordinary verb or name the systems involved.
+- **Unsupported emphasis** includes effortlessly, seamlessly, quietly,
+  fundamentally, and inherently. Read the sentence without the adverb. If
+  it carried an operational detail, state that detail directly.
+
+### Sentence patterns to rewrite
+
+- “Whether you’re X, Y, or Z” delays the claim. Address the reader doing the job.
+- “It’s not just X. It’s Y” and “No X. No Y. Just Z” stage a contrast. State
+  the claim directly. Keep both sides of a comparison the reader actually faces.
+- “The result? X” makes the reader wait for an answer the writer already has.
+  Connect the action to its result in one sentence.
+- “From X to Y” needs meaningful endpoints. Name the supported cases when the
+  supposed range joins unrelated ideas.
+- “..., highlighting the importance of X” attaches a judgment to a fact.
+  Explain the consequence or end at the fact.
+- Repeated three-item lists, identical openings, and a punchline after every
+  paragraph give unrelated ideas the same shape. Merge overlapping examples.
+  Keep distinct outcomes and deliberate repetition that helps readers compare.
+- Cut a conclusion that repeats the introduction and a defensive aside that
+  answers an objection the reader has no reason to raise.
 
 ### Edit the sentence in context
 

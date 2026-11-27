@@ -89,8 +89,8 @@ judgment, voice, and editing decide quality; a detector result does not.
    - Structure: keep one job per section and put important information first.
    - Water: replace praise and abstractions with a mechanism, consequence, or
      proof; delete the sentence when none exists.
-   - Voice: remove canned transitions, generated cadence, forced symmetry, fake
-     enthusiasm, and words the reader would not use.
+   - Voice: apply the phrase blacklist, word watchlist, and sentence patterns in
+     [the tone rules](references/tone-rules.md#phrase-blacklist).
    - Sound: read it aloud; fix breathless sentences, choppy fragments, repeated
      openings, and unnatural formality.
    - Section openings and endings: read each heading with its first sentence,
