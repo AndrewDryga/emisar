@@ -93,8 +93,17 @@ judgment, voice, and editing decide quality; a detector result does not.
      enthusiasm, and words the reader would not use.
    - Sound: read it aloud; fix breathless sentences, choppy fragments, repeated
      openings, and unnatural formality.
+   - Section openings and endings: read each heading with its first sentence,
+     then each example with its closing line. Keep the line when it adds a
+     condition, consequence, or observation the reader still needs.
    - Compression: cut repetition, throat-clearing, needless headings, and any
      closing paragraph that merely summarizes the page.
+
+   After compression, compare the final text with the source. Check who acts,
+   under which conditions, in what order, and with what result. Preserve
+   qualifications, quantities, units, dates, quotations, and attribution.
+   For prose edits, also check commands, flags, identifiers, and link targets.
+   Restore any supported detail whose loss changes what the reader would do or believe.
 
 7. **Apply the surface mode and ship the copy.**
    Check the work against `references/surface-modes.md`, then present the final

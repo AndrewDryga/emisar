@@ -148,6 +148,37 @@ Words such as `unlock`, `empower`, `seamless`, `robust`, `transformative`,
 often hide the real claim. They remain valid when the content states what was
 tested, what failure the system withstands, or what capability the word names.
 
+### Edit the sentence in context
+
+| Draft wording | Editorial decision |
+|---|---|
+| “It’s worth noting that the runner is offline.” | Delete the lead-in. “The runner is offline.” Cut greetings, offers of further help, and drafting notes from standalone copy. |
+| “Seamlessly extend the catalog.” | Which setup step does the reader save? “Add actions through packs without configuring another MCP server.” |
+| “Experts agree that agents need guardrails.” | Name the source and its specific finding if the argument depends on it. Otherwise explain the mechanism directly. |
+| “From visibility to confidence” | The endpoints imply a range the reader cannot use. Name an observable result, such as finding a denied action in the audit trail. |
+| “The audit trail includes denials, highlighting its importance.” | Cut the trailing judgment. If the consequence matters, write it directly. “Operators can see which actions policy denied.” |
+| “The approval paradox” | Use an established term or describe the actual decision. A heading such as “When an action needs approval” tells the reader what they can learn. |
+
+Put the actor in the subject position when responsibility matters. Name the
+runner, policy, or operator as appropriate. Keep the condition beside its
+consequence. “When policy requires approval, the action waits” preserves a
+condition that disappears in “Actions require approval.” Use the same product
+term each time readers need to recognize the same object.
+
+Read a reply with its preceding message. Lead with the decision or new fact and
+supply the context the recipient still needs. In a standalone guide, give a
+first-time reader the prerequisites they need to follow the example.
+
+Stop editing when the passage is clear, accurate, and right for its reader.
+“Runner offline” fits a status label. The three policy outcomes each belong in
+an explanation of policy. The short closing line in the SSH blog example works
+because it identifies shell flexibility as the source of the risk. Keep an
+author’s characteristic phrasing when it serves the argument. Use emphasis and
+list labels where they help readers find a decision, warning, or step.
+
+These editing examples draw on [Humanizer](https://github.com/blader/humanizer)
+and [Deslop](https://github.com/stephenturner/skills/blob/main/deslop/SKILL.md).
+
 ## Kill Marketing Water
 
 A sentence earns its place by stating a fact, explaining a mechanism or

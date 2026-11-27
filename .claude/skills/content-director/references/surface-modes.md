@@ -4,6 +4,12 @@ Choose one primary mode before writing. The house voice stays recognizable, but
 the reader's job changes. Do not make documentation sound like a landing page or
 make product errors sound like a blog post.
 
+For the same approval behavior, a status label can read “Waiting for approval.”
+A guide can explain “When policy requires approval, the action waits for an
+operator.” A release note needs a verified change. If this release first
+exposes pending approvals in the audit trail, write “You can now see pending
+approvals in the audit trail.”
+
 ## Marketing Website
 
 **Reader job:** decide whether this product is relevant, different, credible,
