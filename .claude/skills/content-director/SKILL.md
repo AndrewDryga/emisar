@@ -53,6 +53,12 @@ judgment, voice, and editing decide quality; a detector result does not.
 
 ## Workflow
 
+For a targeted edit, read the surrounding copy, make the requested change,
+and compare the result with the source. Preserve wording that already works,
+including technical terms and conditions that limit a claim. Return the edit.
+
+For a new piece or a substantial rewrite, use the full workflow below.
+
 1. **Choose the surface and the reader's next move.**
    Name who is reading, what brought them here, what they already know, and what
    they should understand, decide, or do next.
@@ -117,9 +123,10 @@ judgment, voice, and editing decide quality; a detector result does not.
   like a brochure, a strategy deck, or a sentence nobody would say.
 - **Competitor-swap test:** Replace `emisar` with a competitor's name. Rewrite
   any claim or benefit that still works unchanged. Exempt structural copy.
-- **Hierarchy test:** Does the piece lead with bounded agent autonomy, then earn
-  it with the action system, catalog, and controls? Rewrite any version that
-  makes a generic approval workflow the main product.
+- For product positioning, lead with bounded agent autonomy and support the
+  promise with the action system, catalog, and controls.
+- For other surfaces, can readers find the state, decision, or next action
+  where they need it?
 - **Deletion test:** Remove the sentence, section, or joke. If the reader loses
   no fact, logic, useful emphasis, or genuine delight, leave it out.
 
