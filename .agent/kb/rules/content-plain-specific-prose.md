@@ -27,6 +27,10 @@ writer first.
 
 ## Good
 
+- In a long article, establish a familiar situation and a question worth
+  pursuing. Build each explanation on what the reader has already learned.
+  Let the ending show what that accumulated understanding allows them to
+  explain, predict, or decide.
 - Lead with the reader's actual job, question, or decision.
 - Preserve the author's voice, narrative order, examples, and rhythm when editing
   existing prose. SEO work and plain-English cleanup call for focused edits, not

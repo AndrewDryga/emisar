@@ -88,6 +88,11 @@ For a new piece or a substantial rewrite, use the full workflow below.
    Decide what the piece teaches or argues before writing headings or filling a
    layout. If the argument needs a paragraph, it is not ready.
 
+   For a long article or explainer, sketch the reader’s path before drafting.
+   Write down what they already understand, the question the opening raises,
+   and what they should be able to explain or decide by the end. Between those
+   points, order the ideas by what the reader needs to grasp each one.
+
 5. **Draft from meaning.**
    Write the shortest complete version first. Add detail only where it answers a
    real question, proves a claim, prevents a mistake, or makes the piece worth
@@ -96,6 +101,10 @@ For a new piece or a substantial rewrite, use the full workflow below.
 6. **Edit in separate passes.**
    - Truth: verify claims, examples, names, commands, numbers, and limitations.
    - Structure: keep one job per section and put important information first.
+     For long prose, set the headings aside and read across the section breaks.
+     What does the reader know now that makes the next idea intelligible? Move
+     a prerequisite earlier or supply the missing reasoning. Check that the
+     ending resolves the question the opening led the reader to care about.
    - Water: replace praise and abstractions with a mechanism, consequence, or
      proof; delete the sentence when none exists.
    - Voice: apply the phrase blacklist, word watchlist, and sentence patterns in

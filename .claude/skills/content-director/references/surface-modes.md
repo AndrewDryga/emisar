@@ -100,6 +100,21 @@ topic. Give the piece one thesis. Develop it through real examples, mechanisms,
 evidence, consequences, and counterarguments. Let the writer make a choice and
 admit the tradeoff.
 
+Open with a situation the intended reader recognizes. Choose a detail that
+sets the tone and gives them a reason to follow the argument. For an article
+about agent permissions, an operator asking an agent to inspect a stalled
+service gives the reader somewhere to stand. The agent has an SSH key. What
+else can that credential authorize? Once the reader sees why the distinction
+matters, introduce the difference between the requested task and the account’s
+authority. Now they can judge which permission the inspection actually needs.
+
+Carry that situation forward as the reasoning gets harder. Introduce a term
+when it gives the reader a name for something they now need to distinguish.
+At each turn, show why the previous observation raises this question. A shared
+example, a cause, or an unresolved choice can carry the transition in a single
+sentence. Return to the opening situation when the reader can finally make a
+decision or see a consequence they could have missed at the start.
+
 **Teach before you pitch.** Explain the domain from first principles at a depth
 useful to someone who never buys: how the failure happens, what authority a
 credential grants, why the obvious workaround breaks, or which tradeoff cannot
